@@ -1,0 +1,11 @@
+{
+  "flab": {
+    "description": "flab-ui Wi-Fi page",
+    "read": {
+      "ubus": {
+        "flab.wifi": ["clients"]
+      }
+    },
+    "write": {}
+  }
+}

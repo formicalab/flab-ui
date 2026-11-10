@@ -1,0 +1,44 @@
+// Client-side throughput history. strongSwan only reports counters, so rates are derived from
+// the difference between consecutive polls. Interface counters (xfrmN) are preferred because they
+// keep counting across child SA rekeys; SA byte counters are the fallback.
+
+const MAX_SAMPLES = 60;
+const history = new Map();
+
+const keyOf = (conn, child) => `${conn.name}/${child.name}`;
+
+function counters(child) {
+  const sa = child.sas[0];
+  if (!sa) return null;
+  if (sa.iface) return { rx: sa.iface.rx_bytes, tx: sa.iface.tx_bytes };
+  return { rx: sa.bytes_in, tx: sa.bytes_out };
+}
+
+export function record(data) {
+  const t = performance.now();
+  for (const conn of data.connections) {
+    for (const child of conn.children) {
+      const c = counters(child);
+      if (!c || c.rx == null) continue;
+      const list = history.get(keyOf(conn, child)) ?? [];
+      list.push({ t, ...c });
+      if (list.length > MAX_SAMPLES) list.shift();
+      history.set(keyOf(conn, child), list);
+    }
+  }
+}
+
+// Returns { rx: number[], tx: number[] } in bytes/s (oldest first); a counter reset counts as zero.
+export function series(conn, child) {
+  const list = history.get(keyOf(conn, child)) ?? [];
+  const rx = [], tx = [];
+  for (let i = 1; i < list.length; i++) {
+    const dt = (list[i].t - list[i - 1].t) / 1000;
+    if (dt <= 0) continue;
+    rx.push(Math.max(0, (list[i].rx - list[i - 1].rx) / dt));
+    tx.push(Math.max(0, (list[i].tx - list[i - 1].tx) / dt));
+  }
+  return { rx, tx };
+}
+
+export const latest = s => ({ rx: s.rx.at(-1) ?? null, tx: s.tx.at(-1) ?? null });

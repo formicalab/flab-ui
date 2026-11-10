@@ -1,0 +1,68 @@
+/* IPsec page styling. Loaded on demand by core/app.js when the page is first opened. */
+
+.vpn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 860px), 1fr)); gap: 1.25rem; }
+.vpn-grid.compact { grid-template-columns: repeat(auto-fit, minmax(min(100%, 720px), 1fr)); }
+.vpn-grid.compact .vpn-flow { grid-template-columns: minmax(9rem, 1fr) minmax(14rem, 2fr) minmax(9rem, 1fr); }
+.vpn-grid.compact .vpn-score { border-top: 1px solid var(--fl-stroke); }
+
+.vpn-card { position: relative; overflow: hidden; }
+.vpn-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--fl-ok-fg), var(--fl-brand)); }
+.vpn-card.is-down::before { background: var(--fl-bad-fg); }
+
+/* ── Header ── */
+.vpn-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: 1.2rem 1.25rem .5rem; }
+.vpn-head .name { font-size: 1.2rem; font-weight: 600; }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot.up { background: var(--fl-ok-fg); animation: pulse 2.4s ease-out infinite; }
+.dot.down { background: var(--fl-bad-fg); }
+.grade { margin-left: auto; padding: .25rem .9rem; border-radius: 999px; font-size: 1.05rem; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); white-space: nowrap; }
+.grade small { font-weight: 400; opacity: .8; }
+.grade.success { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
+.grade.info { background: var(--fl-info-bg); color: var(--fl-info-fg); }
+.grade.warning { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
+.grade.danger { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
+
+/* ── Flow diagram ── */
+.vpn-flow { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(16rem, 2fr) minmax(10rem, 1fr); gap: 1rem; align-items: center; padding: .5rem 1.25rem 1.1rem; }
+.vpn-node { display: grid; gap: .15rem; justify-items: center; text-align: center; padding: .8rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: var(--fl-surface-hover); }
+.vpn-node svg { color: var(--fl-brand); }
+.vpn-node .node-title { font-weight: 600; }
+.vpn-link { display: grid; gap: .5rem; text-align: center; }
+.vpn-link .chips { justify-content: center; }
+.vpn-link .line { height: 3px; border-radius: 2px; background: repeating-linear-gradient(90deg, var(--fl-brand) 0 12px, transparent 12px 20px); background-size: 20px 3px; animation: flow 1s linear infinite; }
+.vpn-link.down .line { background: repeating-linear-gradient(90deg, var(--fl-stroke) 0 8px, transparent 8px 16px); animation: none; }
+
+/* ── Detail columns ── */
+.vpn-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 1.75rem; padding: 1.1rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
+.traffic { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .9rem; }
+.traffic .rate { display: grid; gap: .3rem; }
+.traffic .rate b { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.traffic .rate svg { margin-right: .35rem; vertical-align: -2px; color: var(--fl-muted); }
+.traffic .spark { width: 220px; height: 44px; flex: none; }
+
+/* ── Score breakdown ── */
+.vpn-score { padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); background: color-mix(in srgb, var(--fl-surface-hover) 55%, transparent); }
+.vpn-score .parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .9rem 1.5rem; }
+.vpn-score .part { display: grid; gap: .3rem; align-content: start; }
+.vpn-score .plabel { font-size: .8rem; color: var(--fl-muted); }
+.vpn-score .pval { font-size: .8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.warnings { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: .4rem; }
+.warnings li { display: flex; align-items: center; gap: .55rem; }
+.warnings .warn { color: var(--fl-warn-fg); }
+.warnings .bad { color: var(--fl-bad-fg); }
+
+/* ── Daemon and legend ── */
+.vpn-daemon { display: grid; grid-template-columns: minmax(300px, 1fr) 2fr; gap: 1.75rem; }
+.card-header svg { color: var(--fl-brand); }
+.score-model { display: grid; grid-template-columns: 15rem 1fr; gap: .3rem 1rem; padding: .3rem 0; }
+
+@keyframes flow { to { background-position: 20px 0; } }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fl-ok-fg) 55%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 8px transparent; }
+}
+
+@media (max-width: 767.98px) {
+  .vpn-flow, .vpn-daemon, .score-model { grid-template-columns: 1fr; }
+  .grade { margin-left: 0; }
+}

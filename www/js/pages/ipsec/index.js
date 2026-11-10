@@ -1,0 +1,91 @@
+import { h } from '../../core/dom.js';
+import { ubus } from '../../core/ubus.js';
+import { tile, tiles, emptyState } from '../../core/ui.js';
+import { searchControl, selectControl, pauseControl, refreshControl, toggleControl } from '../../core/controls.js';
+import { fmtBps, fmtBytes, fmtSpan } from '../../core/format.js';
+import { record, series, latest } from './rates.js';
+import { connectionCard } from './connection.js';
+import { daemonCard, scoringCard } from './daemon.js';
+
+const state = { q: '', filter: 'all', compact: false, paused: false };
+
+const TEXT_CLASS = { 'A+': 'text-success', A: 'text-success', B: 'text-info', C: 'text-warning', D: 'text-danger' };
+
+function summary(data) {
+  const conns = data.connections;
+  const up = conns.filter(c => c.state === 'ESTABLISHED').length;
+
+  const worst = conns.reduce((a, c) => (!a || c.rating.score < a.rating.score ? c : a), null);
+
+  let rx = 0, tx = 0, anyRate = false;
+  const ifaces = new Map();
+  let nextRekey = null;
+  let failures = 0;
+  for (const c of conns) {
+    if (c.ike?.rekey_time != null && (!nextRekey || c.ike.rekey_time < nextRekey.s)) nextRekey = { s: c.ike.rekey_time, what: `${c.name} IKE SA` };
+    for (const child of c.children) {
+      const r = latest(series(c, child));
+      if (r.rx != null) { rx += r.rx; tx += r.tx; anyRate = true; }
+      for (const sa of child.sas) {
+        if (sa.iface) ifaces.set(sa.iface.name, sa.iface);
+        if (sa.rekey_time != null && (!nextRekey || sa.rekey_time < nextRekey.s)) nextRekey = { s: sa.rekey_time, what: `${child.name} child SA` };
+        failures += (sa.kernel.inbound?.replay_failed ?? 0) + (sa.kernel.outbound?.replay_failed ?? 0);
+      }
+    }
+  }
+  const totalRx = [...ifaces.values()].reduce((n, i) => n + (i.rx_bytes ?? 0), 0);
+  const totalTx = [...ifaces.values()].reduce((n, i) => n + (i.tx_bytes ?? 0), 0);
+
+  return tiles(
+    tile('Tunnels established', `${up} / ${conns.length}`, up === conns.length ? 'all connections up' : `${conns.length - up} down`, up === conns.length ? 'text-success' : 'text-danger'),
+    tile('Weakest security grade', worst ? `${worst.rating.grade} (${worst.rating.score})` : '–', worst ? worst.name : '', worst ? TEXT_CLASS[worst.rating.grade] : ''),
+    tile('Live throughput', anyRate ? `↓ ${fmtBps(rx)}` : '–', anyRate ? `↑ ${fmtBps(tx)} · all tunnels` : 'measuring…'),
+    tile('Total traffic', `↓ ${fmtBytes(totalRx)}`, `↑ ${fmtBytes(totalTx)} · since interface up`),
+    tile('Next rekey', nextRekey ? fmtSpan(nextRekey.s) : '–', nextRekey ? nextRekey.what : '', ''),
+    tile('Replay failures', failures, failures ? 'investigate' : 'anti-replay healthy', failures ? 'text-danger' : 'text-success'));
+}
+
+export default {
+  id: 'ipsec',
+  label: 'IPsec VPN',
+  title: 'IPsec VPN · strongSwan',
+  icon: 'shield-lock',
+  interval: 5000,
+  css: 'css/ipsec.css',
+  isPaused: () => state.paused,
+
+  load: async () => {
+    const data = await ubus('flab.ipsec', 'status');
+    record(data);
+    return data;
+  },
+
+  controls({ rerender, reload }) {
+    const filter = selectControl(state, 'filter', rerender, 'Connection state');
+    filter.setOptions([['all', 'All connections'], ['up', 'Established'], ['down', 'Down']]);
+    return {
+      nodes: [searchControl(state, 'q', rerender, 'Filter connections…'), filter.node,
+        toggleControl(state, 'compact', ['Compact view', 'Detailed view'], rerender), pauseControl(state), refreshControl(reload)],
+    };
+  },
+
+  view(data) {
+    const q = state.q.toLowerCase();
+    const shown = data.connections.filter(c => {
+      if (state.filter === 'up' && c.state !== 'ESTABLISHED') return false;
+      if (state.filter === 'down' && c.state === 'ESTABLISHED') return false;
+      if (!q) return true;
+      const hay = [c.name, c.state, c.config.remote_addrs.join(' '), c.ike?.remote_host, c.ike?.remote_id, ...c.children.map(x => x.name)].join(' ').toLowerCase();
+      return q.split(/\s+/).every(t => hay.includes(t));
+    });
+
+    return [
+      summary(data),
+      shown.length
+        ? h('div', { className: `vpn-grid ${state.compact ? 'compact' : ''}` }, shown.map(c => connectionCard(c, { compact: state.compact })))
+        : emptyState(data.connections.length ? 'No connection matches the filter.' : 'No IPsec connections are configured.'),
+      daemonCard(data.daemon),
+      scoringCard(),
+    ];
+  },
+};

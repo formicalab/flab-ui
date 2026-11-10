@@ -1,0 +1,19 @@
+/* Overview page styling (temperature sensors). Loaded on demand by core/app.js. */
+
+.sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+.sensor { display: grid; gap: .45rem; padding: .9rem 1rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
+.sensor-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.sensor-temp { font-size: 1.9rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.sensor-temp.good { color: var(--fl-ok-fg); }
+.sensor-temp.fair { color: var(--fl-warn-fg); }
+.sensor-temp.weak { color: var(--fl-bad-fg); }
+
+.gauge .track { position: relative; height: 8px; border-radius: 4px; background: var(--fl-neutral-bg); }
+.gauge .fill { height: 100%; border-radius: 4px; background: var(--fl-ok-fg); }
+.gauge.fair .fill { background: var(--fl-warn-fg); }
+.gauge.weak .fill { background: var(--fl-bad-fg); }
+.gauge .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; }
+.gauge .mark.warn { background: var(--fl-warn-fg); }
+.gauge .mark.bad { background: var(--fl-bad-fg); }
+
+.sensor-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; margin-top: 1rem; }
