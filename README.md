@@ -716,16 +716,17 @@ Shows and edits odhcpd, the router's DHCPv4, DHCPv6 and router advertisement (RA
 `service list odhcpd` and rpcd's `uci` object; it needs no plugin, only the ACL fragment
 `rpcd/acl.d/flab-dhcp.json`. Leases are keyed by device (`br-lan`) in the ubus replies and shown under their
 logical interface (`lan`). Top to bottom the page shows the tiles, then the settings (daemon, pools), then the
-announced prefixes, the leases and last the reservations.
+advertised prefixes, the leases and last the reservations.
 - **Tiles**: whether odhcpd runs, DHCPv4 leases (reserved and dynamic), DHCPv6 leases, reservations (how many hold
   a lease now).
 - **Daemon** (`config odhcpd`): main DHCPv4 server switch, legacy mode, log level, lease file, trigger script,
-  hosts directory, and so on.
-- **Pools** (`config dhcp`, one card per interface, groups collapsible): Services (DHCPv4, DHCPv6, RA, NDP),
+  hosts directory, and so on. Like the pools it is folded to its header (main switch and log level) until opened.
+- **Pools** (`config dhcp`, one card per interface, folded to its header until opened, groups collapsible): Services (DHCPv4, DHCPv6, RA, NDP),
   DHCPv4 pool and options, DHCPv6, Router advertisements, Neighbor discovery proxy and Other, about 50 options
   from the odhcpd documentation. The header shows the subnet and the address range the pool resolves to
-  (start and limit are offsets in the interface's subnet).
-- **Leases**: the IPv6 prefixes the router announces (a stale one is flagged), DHCPv4 (address, MAC, hostname,
+  (start and limit are offsets in the interface's subnet). A folded card or closed group that holds an error
+  opens by itself, so an error is never hidden.
+- **Leases**: the IPv6 prefixes advertised to clients in router advertisements (a stale one is flagged), DHCPv4 (address, MAC, hostname,
   reserved or dynamic, time left) with a *Reserve* button on every dynamic lease that adds a reservation to the
   form, and DHCPv6 (DUID, addresses, delegated prefixes). The command bar filters all three by text and by
   interface.

@@ -12,6 +12,30 @@ import { poolRange, poolValue } from './model.js';
 // Which option groups are expanded, kept across redraws: id `<section>:<group>` to open or closed.
 const opened = new Map();
 
+// The cards the user has opened (a pool's `dhcp` section name, or 'daemon'), kept across redraws. These cards start
+// folded down to their header, which already summarizes them.
+const unfolded = new Set();
+
+// Makes a card foldable: its whole header becomes the toggle (mouse, Enter or Space), the card starts folded unless
+// `key` was opened before, and the choice is remembered under `key`.
+function foldable(el, key) {
+  const header = el.querySelector('.card-header');
+  el.classList.toggle('dhcp-folded', !unfolded.has(key));
+  const toggle = () => {
+    const isFolded = el.classList.toggle('dhcp-folded');
+    if (isFolded) unfolded.delete(key); else unfolded.add(key);
+    header.setAttribute('aria-expanded', String(!isFolded));
+  };
+  header.classList.add('dhcp-fold-header');
+  header.setAttribute('role', 'button');
+  header.setAttribute('tabindex', '0');
+  header.setAttribute('aria-expanded', String(unfolded.has(key)));
+  header.title = 'Click to fold or unfold';
+  header.addEventListener('click', toggle);
+  header.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  return el;
+}
+
 // Connects the control of one field to the draft, under the control name `id` (also used to mark errors).
 function controlFor(ctx, f, id, values) {
   return fieldRow(f, {
@@ -40,7 +64,8 @@ function describe(ctx, pool) {
   return parts.join(' · ');
 }
 
-// The card of one pool.
+// The card of one pool. Clicking its header folds the whole card down to that header (which already summarizes
+// the pool), and the choice survives redraws.
 export function poolCard(ctx, pool) {
   const groups = POOL_GROUPS.map(g => {
     const id = `${pool.section}:${g.id}`;
@@ -49,18 +74,23 @@ export function poolCard(ctx, pool) {
       h('summary', {}, g.title),
       h('div', { className: 'dhcp-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, fields)));
   });
-  return card(
-    [icon('signpost-split'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, h('span', { className: 'sub' }, describe(ctx, pool))],
+  const el = card(
+    [h('span', { className: 'dhcp-chevron' }), icon('signpost-split'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, h('span', { className: 'sub' }, describe(ctx, pool))],
     h('div', { className: 'card-body dhcp-groups' }, groups));
+  return foldable(el, pool.section);
 }
 
-// The card of the odhcpd daemon: its options and whether it runs.
+// The card of the odhcpd daemon: its options and whether it runs. Foldable; the header sums up the main switches.
 export function daemonCard(ctx) {
   const fields = DAEMON_FIELDS.map(f => controlFor(ctx, f, `daemon:${f.key}`, ctx.draft.daemon));
   const running = ctx.data.daemonRunning;
-  return card(
-    [icon('hdd-stack'), h('span', {}, 'odhcpd daemon'), running == null ? muted('state not available') : badge(running ? 'running' : 'not running', running ? 'success' : 'danger')],
+  const d = ctx.draft.daemon;
+  const el = card(
+    [h('span', { className: 'dhcp-chevron' }), icon('hdd-stack'), h('span', {}, 'odhcpd daemon'),
+      running == null ? muted('state not available') : badge(running ? 'running' : 'not running', running ? 'success' : 'danger'),
+      h('span', { className: 'sub' }, `${d.maindhcp ? 'main DHCPv4 server' : 'not the main DHCPv4 server'} · log level ${d.loglevel === '' ? `${DAEMON_FIELDS.find(f => f.key === 'loglevel').default} (default)` : d.loglevel}`)],
     h('div', {},
-      legend(['The daemon that serves DHCPv4, DHCPv6 and router advertisements. These are the odhcpd section of /etc/config/dhcp; the interface pools above are its dhcp sections.']),
+      legend(['The daemon that serves DHCPv4, DHCPv6 and router advertisements. These are the odhcpd section of /etc/config/dhcp; the interface pools below are its dhcp sections.']),
       h('div', { className: 'card-body set-fields' }, fields)));
+  return foldable(el, 'daemon');
 }

@@ -166,7 +166,12 @@ export default {
       for (const e of problems(state.base, state.draft).errors) {
         for (const key of [e.key, e.also]) {
           const el = key && ctx.inputs[key];
-          (Array.isArray(el) ? el[e.index] : el)?.classList.add('is-invalid');
+          const bad = Array.isArray(el) ? el[e.index] : el;
+          bad?.classList.add('is-invalid');
+          // A control with an error must not stay hidden in a folded pool or a closed group.
+          const group = bad?.closest('details');
+          if (group && !group.open) group.open = true;
+          if (bad?.closest('.dhcp-folded')) bad.closest('.card').querySelector('.dhcp-fold-header').click();
         }
       }
       renderBar(canEdit);

@@ -62,7 +62,8 @@ export function announcedCard(data, filter) {
     .filter(p => passes(filter, p.iface, [p.iface, p.device, p.prefix]))
     .sort((a, b) => a.iface.localeCompare(b.iface) || a.prefix.localeCompare(b.prefix));
   return card(
-    [icon('megaphone'), h('span', {}, 'Announced IPv6 prefixes'), h('span', { className: 'sub' }, 'what the router advertisements tell clients')],
+    [icon('megaphone'), h('span', {}, 'IPv6 prefixes advertised to clients'),
+      h('span', { className: 'sub' }, 'Sent in router advertisements; clients build their IPv6 addresses from these. A stale prefix is being withdrawn.')],
     table(['Interface', 'Device', 'Prefix', 'State'], rows.map(p => [
       p.iface, mono(p.device), mono(`${p.prefix}/${p.length}`),
       p.stale ? badge('stale', 'warning', 'the prefix is no longer valid upstream and is being phased out') : badge('current', 'success'),
