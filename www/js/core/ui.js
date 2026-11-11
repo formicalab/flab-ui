@@ -52,7 +52,7 @@ export const meter = (score, max, lvl) => h('div', { className: `meter ${lvl}` }
   h('div', { className: 'fill', style: `width:${max ? score / max * 100 : 0}%` }));
 
 // Inline SVG line chart. series: [{ values: number[], cls }]; all series share one scale.
-export function sparkline(series, { width = 160, height = 36 } = {}) {
+export function sparkline(series, { width = 160, height = 36, max: fixedMax } = {}) {
   // Two points would draw a misleading diagonal, so wait for a few samples.
   if (series.every(s => s.values.length < 3)) return h('div', { className: 'spark-empty muted small', style: `width:${width}px` }, 'measuring…');
   const ns = 'http://www.w3.org/2000/svg';
@@ -60,7 +60,8 @@ export function sparkline(series, { width = 160, height = 36 } = {}) {
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('class', 'spark');
   svg.setAttribute('preserveAspectRatio', 'none');
-  const max = Math.max(1, ...series.flatMap(s => s.values));
+  // A fixed `max` (e.g. 100 for percentages) keeps the scale stable; otherwise all series share the data maximum.
+  const max = fixedMax ?? Math.max(1, ...series.flatMap(s => s.values));
   for (const { values, cls } of series) {
     if (values.length < 2) continue;
     const pts = values.map((v, i) => `${(i / (values.length - 1) * width).toFixed(1)},${(height - 2 - v / max * (height - 4)).toFixed(1)}`);

@@ -35,7 +35,7 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
    v
 rpcd ---- built-in objects:  session, system, network.interface, service
    |
-   '----- ucode plugins:    flab.wifi, flab.ipsec, flab.bgp, flab.sensors   (this repo)
+   '----- ucode plugins:    flab.wifi, flab.ipsec, flab.bgp, flab.sensors, flab.system   (this repo)
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici
@@ -80,7 +80,7 @@ flab-ui/
         theme.js             Follows the OS light/dark preference
       pages/
         index.js             Page registry and the page contract (read this first)
-        overview/            index.js + temperatures.js
+        overview/            index.js + cpu.js + temperatures.js
         wifi.js              Wi-Fi clients
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         bgp/                 index.js, topology.js, peer.js, routes.js, announced.js, system.js, util.js
@@ -157,8 +157,9 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   `rates.js` derives throughput from successive counter samples kept in memory (60 samples; uses the
   `xfrmN` interface counters because they survive child SA rekeys); `daemon.js` shows daemon state and
   the score model.
-- **Overview** (`pages/overview/`): the sensors call is optional (`optional()` wrapper), so a missing
-  plugin or ACL hides the temperature section instead of breaking the page.
+- **Overview** (`pages/overview/`): the sensors and CPU calls are optional (`optional()` wrapper), so a
+  missing plugin or ACL hides that section instead of breaking the page. `cpu.js` keeps the sample
+  history and builds the CPU card; `temperatures.js` builds the temperature cards.
 - **BGP** (`pages/bgp/`): `index.js` owns the page state and composes the sections; `topology.js`,
   `peer.js`, `routes.js`, `announced.js` and `system.js` each export card builders that take the backend
   data; `util.js` holds the per-peer color helpers, AS-path chips and prefix sort key. Shared styles for
@@ -183,6 +184,7 @@ return {
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
+| `flab.system.uc` | `flab.system` | `cpu` | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime` |
 
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
@@ -297,8 +299,21 @@ parsing is needed by two plugins, move it to `rpcd/lib/flab/`.
 ## Existing pages
 
 ### Overview (default)
-KPI tiles (uptime, load, memory, CPU temperature, hottest sensor, kernel), a Temperatures card, system
-info and memory breakdown. Temperatures come from `flab.sensors`: thermal zones plus hwmon sensors
+KPI tiles (uptime, CPU usage, load, memory, CPU temperature, hottest sensor), a CPU load card, a
+Temperatures card, system info (including the kernel version) and the memory breakdown.
+
+**CPU load** comes from `flab.system cpu`, which returns the kernel's cumulative counters from
+`/proc/stat` (plus load average and task counts). Utilization is a rate, so the browser derives it from
+the difference between two successive samples (`overview/cpu.js`, same idea as the IPsec throughput):
+total busy percentage, a stacked bar per state (user, system, interrupts = irq + softirq, I/O wait,
+steal), one bar per core and a 60-sample history chart. "Busy" excludes idle and I/O wait, like top and
+htop. On a router the interrupts share is worth watching: packet forwarding and Wi-Fi show up as
+softirq. The first visit takes a second sample a moment after the first, so numbers appear immediately;
+the history restarts if the router uptime shows a gap longer than 20 s (page paused or not open), since a
+delta over minutes would be a misleading average. This router has no cpufreq policy (fixed clock), so no
+frequency is shown.
+
+Temperatures come from `flab.sensors`: thermal zones plus hwmon sensors
 (deduplicated, since the CPU appears as both). On the MT6000: CPU, two RTL8221B 2.5G Ethernet PHYs and
 two MT7915 Wi-Fi radios. Health: Normal below 75 C, Warm from 75 C, Hot from 90 C or at a sensor's own
 throttle/critical limit. Also shows CPU trip points, throttling state and cooling devices (passive

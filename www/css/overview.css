@@ -17,3 +17,42 @@
 .gauge .mark.bad { background: var(--fl-bad-fg); }
 
 .sensor-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; margin-top: 1rem; }
+
+/* ── CPU load card ── */
+.cpu-grid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.2fr) minmax(300px, 1fr); gap: 2rem; align-items: start; }
+.cpu-big { font-size: 2.6rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.cpu-big small { margin-left: .5rem; font-size: .85rem; font-weight: 400; color: var(--fl-muted); }
+.cpu-total { display: grid; gap: .9rem; }
+
+/* Stacked bar: one segment per CPU state, sharing the colors of the legend swatches. */
+.cpu-stack { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--fl-neutral-bg); }
+.cpu-stack.big { height: 14px; border-radius: 7px; }
+.cpu-stack i { display: block; height: 100%; }
+.cpu-stack .user, .sw.user { background: var(--fl-brand); }
+.cpu-stack .system, .sw.system { background: var(--fl-ok-fg); }
+.cpu-stack .irq, .sw.irq { background: var(--fl-warn-fg); }
+.cpu-stack .iowait, .sw.iowait { background: var(--fl-bad-fg); }
+.cpu-stack .steal, .sw.steal { background: #8a8a8a; }
+.sw.idle { background: var(--fl-neutral-bg); border: 1px solid var(--fl-stroke); }
+
+.cpu-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem 1.25rem; }
+.cpu-legend .lg { display: flex; align-items: center; gap: .5rem; }
+.cpu-legend .lg b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+.cpu-cores { display: grid; gap: .75rem; }
+.core { display: grid; grid-template-columns: 3.2rem 1fr 3rem; align-items: center; gap: .75rem; }
+.core .cl { color: var(--fl-muted); font-size: .8rem; }
+.core .cv { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.cpu-spark svg { width: 100%; height: 90px; display: block; }
+.cpu-spark .spark .tx { stroke: var(--fl-warn-fg); }
+.cpu-spark .spark-empty { width: 100% !important; }
+.cpu-keys { display: flex; gap: 1.25rem; margin-top: .4rem; }
+.cpu-keys .key { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: .4rem; vertical-align: middle; }
+.cpu-keys .key.busy { background: var(--fl-brand); }
+.cpu-keys .key.irq { background: var(--fl-warn-fg); }
+
+@media (max-width: 991.98px) {
+  .cpu-grid { grid-template-columns: 1fr; }
+}
