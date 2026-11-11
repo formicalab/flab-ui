@@ -1,18 +1,14 @@
-// Network page: physical ports and bridges first (state, speed, spanning tree, learned MACs, live
-// throughput), then the logical interfaces. Data comes from the flab.network plugin plus netifd's
-// standard network.interface dump; everything is rediscovered on every poll, and counters are turned into
-// rates in the browser (core/rates.js), so links, ports and bridges that appear, change or disappear are
-// reflected without a reload.
-import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
-import { ubus } from '../../core/ubus.js';
-import { card, tile, tiles } from '../../core/ui.js';
+// Wired network page (route #network): the Ethernet ports. The wiring diagram (SoC, MACs, switch chip,
+// PHYs, jacks) and a port table with link, hardware, traffic and errors. Bridges and the layers built on
+// the ports have their own pages. Data comes from the flab.network plugin; everything is rediscovered on
+// every poll and counters are turned into rates in the browser (core/rates.js), so ports that appear,
+// change or disappear are reflected without a reload.
+import { tile, tiles, healthBanner } from '../../core/ui.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
 import { fmtNum } from '../../core/format.js';
 import { portsPanel } from './ports.js';
-import { bridgeCard } from './bridges.js';
-import { interfacesCard, addressesByDevice } from './interfaces.js';
-import { record, traffic, findings, fmtLine, errorsOf, dropsOf, newFlaps } from './util.js';
+import { loadWired } from './shared.js';
+import { traffic, portFindings, fmtLine, errorsOf, dropsOf, newFlaps } from './util.js';
 
 const state = { paused: false };
 
@@ -24,53 +20,36 @@ function summary(net) {
   const errors = net.ports.reduce((n, p) => n + errorsOf(p), 0);
   const drops = net.ports.reduce((n, p) => n + dropsOf(p), 0);
   const flaps = net.ports.reduce((n, p) => n + newFlaps(p), 0);
-  const stpBridges = net.bridges.filter(b => b.stp);
-  const notRoot = stpBridges.find(b => !b.is_root);
-  const macs = net.bridges.reduce((n, b) => n + b.macs, 0);
+  const sw = net.switches?.[0];
 
   return tiles(
     tile('Ports linked', `${up} / ${external.length}`, `${external.filter(p => p.role === 'switch').length} switch · ${external.filter(p => p.role === 'nic').length} adapter`, up ? 'text-success' : 'text-danger'),
     tile('Live throughput', `↓ ${fmtLine(rx)}`, `↑ ${fmtLine(tx)} · external ports`),
-    tile('Bridges', net.bridges.length, net.bridges.map(b => b.name).join(', ') || 'none'),
-    tile('Spanning tree', stpBridges.length ? (notRoot ? 'Not root' : 'Root') : 'Off', notRoot ? `${notRoot.name} via ${notRoot.root_port_name ?? notRoot.root_port} (cost ${notRoot.root_path_cost})` : `${stpBridges.length} / ${net.bridges.length} bridges`),
-    tile('Learned MACs', fmtNum(macs), 'in the bridge tables'),
-    tile('Errors & drops', fmtNum(errors), `${fmtNum(drops)} drops${flaps ? ` · ${flaps} new link changes` : ''}`, errors ? 'text-warning' : 'text-success'));
-}
-
-function healthCard(list) {
-  if (!list.length) return h('div', { className: 'net-health ok' }, icon('check-circle'), 'All ports and bridges look healthy.');
-  const worst = list.some(f => f.level === 'bad') ? 'bad' : list.some(f => f.level === 'warn') ? 'warn' : 'info';
-  return h('div', { className: `net-health ${worst}` },
-    h('ul', {}, list.map(f => h('li', { className: f.level }, icon(f.level === 'bad' ? 'shield-exclamation' : f.level === 'warn' ? 'exclamation-triangle' : 'info-circle'), f.text))));
+    tile('Switch', sw ? sw.label ?? 'switch' : 'none', sw ? `${sw.ports.length} user ports · CPU port${sw.cpu_ports.length === 1 ? '' : 's'} ${sw.cpu_ports.map(c => c.port).join(', ') || '–'}` : 'ports connect straight to the SoC'),
+    tile('Errors & drops', fmtNum(errors), `${fmtNum(drops)} drops`, errors ? 'text-warning' : 'text-success'),
+    tile('Link changes', flaps, 'since this page was opened', flaps ? 'text-warning' : ''));
 }
 
 export default {
   id: 'network',
-  label: 'Network',
-  title: 'Network · ports and bridges',
-  icon: 'diagram-3',
+  label: 'Wired network',
+  title: 'Wired network · ports',
+  icon: 'ethernet',
   interval: 3000,
   css: 'css/network.css',
   isPaused: () => state.paused,
 
-  load: async () => {
-    const [net, ifaces] = await Promise.all([ubus('flab.network', 'status'), ubus('network.interface', 'dump')]);
-    record(net);
-    return { net, ifs: ifaces.interface };
-  },
+  load: loadWired,
 
   controls({ reload }) {
     return { nodes: [pauseControl(state), refreshControl(reload)] };
   },
 
-  view({ net, ifs }, rerender) {
-    const addrs = addressesByDevice(ifs);
+  view({ net }, rerender) {
     return [
       summary(net),
-      healthCard(findings(net)),
+      healthBanner(portFindings(net), 'All ports look healthy.'),
       ...portsPanel(net, rerender),
-      ...net.bridges.map(b => bridgeCard(b, addrs.get(b.name) ?? [])),
-      interfacesCard(ifs),
     ];
   },
 };

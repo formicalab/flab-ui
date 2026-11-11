@@ -1,0 +1,26 @@
+/* Bridges page styling. Loaded on demand by core/app.js when the page is first opened. */
+
+.br-card { position: relative; overflow: hidden; }
+.br-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--fl-ok-fg), var(--fl-brand)); }
+.br-card.is-down::before { background: var(--fl-bad-fg); }
+.br-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: 1.2rem 1.25rem .5rem; }
+.br-head .name { font-size: 1.2rem; font-weight: 600; }
+.br-head svg { color: var(--fl-brand); }
+.br-addrs { margin-left: auto; display: flex; flex-wrap: wrap; gap: .5rem; }
+.br-stp { display: grid; grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 2fr) minmax(11rem, 1fr); gap: 1rem; align-items: center; padding: .5rem 1.25rem 1.1rem; }
+.br-stp.root { grid-template-columns: minmax(11rem, 22rem) 1fr; }
+.br-stp.off { grid-template-columns: 1fr; }
+.br-node { display: grid; gap: .15rem; justify-items: center; text-align: center; padding: .8rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: var(--fl-surface-hover); }
+.br-node svg { color: var(--fl-brand); }
+.br-node.me { border-color: var(--fl-brand); }
+.br-node .node-title { font-weight: 600; }
+.br-link { display: grid; gap: .5rem; text-align: center; }
+.br-link .line { height: 3px; border-radius: 2px; background: repeating-linear-gradient(90deg, var(--fl-brand) 0 12px, transparent 12px 20px); background-size: 20px 3px; animation: br-flow 1s linear infinite; }
+.br-cols { display: grid; grid-template-columns: minmax(300px, 1fr) 2.2fr; gap: 1.75rem; padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
+
+@keyframes br-flow { to { background-position: 20px 0; } }
+
+@media (max-width: 991.98px) {
+  .br-stp, .br-cols { grid-template-columns: 1fr; }
+  .br-addrs { margin-left: 0; }
+}

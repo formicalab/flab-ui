@@ -35,7 +35,7 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
    v
 rpcd ---- built-in objects:  session, system, network.interface, service
    |
-   '----- ucode plugins:    flab.wifi, flab.radio, flab.network, flab.ipsec, flab.bgp, flab.sensors, flab.system   (this repo)
+   '----- ucode plugins:    flab.wifi, flab.radio, flab.mesh, flab.network, flab.ipsec, flab.bgp, flab.sensors, flab.system   (this repo)
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici
@@ -59,13 +59,13 @@ Design principles:
 ```
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
-  tests/bgp/, tests/ipsec/, tests/network/   Test suites for the BGP, IPsec and Network + Wi-Fi radio pages (run.ps1, see "Testing")
+  tests/bgp/, tests/ipsec/, tests/network/   Test suites for the BGP and IPsec pages, and for the Wired network, Bridges, Devices and Interfaces, Wi-Fi radio and Mesh pages (run.ps1, see "Testing")
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
     css/
       base.css               Fluent tokens, app shell, shared component styles
-      <page>.css             Page-specific styles, loaded on first visit (overview, wifi, ipsec, bgp, network)
+      <page>.css             Page-specific styles, loaded on first visit (overview, wifi, ipsec, bgp, network, bridges, interfaces, mesh)
     js/
       main.js                Entry point: theme + start the app
       core/                  Framework-level modules shared by all pages
@@ -73,7 +73,7 @@ flab-ui/
         ubus.js              ubus JSON-RPC transport, session, AuthError
         login.js             Sign-in screen
         dom.js               h() element builder (XSS-safe), byId()
-        ui.js                Components: card, tile(s), table, badge, chip, kv, lifebar, meter, sparkline
+        ui.js                Components: card, tile(s), table, badge, chip, kv, lifebar, meter, sparkline, healthBanner
         controls.js          Command-bar controls: search, select, pause, toggle, refresh
         format.js            Bytes, rates, durations, numbers
         rates.js             Rate tracker: turns cumulative counters into rates/ratios between polls
@@ -82,10 +82,13 @@ flab-ui/
       pages/
         index.js             Page registry and the page contract (read this first)
         overview/            index.js + cpu.js + temperatures.js
-        wifi/                index.js (page + clients table), radios.js (radio cards)
+        wifi/                index.js (page + clients table), radios.js (radio cards); mesh interfaces are left to mesh/
+        mesh/                index.js, node.js (802.11s mesh: peers, paths, parameters)
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         bgp/                 index.js, topology.js, peer.js, routes.js, announced.js, system.js, util.js
-        network/             index.js, ports.js, bridges.js, interfaces.js, diagnostics.js, util.js
+        network/             Wired network: index.js, shared.js (loader + address helpers), topology.js, tile.js, chips.js, ports.js, diagnostics.js, util.js
+        bridges/             index.js, card.js
+        interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
         services.js          procd services
   rpcd/
     ucode/flab.<page>.uc     rpcd plugins  -> /usr/share/rpcd/ucode/
@@ -120,7 +123,7 @@ Every page is a plain object, default-exported from its module (full text in `js
 | `view(data, rerender)` | yes | Returns an array of DOM nodes |
 | `controls({ rerender, reload })` | no | Returns `{ nodes, update?(data) }`; controls persist across refreshes |
 | `isPaused()` | no | Return true to suspend auto-refresh |
-| `css` | no | Stylesheet loaded on first visit |
+| `css` | no | Stylesheet (or array of stylesheets) loaded on first visit |
 
 **State that must survive refreshes** (filter text, sort order, selected radio, paused flag, compact
 toggle) lives in a module-level `state` object in the page, never in the DOM. The controls are created
@@ -185,7 +188,8 @@ return {
 |---|---|---|---|
 | `flab.wifi.uc` | `flab.wifi` | `clients` | uci wireless/network/dhcp, ubus `network.wireless`, `dhcp`, `hostapd.<if>`; `hostapd_cli all_sta`, `iw station dump`, `/proc/net/arp`, `ip -6 neigh` |
 | `flab.radio.uc` | `flab.radio` | `status` | uci wireless, ubus `network.wireless`, `hostapd.<if>`; `iw dev/phy info`, `iw survey dump`, `iwinfo`, `iw reg get`; sysfs counters |
-| `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware); `logread` (error log lines) |
+| `flab.mesh.uc` | `flab.mesh` | `status` | uci wireless (`wifi-iface mode=mesh`), ubus `network.wireless`; `iw dev/station dump`, `iw mpath dump`, `iw mpp dump`, `iw get mesh_param`; sysfs counters |
+| `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles and port order); `logread` (error log lines) |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
@@ -344,12 +348,13 @@ actually running (channel, mode, TX power with the regulatory limit of that chan
 regulatory domain, cell density, beacon interval, options); channel utilisation (busy, RX and TX airtime
 as a percentage and chart, derived in the browser from the driver's cumulative survey counters); the
 channels allowed by the regulatory domain with the running channel and its width span highlighted and
-DFS (radar) channels marked; and a table of the SSIDs / mesh interfaces (BSSID, networks, security,
+DFS (radar) channels marked; and a table of the SSIDs (BSSID, networks, security,
 clients, live and total traffic, 802.11r/k/v, WPS, OCV, hidden, isolation, MAC filter policy with entry
 count, BSS status). Findings appear when something is off: radio down, setup failing, running channel
 different from the configured one, high noise, busy channel, DFS availability check in progress, open
 network, country mismatch. Only whitelisted options are copied: keys, passwords, FT key material and MAC
-lists never leave the router.
+lists never leave the router. Mesh (802.11s) interfaces are not listed here: a radio carrying one shows a
+`mesh · <id>` badge linking to the Mesh page, and mesh peers are not in the clients list.
 
 **Clients**: port of `utilities/list_connected_devices.uc`: clients per radio and SSID with MAC,
 IPv4/IPv6, hostname, signal, Wi-Fi standard, bandwidth, TX/RX bitrate, security label, AKM/SAE
@@ -430,21 +435,32 @@ Facts worth remembering:
   prefixes learned from only one peer, import-filter drops, graceful-restart mismatch, peers receiving no
   announcement.
 
-### Network
-Refreshed every 3 s. Ports and bridges come first, the logical interfaces last. Nothing is hard-coded
-to this router: the backend (`flab.network`) classifies whatever netifd reports (`devtype` dsa/ethernet =
-port, bridge, vlan), so another board or a new bridge shows up on the next poll.
+### Wired network (route `#network`)
+Refreshed every 3 s. The physical ports only; bridges and the layered device/interface view have their own
+pages. Nothing is hard-coded to this router: the backend (`flab.network`) classifies whatever netifd
+reports (`devtype` dsa/ethernet = port, bridge, vlan), so another board or a new bridge shows up on the
+next poll. `shared.js` holds the loader and the address helpers the three network pages share.
 
-- **Summary tiles and health banner**: ports linked, live throughput of the external ports, bridges,
-  spanning-tree position, learned MACs, errors and drops. The banner lists what needs attention:
+- **Summary tiles and health banner**: ports linked, live throughput of the external ports, switch chip,
+  errors and drops, link changes. The banner (`healthBanner` in `core/ui.js`) lists what needs attention:
   downshifted link (negotiated speed below what both ends support), link flaps and new errors since the
-  page was opened, a blocked (alternate) STP port, a topology change, a down bridge, STP off with several
-  linked ports.
-- **Physical ports** (`ports.js`): a front-panel view (one tile per port, green/amber/grey by link state,
-  chipset, speed, live rate, chart, bridge and STP role, VLAN devices) grouped into switch ports, adapters
-  and the internal CPU link, plus a table with the hardware, link, speed and duplex, negotiation (auto/forced,
-  max speed, partner speed, pause), live and total traffic, errors and drops, link-change counter, STP state
-  and role, learned MACs and VLAN devices. A missing link is shown in neutral grey, not red: an unplugged
+  page was opened.
+- **Port topology** (`topology.js`, `tile.js`, `chips.js`): the wiring of the Ethernet ports, drawn from
+  what the router reports, so another board gets its own picture: SoC, its MAC(s), the CPU port and link
+  speed into the switch chip, the chip with its numbered switch ports, an external PHY where one exists, and
+  one jack per column (green/amber/grey by link state, LAN/WAN label, speed, live rate, chart, bridge, STP
+  role, VLAN devices). Jacks follow the order `/etc/board.json` lists its ports (usually the order on the
+  case) with each switch's ports kept together; a switch's CPU port and the SoC MAC behind it come from the
+  device tree (`ports/port@N` with an `ethernet` property, matched to the MAC by phandle); a port has an
+  external PHY when its node has a `phy-handle`, otherwise the switch's internal one. A router without a
+  switch just gets MAC, PHY and jack columns. `chips.js` adds a one-line description for a few well-known
+  chips (MT7531, RTL8221B, ...); it is optional enrichment, an unknown chip shows only its name. On the lab
+  router this reproduces the OpenWrt table-of-hardware diagram: MT7986 eth0 into CPU port 6 of the MT7531,
+  switch ports 0-3 as lan2-lan5 on the internal PHYs, port 5 as lan1 through an RTL8221B, and eth1
+  through a second RTL8221B as WAN.
+- **Port table** (`ports.js`): the hardware, link, speed and duplex, negotiation (auto/forced, max speed,
+  partner speed, pause), live and total traffic, errors and drops, link-change counter, STP state and role,
+  learned MACs and VLAN devices per port. A missing link is shown in neutral grey, not red: an unplugged
   port is normal.
 - **Hardware** (when known): the PHY chip (driver name, ID, MDIO address and bus), the switch chip (from the
   device tree of the DSA switch node), the SoC Ethernet MAC, the kernel driver and bus, and the medium.
@@ -457,15 +473,54 @@ port, bridge, vlan), so another board or a new bridge shows up on the next poll.
   that mention the port, and whether anything is new since the page was opened. The backend only computes
   this for ports that have errors or drops. On the lab router `eth1` shows 42 RX checksum errors: the
   hardware flagged corrupt frames on the WAN link, a cable/connector/peer symptom.
-- **Bridges** (`bridges.js`): spanning-tree position (this bridge is the root, or the root bridge ID, the
-  root port and path cost), bridge ID, priority, timers, ageing, learned MACs, VLAN filtering and default
-  PVID, IGMP snooping, VLAN devices, addresses of the logical interfaces on it, and a member table with
-  type (Ethernet or Wi-Fi with SSID), link, STP state and role, port cost, MACs learned per port and live
-  throughput.
-- **Logical interfaces** (`interfaces.js`): from `network.interface dump`: state, protocol, device,
-  addresses, gateway, DNS, uptime.
 
-Facts worth remembering:
+### Bridges (route `#bridges`)
+Same data as the Wired network page (one `flab.network` call), one card per bridge (`card.js`).
+Tiles: bridges, spanning-tree position, learned MACs. The health banner lists a blocked (alternate) STP
+port, a topology change, a down bridge, STP off with several linked ports. Each card shows the
+spanning-tree position (this bridge is the root, or the root bridge ID, the root port and path cost),
+bridge ID, priority, timers, ageing, learned MACs, VLAN filtering and default PVID, IGMP snooping, VLAN
+devices, addresses of the logical interfaces on it, and a member table with type (Ethernet or Wi-Fi with
+SSID), link, STP state and role, port cost, MACs learned per port and live throughput.
+
+### Mesh (route `#mesh`)
+Refreshed every 5 s, from `flab.mesh`. Discovered from UCI: one node card per `wifi-iface` with
+`mode=mesh`, so a router without mesh shows an empty page and a second mesh interface gets its own card.
+- **Tiles**: mesh interfaces, peers established, weakest link (signal), mesh paths, forwarding.
+- **Node card** (`node.js`): mesh ID, interface, MAC, security label (SAE/WPA3 detected from the
+  encryption setting), channel, frequency and width, traffic counters. If the interface is configured but
+  not running the card says so and shows no live data.
+- **Peers**: link state (ESTAB, LISTEN, ...), signal and average, TX/RX bit rate, airtime link metric,
+  expected throughput, connected time, retries and failed transmissions, mesh gate flag.
+- **Paths**: destination, next hop, hop count, metric, lifetime and the decoded flags (active, resolving,
+  sequence-number valid, fixed, resolved). Entries appear and disappear as the mesh converges.
+- **Mesh parameters** (`iw get mesh_param`, cached 60 s in the plugin) with findings, e.g. forwarding off.
+- **STP note**: when the bridge's root is reached through the mesh port, the root bridge MAC is matched to
+  a peer by its first five octets (the bridge MAC and the radio MAC differ in the last octet).
+- The mesh key (`key` / SAE password) is never read into the output; the tests plant a canary to prove it.
+
+### Devices and Interfaces (route `#interfaces`)
+Refreshed every 5 s, after the Wired network, Bridges, Wi-Fi and Mesh pages because it ties them together.
+`layers.js` is the pure model (unit-tested), `table.js` renders it. Data: `flab.network`, netifd's
+interface dump and (optional, a missing plugin only drops the wireless layer) `flab.radio`. OpenWrt builds a
+network in layers, and the table shows one row per interface with the whole chain: physical ports and
+radios with their Wi-Fi and mesh interfaces, then the devices built on them (a bridge groups ports and
+Wi-Fi; an 802.1q VLAN device sits on a port or a bridge), then the netifd interface that binds to one device
+and holds the protocol, addresses, gateway and DNS, then the protocol device some protocols create on top
+(the PPPoE session `pppoe-wan`, a WireGuard or XFRM device). An interface can ride on another interface's
+protocol device (`wan6` on the PPPoE session of `wan`, shown as shared) or run over another interface
+(`tunlink`, read from UCI, e.g. the IPsec XFRM interfaces over `wan`). Rows are ordered by the first
+front-panel port they use, tunnels last; a device the router does not describe is kept as an unknown device,
+never dropped.
+- **Wireless nodes**: a Wi-Fi or mesh interface is a chip with its SSID or mesh ID and the radio and band it
+  runs on, linking to the Wi-Fi or Mesh page. Bridge members and interfaces directly on a Wi-Fi device
+  (station mode) are matched to `flab.radio` by interface name. A configured interface that is not running
+  has no name yet, so it joins the interface named in its `network` option, shown as down.
+- **Unattached wireless**: a wireless interface that reaches no netifd interface, and a radio with no
+  interface at all, get a row of their own at the end; the former also raises a finding.
+- **Tiles**: interfaces up, bridges, VLAN devices, protocol devices, tunnels, radios up, wireless interfaces.
+
+Facts worth remembering (Wired network, Bridges and Mesh pages):
 - Learned MACs per port come from the kernel's binary forwarding table (`/sys/class/net/<bridge>/brforward`,
   16 bytes per entry; the port number is the low byte at offset 6 plus the high byte at offset 12). The
   `bridge` utility is not installed on the router.
@@ -533,29 +588,40 @@ pwsh -File flab-ui\tests\ipsec\run.ps1 -Browser   # plus the live-update test in
 
 It cleans up `/tmp/flab-ipsec-test` and its local temp folder.
 
-### Network and Wi-Fi radio tests
+### Network, Wi-Fi radio and Mesh tests
 
-`tests/network/run.ps1` covers the `flab.network` and `flab.radio` plugins and both pages, again without
-changing anything on the router:
+`tests/network/run.ps1` covers the `flab.network`, `flab.radio` and `flab.mesh` plugins and the Wired
+network, Bridges, Devices and Interfaces, Wi-Fi and Mesh pages, again without changing anything on the router:
 
 ```powershell
 pwsh -File flab-ui\tests\network\run.ps1            # unit test + backend scenarios
 pwsh -File flab-ui\tests\network\run.ps1 -Browser   # plus the live-update test in Edge (needs the UI deployed)
 ```
 
-1. `rates.test.mjs`: unit test of `core/rates.js` (rates, ratios, counter resets, gaps, capping, pruning).
+1. `rates.test.mjs`: unit test of `core/rates.js` (rates, ratios, counter resets, gaps, capping, pruning);
+   `layers.test.mjs`: unit test of the network layer model (bridge and VLAN stacking, PPPoE over a VLAN,
+   an interface riding on another's protocol device, tunnels with and without an underlay, unknown devices,
+   parent loops, Wi-Fi and mesh nodes with their radio, configured-but-down interfaces, unattached wireless
+   and radios without interfaces).
 2. Capture what the plugins read: each plugin is run once on the router with `FLAB_RECORD` set, so it saves
    its own inputs (`ubus call` results, UCI, sysfs files, command output). Keys and passwords are blanked
    while recording, and `mkfx.mjs` plants a canary in every `wifi-iface` so the assertions prove it is never
    forwarded.
 3. `mkfx.mjs` builds scenarios: `n-linkdown`, `n-downshift`, `n-root`, `n-blocked`, `n-nostp`,
    `n-vlanfilter`, `n-newbridge` (a second bridge takes over a port), `n-highport` (port number above 255),
-   `n-nodevices`, `r-down`, `r-dfs`, `r-channel`, `r-disabled`, `r-newssid`. The bridge forwarding table is
-   binary, so it is generated; everything else is the captured state with targeted edits.
+   `n-nodevices`, `n-board` (a different router: other model, four LAN ports in reverse order, no external
+   PHY), `n-nodsa` (no switch at all), `n-errors`, `r-down`, `r-dfs`, `r-channel`, `r-disabled`, `r-newssid`,
+   and for the mesh `m-twopeers` (a second peer in LISTEN that is a gate, a two-hop path, an unresolved
+   path), `m-weak` (weak, lossy link), `m-fwdoff`, `m-nopeer`, `m-down` (configured but not running),
+   `m-nomesh` (no mesh configured).
+   The bridge forwarding table is binary, so it is generated; everything else is the captured state with
+   targeted edits. Device-tree files are recorded hex-encoded (`hex:...`) because JSON cannot carry bytes.
 4. The repository's plugins and `rpcd/lib/flab/*` run on the router with `FLAB_FIXTURES` and `ucode -L`
    (`harness.uc` runs the plugin named in `FLAB_PLUGIN`); `assert.mjs` checks the JSON.
-5. `live.mjs` (`-Browser`) intercepts both status calls and drives the pages through every scenario, then
-   simulates traffic and airtime counters to check live rates and the utilisation percentage.
+5. `live.mjs` (`-Browser`) intercepts the status calls and drives each page through every scenario (Wired
+   network, Bridges, Devices and Interfaces, Mesh, Wi-Fi), checking that mesh interfaces and clients stay off
+   the Wi-Fi page, then simulates traffic and airtime counters to check live rates and the utilisation
+   percentage.
 
 It cleans up `/tmp/flab-net-test` and its local temp folder.
 

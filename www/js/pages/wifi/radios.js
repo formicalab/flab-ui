@@ -1,6 +1,6 @@
 // Radios section of the Wi-Fi page: one card per radio with its live state (channel, width, tx power,
 // noise, channel utilisation), its configuration next to what is actually running, the channels the
-// regulatory domain allows, and a table of the SSIDs / mesh interfaces on it. Data comes from the
+// regulatory domain allows, and a table of the SSIDs on it (mesh interfaces are on the Mesh page). Data comes from the
 // flab.radio plugin; counters (airtime, bytes) are turned into rates here, so the cards follow
 // channel changes, DFS events and interfaces coming and going on every poll.
 import { h } from '../../core/dom.js';
@@ -83,6 +83,7 @@ function header(r) {
     r.phy ? badge(r.phy) : null,
     badge(state[0], state[1]),
     ...(r.standards ?? []).map(s => badge(s.replace('802.', ''), '', s)),
+    ...(r.mesh ?? []).map(m => h('a', { href: '#mesh', className: 'fl-badge info', title: 'A mesh interface on this radio: see the Mesh page' }, `mesh · ${m.ssid ?? m.ifname ?? m.section}`)),
     r.hardware?.hardware ? h('span', { className: 'rd-hw muted' }, r.hardware.hardware) : null);
 }
 
@@ -174,7 +175,7 @@ function interfaceRow(i) {
 }
 
 function interfacesTable(r) {
-  const cols = ['SSID / mesh', 'BSSID', 'Network', 'Security', 'Clients', 'Throughput now', 'Total', 'Features', 'State'];
+  const cols = ['SSID', 'BSSID', 'Network', 'Security', 'Clients', 'Throughput now', 'Total', 'Features', 'State'];
   return h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover' },
     h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
     h('tbody', {}, r.interfaces.length ? r.interfaces.map(interfaceRow) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No wireless interfaces are configured on this radio.')))));
@@ -191,8 +192,10 @@ function radioCard(r, reg) {
     h('div', { className: 'rd-ifaces' }, h('h3', {}, `Interfaces (${r.interfaces.length})`), interfacesTable(r)));
 }
 
-// Returns the nodes for the radios section; an empty list when the plugin is not available.
+// Returns the nodes for the radios section; an empty list when the plugin is not available. Mesh interfaces
+// are left out of the tables and shown as a link: they have their own page.
 export function radiosSection(hw) {
   if (!hw?.radios?.length) return [];
-  return [h('div', { className: 'rd-grid' }, hw.radios.map(r => radioCard(r, hw.regdomain)))];
+  const radios = hw.radios.map(r => ({ ...r, interfaces: r.interfaces.filter(i => i.mode !== 'mesh'), mesh: r.interfaces.filter(i => i.mode === 'mesh') }));
+  return [h('div', { className: 'rd-grid' }, radios.map(r => radioCard(r, hw.regdomain)))];
 }

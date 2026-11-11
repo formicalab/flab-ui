@@ -12,11 +12,13 @@ let timer = null;
 let board = null;
 const loadedCss = new Set();
 
-// Page-specific stylesheets are loaded once, the first time the page is opened.
-function ensureCss(href) {
-  if (!href || loadedCss.has(href)) return;
-  loadedCss.add(href);
-  document.head.append(h('link', { rel: 'stylesheet', href }));
+// Page-specific stylesheets are loaded once, the first time the page is opened. `css` may be one path or a list.
+function ensureCss(hrefs) {
+  for (const href of [].concat(hrefs ?? [])) {
+    if (!href || loadedCss.has(href)) continue;
+    loadedCss.add(href);
+    document.head.append(h('link', { rel: 'stylesheet', href }));
+  }
 }
 
 const defaultPageId = pages[0].id;

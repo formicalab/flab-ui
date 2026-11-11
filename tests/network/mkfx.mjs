@@ -1,7 +1,7 @@
 // Builds the fixture directories for the Network and Wi-Fi radio scenarios from the output captured on the
 // router. Usage: node mkfx.mjs <work dir containing fx-real/>
 // Writes <work>/<scenario>/ with one file per command, ubus call, UCI config and kernel file that
-// flab.network and flab.radio read (see FLAB_FIXTURES in rpcd/lib/flab/util.uc), plus <work>/expect.json
+// flab.network, flab.radio and flab.mesh read (see FLAB_FIXTURES in rpcd/lib/flab/util.uc), plus <work>/expect.json
 // with the facts the assertions compare against.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,6 +57,8 @@ function brforward(fx, bridge) {
 const baseFx = () => ({ raw: clone(raw), files: clone(files), devices: clone(devices), uci: clone(uci), learned: clone(LEARNED) });
 const member = 'phy1-ap0';
 const bridge = bridgeNames[0];
+const meshSection = Object.values(uci).find(s => s['.type'] === 'wifi-iface' && s.mode === 'mesh')?.['.name'];
+if (!meshSection) throw new Error('the router has no 802.11s mesh interface to test with');
 const sys = (dev, f) => `/sys/class/net/${dev}/${f}`;
 const radioIf = (fx, radio) => Object.values(fx.uci).find(s => s['.type'] === 'wifi-iface' && s.device === radio);
 const wireless = fx => JSON.parse(fx.raw['network_wireless_status.json']);
@@ -102,6 +104,20 @@ const scenarios = {
   // A port number above 255 exercises the high byte of the forwarding-table entry.
   'n-highport': fx => { fx.files[sys('lan5', 'brport/port_no')] = '0x102'; fx.learned.lan5 = 4; return fx; },
   'n-nodevices': fx => { fx.devices = {}; return fx; },
+  // A different router: four LAN ports in reverse board order, no external PHY, another model name.
+  'n-board': fx => {
+    delete fx.devices.lan5;
+    fx.devices[bridge]['bridge-members'] = fx.devices[bridge]['bridge-members'].filter(m => m !== 'lan5');
+    for (const k of Object.keys(fx.files)) if (k.endsWith('/phy-handle')) delete fx.files[k];
+    fx.files['/etc/board.json'] = JSON.stringify({ model: { id: 'other,router', name: 'Other Router' }, network: { lan: { ports: ['lan4', 'lan3', 'lan2', 'lan1'], protocol: 'static' }, wan: { device: 'eth1', protocol: 'dhcp' } } });
+    return fx;
+  },
+  // A router without a DSA switch: only the two SoC MACs remain.
+  'n-nodsa': fx => {
+    for (const n of Object.keys(fx.devices)) if (fx.devices[n].devtype === 'dsa') delete fx.devices[n];
+    fx.devices[bridge]['bridge-members'] = fx.devices[bridge]['bridge-members'].filter(m => !/^lan\d$/.test(m));
+    return fx;
+  },
   // lan2 starts logging CRC errors: kernel counter, driver counter and two log lines.
   'n-errors': fx => {
     fx.devices.lan2.statistics.rx_crc_errors = 5; fx.devices.lan2.statistics.rx_errors = 5;
@@ -135,6 +151,37 @@ const scenarios = {
     fx.uci.guest_2g = { '.type': 'wifi-iface', '.name': 'guest_2g', '.index': 99, device: 'radio0', mode: 'ap', ssid: 'guest', network: 'guest', encryption: 'none', key: CANARY };
     return fx;
   },
+
+  // ── Mesh ──
+  // A second peer whose link is only LISTEN and which is a gate, a path through the first peer, and an unresolved path.
+  'm-twopeers': fx => {
+    const dump = fx.raw['iw_dev_phy0_mesh0_station_dump.txt'];
+    const peer = dump.match(/^Station ([0-9a-f:]{17})/m)?.[1];
+    if (!peer) throw new Error('no mesh peer captured');
+    const second = dump.slice(dump.indexOf('Station '))
+      .replace(/^Station [0-9a-f:]{17}/, 'Station aa:bb:cc:dd:ee:01')
+      .replace(/(mesh plink:\s+)\S+/, '$1LISTEN').replace(/(mesh connected to gate:\s+)no/, '$1yes');
+    fx.raw['iw_dev_phy0_mesh0_station_dump.txt'] = dump.trimEnd() + '\n' + second.trimEnd() + '\n';
+    fx.raw['iw_dev_phy0_mesh0_mpath_dump.txt'] = fx.raw['iw_dev_phy0_mesh0_mpath_dump.txt'].trimEnd()
+      + `\naa:bb:cc:dd:ee:01 ${peer} phy0-mesh0\t0\t222\t0\t1500\t0\t0\t0x15\t2\t1`
+      + '\n5a:00:00:00:00:01 00:00:00:00:00:00 phy0-mesh0\t0\t0\t0\t0\t1600\t4\t0x0\t0\t0\n';
+    return fx;
+  },
+  'm-weak': fx => {
+    fx.raw['iw_dev_phy0_mesh0_station_dump.txt'] = fx.raw['iw_dev_phy0_mesh0_station_dump.txt']
+      .replace(/(signal:\s+)-\d+/, '$1-82').replace(/(signal avg:\s+)-\d+/, '$1-82')
+      .replace(/(tx failed:\s+)\d+/, '$1600').replace(/(tx packets:\s+)\d+/, '$11000');
+    return fx;
+  },
+  'm-fwdoff': fx => { fx.raw['iw_dev_phy0_mesh0_get_mesh_param_mesh_fwding.txt'] = '0\n'; return fx; },
+  'm-nopeer': fx => { fx.raw['iw_dev_phy0_mesh0_station_dump.txt'] = ''; return fx; },
+  'm-down': fx => {
+    const w = wireless(fx);
+    for (const r of Object.values(w)) r.interfaces = r.interfaces.filter(i => i.section !== meshSection);
+    setWireless(fx, w);
+    return fx;
+  },
+  'm-nomesh': fx => { delete fx.uci[meshSection]; return fx; },
 };
 //#endregion
 
@@ -155,6 +202,7 @@ for (const [name, build] of Object.entries(scenarios)) writeScenario(name, build
 fs.writeFileSync(path.join(work, 'scenarios.json'), JSON.stringify(Object.keys(scenarios)));
 
 const wl = wireless(baseFx());
+const meshSec = uci[meshSection];
 fs.writeFileSync(path.join(work, 'expect.json'), JSON.stringify({
   bridge,
   members: baseFx().devices[bridge]['bridge-members'],
@@ -164,6 +212,7 @@ fs.writeFileSync(path.join(work, 'expect.json'), JSON.stringify({
   maclist: Object.values(uci).flatMap(s => s.maclist ?? []),
   canary: CANARY,
   phyIfaces: ifaces,
+  mesh: { section: meshSection, id: meshSec.mesh_id, ifname: wl[meshSec.device].interfaces.find(i => i.section === meshSection)?.ifname },
 }));
 console.log(`built ${Object.keys(scenarios).join(', ')}`);
 //#endregion

@@ -168,6 +168,21 @@ details.legend { color: var(--fl-muted); }
 details.legend summary { cursor: pointer; color: var(--fl-text); font-weight: 600; }
 details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
 
+/* ── Table helpers and health banner (shared by several pages) ── */
+.card-header svg { color: var(--fl-brand); }
+.table .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table td svg { margin-right: .3rem; vertical-align: -1px; color: var(--fl-muted); }
+.table .dot { display: inline-block; }
+.dot.idle { background: var(--fl-muted); opacity: .55; }
+.net-health { display: flex; align-items: center; gap: .6rem; padding: .7rem 1rem; border-radius: 10px; border: 1px solid var(--fl-stroke); background: var(--fl-surface); }
+.net-health.ok { color: var(--fl-ok-fg); background: var(--fl-ok-bg); border-color: transparent; }
+.net-health.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); border-color: transparent; }
+.net-health.bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); border-color: transparent; }
+.net-health.info { background: var(--fl-info-bg); color: var(--fl-info-fg); border-color: transparent; }
+.net-health ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.net-health li { display: flex; align-items: center; gap: .55rem; }
+.net-health svg { flex: none; }
+
 /* ── Sign-in ── */
 .login { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
 .login .card { width: min(24rem, 100%); padding: 1.75rem; backdrop-filter: blur(24px); }

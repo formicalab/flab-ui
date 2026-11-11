@@ -74,3 +74,11 @@ export function sparkline(series, { width = 160, height = 36, max: fixedMax } = 
 }
 
 export const emptyState = text => h('div', { className: 'card' }, h('div', { className: 'card-body muted' }, text));
+
+// A banner listing what needs attention ({ level: 'bad' | 'warn' | 'info', text }), or a green all-clear.
+export function healthBanner(list, okText) {
+  if (!list.length) return h('div', { className: 'net-health ok' }, icon('check-circle'), okText);
+  const worst = list.some(f => f.level === 'bad') ? 'bad' : list.some(f => f.level === 'warn') ? 'warn' : 'info';
+  return h('div', { className: `net-health ${worst}` },
+    h('ul', {}, list.map(f => h('li', { className: f.level }, icon(f.level === 'bad' ? 'shield-exclamation' : f.level === 'warn' ? 'exclamation-triangle' : 'info-circle'), f.text))));
+}

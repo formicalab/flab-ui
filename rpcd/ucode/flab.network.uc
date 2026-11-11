@@ -17,7 +17,7 @@
 
 import { connect } from 'ubus';
 import { readfile } from 'fs';
-import { fixture, record_file, run, ubus_call, sysfs, safe_ifname, num } from 'flab.util';
+import { fixture, record_file, run, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname, num } from 'flab.util';
 
 const STP_STATES = [ 'disabled', 'listening', 'learning', 'forwarding', 'blocking' ];
 
@@ -227,6 +227,66 @@ function last_part(path) {
 	return m ? m[1] : null;
 }
 
+//#region Device tree
+
+// Properties of the device tree under /proc/device-tree: text, big-endian 32-bit cells, existence.
+function dt_text(path) {
+	let raw = sysfs_raw('/proc/device-tree' + path);
+	if (raw == null)
+		return null;
+	let text = trim(replace(raw, /[^ -~]+/g, ' '));
+	return text == '' ? null : text;
+}
+
+function dt_exists(path) {
+	return sysfs_raw('/proc/device-tree' + path) != null;
+}
+
+function dt_u32(path) {
+	let raw = sysfs_raw('/proc/device-tree' + path);
+	if (raw == null || length(raw) < 4)
+		return null;
+	return (ord(raw, 0) << 24) | (ord(raw, 1) << 16) | (ord(raw, 2) << 8) | ord(raw, 3);
+}
+
+// The CPU-facing ports of a DSA switch (those with an "ethernet" property) with their link mode and speed.
+// `conduits` maps each candidate SoC MAC to its device-tree node so the "ethernet" phandle can be matched.
+function switch_cpu_ports(node, conduits) {
+	let out = [];
+	for (let ent in split(run(`ls /proc/device-tree${node}/ports 2>/dev/null`), '\n')) {
+		let m = match(ent, /^port@([0-9]+)$/);
+		if (!m)
+			continue;
+		let path = `${node}/ports/${ent}`;
+		let handle = dt_u32(path + '/ethernet');
+		if (handle == null)
+			continue;
+		let cpu = { port: +m[1], mode: dt_text(path + '/phy-mode'), speed: dt_u32(path + '/fixed-link/speed') };
+		for (let c, mac_node in conduits)
+			if (dt_u32(mac_node + '/phandle') == handle)
+				cpu.conduit = c;
+		push(out, cpu);
+	}
+	// A single CPU port and a single conduit need no phandle matching.
+	if (length(out) == 1 && !out[0].conduit && length(keys(conduits)) == 1)
+		out[0].conduit = keys(conduits)[0];
+	return sort(out, (a, b) => a.port - b.port);
+}
+
+// /etc/board.json: which netdevs OpenWrt treats as LAN or WAN ports, in the order the board lists them
+// (usually the order printed on the case).
+function board_roles() {
+	let raw = sysfs('/etc/board.json');
+	let board = raw ? json(raw) : null;
+	let roles = {}, index = 0;
+	for (let net, conf in board?.network ?? {}) {
+		for (let dev in conf.ports ?? (conf.device ? [conf.device] : []))
+			roles[dev] ??= { role: net, index: index++ };
+	}
+	return { roles, model: board?.model?.name };
+}
+//#endregion
+
 // PHY chips on the MDIO buses with the netdev each one is attached to (static, so read once).
 let mdio_cache = null;
 function mdio_phys() {
@@ -285,8 +345,17 @@ function hardware(name, d) {
 	let node = match(sys(name, 'uevent') ?? '', /OF_FULLNAME=([^\n]+)/);
 	if (node) {
 		let dt = (path) => compat_label(sysfs('/proc/device-tree' + path + '/compatible'));
-		if (d.devtype == 'dsa')
-			hw.switch = dt(replace(node[1], /\/ports\/[^\/]+$/, ''));
+		hw.of_node = node[1];
+		if (d.devtype == 'dsa') {
+			let sw = replace(node[1], /\/ports\/[^\/]+$/, '');
+			let pn = match(node[1], /\/port@([0-9]+)$/);
+			hw.switch = dt(sw);
+			hw.switch_node = sw;
+			hw.switch_port = pn ? +pn[1] : null;
+			// A port with a phy-handle uses a PHY outside the switch; otherwise the switch's own PHY.
+			hw.external_phy = dt_exists(node[1] + '/phy-handle');
+			hw.phy_mode = dt_text(node[1] + '/phy-mode');
+		}
 		else
 			hw.soc = dt(replace(node[1], /\/[^\/]+$/, ''));
 	}
@@ -331,6 +400,15 @@ function diagnostics(name, stats) {
 	return { counters, driver, log: slice(log, -8) };
 }
 //#endregion
+
+// Interfaces that run over another interface (tunnels: `option tunlink`), as { interface: underlying interface }.
+function tunlinks() {
+	let out = {};
+	for (let name, s in uci_all('network'))
+		if (s['.type'] == 'interface' && s.tunlink)
+			out[name] = s.tunlink;
+	return out;
+}
 
 function collect() {
 	let conn = connect();
@@ -387,7 +465,33 @@ function collect() {
 	for (let b in bridges)
 		b.vlans = filter(vlans, (v) => v.parent == b.name);
 
-	return { generated: time(), ports, bridges, vlans };
+	// Wiring of the board, all read from the device tree and /etc/board.json so it follows any router:
+	// which switch chip each DSA port belongs to, the switch's CPU ports and which SoC MAC they reach.
+	let board = board_roles();
+	for (let p in ports)
+		p.board = board.roles[p.name];
+
+	let conduit_nodes = {};
+	for (let p in ports)
+		if (p.role == 'conduit' && p.hardware?.of_node)
+			conduit_nodes[p.name] = p.hardware.of_node;
+
+	let switches = [];
+	let seen = {};
+	for (let p in ports) {
+		let node = p.hardware?.switch_node;
+		if (!node || seen[node])
+			continue;
+		seen[node] = true;
+		let members = filter(ports, (x) => x.hardware?.switch_node == node);
+		push(switches, {
+			node, label: p.hardware.switch,
+			ports: map(members, (x) => x.name),
+			cpu_ports: switch_cpu_ports(node, conduit_nodes),
+		});
+	}
+
+	return { generated: time(), model: board.model, ports, bridges, vlans, switches, tunlinks: tunlinks() };
 }
 
 return {

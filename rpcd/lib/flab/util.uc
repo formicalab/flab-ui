@@ -83,23 +83,33 @@ export function uci_all(config) {
 	return all;
 }
 
-// Trimmed contents of a small kernel pseudo-file such as /sys/class/net/<if>/carrier, or null when it
-// is missing or unreadable (a down link refuses to report its speed, for instance).
+// Contents of a small kernel pseudo-file such as /sys/class/net/<if>/carrier, exactly as read (device-tree
+// properties are binary), or null when it is missing or unreadable (a down link refuses to report its
+// speed, for instance). Binary files are recorded hex-encoded ("hex:...") because JSON cannot carry
+// arbitrary bytes; the fixture reader decodes them again.
 let saved_files = null;
-export function sysfs(path) {
+const is_binary = (path) => index(path, '/proc/device-tree/') == 0;
+
+export function sysfs_raw(path) {
 	if (FIXTURES) {
 		saved_files ??= json(fixture('files.json') || '{}');
-		return saved_files[path];
+		let v = saved_files[path];
+		return (type(v) == 'string' && index(v, 'hex:') == 0) ? hexdec(substr(v, 4)) : v;
 	}
 	let s = readfile(path);
-	s = s == null ? null : trim(s);
 	if (RECORD && s != null) {
 		// Several plugins record into one folder, so merge with what an earlier run saved.
 		saved_files ??= json(readfile(`${RECORD}/files.json`) ?? '{}');
-		saved_files[path] = s;
+		saved_files[path] = is_binary(path) ? 'hex:' + hexenc(s) : s;
 		writefile(`${RECORD}/files.json`, sprintf('%J', saved_files));
 	}
 	return s;
+}
+
+// The same, trimmed.
+export function sysfs(path) {
+	let s = sysfs_raw(path);
+	return s == null ? null : trim(s);
 }
 
 // Interface names reach shell command lines, so restrict them to a safe alphabet.
@@ -118,4 +128,21 @@ export function normalize_mac(raw) {
 // Numeric value of a string field, or null when absent or empty.
 export function num(v) {
 	return (v == null || v == '') ? null : +v;
+}
+
+// Human label for a UCI wireless `encryption` value.
+export function security_label(enc) {
+	enc ??= '';
+	if (enc == '' || enc == 'none') return 'Open/None';
+	if (match(enc, /owe/)) return 'OWE (Enhanced Open)';
+	if (match(enc, /psk2\+psk3|sae-mixed/)) return 'WPA2/WPA3 Mixed';
+	if (match(enc, /psk3|sae/)) return 'WPA3-Personal (SAE)';
+	if (match(enc, /psk2/)) return 'WPA2-PSK';
+	if (match(enc, /psk-mixed/)) return 'WPA/WPA2 Mixed';
+	if (match(enc, /psk/)) return 'WPA-PSK';
+	if (match(enc, /wpa3/)) return 'WPA3-Enterprise';
+	if (match(enc, /wpa2/)) return 'WPA2-Enterprise';
+	if (match(enc, /wpa/)) return 'WPA-Enterprise';
+	if (match(enc, /wep/)) return 'WEP (Legacy)';
+	return enc;
 }

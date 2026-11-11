@@ -44,7 +44,7 @@ $ErrorActionPreference = 'Stop'
 
 $here = $PSScriptRoot
 $root = (Resolve-Path (Join-Path $here '..\..')).Path
-$plugins = 'flab.network', 'flab.radio'
+$plugins = 'flab.network', 'flab.radio', 'flab.mesh'
 $libs = Join-Path $root 'rpcd\lib\flab'
 $work = Join-Path ([IO.Path]::GetTempPath()) 'flab-net-test'
 $remote = '/tmp/flab-net-test'
@@ -87,8 +87,9 @@ try {
     New-Item -ItemType Directory (Join-Path $work 'out') -Force | Out-Null
 
     #region Unit test
-    Write-Host '1/5 Rate tracker unit test'
+    Write-Host '1/5 Rate tracker and network layer unit tests'
     Invoke-Native 'node' @((Join-Path $here 'rates.test.mjs'))
+    Invoke-Native 'node' @((Join-Path $here 'layers.test.mjs'))
     #endregion
 
     #region Capture the real baseline

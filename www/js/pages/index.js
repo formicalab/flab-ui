@@ -15,13 +15,16 @@
 //   view(data, rerender)  returns an array of nodes; rerender() redraws from cached data
 //   controls({ rerender, reload })  returns { nodes, update?(data) } for persistent command-bar controls
 //   isPaused()  return true to suspend auto-refresh
-//   css       stylesheet loaded the first time the page opens
+//   css       stylesheet (or array of stylesheets) loaded the first time the page opens
 
 import overview from './overview/index.js';
+import network from './network/index.js';
+import bridges from './bridges/index.js';
 import wifi from './wifi/index.js';
+import mesh from './mesh/index.js';
+import interfaces from './interfaces/index.js';
 import ipsec from './ipsec/index.js';
 import bgp from './bgp/index.js';
-import network from './network/index.js';
 import services from './services.js';
 
-export const pages = [overview, wifi, ipsec, bgp, network, services];
+export const pages = [overview, network, bridges, wifi, mesh, interfaces, ipsec, bgp, services];

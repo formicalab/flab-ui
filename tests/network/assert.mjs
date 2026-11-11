@@ -7,6 +7,7 @@ const dir = process.argv[2];
 const read = f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
 const net = n => read(`${n}.flab.network.json`);
 const rad = n => read(`${n}.flab.radio.json`);
+const mesh = n => read(`${n}.flab.mesh.json`);
 const expect = read('expect.json');
 let failed = 0;
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
@@ -47,7 +48,25 @@ check(base.ports.filter(p => p.role !== 'switch' && p.hardware.phy).every(p => p
 const conduit = base.ports.find(p => p.role === 'conduit');
 check(!conduit.hardware.phy && /MT7986/.test(conduit.hardware.soc ?? ''), 'the CPU link has no PHY and names the SoC MAC (it must not borrow a switch PHY with the same address)', JSON.stringify(conduit.hardware));
 
-console.log('== network: error diagnostics ==');
+console.log('== network: wiring (topology data) ==');
+const sw = base.switches[0];
+check(base.switches.length === 1 && /MT7531/.test(sw.label) && same(sw.ports, base.ports.filter(p => p.role === 'switch').map(p => p.name)), 'one switch with all the DSA ports', JSON.stringify(base.switches));
+check(sw.cpu_ports.length === 1 && sw.cpu_ports[0].port === 6 && sw.cpu_ports[0].conduit === 'eth0' && sw.cpu_ports[0].speed === 2500 && sw.cpu_ports[0].mode === '2500base-x', 'CPU port, its conduit, mode and speed from the device tree', JSON.stringify(sw.cpu_ports));
+check(['lan2', 'lan3', 'lan4', 'lan5'].every((n, i) => port(base, n).hardware.switch_port === i) && port(base, 'lan1').hardware.switch_port === 5, 'switch port numbers (reg) per user port: lan2-5 on 0-3, lan1 on 5', JSON.stringify(base.ports.map(p => [p.name, p.hardware.switch_port])));
+check(port(base, 'lan1').hardware.external_phy === true && ['lan2', 'lan3', 'lan4', 'lan5'].every(n => port(base, n).hardware.external_phy === false), 'external PHY only where the device tree has a phy-handle');
+check(base.ports.filter(p => p.board).every(p => p.board.role === 'lan' || p.board.role === 'wan') && port(base, 'lan1').board.index === 0 && port(base, 'lan5').board.index === 4 && port(base, 'eth1').board.role === 'wan', 'LAN/WAN role and order from /etc/board.json', JSON.stringify(base.ports.map(p => [p.name, p.board])));
+check(base.model && typeof base.model === 'string', 'board model name', String(base.model));
+check(typeof base.tunlinks === 'object' && Object.values(base.tunlinks).every(v => typeof v === 'string') && Object.keys(base.tunlinks).every(k => /^xfrm\d+$|^[a-z]/.test(k)), 'tunnel underlays (tunlink) from UCI, interface names only', JSON.stringify(base.tunlinks));
+
+console.log('== network: a different router ==');
+const other = net('n-board');
+check(other.model === 'Other Router' && other.switches[0].ports.length === 4, 'model and port count follow the board', JSON.stringify([other.model, other.switches[0].ports]));
+check(['lan4', 'lan3', 'lan2', 'lan1'].every((n, i) => port(other, n).board.index === i) && port(other, 'eth1').board.index === 4, 'jack order follows the board file', JSON.stringify(other.ports.map(p => [p.name, p.board?.index])));
+check(other.ports.every(p => p.hardware.external_phy !== true), 'no external PHY without phy-handle');
+
+console.log('== network: a router without a switch ==');
+const nodsa = net('n-nodsa');
+check(nodsa.switches.length === 0 && same(nodsa.ports.map(p => p.name), ['eth0', 'eth1']) && nodsa.ports.every(p => p.role === 'nic'), 'plain MACs, no switch', JSON.stringify([nodsa.switches, nodsa.ports.map(p => [p.name, p.role])]));
 const withProblems = base.ports.filter(p => (p.stats.rx_errors + p.stats.tx_errors + p.stats.rx_crc_errors + p.stats.rx_dropped + p.stats.tx_dropped) > 0);
 check(withProblems.length >= 1 && withProblems.every(p => p.diagnostics && Object.keys(p.diagnostics.counters).length), 'ports with errors or drops carry a breakdown of non-zero counters', withProblems.map(p => p.name).join());
 check(base.ports.filter(p => !withProblems.includes(p)).every(p => p.diagnostics === undefined), 'clean ports carry none (no needless work)');

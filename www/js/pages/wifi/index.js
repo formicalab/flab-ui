@@ -118,8 +118,10 @@ export default {
   },
 
   view(data, rerender) {
+    // Mesh interfaces and their peers have their own page (Mesh).
+    const ifsOf = r => r.interfaces.filter(i => i.mode !== 'mesh');
     const radios = data.radios.filter(r => state.radio === 'all' || r.name === state.radio);
-    const all = data.radios.flatMap(r => r.interfaces.flatMap(i => i.clients));
+    const all = data.radios.flatMap(r => ifsOf(r).flatMap(i => i.clients));
     const signals = all.map(c => c.signal).filter(s => s != null);
     const avg = signals.length ? Math.round(signals.reduce((a, b) => a + b, 0) / signals.length) : null;
     const wpa3 = all.filter(c => /WPA3|OWE/.test(c.security)).length;
@@ -128,14 +130,14 @@ export default {
     const summary = tiles(
       tile('Connected clients', all.length, `${data.radios.length} radios`),
       ...data.radios.map(r => tile(`${r.name} · ${r.band ?? '?'}`,
-        r.interfaces.reduce((n, i) => n + i.clients.length, 0), `channel ${r.channel}${r.htmode ? ' · ' + r.htmode : ''}`)),
+        ifsOf(r).reduce((n, i) => n + i.clients.length, 0), `channel ${r.channel}${r.htmode ? ' · ' + r.htmode : ''}`)),
       tile('Average signal', avg == null ? '–' : `${avg} dBm`, 'across all clients'),
       tile('WPA3 clients', `${wpa3} / ${all.length}`, 'SAE or OWE'),
       tile('Need attention', weak, 'security grade C or D', weak ? 'text-warning' : ''));
 
     const groups = [];
     for (const r of radios) {
-      for (const i of r.interfaces) {
+      for (const i of ifsOf(r)) {
         const clients = i.clients.filter(c => matches(c, i.ssid ?? '', state.q));
         if (state.q && !clients.length) continue;
         groups.push(card(

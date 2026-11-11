@@ -4,7 +4,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, kv, section, sparkline } from '../../core/ui.js';
 import { fmtNum, fmtSpan } from '../../core/format.js';
-import { fmtLine, fmtSpeed, traffic, newFlaps, STP_ROLE, stpKind } from './util.js';
+import { fmtLine, fmtSpeed, traffic, newFlaps, STP_ROLE, stpKind } from '../network/util.js';
 
 const muted = t => h('span', { className: 'muted' }, t);
 const mono = t => h('span', { className: 'mono' }, t);

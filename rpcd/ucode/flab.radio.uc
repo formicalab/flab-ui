@@ -19,7 +19,7 @@
 'use strict';
 
 import { connect } from 'ubus';
-import { run, ubus_call, uci_all, sysfs, safe_ifname, num } from 'flab.util';
+import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label } from 'flab.util';
 
 //#region Helpers
 
@@ -37,22 +37,6 @@ function popcount(mask) {
 	for (let v = mask ?? 0; v > 0; v >>= 1)
 		n += v & 1;
 	return n;
-}
-
-function security_label(enc) {
-	enc ??= '';
-	if (enc == '' || enc == 'none') return 'Open/None';
-	if (match(enc, /owe/)) return 'OWE (Enhanced Open)';
-	if (match(enc, /psk2\+psk3|sae-mixed/)) return 'WPA2/WPA3 Mixed';
-	if (match(enc, /psk3|sae/)) return 'WPA3-Personal (SAE)';
-	if (match(enc, /psk2/)) return 'WPA2-PSK';
-	if (match(enc, /psk-mixed/)) return 'WPA/WPA2 Mixed';
-	if (match(enc, /psk/)) return 'WPA-PSK';
-	if (match(enc, /wpa3/)) return 'WPA3-Enterprise';
-	if (match(enc, /wpa2/)) return 'WPA2-Enterprise';
-	if (match(enc, /wpa/)) return 'WPA-Enterprise';
-	if (match(enc, /wep/)) return 'WEP (Legacy)';
-	return enc;
 }
 
 function sections_of(all, kind) {

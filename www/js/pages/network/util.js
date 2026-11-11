@@ -55,16 +55,6 @@ export const STP_ROLE = {
 
 export const stpKind = state => ({ forwarding: 'success', learning: 'info', listening: 'info', blocking: 'warning' })[state] ?? '';
 
-// One-line chipset description for a port tile: the PHY if known, else the switch or SoC MAC.
-export function hwSummary(p) {
-  const hw = p.hardware;
-  if (!hw) return '';
-  if (hw.phy?.name) return hw.phy.name;
-  if (hw.switch) return `${hw.switch} switch`;
-  if (hw.soc) return `${hw.soc} Ethernet MAC`;
-  return hw.driver ?? '';
-}
-
 // Everything known about a port's hardware as [label, value] pairs (empty when nothing is known).
 export function hwLines(p) {
   const hw = p.hardware;
@@ -79,13 +69,18 @@ export function hwLines(p) {
 }
 
 // Problems worth surfacing immediately, computed from the current poll plus what changed since opening.
-export function findings(net) {
+export function portFindings(net) {
   const out = [];
   for (const p of net.ports) {
     if (p.downshifted) out.push({ level: 'warn', text: `${p.name} runs at ${fmtSpeed(p.speed)} although both ends support ${fmtSpeed(Math.min(p.max_speed, p.partner_max))}: check the cable.` });
     if (newFlaps(p)) out.push({ level: 'warn', text: `${p.name} changed link state ${newFlaps(p)} time${newFlaps(p) === 1 ? '' : 's'} since this page was opened.` });
     if (newErrors(p)) out.push({ level: 'bad', text: `${p.name} logged ${newErrors(p)} new error${newErrors(p) === 1 ? '' : 's'} since this page was opened.` });
   }
+  return out;
+}
+
+export function bridgeFindings(net) {
+  const out = [];
   for (const b of net.bridges) {
     if (!b.up) out.push({ level: 'bad', text: `Bridge ${b.name} is down.` });
     if (b.topology_change) out.push({ level: 'warn', text: `Spanning tree topology change in progress on ${b.name}.` });

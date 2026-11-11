@@ -1,0 +1,19 @@
+/* Devices and Interfaces page styling. Loaded on demand by core/app.js when the page is first opened. */
+
+.layers-table td { vertical-align: top; }
+.cn-group { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; max-width: 26rem; }
+.cn { display: inline-flex; align-items: center; gap: .35rem; padding: .12rem .5rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface-hover); font-size: .8rem; white-space: nowrap; }
+.cn .dot { width: 8px; height: 8px; display: inline-block; animation: none; }
+.cn svg { color: var(--fl-muted); }
+.cn-name { font-weight: 600; }
+.cn-sub { color: var(--fl-muted); font-size: .72rem; }
+.cn.k-bridge { border-color: color-mix(in srgb, var(--fl-brand) 50%, var(--fl-stroke)); }
+.cn.k-vlan { border-style: dashed; }
+.cn.k-protocol { border-color: color-mix(in srgb, var(--fl-brand) 35%, var(--fl-stroke)); }
+.cn-link { text-decoration: none; color: inherit; }
+.cn-link:hover .cn { border-color: var(--fl-brand); }
+.cn.k-mesh { border-color: color-mix(in srgb, var(--fl-brand) 35%, var(--fl-stroke)); }
+.cn.k-radio { border-style: dotted; }
+.cn-sep { color: var(--fl-muted); font-weight: 700; }
+.cn-over { color: var(--fl-muted); }
+.layers-foot { padding: .6rem 1rem .8rem; }
