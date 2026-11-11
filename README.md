@@ -35,7 +35,7 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
    v
 rpcd ---- built-in objects:  session, system, network.interface, service
    |
-   '----- ucode plugins:    flab.wifi, flab.radio, flab.mesh, flab.network, flab.ipsec, flab.bgp, flab.sensors, flab.system   (this repo)
+   '----- ucode plugins:    flab.wifi, flab.radio, flab.mesh, flab.wireguard, flab.network, flab.ipsec, flab.bgp, flab.sensors, flab.system   (this repo)
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici
@@ -59,13 +59,13 @@ Design principles:
 ```
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
-  tests/bgp/, tests/ipsec/, tests/network/   Test suites for the BGP and IPsec pages, and for the Wired network, Bridges, Devices and Interfaces, Wi-Fi radio and Mesh pages (run.ps1, see "Testing")
+  tests/bgp/, tests/ipsec/, tests/network/   Test suites for the BGP and IPsec pages, and for the Wired network, Bridges, Devices and Interfaces, Wi-Fi radio, Mesh and WireGuard pages (run.ps1, see "Testing")
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
     css/
       base.css               Fluent tokens, app shell, shared component styles
-      <page>.css             Page-specific styles, loaded on first visit (overview, wifi, ipsec, bgp, network, bridges, interfaces, mesh)
+      <page>.css             Page-specific styles, loaded on first visit (overview, wifi, ipsec, bgp, network, bridges, interfaces, mesh, wireguard)
     js/
       main.js                Entry point: theme + start the app
       core/                  Framework-level modules shared by all pages
@@ -84,6 +84,7 @@ flab-ui/
         overview/            index.js + cpu.js + temperatures.js
         wifi/                index.js (page + clients table), radios.js (radio cards); mesh interfaces are left to mesh/
         mesh/                index.js, node.js (802.11s mesh: peers, paths, parameters)
+        wireguard/           index.js, iface.js (interface cards, peers table, findings)
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         bgp/                 index.js, topology.js, peer.js, routes.js, announced.js, system.js, util.js
         network/             Wired network: index.js, shared.js (loader + address helpers), topology.js, tile.js, chips.js, ports.js, diagnostics.js, util.js
@@ -189,7 +190,8 @@ return {
 | `flab.wifi.uc` | `flab.wifi` | `clients` | uci wireless/network/dhcp, ubus `network.wireless`, `dhcp`, `hostapd.<if>`; `hostapd_cli all_sta`, `iw station dump`, `/proc/net/arp`, `ip -6 neigh` |
 | `flab.radio.uc` | `flab.radio` | `status` | uci wireless, ubus `network.wireless`, `hostapd.<if>`; `iw dev/phy info`, `iw survey dump`, `iwinfo`, `iw reg get`; sysfs counters |
 | `flab.mesh.uc` | `flab.mesh` | `status` | uci wireless (`wifi-iface mode=mesh`), ubus `network.wireless`; `iw dev/station dump`, `iw mpath dump`, `iw mpp dump`, `iw get mesh_param`; sysfs counters |
-| `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles and port order); `logread` (error log lines) |
+| `flab.wireguard.uc` | `flab.wireguard` | `status` | uci network (`proto wireguard` interfaces and `wireguard_<if>` peer sections), uci firewall (zone); `wg show <if> public-key/listen-port/peers/endpoints/allowed-ips/latest-handshakes/transfer/persistent-keepalive` (the single-field forms never print the private or pre-shared key); sysfs MTU and counters |
+| `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles and port order); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines) |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
@@ -386,6 +388,27 @@ Facts worth remembering:
   pre-shared-key or lifetime advice. Global IPv6 addresses on an `xfrmN` interface are listed next to the
   IPv4 tunnel address; link-local ones are skipped.
 
+### WireGuard (route `#wireguard`)
+Refreshed every 5 s, from `flab.wireguard`. Interfaces come from UCI network (`proto wireguard`) plus whatever
+`wg show interfaces` reports, peers from the `wireguard_<interface>` sections plus whatever the kernel has
+(matched by public key), so a new interface or a peer added at run time with `wg set` shows up on the next
+poll (flagged as not in the configuration).
+- **Tiles**: interfaces up, peers connected, latest handshake, live traffic (rates derived in the browser
+  from the byte counters).
+- **Interface card**: state, firewall zone, addresses, listen port, public key (not secret), MTU, firewall
+  mark, totals.
+- **Peers table**: name (UCI `description`) and a role badge from the allowed IPs (*client*: host routes only,
+  *site*: a whole network behind the peer, *all traffic*: a `/0`), shortened public key (full key on hover),
+  endpoint (empty for roaming peers), allowed IPs, handshake state, keepalive, live and total traffic.
+- **Handshake state**: *connected* when the last handshake is under 180 s old (WireGuard rekeys every 120 s
+  and rejects a session after 180 s), *no recent handshake* when older, *never connected* when the kernel has
+  no handshake, *not loaded* when the peer is configured but the interface is not running.
+- **Findings**: interface down, interface in no firewall zone, a configured peer not loaded, stale or never
+  connected peers (informational: roaming phones are often offline), a site peer whose `route_allowed_ips` is off.
+- Secrets: the plugin never reads `private_key` or `preshared_key` into its output, and only the single-field
+  `wg show` forms are used because they never print them. The test recorder scrubs both keys, and the test
+  generator aborts if a capture still contains one.
+
 ### BGP
 Status of BIRD 3 (`flab.bgp`); the lab setup is four eBGP sessions to Azure (AS 65515) over the `xfrm0..3`
 tunnels (`build/MT6000/etc/bird.conf`). Sections, top to bottom:
@@ -518,7 +541,20 @@ never dropped.
   has no name yet, so it joins the interface named in its `network` option, shown as down.
 - **Unattached wireless**: a wireless interface that reaches no netifd interface, and a radio with no
   interface at all, get a row of their own at the end; the former also raises a finding.
+- **Several interfaces on the same ports** (the lab's `lan` and `lan100`): a bridge hands its untagged frames
+  to the interface bound to it, while an 802.1q VLAN device on that bridge picks out only the frames carrying
+  its tag and gives a second, separate interface on the same wires. Rows that sit on the same set of ports
+  and radios list them once; later rows say "same N ports and radios as <first row>", and the Devices column
+  says what each row carries ("the bridge's untagged frames", "only frames tagged VLAN 100 on br-lan").
+- **Firewall zone and services** (from `flab.network`: UCI firewall and dhcp): the zone of each interface
+  (tooltip: input/output/forward policy, NAT, zones it may forward to) and the DHCPv4 pool, DHCPv6 and
+  router-advertisement mode of the interfaces that serve them.
+- **Addressing** also lists non-default routes netifd installed for the interface (`on link` when the next hop
+  is unspecified) and the IPv6 prefixes assigned to it or received on it.
 - **Tiles**: interfaces up, bridges, VLAN devices, protocol devices, tunnels, radios up, wireless interfaces.
+
+The page order is the layers of the network from the bottom: Wired network, Bridges, Wi-Fi, Mesh, IPsec VPN,
+WireGuard, BGP, and last Devices and Interfaces, which recaps how all of them fit together.
 
 Facts worth remembering (Wired network, Bridges and Mesh pages):
 - Learned MACs per port come from the kernel's binary forwarding table (`/sys/class/net/<bridge>/brforward`,
@@ -588,10 +624,11 @@ pwsh -File flab-ui\tests\ipsec\run.ps1 -Browser   # plus the live-update test in
 
 It cleans up `/tmp/flab-ipsec-test` and its local temp folder.
 
-### Network, Wi-Fi radio and Mesh tests
+### Network, Wi-Fi radio, Mesh and WireGuard tests
 
-`tests/network/run.ps1` covers the `flab.network`, `flab.radio` and `flab.mesh` plugins and the Wired
-network, Bridges, Devices and Interfaces, Wi-Fi and Mesh pages, again without changing anything on the router:
+`tests/network/run.ps1` covers the `flab.network`, `flab.radio`, `flab.mesh` and `flab.wireguard` plugins and
+the Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh and WireGuard pages, again without changing
+anything on the router:
 
 ```powershell
 pwsh -File flab-ui\tests\network\run.ps1            # unit test + backend scenarios
@@ -605,21 +642,25 @@ pwsh -File flab-ui\tests\network\run.ps1 -Browser   # plus the live-update test 
    and radios without interfaces).
 2. Capture what the plugins read: each plugin is run once on the router with `FLAB_RECORD` set, so it saves
    its own inputs (`ubus call` results, UCI, sysfs files, command output). Keys and passwords are blanked
-   while recording, and `mkfx.mjs` plants a canary in every `wifi-iface` so the assertions prove it is never
-   forwarded.
+   while recording (including WireGuard `private_key` / `preshared_key`), and `mkfx.mjs` plants a canary in every
+   `wifi-iface` and in the WireGuard secrets so the assertions prove they are never forwarded; it aborts if a
+   capture still holds a real WireGuard key.
 3. `mkfx.mjs` builds scenarios: `n-linkdown`, `n-downshift`, `n-root`, `n-blocked`, `n-nostp`,
    `n-vlanfilter`, `n-newbridge` (a second bridge takes over a port), `n-highport` (port number above 255),
    `n-nodevices`, `n-board` (a different router: other model, four LAN ports in reverse order, no external
    PHY), `n-nodsa` (no switch at all), `n-errors`, `r-down`, `r-dfs`, `r-channel`, `r-disabled`, `r-newssid`,
    and for the mesh `m-twopeers` (a second peer in LISTEN that is a gate, a two-hop path, an unresolved
    path), `m-weak` (weak, lossy link), `m-fwdoff`, `m-nopeer`, `m-down` (configured but not running),
-   `m-nomesh` (no mesh configured).
+   `m-nomesh` (no mesh configured), and for WireGuard `w-stale` (a handshake 1000 s old), `w-down` (configured
+   but not running), `w-newpeer` (a peer the kernel has but UCI does not), `w-noroutes` (a site peer without
+   routes), `w-nozone` (interface in no firewall zone), `w-nowg` (no WireGuard at all). Handshake times in a
+   capture age while the test runs, so the base scenario pins the connected peer to "30 s ago".
    The bridge forwarding table is binary, so it is generated; everything else is the captured state with
    targeted edits. Device-tree files are recorded hex-encoded (`hex:...`) because JSON cannot carry bytes.
 4. The repository's plugins and `rpcd/lib/flab/*` run on the router with `FLAB_FIXTURES` and `ucode -L`
    (`harness.uc` runs the plugin named in `FLAB_PLUGIN`); `assert.mjs` checks the JSON.
 5. `live.mjs` (`-Browser`) intercepts the status calls and drives each page through every scenario (Wired
-   network, Bridges, Devices and Interfaces, Mesh, Wi-Fi), checking that mesh interfaces and clients stay off
+   network, Bridges, Devices and Interfaces, Mesh, WireGuard, Wi-Fi), checking that mesh interfaces and clients stay off
    the Wi-Fi page, then simulates traffic and airtime counters to check live rates and the utilisation
    percentage.
 

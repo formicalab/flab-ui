@@ -8,6 +8,7 @@ const read = f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
 const net = n => read(`${n}.flab.network.json`);
 const rad = n => read(`${n}.flab.radio.json`);
 const mesh = n => read(`${n}.flab.mesh.json`);
+const wg = n => read(`${n}.flab.wireguard.json`);
 const expect = read('expect.json');
 let failed = 0;
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
@@ -39,6 +40,11 @@ check(bridge.ageing_time === 300 && bridge.forward_delay === 8 && bridge.hello_t
 check(base.vlans.length >= 1 && base.vlans.every(v => v.parent && v.vid), 'VLAN devices listed with parent and VID');
 check(base.ports.filter(p => p.vlans.length).every(p => p.vlans.every(v => v.parent === p.name)) && bridge.vlans.every(v => v.parent === bridge.name), 'VLAN devices attached to their parent');
 check(bridge.members.some(m => m.kind === 'wifi' && m.ssid), 'Wi-Fi members show their SSID from hostapd');
+check(Array.isArray(base.zones) && base.zones.every(z => z.name && Array.isArray(z.networks) && Array.isArray(z.forwards) && ['input', 'output', 'forward'].every(k => /^(ACCEPT|REJECT|DROP)$/.test(z[k]))), 'firewall zones with their networks, policies and allowed forwardings', JSON.stringify(base.zones));
+check(base.zones.some(z => z.networks.includes('lan') && z.input === 'ACCEPT') && base.zones.some(z => z.masq === true && z.networks.includes('wan')), 'the LAN zone accepts input, the WAN zone does NAT');
+check(base.dhcp && Object.values(base.dhcp).length >= 1 && Object.values(base.dhcp).every(d => typeof d.v4 === 'string' && typeof d.v6 === 'string' && typeof d.ra === 'string'), 'DHCP and router-advertisement service per interface', JSON.stringify(base.dhcp));
+check(base.dhcp.lan?.v4 === 'server' && base.dhcp.lan.start > 0 && base.dhcp.lan.limit > 0, 'DHCPv4 pool of the LAN interface');
+check(!JSON.stringify(base).includes(expect.canary), 'no secret in the network output');
 
 console.log('== network: hardware of the ports ==');
 check(base.ports.every(p => p.hardware?.driver), 'every port reports its driver', JSON.stringify(base.ports.map(p => p.hardware?.driver)));
@@ -172,6 +178,66 @@ console.log('== radio: a new SSID appears in the configuration ==');
 const ns = radio(rad('r-newssid'), 'radio0');
 const guest = ns.interfaces.find(i => i.ssid === 'guest');
 check(ns.interfaces.length === 3 && guest && guest.up === false && guest.security === 'Open/None' && guest.networks.join() === 'guest', 'new SSID listed as not running, open, on its network', JSON.stringify(guest));
+
+console.log('== mesh: base (real captured state) ==');
+const mb = mesh('base');
+const mn = mb.nodes[0];
+check(mb.nodes.length === 1 && mn.mesh_id === expect.mesh.id && mn.ifname === expect.mesh.ifname && mn.up === true && mn.enabled === true, 'the configured mesh interface, with its mesh id and interface name', JSON.stringify([mn.mesh_id, mn.ifname]));
+check(/WPA3/.test(mn.security) && mn.encryption === 'sae', 'security label from the encryption setting', JSON.stringify([mn.security, mn.encryption]));
+check(mn.live?.channel > 0 && mn.live.freq > 0 && mn.live.width > 0, 'channel and width of the mesh interface', JSON.stringify(mn.live));
+check(mn.peers.length >= 1 && mn.peers.every(p => /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(p.mac) && typeof p.plink === 'string'), 'peers parsed with MAC and link state', JSON.stringify(mn.peers.map(p => [p.mac, p.plink])));
+const p0 = mn.peers[0];
+check(p0.plink === 'ESTAB' && typeof p0.signal === 'number' && p0.tx_rate?.mbit > 0 && p0.rx_rate?.mbit > 0 && typeof p0.airtime_metric === 'number' && typeof p0.connected_s === 'number', 'peer link quality: signal, bit rates, airtime metric, connected time', JSON.stringify(p0));
+check(typeof p0.rx_bytes === 'number' && typeof p0.tx_retries === 'number' && typeof p0.tx_failed === 'number', 'peer counters');
+check(Array.isArray(mn.paths) && mn.paths.every(p => /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(p.dest) && Array.isArray(p.flags)), 'mesh paths parsed');
+check(mn.params.mesh_fwding === '1' && mn.params.mesh_ttl && mn.params.mesh_hwmp_rootmode != null, 'mesh parameters read', JSON.stringify(mn.params));
+check(Array.isArray(mn.proxied) && typeof mn.rx_bytes === 'number', 'proxied destinations list and interface counters');
+
+console.log('== mesh: other states ==');
+const m2 = mesh('m-twopeers').nodes[0];
+const second = m2.peers.find(p => p.mac === 'aa:bb:cc:dd:ee:01');
+check(m2.peers.length === mn.peers.length + 1 && second?.plink === 'LISTEN' && second.gate === true, 'a second peer in LISTEN state that is a mesh gate', JSON.stringify(second));
+const multi = m2.paths.find(p => p.dest === 'aa:bb:cc:dd:ee:01');
+check(multi && multi.hop_count === 2 && multi.metric === 222 && multi.next_hop === p0.mac && multi.flags.includes('resolved') && multi.flags.includes('sn_valid') && !multi.flags.includes('fixed'), 'a two-hop path through the first peer, flags decoded', JSON.stringify(multi));
+const open = m2.paths.find(p => p.dest === '5a:00:00:00:00:01');
+check(open && open.next_hop === null && open.flags.length === 0, 'an unresolved path has no next hop and no flags', JSON.stringify(open));
+const mw = mesh('m-weak').nodes[0].peers[0];
+check(mw.signal === -82 && mw.signal_avg === -82 && mw.tx_failed === 600 && mw.tx_packets === 1000, 'weak signal and failed transmissions parsed', JSON.stringify(mw));
+check(mesh('m-fwdoff').nodes[0].params.mesh_fwding === '0', 'forwarding off from the parameters');
+check(mesh('m-nopeer').nodes[0].peers.length === 0 && mesh('m-nopeer').nodes[0].up === true, 'no peers, interface still up');
+const md = mesh('m-down').nodes[0];
+check(md.up === false && md.ifname == null && md.peers === undefined && md.mesh_id === expect.mesh.id, 'a mesh section without a running interface has no live data', JSON.stringify(md));
+check(mesh('m-nomesh').nodes.length === 0, 'no mesh configured: empty list');
+for (const n of ['base', 'm-twopeers', 'm-weak', 'm-fwdoff', 'm-nopeer', 'm-down']) {
+  const text = JSON.stringify(mesh(n));
+  check(!text.includes(expect.canary) && !/"(key|sae_password|r0kh|r1kh)"/.test(text), `${n}: no key in the mesh output`);
+}
+
+console.log('== wireguard ==');
+const wb = wg('base');
+const wi = wb.interfaces[0];
+const wpeer = (d, key = expect.wg.site) => d.interfaces[0].peers.find(p => p.public_key === key);
+check(wb.interfaces.length === 1 && wi.name === expect.wg.name && wi.up === true && wi.enabled === true && wi.configured === true, 'the WireGuard interface found from the configuration');
+check(/^[A-Za-z0-9+/]{43}=$/.test(wi.public_key) && wi.listen_port > 0 && wi.mtu > 0 && wi.addresses.length >= 1 && typeof wi.rx_bytes === 'number', 'public key, listen port, MTU, addresses and counters', JSON.stringify([wi.public_key, wi.listen_port, wi.mtu, wi.addresses]));
+check(typeof wi.zone === 'string' && wi.zone.length > 0, 'firewall zone of the interface', String(wi.zone));
+check(same(wi.peers.map(p => p.public_key), expect.wg.peers.map(p => p.key)) && wi.peers.map(p => p.name).join() === expect.wg.peers.map(p => p.name).join(), 'peers in configuration order with their descriptions', JSON.stringify(wi.peers.map(p => p.name)));
+const site = wpeer(wb);
+check(site.state === 'connected' && site.handshake_age >= 0 && site.handshake_age < 180 && site.endpoint && site.allowed_ips.length >= 1 && site.route_allowed_ips === true && site.keepalive > 0 && site.configured === true && typeof site.rx_bytes === 'number' && typeof site.tx_bytes === 'number', 'a connected peer: recent handshake, endpoint, allowed IPs, routes, keepalive, traffic', JSON.stringify(site));
+check(wi.peers.filter(p => p !== site).every(p => ['never', 'connected', 'stale'].includes(p.state) && (p.state !== 'never' || (p.handshake_age === null && p.endpoint === null))), 'the other peers are connected, stale or never connected without an endpoint');
+for (const n of ['base', 'w-stale', 'w-down', 'w-newpeer', 'w-noroutes', 'w-nozone']) {
+  const text = JSON.stringify(wg(n));
+  check(!text.includes(expect.canary) && !/"(private_key|preshared_key|key)"/.test(text), `${n}: no private or pre-shared key in the WireGuard output`);
+}
+const stale = wpeer(wg('w-stale'));
+check(stale.state === 'stale' && stale.handshake_age > 900 && stale.handshake_age < 1200, 'a handshake older than 3 minutes is stale', JSON.stringify(stale));
+const wdown = wg('w-down').interfaces[0];
+check(wdown.up === false && wdown.public_key === undefined && wdown.peers.length === expect.wg.peers.length && wdown.peers.every(p => p.state === 'down' && p.configured), 'a configured interface that is not running lists its peers as not loaded', JSON.stringify(wdown));
+const added = wpeer(wg('w-newpeer'), expect.wg.newKey);
+check(added && added.configured === false && added.name == null && added.endpoint === '203.0.113.7:51820' && added.allowed_ips.join() === '10.99.0.2/32' && added.state === 'connected' && added.tx_bytes === 2000 && added.keepalive === null, 'a peer the kernel has but the configuration does not is still listed', JSON.stringify(added));
+check(wg('w-newpeer').interfaces[0].peers.at(-1).public_key === expect.wg.newKey, 'run-time peers come after the configured ones');
+check(wpeer(wg('w-noroutes')).route_allowed_ips === false, 'route_allowed_ips off is reported');
+check(wg('w-nozone').interfaces[0].zone === null, 'an interface in no firewall zone has zone null');
+check(wg('w-nowg').interfaces.length === 0, 'no WireGuard configured or running: empty list');
 
 if (failed) { console.log(`\n${failed} check(s) FAILED`); process.exit(1); }
 console.log('\nall Network / Wi-Fi radio backend checks passed');

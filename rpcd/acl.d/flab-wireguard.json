@@ -1,0 +1,11 @@
+{
+  "flab": {
+    "description": "flab-ui WireGuard page (interfaces and peers)",
+    "read": {
+      "ubus": {
+        "flab.wireguard": ["status"]
+      }
+    },
+    "write": {}
+  }
+}

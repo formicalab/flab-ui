@@ -20,6 +20,36 @@ const CANARY = 'CANARYSECRET';
 const raw = {};
 for (const f of fs.readdirSync(real)) if (!['files.json', 'uci_wireless.json'].includes(f) && !f.startsWith('brforward_')) raw[f] = text(f);
 
+// Planted where the real router keeps WireGuard secrets, so the assertions prove they are never forwarded.
+// The capture itself must already have them blanked by the recorder.
+const uciNet = JSON.parse(raw['uci_network.json']);
+for (const s of Object.values(uciNet.values)) {
+  if (s.private_key !== undefined && s.private_key !== 'REDACTED') throw new Error('the capture contains a WireGuard private key: the recorder does not scrub it');
+  if (s.preshared_key !== undefined && s.preshared_key !== 'REDACTED') throw new Error('the capture contains a WireGuard pre-shared key: the recorder does not scrub it');
+  if (s['.type'] === 'interface' && s.proto === 'wireguard') s.private_key = CANARY;
+  if (s['.type'].startsWith('wireguard_')) s.preshared_key = CANARY;
+}
+raw['uci_network.json'] = JSON.stringify(uciNet);
+
+// WireGuard facts from the capture.
+const wgIf = Object.values(uciNet.values).find(s => s['.type'] === 'interface' && s.proto === 'wireguard')?.['.name'];
+if (!wgIf) throw new Error('the router has no WireGuard interface to test with');
+const wgPeers = Object.values(uciNet.values).filter(s => s['.type'] === `wireguard_${wgIf}`);
+if (wgPeers.length < 2) throw new Error('the router needs at least two WireGuard peers to test with');
+const wgSite = wgPeers.find(p => p.route_allowed_ips === '1') ?? wgPeers[0];
+const wgFile = f => `wg_show_${wgIf}_${f}.txt`;
+const nowS = () => Math.floor(Date.now() / 1000);
+const NEWKEY = `${'B'.repeat(43)}=`;
+
+// Rewrites (or adds) the "key<TAB>value" line of a `wg show <if> <field>` capture.
+function wgSet(fx, field, key, value) {
+  const lines = (fx.raw[wgFile(field)] ?? '').split('\n').filter(l => l && !l.startsWith(`${key}\t`));
+  fx.raw[wgFile(field)] = [...lines, `${key}\t${value}`].join('\n') + '\n';
+}
+// A capture's handshake times go stale while the test runs, so the connected peer is pinned to "30 s ago".
+const wgNormalize = fx => wgSet(fx, 'latest_handshakes', wgSite.public_key, nowS() - 30);
+const editUci = (fx, file, fn) => { const o = JSON.parse(fx.raw[file]); fn(o.values); fx.raw[file] = JSON.stringify(o); };
+
 const files = JSON.parse(text('files.json'));
 const uci = JSON.parse(text('uci_wireless.json')).values;
 for (const s of Object.values(uci)) if (s['.type'] === 'wifi-iface') { s.key = CANARY; s.r0kh = [CANARY]; s.r1kh = [CANARY]; }
@@ -54,7 +84,11 @@ function brforward(fx, bridge) {
 //#endregion
 
 //#region Scenarios
-const baseFx = () => ({ raw: clone(raw), files: clone(files), devices: clone(devices), uci: clone(uci), learned: clone(LEARNED) });
+const baseFx = () => {
+  const fx = { raw: clone(raw), files: clone(files), devices: clone(devices), uci: clone(uci), learned: clone(LEARNED) };
+  wgNormalize(fx);
+  return fx;
+};
 const member = 'phy1-ap0';
 const bridge = bridgeNames[0];
 const meshSection = Object.values(uci).find(s => s['.type'] === 'wifi-iface' && s.mode === 'mesh')?.['.name'];
@@ -182,6 +216,34 @@ const scenarios = {
     return fx;
   },
   'm-nomesh': fx => { delete fx.uci[meshSection]; return fx; },
+
+  // ── WireGuard ──
+  // The connected peer has not shaken hands for a long time; a roaming peer connects now.
+  'w-stale': fx => {
+    wgSet(fx, 'latest_handshakes', wgSite.public_key, nowS() - 1000);
+    return fx;
+  },
+  'w-down': fx => { fx.raw['wg_show_interfaces.txt'] = '\n'; return fx; },
+  // A peer the kernel has but the configuration does not (added with `wg set`).
+  'w-newpeer': fx => {
+    fx.raw[wgFile('peers')] = `${fx.raw[wgFile('peers')].trimEnd()}\n${NEWKEY}\n`;
+    wgSet(fx, 'endpoints', NEWKEY, '203.0.113.7:51820');
+    wgSet(fx, 'allowed_ips', NEWKEY, '10.99.0.2/32');
+    wgSet(fx, 'latest_handshakes', NEWKEY, nowS() - 5);
+    wgSet(fx, 'transfer', NEWKEY, '1000\t2000');
+    wgSet(fx, 'persistent_keepalive', NEWKEY, 'off');
+    return fx;
+  },
+  'w-noroutes': fx => { editUci(fx, 'uci_network.json', v => { for (const s of Object.values(v)) if (s.public_key === wgSite.public_key) s.route_allowed_ips = '0'; }); return fx; },
+  'w-nozone': fx => {
+    editUci(fx, 'uci_firewall.json', v => { for (const s of Object.values(v)) if (s['.type'] === 'zone') s.network = [].concat(s.network ?? []).filter(n => n !== wgIf); });
+    return fx;
+  },
+  'w-nowg': fx => {
+    editUci(fx, 'uci_network.json', v => { for (const [k, s] of Object.entries(v)) if (k === wgIf || s['.type'] === `wireguard_${wgIf}`) delete v[k]; });
+    fx.raw['wg_show_interfaces.txt'] = '\n';
+    return fx;
+  },
 };
 //#endregion
 
@@ -213,6 +275,7 @@ fs.writeFileSync(path.join(work, 'expect.json'), JSON.stringify({
   canary: CANARY,
   phyIfaces: ifaces,
   mesh: { section: meshSection, id: meshSec.mesh_id, ifname: wl[meshSec.device].interfaces.find(i => i.section === meshSection)?.ifname },
+  wg: { name: wgIf, peers: wgPeers.map(p => ({ name: p.description, key: p.public_key })), site: wgSite.public_key, siteName: wgSite.description, newKey: NEWKEY },
 }));
 console.log(`built ${Object.keys(scenarios).join(', ')}`);
 //#endregion

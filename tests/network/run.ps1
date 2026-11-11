@@ -1,19 +1,21 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-Tests the Network and Wi-Fi radio pages against captured and synthetic router states without changing the router.
+Tests the Network, Bridges, Devices and Interfaces, Wi-Fi radio, Mesh and WireGuard pages against captured and synthetic router states without changing the router.
 
 .DESCRIPTION
-1. Runs the rate-tracker unit test (no router needed).
-2. Captures what the flab.network and flab.radio plugins read by running each once on the router with
-   FLAB_RECORD set (keys and passwords are blanked while recording).
+1. Runs the rate-tracker and network-layer unit tests (no router needed).
+2. Captures what the flab.network, flab.radio, flab.mesh and flab.wireguard plugins read by running each once
+   on the router with FLAB_RECORD set (keys and passwords are blanked while recording).
 3. Derives synthetic scenarios: link down, downshifted link, STP root / blocked port / STP off, VLAN
    filtering, a second bridge, a high bridge port number, no devices, a radio that is down or disabled,
-   DFS, a channel change and a new SSID.
-4. Runs the repository's flab.network.uc and flab.radio.uc on the router against every scenario
-   (FLAB_FIXTURES) and asserts the JSON, including that no secret is forwarded.
-5. With -Browser, opens the deployed UI in Edge and drives both pages through the scenarios live,
-   checking that tiles, port tiles, bridge cards, radio cards and findings follow without a reload.
+   DFS, a channel change, a new SSID, mesh peers and paths, and WireGuard peers (stale, never connected,
+   interface down, new peer at run time, no firewall zone, no WireGuard at all).
+4. Runs the repository's plugins on the router against every scenario (FLAB_FIXTURES) and asserts the JSON,
+   including that no secret is forwarded.
+5. With -Browser, opens the deployed UI in Edge and drives the pages through the scenarios live,
+   checking that tiles, port tiles, bridge cards, radio cards, mesh and WireGuard cards and findings follow
+   without a reload.
 
 Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (deploy.ps1 -Action
 Deploy) and installs playwright-core into the temporary work folder. Everything it creates on the router
@@ -44,7 +46,7 @@ $ErrorActionPreference = 'Stop'
 
 $here = $PSScriptRoot
 $root = (Resolve-Path (Join-Path $here '..\..')).Path
-$plugins = 'flab.network', 'flab.radio', 'flab.mesh'
+$plugins = 'flab.network', 'flab.radio', 'flab.mesh', 'flab.wireguard'
 $libs = Join-Path $root 'rpcd\lib\flab'
 $work = Join-Path ([IO.Path]::GetTempPath()) 'flab-net-test'
 $remote = '/tmp/flab-net-test'

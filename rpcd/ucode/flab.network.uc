@@ -410,6 +410,45 @@ function tunlinks() {
 	return out;
 }
 
+const as_list = (v) => v == null ? [] : (type(v) == 'array' ? v : split(trim(v), /[[:space:]]+/));
+
+// Firewall zones: which netifd interfaces each contains, its default policies, NAT, and the zones it may
+// forward to (the `forwarding` sections), so the interface table can say what a network is allowed to reach.
+function firewall_zones() {
+	let all = uci_all('firewall');
+	let zones = [];
+	for (let name, s in all) {
+		if (s['.type'] != 'zone')
+			continue;
+		let forwards = [];
+		for (let n2, f in all)
+			if (f['.type'] == 'forwarding' && f.src == s.name && f.dest)
+				push(forwards, f.dest);
+		push(zones, {
+			name: s.name, networks: as_list(s.network),
+			input: s.input ?? 'REJECT', output: s.output ?? 'REJECT', forward: s.forward ?? 'REJECT',
+			masq: s.masq == '1', forwards,
+		});
+	}
+	return zones;
+}
+
+// DHCP / router-advertisement service per interface (UCI dhcp, served by dnsmasq and odhcpd), as
+// { interface: { v4, v6, ra, start, limit, leasetime } }. Only the settings an operator looks for.
+function dhcp_services() {
+	let out = {};
+	for (let name, s in uci_all('dhcp')) {
+		if (s['.type'] != 'dhcp' || !s.interface)
+			continue;
+		out[s.interface] = {
+			v4: s.ignore == '1' ? 'disabled' : (s.dhcpv4 ?? 'server'),
+			v6: s.dhcpv6 ?? 'disabled', ra: s.ra ?? 'disabled',
+			start: num(s.start), limit: num(s.limit), leasetime: s.leasetime,
+		};
+	}
+	return out;
+}
+
 function collect() {
 	let conn = connect();
 	let devices = ubus_call(conn, 'network.device', 'status', {}) ?? {};
@@ -491,7 +530,7 @@ function collect() {
 		});
 	}
 
-	return { generated: time(), model: board.model, ports, bridges, vlans, switches, tunlinks: tunlinks() };
+	return { generated: time(), model: board.model, ports, bridges, vlans, switches, tunlinks: tunlinks(), zones: firewall_zones(), dhcp: dhcp_services() };
 }
 
 return {

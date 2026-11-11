@@ -32,7 +32,7 @@ function scrub(v) {
 		return v;
 	let out = {};
 	for (let k, x in v)
-		out[k] = match(k, /^(key|r0kh|r1kh|[a-z_]*(psk|password|passphrase|secret)[a-z_]*)$/i) ? 'REDACTED' : scrub(x);
+		out[k] = match(k, /^(key|r0kh|r1kh|[a-z_]*(psk|password|passphrase|secret|private_key|preshared_key)[a-z_]*)$/i) ? 'REDACTED' : scrub(x);
 	return out;
 }
 

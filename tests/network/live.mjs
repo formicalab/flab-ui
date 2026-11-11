@@ -17,7 +17,7 @@ const scenario = (n, plugin) => JSON.parse(fs.readFileSync(path.join(out, `${n}.
 let failed = 0;
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
-const mock = { network: null, radio: null, mesh: null };   // null = pass through to the real router
+const mock = { network: null, radio: null, mesh: null, wireguard: null };   // null = pass through to the real router
 let tick = null;                                // optional per-poll mutation, used to simulate traffic and airtime
 const browser = await chromium.launch({ channel: 'msedge' });
 const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, colorScheme: 'light' });
@@ -26,7 +26,7 @@ const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
-const PLUGINS = { 'flab.network': 'network', 'flab.radio': 'radio', 'flab.mesh': 'mesh' };
+const PLUGINS = { 'flab.network': 'network', 'flab.radio': 'radio', 'flab.mesh': 'mesh', 'flab.wireguard': 'wireguard' };
 await page.route('**/ubus', async route => {
   let body = null;
   try { body = route.request().postDataJSON(); } catch { /* not JSON */ }
@@ -164,6 +164,13 @@ check(/eth1\.1036/.test(await layerRow('wan').innerText()) && /pppoe-wan/.test(a
 check(/protocol device of wan/.test(await layerRow('wan6').innerText()), 'layers: wan6 is shown riding on the PPPoE session of wan');
 check(/runs over interface\s+wan/.test(await layerRow('xfrm0').innerText()), 'layers: the IPsec interface runs over wan');
 check(/^\d+ \/ \d+$/.test(await tile(0)), 'interfaces-up tile', await tile(0));
+check(await layerRow('lan100').locator('.cn-same').count() === 1 && /same \d+ ports and radios as lan/.test(await layerRow('lan100').innerText()) && await layerRow('lan100').locator('.cn.k-port').count() === 0, 'layers: lan100 does not repeat the ports, it says they are the same as lan');
+check(/untagged/.test(await layerRow('lan').innerText()) && /only frames tagged VLAN 100 on br-lan/.test(await layerRow('lan100').innerText()), 'layers: each row says which frames it carries (untagged vs VLAN 100)');
+check(/\blan\b/.test(await layerRow('lan').locator('td:nth-child(6)').innerText()) && /DHCPv4/.test(await layerRow('lan').locator('td:nth-child(6)').innerText()), 'zone and DHCP service of lan');
+check(/\bwan\b/.test(await layerRow('wan').locator('td:nth-child(6)').innerText()) && /NAT/.test(await layerRow('wan').locator('td:nth-child(6)').innerText()), 'the WAN zone is shown with NAT');
+check(/\bvpn\b/.test(await layerRow('xfrm0').locator('td:nth-child(6)').innerText()) && /\bwg\b/.test(await layerRow('wg0').locator('td:nth-child(6)').innerText()), 'tunnel interfaces show their firewall zone');
+check(/route\s+10\.0\.0\.0\/8 via/.test(await layerRow('voip').innerText()) && /route\s+192\.168\.8\.0\/24 on link/.test(await layerRow('wg0').innerText()), 'static routes are listed under their interface (on-link ones say so)');
+check(/prefix\s+[0-9a-f:]+\/60/.test(await layerRow('lan').innerText()), 'delegated prefixes are listed');
 
 await stage('router reports no devices', 'network', 'n-nodevices');
 check(await layerRow('lan').locator('.cn.k-device').count() === 1, 'an undescribed device is kept as an unknown device, not dropped');
@@ -209,6 +216,48 @@ check(await page.locator('.mesh-card').count() === 0 && /No 802\.11s mesh interf
 
 await stage('back to normal', 'mesh', 'base');
 check(await page.locator('.mesh-card').count() === 1, 'the mesh interface is back');
+//#endregion
+
+//#region WireGuard page
+await page.click('a[href="#wireguard"]');
+await page.waitForSelector('.wg-card');
+console.log('\n== wireguard: live router (pass-through) ==');
+mock.wireguard = null;
+await refresh();
+check(await page.locator('.wg-table tbody tr').count() >= 2, 'peers listed from the live router');
+check(/^\d+ \/ \d+$/.test(await tile(1)) && /Interfaces up/.test(await text('.tile')), 'summary tiles', await tile(1));
+check(await page.locator('.wg-ip.net').count() >= 1 && /site/.test(await text('.wg-table')) && /client/.test(await text('.wg-table')), 'a network behind a peer is marked as a site, single hosts as clients');
+check(!/CANARY|private/i.test(await text('main')), 'no key material on the page');
+
+await stage('one site peer connected', 'wireguard', 'base');
+const wgRows = await page.locator('.wg-table tbody tr').count();
+check(/^1 \/ \d+$/.test(await tile(1)) && /healthy|has not connected/.test(await text('.net-health')), 'one connected peer', await tile(1));
+
+await stage('peer silent for a long time', 'wireguard', 'w-stale');
+check(/^0 \/ \d+$/.test(await tile(1)) && /last handshake .* ago/.test(await text('.net-health')), 'a stale handshake is called out', `${await tile(1)} ${await text('.net-health')}`);
+check(/no recent handshake/.test(await text('.wg-table')), 'the peer shows as not recently connected');
+
+await stage('interface not running', 'wireguard', 'w-down');
+check(await page.locator('.wg-card.is-down').count() === 1 && /configured but not running/.test(await text('.net-health')) && /not loaded/.test(await text('.wg-table')), 'a WireGuard interface that is down is shown as such', await text('.net-health'));
+
+await stage('a peer added at run time', 'wireguard', 'w-newpeer');
+check(await page.locator('.wg-table tbody tr').count() === wgRows + 1 && /not in the configuration/.test(await text('.wg-table')) && /203\.0\.113\.7:51820/.test(await text('.wg-table')), 'a peer the configuration does not know is listed and flagged');
+
+await stage('routes for a site not installed', 'wireguard', 'w-noroutes');
+check(/route_allowed_ips is off/.test(await text('.net-health')) && /routes not installed/.test(await text('.wg-table')), 'a site peer without routes is warned about', await text('.net-health'));
+
+await stage('interface without a firewall zone', 'wireguard', 'w-nozone');
+check(/no firewall zone/.test(await text('.net-health')) && /no firewall zone/.test(await text('.wg-head')), 'a missing firewall zone is warned about');
+
+await stage('no WireGuard at all', 'wireguard', 'w-nowg');
+check(await page.locator('.wg-card').count() === 0 && /No WireGuard interface/.test(await text('main')), 'empty state when WireGuard is not configured');
+
+console.log('\n== wireguard: live traffic ==');
+mock.wireguard = scenario('base', 'wireguard');
+tick = (plugin, d) => { if (plugin === 'wireguard') for (const i of d.interfaces) for (const p of i.peers) if (p.state === 'connected') { p.rx_bytes += 3_000_000; p.tx_bytes += 500_000; } };
+await refresh(); await refresh(); await refresh();
+check(/Mbit\/s|kbit\/s/.test(await text('.wg-table tbody')) && /[1-9]/.test((await tile(3)).split('\n')[0]) && !/^0 bit/.test(await tile(3)), 'peer traffic shows a measured rate', await tile(3));
+await stage('back to the live router', 'wireguard', null);
 //#endregion
 
 //#region Wi-Fi page

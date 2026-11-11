@@ -1,0 +1,19 @@
+/* WireGuard page styling. Loaded on demand by core/app.js when the page is first opened. */
+
+.wg-card { position: relative; overflow: hidden; }
+.wg-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--fl-ok-fg), var(--fl-brand)); }
+.wg-card.is-down::before { background: var(--fl-bad-fg); }
+.wg-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: 1.2rem 1.25rem .5rem; }
+.wg-head .name { font-size: 1.2rem; font-weight: 600; }
+.wg-head svg { color: var(--fl-brand); }
+.wg-traffic { margin-left: auto; color: var(--fl-muted); font-variant-numeric: tabular-nums; }
+.wg-body { padding: .6rem 1.25rem 1.25rem; display: grid; gap: 1.2rem; }
+.wg-body .kv { grid-template-columns: max-content minmax(0, 1fr); column-gap: 2rem; max-width: 60rem; }
+.wg-key { word-break: break-all; }
+.wg-table td { vertical-align: top; }
+.wg-table tr.wg-off { opacity: .55; }
+.wg-allowed { display: flex; flex-wrap: wrap; gap: .25rem; }
+.wg-ip { padding: .05rem .4rem; border: 1px solid var(--fl-stroke); border-radius: 6px; font-size: .8rem; background: var(--fl-surface-hover); }
+.wg-ip.net { border-color: color-mix(in srgb, var(--fl-brand) 50%, var(--fl-stroke)); }
+
+@media (max-width: 991.98px) { .wg-traffic { margin-left: 0; } }
