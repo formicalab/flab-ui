@@ -59,7 +59,7 @@ Design principles:
 ```
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
-  tests/bgp/                 Test suite for the BGP page (run.ps1, see "Testing")
+  tests/bgp/, tests/ipsec/   Test suites for the BGP and IPsec pages (run.ps1, see "Testing")
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
@@ -155,8 +155,10 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
 - **IPsec** (`pages/ipsec/`): `connection.js` renders one card per connection from the backend JSON;
   `names.js` maps strongSwan identifiers to friendly names (`AES_GCM_16`+256 to `AES-256-GCM`);
   `rates.js` derives throughput from successive counter samples kept in memory (60 samples; uses the
-  `xfrmN` interface counters because they survive child SA rekeys); `daemon.js` shows daemon state and
-  the score model.
+  `xfrmN` interface counters because they survive child SA rekeys). A series is keyed by the backend's
+  `conn.key`, restarts after 15 s without a sample (tunnel down, polling paused, background tab) so a gap
+  is never averaged into one bogus rate, and is dropped when its connection disappears; `daemon.js` shows
+  daemon state and the score model.
 - **Overview** (`pages/overview/`): the sensors and CPU calls are optional (`optional()` wrapper), so a
   missing plugin or ACL hides that section instead of breaking the page. `cpu.js` keeps the sample
   history and builds the CPU card; `temperatures.js` builds the temperature cards.
@@ -188,10 +190,15 @@ return {
 
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
-- **`flab.util`**: `run(cmd)`, `safe_ifname()`, `normalize_mac()`, `num()`.
+- **`flab.util`**: `run(cmd)`, `fixture(name)`, `safe_ifname()`, `normalize_mac()`, `num()`. `run()` and
+  `fixture()` are also the test seam: with `FLAB_FIXTURES=<dir>` set (rpcd never does) `run()` returns
+  `<dir>/<command>.txt` instead of executing the command; the file name is the command with every run of
+  non-alphanumerics turned into `_` and a trailing `2>/dev/null` dropped.
 - **`flab.vici`**: parses `swanctl --list-sas|--list-conns|--stats --raw` output into nested objects.
   The raw format is `name {key=value list=[a b] section {...}}`; values may contain spaces
-  (`class=pre-shared key`), so a value ends where the next `key=` or `key {` begins.
+  (`class=pre-shared key`), so a value ends where the next `key=` or `key {` begins. `events()` returns
+  every event (several IKE SAs can share a connection name); `query()` merges them by name and is only
+  safe where names are unique (`list-conns`); `reply()` is for request/reply commands such as `stats`.
 
 ### Backend rules
 
@@ -340,6 +347,14 @@ Facts worth remembering:
   `build/MT6000/etc/hotplug.d/iface/90-xfrm`; `xfrm0` has a few TX errors the page flags.
 - Pre-shared-key authentication caps the authentication score at 6/10 and raises a warning, because
   key entropy cannot be observed.
+- The page is rebuilt from the backend reply on every poll, so connections, rekeys and state changes
+  show up without a reload. The backend lists every configured connection (DOWN when it has no SA) and
+  every live IKE SA. A connection with several IKE SAs (`unique = no`) gets one card per SA
+  (`instance` = IKE SA id, `key` = `name#id`). An SA whose connection is no longer loaded, or a child SA
+  whose child config was removed, is still shown and flagged `orphan`; its authentication and lifetime
+  policy cannot be seen, so those score parts are neutral (`unknown`) instead of producing false
+  pre-shared-key or lifetime advice. Global IPv6 addresses on an `xfrmN` interface are listed next to the
+  IPv4 tunnel address; link-local ones are skipped.
 
 ### BGP
 Status of BIRD 3 (`flab.bgp`); the lab setup is four eBGP sessions to Azure (AS 65515) over the `xfrm0..3`
@@ -427,6 +442,30 @@ How it works:
 The suite removes `/tmp/flab-bgp-test` on the router and its local temp folder when it finishes. Add a
 scenario by extending `mkfx.mjs` and `assert.mjs`; add a captured sample of a state you want to keep
 testing as extra `.txt` files.
+
+### IPsec tests
+
+`tests/ipsec/run.ps1` works the same way for the IPsec page and never touches the tunnels:
+
+```powershell
+pwsh -File flab-ui\tests\ipsec\run.ps1            # unit test + backend scenarios
+pwsh -File flab-ui\tests\ipsec\run.ps1 -Browser   # plus the live-update test in Edge (needs the UI deployed)
+```
+
+1. `rates.test.mjs`: unit test of the throughput history (rates, counter resets, gaps, pauses, per-SA
+   keys, removed connections); needs no router.
+2. Capture `swanctl --list-conns|--list-sas|--stats|--version --raw`, `ip -s xfrm state` (key material is
+   redacted on the router before it is copied; `mkfx.mjs` then plants a canary key so the assertions prove
+   the plugin never forwards it), the xfrm interface addresses and their uci/netifd data.
+3. `mkfx.mjs` builds `base`, `down`, `rekey` (two child SAs), `multi` (two IKE SAs under one name),
+   `orphan` (SA without connection, child SA without child config), `ipv6` and `daemondown`. These are
+   synthetic variations of the captured output, not captured states.
+4. The repository's `flab.ipsec.uc` and `rpcd/lib/flab/*` run on the router with `FLAB_FIXTURES` and
+   `ucode -L`, so the uploaded libraries win over the deployed ones; `assert.mjs` checks the JSON.
+5. `live.mjs` (`-Browser`) intercepts `flab.ipsec status` and drives the page through all scenarios plus
+   simulated traffic, checking tiles, cards, badges, IPv6 rows, the stopped-daemon state and console errors.
+
+It cleans up `/tmp/flab-ipsec-test` and its local temp folder.
 
 ## Gotchas learned the hard way
 

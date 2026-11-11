@@ -15,8 +15,8 @@
 
 import { connect } from 'ubus';
 import { cursor } from 'uci';
-import { run, safe_ifname, num } from 'flab.util';
-import { query, reply } from 'flab.vici';
+import { run, fixture, safe_ifname, num } from 'flab.util';
+import { query, events, reply } from 'flab.vici';
 
 //#region Algorithm strength tables (fraction of the maximum score, 0..1)
 
@@ -136,10 +136,13 @@ function assess(v) {
 
 	push(parts, part('ike_ke', 'IKE key exchange', 20, rate_ke(v.ike.ke), v.ike.ke));
 
-	let auth = rate_auth(v.auth);
-	push(parts, part('ike_auth', 'Authentication', 10, auth, v.auth,
-		auth < 0.85 ? 'Pre-shared key: strength depends on key entropy, which the router cannot see' : null));
-	if (auth < 0.85)
+	// An SA whose connection is no longer loaded has no policy to rate: authentication and lifetimes are
+	// unknown rather than weak, so they get a neutral score and no pre-shared-key advice.
+	let auth = v.orphan ? 0.5 : rate_auth(v.auth);
+	push(parts, part('ike_auth', 'Authentication', 10, auth, v.auth ?? (v.orphan ? 'unknown' : null),
+		v.orphan ? 'Connection is not loaded, so the authentication method is unknown'
+			: auth < 0.85 ? 'Pre-shared key: strength depends on key entropy, which the router cannot see' : null));
+	if (auth < 0.85 && !v.orphan)
 		push(warnings, { level: 'warn', text: 'Authenticated with a pre-shared key; use a long random key or certificates.' });
 
 	let esp = rate_enc(v.esp.encr, v.esp.keysize);
@@ -153,10 +156,19 @@ function assess(v) {
 
 	let hygiene = 0;
 	let notes = [];
-	if (v.dpd_delay > 0) { hygiene += 2; } else { push(notes, 'dead peer detection off'); }
-	if (v.child_rekey != null && (v.child_rekey <= 28800 || v.child_rekey_bytes > 0)) { hygiene += 2; } else { push(notes, 'child SA lifetime above 8 h'); }
-	if ((v.ike_rekey != null && v.ike_rekey <= 86400) || v.reauth > 0) { hygiene += 1; } else { push(notes, 'IKE SA lifetime above 24 h'); }
+	if (v.orphan) {
+		hygiene = 2.5;
+		push(notes, 'lifetime and liveness policy unknown');
+	}
+	else {
+		if (v.dpd_delay > 0) { hygiene += 2; } else { push(notes, 'dead peer detection off'); }
+		if (v.child_rekey != null && (v.child_rekey <= 28800 || v.child_rekey_bytes > 0)) { hygiene += 2; } else { push(notes, 'child SA lifetime above 8 h'); }
+		if ((v.ike_rekey != null && v.ike_rekey <= 86400) || v.reauth > 0) { hygiene += 1; } else { push(notes, 'IKE SA lifetime above 24 h'); }
+	}
 	push(parts, part('hygiene', 'Rekeying & liveness', 5, hygiene / 5, null, length(notes) ? join(', ', notes) : 'DPD on, short lifetimes'));
+
+	if (v.orphan)
+		push(warnings, { level: 'warn', text: 'This SA is not in the loaded configuration (removed or renamed without terminating it); authentication and lifetime policy cannot be rated.' });
 
 	if (v.version != 'IKEv2')
 		push(warnings, { level: 'bad', text: 'IKEv1 is deprecated; use IKEv2.' });
@@ -260,9 +272,9 @@ function xfrm_states() {
 	return states;
 }
 
-// xfrmN interfaces keyed by their numeric if_id.
-function xfrm_interfaces(ubus) {
-	let out = {};
+// Interfaces of proto xfrm as read from UCI and netifd (statistics included); addresses are added later.
+function live_xfrm_interfaces(ubus) {
+	let list = [];
 	let uci = cursor();
 	uci.load('network');
 	uci.foreach('network', 'interface', (s) => {
@@ -274,17 +286,41 @@ function xfrm_interfaces(ubus) {
 
 		let dev = ubus.call('network.device', 'status', { name }) ?? {};
 		let st = dev.statistics ?? {};
-		let info = { name, ifid: +s.ifid, tunlink: s.tunlink, zone: s.zone, mtu: dev.mtu ?? num(s.mtu), up: dev.up ?? false,
+		push(list, { name, ifid: +s.ifid, tunlink: s.tunlink, zone: s.zone, mtu: dev.mtu ?? num(s.mtu), up: dev.up ?? false,
 			rx_bytes: st.rx_bytes, tx_bytes: st.tx_bytes, rx_packets: st.rx_packets, tx_packets: st.tx_packets,
-			rx_errors: st.rx_errors, tx_errors: st.tx_errors, rx_dropped: st.rx_dropped, tx_dropped: st.tx_dropped };
-
-		let m = match(run('ip -o -4 addr show dev ' + name + ' 2>/dev/null'), /inet ([0-9.]+)\/?([0-9]*)( peer ([0-9.]+))?/);
-		if (m) {
-			info.local = m[1];
-			info.peer = m[4];
-		}
-		out[+s.ifid] = info;
+			rx_errors: st.rx_errors, tx_errors: st.tx_errors, rx_dropped: st.rx_dropped, tx_dropped: st.tx_dropped });
 	});
+	return list;
+}
+
+// IPv4 tunnel endpoints (local and point-to-point peer) and global IPv6 addresses of an interface.
+function add_addresses(info) {
+	info.addrs6 = [];
+	for (let line in split(run('ip -o addr show dev ' + info.name + ' 2>/dev/null'), '\n')) {
+		let m = match(line, /inet ([0-9.]+)\/?([0-9]*)( peer ([0-9.]+))?/);
+		if (m) {
+			if (info.local == null) {
+				info.local = m[1];
+				info.peer = m[4];
+			}
+			continue;
+		}
+		m = match(line, /inet6 ([0-9a-f:]+)(\/([0-9]+))?( peer ([0-9a-f:]+)(\/[0-9]+)?)? scope (global|site)/);
+		if (m)
+			push(info.addrs6, { addr: m[1], prefix: num(m[3]), peer: m[5] });
+	}
+}
+
+// xfrmN interfaces keyed by their numeric if_id.
+function xfrm_interfaces(ubus) {
+	let out = {};
+	let saved = fixture('ifaces.json');
+	for (let info in (saved != null ? json(saved) : live_xfrm_interfaces(ubus))) {
+		if (!safe_ifname(info.name))
+			continue;
+		add_addresses(info);
+		out[+info.ifid] = info;
+	}
 	return out;
 }
 
@@ -313,7 +349,11 @@ function child_sa_view(sa, kernel, ifaces) {
 	};
 }
 
-function build_connection(name, conf, sa, kernel, ifaces) {
+// `sa` is one IKE SA (null when the connection is down). `conf` is null for an SA whose connection is
+// no longer loaded (orphan). `multi` is set when the connection has several IKE SAs at once.
+function build_connection(name, conf, sa, kernel, ifaces, multi) {
+	let orphan = conf == null;
+	conf ??= {};
 	let proposals = sorted_values(conf.proposals);
 	let first = proposals[0] ?? {};
 	let first_ike = split_alg((first.encr ?? [])[0]);
@@ -322,11 +362,21 @@ function build_connection(name, conf, sa, kernel, ifaces) {
 	let remote = auth_rounds(conf, 'remote');
 	let auth_class = (remote[0] ?? local[0])?.auth;
 
+	// Configured children plus any child SA whose configuration is gone.
+	let child_names = keys(conf.children ?? {});
+	for (let k in keys(sa?.['child-sas'] ?? {})) {
+		let n = sa['child-sas'][k].name;
+		if (index(child_names, n) < 0)
+			push(child_names, n);
+	}
+
 	let children = [];
 	let first_esp = null;
 	let child_conf_first = null;
-	for (let cname in sort(keys(conf.children ?? {}))) {
-		let cc = conf.children[cname];
+	for (let cname in sort(child_names)) {
+		let cc = conf.children?.[cname];
+		let child_orphan = cc == null;
+		cc ??= {};
 		let esp_props = sorted_values(cc.esp_proposals);
 		let sas = [];
 		for (let k in sort(keys(sa?.['child-sas'] ?? {}))) {
@@ -336,17 +386,20 @@ function build_connection(name, conf, sa, kernel, ifaces) {
 		// Newest SA first: during a rekey overlap the older SA is about to be deleted.
 		sas = sort(sas, (a, b) => (a.install_time ?? 0) - (b.install_time ?? 0));
 
-		first_esp ??= { props: esp_props, cc };
+		if (!child_orphan) {
+			first_esp ??= { props: esp_props, cc };
+			child_conf_first ??= cc;
+		}
 		push(children, {
 			name: cname,
-			mode: cc.mode,
+			orphan: child_orphan,
+			mode: cc.mode ?? sas[0]?.mode,
 			rekey_time: num(cc.rekey_time), rekey_bytes: num(cc.rekey_bytes), rekey_packets: num(cc.rekey_packets),
 			dpd_action: cc.dpd_action, close_action: cc.close_action,
-			local_ts: cc['local-ts'] ?? [], remote_ts: cc['remote-ts'] ?? [],
+			local_ts: cc['local-ts'] ?? sas[0]?.local_ts ?? [], remote_ts: cc['remote-ts'] ?? sas[0]?.remote_ts ?? [],
 			esp_proposals: esp_props,
 			sas,
 		});
-		child_conf_first ??= cc;
 	}
 
 	// Prefer negotiated parameters; fall back to the first configured proposal for tunnels that are down.
@@ -384,7 +437,7 @@ function build_connection(name, conf, sa, kernel, ifaces) {
 	}
 
 	let rating = assess({
-		ike, esp, auth: auth_class, version: conf.version,
+		ike, esp, auth: auth_class, version: conf.version ?? (sa ? 'IKEv' + sa.version : null), orphan,
 		dpd_delay: num(conf.dpd_delay), reauth: num(conf.reauth_time), ike_rekey: num(conf.rekey_time),
 		child_rekey: num(child_conf_first?.rekey_time), child_rekey_bytes: num(child_conf_first?.rekey_bytes),
 		ike_proposals: proposals, esp_proposals: first_esp?.props ?? [],
@@ -392,8 +445,12 @@ function build_connection(name, conf, sa, kernel, ifaces) {
 
 	return {
 		name,
+		// Stable identity for client-side history; a connection with several IKE SAs gets one entry per SA.
+		key: multi ? `${name}#${sa.uniqueid}` : name,
+		instance: multi ? num(sa.uniqueid) : null,
+		orphan,
 		state: sa?.state ?? 'DOWN',
-		version: conf.version,
+		version: conf.version ?? (sa ? 'IKEv' + sa.version : null),
 		config: {
 			local_addrs: conf.local_addrs ?? [], remote_addrs: conf.remote_addrs ?? [],
 			local_port: num(conf.local_port), remote_port: num(conf.remote_port),
@@ -427,14 +484,33 @@ function collect() {
 		daemon.plugins = stats.plugins ?? [];
 	}
 
+	// Every configured connection, plus any with live SAs whose configuration was removed (orphans).
 	let conns = stats ? query('list-conns') : {};
-	let sas = stats ? query('list-sas') : {};
+	let sas = {};
+	for (let e in (stats ? events('list-sas') : [])) {
+		sas[e.name] ??= [];
+		push(sas[e.name], e.body);
+	}
 	let kernel = xfrm_states();
 	let ifaces = xfrm_interfaces(ubus);
 
+	let names = keys(conns);
+	for (let n in keys(sas))
+		if (conns[n] == null)
+			push(names, n);
+
 	let connections = [];
-	for (let name in sort(keys(conns)))
-		push(connections, build_connection(name, conns[name], sas[name], kernel, ifaces));
+	for (let name in sort(names)) {
+		let list = sas[name] ?? [];
+		if (!length(list)) {
+			push(connections, build_connection(name, conns[name], null, kernel, ifaces, false));
+			continue;
+		}
+		// Oldest IKE SA first so entries keep their order when a new one appears.
+		list = sort(list, (a, b) => (num(b.established) ?? 0) - (num(a.established) ?? 0));
+		for (let sa in list)
+			push(connections, build_connection(name, conns[name], sa, kernel, ifaces, length(list) > 1));
+	}
 
 	return { generated: time(), daemon, connections };
 }

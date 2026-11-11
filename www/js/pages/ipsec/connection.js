@@ -22,8 +22,10 @@ function header(conn) {
   return h('div', { className: 'vpn-head' },
     h('span', { className: `dot ${up ? 'up' : 'down'}`, title: conn.state }),
     h('strong', { className: 'name' }, conn.name),
-    badge(conn.version, 'info'),
+    conn.instance != null ? badge(`IKE SA #${conn.instance}`, '', 'This connection has several IKE SAs; each is shown separately') : null,
+    conn.version ? badge(conn.version, 'info') : null,
     badge(conn.state, stateKind(conn.state)),
+    conn.orphan ? badge('Not in configuration', 'warning', 'The SA is still up but its connection is no longer loaded') : null,
     conn.ike?.nat ? badge('NAT detected', 'warning', 'A NAT device was detected between the peers') : null,
     conn.ike?.floated ? badge('IKE on UDP/4500', '', 'IKE moved to the NAT-T port') : null,
     h('span', { className: `grade ${GRADE_KIND[r.grade]}`, title: `Security score ${r.score}/100` },
@@ -93,14 +95,14 @@ function ikeBlock(conn) {
       h('div', { className: 'muted small' }, `rekey in ${fmtSpan(ike.rekey_time)} (every ${fmtSpan(cfg.rekey_time)})`))],
     ['Reauthentication', cfg.reauth_time ? `every ${fmtSpan(cfg.reauth_time)}` : 'disabled (make-before-break rekeying)'],
     ['Liveness (DPD)', cfg.dpd_delay ? `probe every ${cfg.dpd_delay}s` : badge('disabled', 'warning')],
-    ['Unique IDs', cfg.unique],
+    ['Unique IDs', cfg.unique ?? '–'],
   ]));
 }
 //#endregion
 
 //#region child SA (tunnel)
 function childBlock(conn, child) {
-  const title = `Tunnel · ${child.name}`;
+  const title = `Tunnel · ${child.name}${child.orphan ? ' (not in configuration)' : ''}`;
   const sa = child.sas[0];
   const selectors = `${child.local_ts.join(', ')} ⇄ ${child.remote_ts.join(', ')}`;
   const closing = [['On DPD failure', child.dpd_action], ['On close', child.close_action]];
@@ -155,6 +157,7 @@ function trafficBlock(conn, child) {
   const ifaceRows = ifc ? [
     ['Interface', h('span', {}, mono(ifc.name), ' ', badge(ifc.up ? 'up' : 'down', ifc.up ? 'success' : 'danger'))],
     ['Tunnel address', mono(`${ifc.local ?? '–'} ⇄ ${ifc.peer ?? '–'}`)],
+    ...(ifc.addrs6?.length ? [['IPv6 address', h('div', {}, ifc.addrs6.map(a => mono(`${a.addr}${a.prefix != null ? '/' + a.prefix : ''}${a.peer ? ' ⇄ ' + a.peer : ''}`)))]] : []),
     ['MTU · zone · link', `${ifc.mtu ?? '–'} · ${ifc.zone ?? '–'} · via ${ifc.tunlink ?? '–'}`],
     ['Received', `${fmtBytes(ifc.rx_bytes)} · ${fmtNum(ifc.rx_packets)} pkts`],
     ['Sent', `${fmtBytes(ifc.tx_bytes)} · ${fmtNum(ifc.tx_packets)} pkts`],

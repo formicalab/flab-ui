@@ -1,5 +1,5 @@
 // Reader for strongSwan's VICI protocol through `swanctl --raw`. Deployed to
-// /usr/share/ucode/flab/vici.uc and imported as: import { query, reply } from 'flab.vici';
+// /usr/share/ucode/flab/vici.uc and imported as: import { query, events, reply } from 'flab.vici';
 //
 // `swanctl --list-sas --raw` prints one event per line in the form
 //   list-sa event {Name {key=value list=[a b] section {...}}}
@@ -83,16 +83,26 @@ function parse_body(line) {
 	return section();
 }
 
-// Run a streaming swanctl command (list-sas, list-conns, ...) and merge all event objects.
-export function query(cmd) {
-	let out = {};
+// Run a streaming swanctl command (list-sas, list-conns, ...) and return every event as
+// { name, body } in output order. Several events can share a name (e.g. two IKE SAs of one connection).
+export function events(cmd) {
+	let out = [];
 	for (let line in split(run('swanctl --' + cmd + ' --raw 2>/dev/null'), '\n')) {
 		if (!match(line, /^[a-z-]+ event \{/))
 			continue;
 		let ev = parse_body(line);
 		for (let k, v in ev ?? {})
-			out[k] = v;
+			push(out, { name: k, body: v });
 	}
+	return out;
+}
+
+// Like events(), merged into one object keyed by name; a later event replaces an earlier one with the
+// same name, so use it only where names are unique (list-conns).
+export function query(cmd) {
+	let out = {};
+	for (let e in events(cmd))
+		out[e.name] = e.body;
 	return out;
 }
 
