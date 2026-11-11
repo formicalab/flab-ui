@@ -1,11 +1,18 @@
 {
   "flab": {
-    "description": "flab-ui Wi-Fi page (radios and their configuration)",
+    "description": "flab-ui Wi-Fi page: radios and their state (read), and the channel of each radio through staged uci edits on the wireless config with automatic rollback",
     "read": {
       "ubus": {
-        "flab.radio": ["status"]
-      }
+        "flab.radio": ["status"],
+        "uci": ["get", "changes"]
+      },
+      "uci": ["wireless"]
     },
-    "write": {}
+    "write": {
+      "ubus": {
+        "uci": ["set", "add", "delete", "revert", "apply", "confirm", "rollback"]
+      },
+      "uci": ["wireless"]
+    }
   }
 }

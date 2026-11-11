@@ -47,6 +47,52 @@
 .chn.dfs { border-color: var(--fl-warn-fg); }
 .chn.off { text-decoration: line-through; opacity: .45; }
 
+/* ── Channel picker (editing): tiles you can hover to preview the block a channel would occupy, and click ──
+   .cur running · .span running block · .cfg configured (when it differs from running) · .sel your choice ·
+   .pend the block of your choice · .pv / .pv-bad hover preview (fits / does not fit) · .nofit the block of the
+   radio's width does not fit around the channel · .dfs radar channel · .off not allowed */
+.rd-pick { display: grid; gap: .7rem; padding: .8rem .9rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: linear-gradient(180deg, var(--fl-surface-hover), transparent 70%); transition: border-color .2s, box-shadow .2s; }
+.rd-pick.is-invalid { border-color: var(--fl-bad-fg); box-shadow: 0 0 0 3px var(--fl-bad-bg); }
+.rd-pick-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.rd-pick-head .label { font-size: .75rem; color: var(--fl-muted); text-transform: uppercase; letter-spacing: .04em; }
+.rd-auto { display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .7rem; border-radius: 999px; border: 1px solid var(--fl-stroke); background: var(--fl-surface); color: var(--fl-text); font-size: .8rem; font-weight: 600; transition: background .15s, color .15s, transform .15s; }
+.rd-auto:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--fl-brand); }
+.rd-auto.on { background: var(--fl-brand); border-color: var(--fl-brand); color: var(--fl-surface); }
+.rd-auto svg { margin: 0; }
+.rd-pick .chans { gap: .4rem; }
+.rd-pick .chn { position: relative; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 3rem; height: 2.9rem; padding: 0 .35rem; line-height: 1.15; font: inherit; font-size: .85rem; font-weight: 500; cursor: pointer; transition: transform .12s, background .12s, color .12s, box-shadow .12s, border-color .12s; }
+.rd-pick .chn .n { font-size: .95rem; font-variant-numeric: tabular-nums; }
+.rd-pick .chn .f { font-size: .62rem; font-weight: 400; font-variant-numeric: tabular-nums; opacity: .8; }
+.rd-pick .chn:disabled { cursor: not-allowed; }
+.rd-pick .chn.ov { background: transparent; border: 1px dashed var(--fl-info-fg); color: var(--fl-info-fg); opacity: 1; }
+.rd-pick .chn.in { background: var(--fl-info-bg); border: 1px solid var(--fl-info-fg); color: var(--fl-info-fg); opacity: .75; }
+.rd-pick .chn.span-in { background: var(--fl-info-bg); opacity: .8; }
+.rd-pick .chn.span { background: var(--fl-info-bg); color: var(--fl-info-fg); border-style: solid; }
+.rd-pick .chn.cur { background: var(--fl-brand); color: #fff; border-color: var(--fl-brand); border-style: solid; font-weight: 700; }
+.rd-pick .chn.cfg { box-shadow: 0 0 0 2px var(--fl-brand); }
+.rd-pick .chn.dfs::after { content: ""; position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--fl-warn-fg); }
+.rd-pick .chn.dfs { border-color: var(--fl-stroke); }
+.rd-pick .chn.nofit { opacity: .55; background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgb(128 128 128 / .18) 4px 8px); cursor: not-allowed; }
+.rd-pick .chn.pend { background: var(--fl-ok-bg); color: var(--fl-ok-fg); border-color: var(--fl-ok-fg); border-style: dashed; }
+.rd-pick .chn.sel { background: var(--fl-ok-fg); color: var(--fl-surface); border: 1px solid var(--fl-ok-fg); border-style: solid; font-weight: 700; box-shadow: 0 4px 14px -4px var(--fl-ok-fg); transform: translateY(-2px); }
+.rd-pick .chn.pv { background: var(--fl-info-bg); color: var(--fl-info-fg); border-color: var(--fl-info-fg); box-shadow: inset 0 -3px 0 var(--fl-info-fg); }
+.rd-pick .chn.pv-bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); border-color: var(--fl-bad-fg); box-shadow: inset 0 -3px 0 var(--fl-bad-fg); opacity: 1; }
+.rd-pick .chn.pv-main { transform: translateY(-2px); font-weight: 700; }
+.rd-pick .chn:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: 2px; }
+.rd-pick-sum { min-height: 1.5rem; font-size: .85rem; }
+.rd-pick-key { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem 0; }
+.rd-pick-key .key { display: inline-block; width: .85rem; height: .85rem; margin: 0 .3rem 0 .8rem; border-radius: 3px; border: 1px solid var(--fl-stroke); }
+.rd-pick-key .key:first-child { margin-left: 0; }
+.rd-pick-key .running { background: var(--fl-brand); border-color: var(--fl-brand); }
+.rd-pick-key .sel { background: var(--fl-ok-fg); border-color: var(--fl-ok-fg); }
+.rd-pick-key .pv { background: var(--fl-info-bg); border-color: var(--fl-info-fg); }
+.rd-pick-key .bad { background: var(--fl-bad-bg); border-color: var(--fl-bad-fg); }
+.rd-pick-key .ov { border: 1px dashed var(--fl-info-fg); }
+.rd-pick-key .in { background: var(--fl-info-bg); border-color: var(--fl-info-fg); opacity: .75; }
+.rd-pick-key .dfs { border-radius: 50%; width: .5rem; height: .5rem; background: var(--fl-warn-fg); border-color: var(--fl-warn-fg); }
+.rd-pick-key .off { background: var(--fl-surface-hover); opacity: .5; }
+@media (prefers-reduced-motion: reduce) { .rd-pick .chn, .rd-auto { transition: none; } }
+
 /* ── Interfaces: the SSIDs/stations of the radio and their feature chips ── */
 .rd-ifaces { padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
 .rd-feat { display: flex; flex-wrap: wrap; gap: .25rem; max-width: 24rem; }

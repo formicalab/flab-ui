@@ -11,7 +11,7 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins.
 
 It is deployed to tmpfs for testing and removed again with one command; nothing is installed permanently. Like
 LuCI, it signs in with the router's own `root` login and creates no login of its own. Every page only reads the
-router except System settings (`/etc/config/system`) and DHCP (`/etc/config/dhcp`); how changes are made safely is described in
+router except System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`) and the channel of each radio on the Wi-Fi page (`/etc/config/wireless`); how changes are made safely is described in
 [Configuration changes](#configuration-changes).
 
 ## Contents
@@ -71,7 +71,7 @@ Design principles:
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
-  tests/                     bgp/, dhcp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), settings/,
+  tests/                     bgp/, dhcp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), settings/, wifi/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -104,7 +104,8 @@ flab-ui/
         overview/            index.js, cpu.js, temperatures.js
         network/             Wired network: index.js, shared.js, topology.js, tile.js, chips.js, ports.js, diagnostics.js, util.js
         bridges/             index.js, card.js
-        wifi/                index.js (clients), radios.js (radio cards); mesh interfaces are left to mesh/
+        wifi/                index.js (clients, and the editor of the channel), radios.js (radio cards), channels.js (pure model of
+                             the channel change), picker.js (the channel picker); mesh interfaces are left to mesh/
         mesh/                index.js, node.js
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         wireguard/           index.js, iface.js
@@ -310,7 +311,7 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
 ## Configuration changes
 
-System settings and DHCP change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
+System settings, DHCP and the channel of the Wi-Fi radios change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
 page with every control disabled and a note saying why.
 
 **Flow** (all of it is rpcd's `uci` object, wrapped by `www/js/core/uci.js`; pages call `applyChange()`, not the
@@ -351,7 +352,7 @@ happened; the router is on its previous configuration after every failure.
 - Mirror a change made to the router's configuration into `build/MT6000/etc/config/` in this repository.
 
 **Status.** `core/ubus.js` and `core/uci.js` (including `applyChange`) are unit-tested against a fake transport
-(`tests/network/uci.test.mjs`); the System settings and DHCP suites test their models and drive the whole flow in a
+(`tests/network/uci.test.mjs`); the System settings, DHCP and Wi-Fi suites test their models and drive the whole flow in a
 browser against a mock router. The real path was exercised against the router with the System settings model and
 `applyChange`,
 restoring the configuration afterwards: a confirmed change (zone, description, log port, NTP servers and
@@ -512,14 +513,37 @@ state, standards and hardware; key figures (running channel, frequency, width, c
 antennas, clients); the configuration next to what is actually running (channel, mode, TX power with the
 regulatory limit of that channel, country vs active regulatory domain, cell density, beacon interval,
 options); channel utilization (busy, RX and TX airtime as a percentage and chart, derived in the browser from
-the driver's cumulative survey counters); the channels allowed by the regulatory domain with the running
-channel and its width span highlighted and DFS (radar) channels marked; and a table of the SSIDs (BSSID,
+the driver's cumulative survey counters); the channels allowed by the regulatory domain (a picker to change the
+channel, below) with the running block highlighted and DFS (radar) channels marked; and a table of the SSIDs (BSSID,
 networks, security, clients, live and total traffic, 802.11r/k/v, WPS, OCV, hidden, isolation, MAC filter
 policy with entry count, BSS status). Findings appear when something is off: radio down, setup failing,
 running channel different from the configured one, high noise, busy channel, DFS availability check in
 progress, open network, country mismatch. Only whitelisted options are copied: keys, passwords, FT key
 material and MAC lists never leave the router. Mesh (802.11s) interfaces are not listed here: a radio
 carrying one shows a `mesh · <id>` badge linking to the Mesh page, and mesh peers are not in the clients list.
+
+**Changing the channel** (`wifi/channels.js` model, `wifi/picker.js` control, the shared editor of
+`core/editpage.js`): each radio card shows its allowed channels as tiles. Only the `channel` option of the radio's
+`wifi-device` section is edited (a channel number or `auto`); the width stays as configured, so a channel is only
+selectable when the whole block of that width fits around it in the regulatory domain (others are hatched).
+- **Preview**: hovering or focusing a tile shows the block the radio would use at its configured width, in blue,
+  or in red with the reason when it does not fit. The block is made of whole 20 MHz channels: on 5 and 6 GHz the
+  fixed blocks (36-48 at 80 MHz, 100-128 at 160 MHz); on 2.4 GHz a 40 MHz block is the channel and the one four
+  numbers away, on the side netifd picks (channels 1-6 above, 7-13 below, or an explicit `HT40+`/`HT40-`), so
+  channel 4 with channel 8 covers 2417-2457 MHz. The channels between the two are shown as covered, the ones that
+  stick out as partly overlapped (dashed). The sentence under the tiles says the same in words.
+- **Choosing**: a click selects (green, with its block tinted), a second click undoes it; the Auto chip hands the
+  choice to the radio. The yellow review banner lists the change from and to, with warnings that do not block Save:
+  a block that reaches radar (DFS) channels (the radio listens for radar for 1 to 10 minutes before clients can
+  connect), `auto`, and a radio that carries a mesh interface (the other mesh nodes must be moved to the same
+  channel by hand). A channel the regulatory domain disables, or whose block does not fit, is an error that
+  blocks Save.
+- **Saving**: stage, apply with the rollback countdown, then read back only the radios' own sections (never the
+  whole wireless config, which holds the Wi-Fi keys) and wait until each changed radio is up again; if it is not
+  within 16 seconds the change is rolled back. A radio on a DFS channel counts as up while it listens for radar.
+- Polling is suspended while the pointer is over a picker, while a choice is pending and during a save. A login
+  that may not write, or a radio whose phy did not list its channels, gets the plain channel strip.
+- The page needs the ACL fragment `rpcd/acl.d/flab-radio.json` (the plugin, and `uci` read and write on `wireless`).
 
 **Clients** (`flab.wifi`, a port of `utilities/list_connected_devices.uc`): clients per radio and SSID with
 MAC, IPv4/IPv6, hostname, signal, Wi-Fi standard, bandwidth, TX/RX bitrate, security label, AKM/SAE
@@ -793,7 +817,7 @@ the ACL fragment `rpcd/acl.d/flab-settings.json`.
 
 ## Testing
 
-Five suites, driven by `run.ps1` scripts that never change the router's configuration. The BGP, IPsec and
+Six suites, driven by `run.ps1` scripts that never change the router's configuration. The BGP, IPsec and
 network suites share one mechanism (the "Common mechanism" below): the repository's plugins run **on the router**
 against saved fixtures (`FLAB_FIXTURES`, with `ucode -L` so the uploaded libraries win over the deployed ones), and
 an optional browser pass opens the deployed UI in Edge through `playwright-core` (installed into a temporary
@@ -807,6 +831,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
 | Settings | `pwsh -File flab-ui\tests\settings\run.ps1 [-Browser]` | System settings model, option table and zone table; the whole editing flow against a mock router |
 | DHCP | `pwsh -File flab-ui\tests\dhcp\run.ps1 [-Browser]` | DHCP model (address helpers, reading config and leases, validation, change plan); the page against the router's own data, then the whole editing flow against a mock router |
+| Wi-Fi | `pwsh -File flab-ui\tests\wifi\run.ps1 [-Browser]` | Wi-Fi channel model (blocks of channels, errors and warnings, change plan); the radio cards and pickers against the router's own data, then the whole channel-change flow against a mock router |
 
 `-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
@@ -879,6 +904,18 @@ leases, reservations and pools with every uci write blocked, then switches to a 
 router's own address, bad MACs, Reserve from a lease, Add, Remove and Undo), pool and daemon edits, a successful
 save, a change the router does not keep, a late confirmation, a stopped odhcpd, a login without write access,
 the dark theme and an expired session.
+
+### Wi-Fi suite
+Same shape as the DHCP suite. `model.test.mjs` covers the width of an htmode, the block a channel would occupy
+(fixed blocks on 5 and 6 GHz; on 2.4 GHz the second half and the covered and overlapped channels, including
+netifd's rule for the side), the blocks a radio is running on, the draft, the errors and warnings (not allowed, no
+room for the width, DFS, mesh, auto), the operations and the read-back check; `network/uci.test.mjs` covers
+`applyChange`. The browser pass (`live.mjs`) first shows the router's own radios with their pickers, with every uci
+write blocked, then switches to a mock of the radio and Wi-Fi plugins and a stateful mock of `uci` and drives hover
+previews (fitting and not fitting, 2.4 and 5 GHz, keyboard focus), choosing, undoing, Auto, the banner and its
+warnings, a page that does not poll over a pending choice, a successful save (only the channels written, only the
+radios' own sections read), a change the router does not keep, a radio that does not come back (rolled back),
+leftovers from an earlier attempt, a login without write access, the dark theme and an expired session.
 
 ## Implementation notes
 

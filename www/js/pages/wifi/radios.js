@@ -1,6 +1,7 @@
 // Radios section of the Wi-Fi page: one card per radio with its live state (channel, width, tx power,
 // noise, channel utilization), its configuration next to what is actually running, the channels the
-// regulatory domain allows, and a table of the SSIDs on it (mesh interfaces are on the Mesh page). Data
+// regulatory domain allows (a picker to change the channel, see picker.js), and a table of the SSIDs on it (mesh
+// interfaces are on the Mesh page). Data
 // comes from the flab.radio plugin; counters (airtime, bytes) are turned into rates here, so the cards
 // follow channel changes, DFS events and interfaces coming and going on every poll.
 import { h } from '../../core/dom.js';
@@ -8,6 +9,8 @@ import { icon } from '../../core/icons.js';
 import { badge, kv, meter, sparkline, muted, mono } from '../../core/ui.js';
 import { createTracker, latest } from '../../core/rates.js';
 import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
+import { channelPicker } from './picker.js';
+import { editable, runningBlock } from './channels.js';
 
 // Module-level so rate history survives the redraw on every poll (keys: airtime per radio and channel,
 // byte counters per interface).
@@ -139,16 +142,15 @@ function configBlock(r, reg) {
   ]);
 }
 
-// Allowed channels with the running one and the span of its width highlighted; radar (DFS) channels marked.
-// A channel is "covered" when its frequency lies within center ± width/2 of the running channel.
+// Allowed channels with the running one and the 20 MHz channels of its block highlighted; radar (DFS) channels marked.
 function channelStrip(r) {
   const live = r.live;
   if (!r.channels?.length) return null;
-  const half = live?.width ? live.width / 2 : 0;
+  const running = runningBlock(r);
   return h('div', { className: 'rd-chan' },
     h('div', { className: 'label' }, `Channels allowed in this regulatory domain (${r.channels.filter(c => !c.disabled).length})`),
     h('div', { className: 'chans' }, r.channels.map(ch => {
-      const covered = live?.center != null && ch.freq >= live.center - half && ch.freq <= live.center + half;
+      const covered = running.channels.includes(ch.channel) || running.inside.includes(ch.channel);
       const cls = ['chn', ch.disabled ? 'off' : '', ch.dfs ? 'dfs' : '', covered ? 'span' : '', ch.freq === live?.freq ? 'cur' : ''].filter(Boolean).join(' ');
       const tip = [`${ch.freq} MHz`, ch.disabled ? 'disabled by regulations' : `max ${ch.max_power} dBm`, ch.dfs ? 'DFS: radar detection required' : '', ch.no_ir ? 'no initiating radiation' : ''].filter(Boolean).join(' · ');
       return h('span', { className: cls, title: tip }, ch.channel);
@@ -197,21 +199,23 @@ function interfacesTable(r) {
 }
 //#endregion
 
-// One card per radio: header, live figures, findings, configuration and airtime/channels, interfaces.
-function radioCard(r, reg) {
+// One card per radio: header, live figures, findings, configuration and airtime/channels, interfaces. With `edit`
+// (see picker.js) the channels are a picker the draft is edited through; without it, a plain strip.
+function radioCard(r, reg, edit) {
   const list = findings(r, reg);
+  const channels = edit?.canEdit && editable(r) ? channelPicker(r, edit) : channelStrip(r);
   return h('div', { className: `card rd-card ${r.up ? 'is-up' : 'is-down'}` },
     header(r),
     hero(r),
     list.length ? h('ul', { className: 'rd-find' }, list.map(f => h('li', { className: f.level }, icon(f.level === 'bad' ? 'shield-exclamation' : f.level === 'warn' ? 'exclamation-triangle' : 'info-circle'), f.text))) : null,
-    h('div', { className: 'rd-cols' }, h('div', {}, h('h3', {}, 'Configuration'), configBlock(r, reg)), h('div', {}, airtimeBlock(r), channelStrip(r))),
+    h('div', { className: 'rd-cols' }, h('div', {}, h('h3', {}, 'Configuration'), configBlock(r, reg)), h('div', {}, airtimeBlock(r), channels)),
     h('div', { className: 'rd-ifaces' }, h('h3', {}, `Interfaces (${r.interfaces.length})`), interfacesTable(r)));
 }
 
 // Returns the nodes for the radios section; an empty list when the plugin is not available. Mesh interfaces
-// are left out of the tables and shown as a link: they have their own page.
-export function radiosSection(hw) {
+// are left out of the tables and shown as a link: they have their own page. `edit` is passed on to every card.
+export function radiosSection(hw, edit) {
   if (!hw?.radios?.length) return [];
   const radios = hw.radios.map(r => ({ ...r, interfaces: r.interfaces.filter(i => i.mode !== 'mesh'), mesh: r.interfaces.filter(i => i.mode === 'mesh') }));
-  return [h('div', { className: 'rd-grid' }, radios.map(r => radioCard(r, hw.regdomain)))];
+  return [h('div', { className: 'rd-grid' }, radios.map(r => radioCard(r, hw.regdomain, edit)))];
 }

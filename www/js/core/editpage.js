@@ -6,6 +6,8 @@
 // createEditor(spec) returns the editor; spec is
 //   config      the uci config being edited
 //   readBack    (cfg) => data       reads a fresh `uci get` reply into the page's data shape, for the check after a save
+//   readAfter   optional async () => data    reads the data for that check some other way (a page that must not
+//               load the whole config, for example because it holds secrets, reads just the sections it edits)
 //   model       { draftFrom(data), changesOf(base, draft), isDirty(base, draft), problems(base, draft), plan(base, draft) }
 //   verify      (base, draft, after) => void    throws when the data read back does not hold what was saved
 //   afterSave   optional (base, draft) => boolean    true when the page took over the refresh (otherwise it reloads)
@@ -70,7 +72,7 @@ export function createEditor(spec) {
     try {
       await applyChange(uci, [config],
         ed => stageOps(ed, model.plan(base, draft)),
-        async () => spec.verify(base, draft, spec.readBack(await uci.get(config))));
+        async () => spec.verify(base, draft, spec.readAfter ? await spec.readAfter() : spec.readBack(await uci.get(config))));
       state.message = { kind: 'ok', text: 'Saved: the router applied the change and it was confirmed.' };
       state.draft = null;
     } catch (e) {

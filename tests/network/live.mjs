@@ -411,7 +411,7 @@ check(/radar channel availability check/.test(await text('.rd-find')), 'DFS wait
 
 await stage('channel change', 'radio', 'r-channel');
 check(/Running on channel 11 but configured for 6/.test(await text('.rd-find')), 'channel mismatch reported', await text('.rd-find'));
-check(await page.locator('.chn.cur:text-is("11")').count() === 1, 'channel strip highlights the new channel');
+check(await page.locator('.chn.cur:text-is("11"), .chn.cur:has(.n:text-is("11"))').count() === 1, 'channel strip highlights the new channel');
 
 await stage('radio disabled', 'radio', 'r-disabled');
 check(/disabled in the configuration/.test(await text('.rd-find')), 'disabled radio explained', await text('.rd-find'));

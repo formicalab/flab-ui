@@ -378,7 +378,8 @@ await page.emulateMedia({ colorScheme: 'light' });
 console.log('\n== the session expires ==');
 await hostInput(hostRow('flabn01'), 'Name').fill('x1');
 mock.expired = true;
-await saveBtn().click();
+// A poll may notice the expiry before the click lands; either way the sign-in screen must appear.
+await saveBtn().click({ timeout: 5000 }).catch(() => {});
 await page.waitForSelector('.login-form', { timeout: 20000 });
 check(/Session expired/.test(await page.locator('.login-error').innerText()), 'an expired session returns to the sign-in screen');
 //#endregion
