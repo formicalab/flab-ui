@@ -15,7 +15,7 @@
 
 import { connect } from 'ubus';
 import { cursor } from 'uci';
-import { run, fixture, safe_ifname, num } from 'flab.util';
+import { run, fixture, safe_ifname, num, uci_all } from 'flab.util';
 import { query, events, reply } from 'flab.vici';
 
 //#region Algorithm strength tables (fraction of the maximum score, 0..1)
@@ -497,8 +497,10 @@ function build_connection(name, conf, sa, kernel, ifaces, multi) {
 function collect() {
 	let ubus = connect();
 	let stats = reply('stats');
-	// A missing stats reply means charon/swanctl is not reachable.
-	let daemon = { running: stats != null };
+	// A missing stats reply means charon/swanctl is not reachable. The init script starts charon only when
+	// /etc/config/swanctl has sections, so `configured` tells a stopped daemon with tunnels to run from one that
+	// has nothing to do.
+	let daemon = { running: stats != null, configured: length(keys(uci_all('swanctl'))) > 0 };
 
 	if (stats) {
 		let ver = match(run('swanctl --version 2>/dev/null'), /swanctl ([0-9][0-9.]*)/);

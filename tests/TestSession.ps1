@@ -18,7 +18,7 @@ function New-TestSession {
     Creates a temporary rpcd session holding the permissions of the repository's ACL fragments.
     .DESCRIPTION
     Returns an object with Sid (the session id) and Acls (the ACLs as JSON, in the shape rpcd returns at sign-in:
-    { ubus: { object: [methods] }, uci: { config: [read, write] } }).
+    { ubus: { object: [methods] }, uci: { config: [read, write] }, file: { path: [read, write] } }).
     .PARAMETER Router
     SSH destination of the router.
     #>
@@ -27,6 +27,7 @@ function New-TestSession {
     # Merge every group of every fragment, read and write alike.
     $ubus = @{}
     $uci = @{}
+    $files = @{}
     foreach ($file in Get-ChildItem (Join-Path $PSScriptRoot '..\rpcd\acl.d') -Filter *.json) {
         $groups = Get-Content $file.FullName -Raw | ConvertFrom-Json -AsHashtable
         foreach ($group in $groups.Values) {
@@ -42,6 +43,10 @@ function New-TestSession {
                     if (-not $uci.ContainsKey($config)) { $uci[$config] = [System.Collections.Generic.HashSet[string]]::new() }
                     [void]$uci[$config].Add($mode)
                 }
+                foreach ($path in @($section['file']?.Keys).Where({ $_ })) {
+                    if (-not $files.ContainsKey($path)) { $files[$path] = [System.Collections.Generic.HashSet[string]]::new() }
+                    foreach ($access in $section['file'][$path]) { [void]$files[$path].Add($access) }
+                }
             }
         }
     }
@@ -49,12 +54,15 @@ function New-TestSession {
     $sid = (ssh $Router "ubus call session create '{`"timeout`":1800}' | jsonfilter -e '@.ubus_rpc_session'").Trim()
     if ($LASTEXITCODE -ne 0 -or $sid -notmatch '^[0-9a-f]{32}$') { throw 'Could not create a test session on the router.' }
 
-    # rpcd takes the grants as [object, function] pairs for the ubus scope and [config, access] for the uci scope.
+    # rpcd takes the grants as [object, function] pairs for the ubus scope, [config, access] for the uci scope and
+    # [path pattern, access] for the file scope.
     $ubusPairs = [System.Collections.Generic.List[object]]::new()
     foreach ($object in $ubus.Keys) { foreach ($method in $ubus[$object]) { $ubusPairs.Add([object[]]@($object, $method)) } }
     $uciPairs = [System.Collections.Generic.List[object]]::new()
     foreach ($config in $uci.Keys) { foreach ($mode in $uci[$config]) { $uciPairs.Add([object[]]@($config, $mode)) } }
-    foreach ($grant in @(@('ubus', $ubusPairs), @('uci', $uciPairs))) {
+    $filePairs = [System.Collections.Generic.List[object]]::new()
+    foreach ($path in $files.Keys) { foreach ($access in $files[$path]) { $filePairs.Add([object[]]@($path, $access)) } }
+    foreach ($grant in @(@('ubus', $ubusPairs), @('uci', $uciPairs), @('file', $filePairs))) {
         $json = [ordered]@{ ubus_rpc_session = $sid; scope = $grant[0]; objects = $grant[1] } | ConvertTo-Json -Compress -Depth 5
         $json | ssh $Router 'ubus call session grant "$(cat)"' | Out-Null
         if ($LASTEXITCODE -ne 0) {
@@ -67,9 +75,11 @@ function New-TestSession {
     $acls = [ordered]@{
         ubus = [ordered]@{}
         uci  = [ordered]@{}
+        file = [ordered]@{}
     }
     foreach ($object in ($ubus.Keys | Sort-Object)) { $acls.ubus[$object] = @($ubus[$object] | Sort-Object) }
     foreach ($config in ($uci.Keys | Sort-Object)) { $acls.uci[$config] = @($uci[$config] | Sort-Object) }
+    foreach ($path in ($files.Keys | Sort-Object)) { $acls.file[$path] = @($files[$path] | Sort-Object) }
     [pscustomobject]@{ Sid = $sid; Acls = ($acls | ConvertTo-Json -Compress -Depth 5) }
 }
 

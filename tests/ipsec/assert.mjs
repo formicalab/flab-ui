@@ -6,7 +6,8 @@
 //   multi      - two IKE SAs under one connection name (distinct keys per IKE SA)
 //   orphan     - SAs whose connection / child is missing from the loaded configuration
 //   ipv6       - global IPv6 addresses on an xfrm interface
-//   daemondown - charon not running (no stats output)
+//   daemondown - charon not running (no stats output), connections configured
+//   unconfigured - charon not running because /etc/config/swanctl has no sections
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -89,6 +90,9 @@ check(iv.local === onIface(base).children[0].sas[0].iface.local, 'IPv4 tunnel ad
 console.log('== daemon down ==');
 const dd = load('daemondown');
 check(dd.daemon.running === false && dd.connections.length === 0, 'no connections and running=false without charon');
+check(dd.daemon.configured === true && base.daemon.configured === true, 'connections are configured in the base and the stopped-daemon scenarios');
+const uc = load('unconfigured');
+check(uc.daemon.running === false && uc.daemon.configured === false && uc.connections.length === 0, 'a stopped daemon with an empty swanctl config is reported as not configured');
 
 if (failed) { console.log(`\n${failed} check(s) FAILED`); process.exit(1); }
 console.log('\nall IPsec backend checks passed');

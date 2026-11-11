@@ -246,7 +246,8 @@ return {
 
 The System settings page needs no plugin: it reads `/etc/config/system` through rpcd's own `uci` object, whose
 calls (on the `system` config only) are granted by `rpcd/acl.d/flab-settings.json`; the DHCP page likewise uses
-`rpcd/acl.d/flab-dhcp.json` (ubus `dhcp` methods, `uci` read and write on `dhcp`).
+`rpcd/acl.d/flab-dhcp.json` (ubus `dhcp` methods, `uci` read and write on `dhcp`, and reading `/tmp/*.leases` through
+rpcd's `file` object for dnsmasq's lease file).
 
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
@@ -584,7 +585,9 @@ One card per strongSwan connection: header with state and security grade, a rout
 IKE SA details, tunnel (child SA) details, live traffic with interface counters and a chart, and a 0-100 score
 breakdown with warnings. The score explanation sits above the cards (IKE encryption 20, IKE PRF/integrity 10,
 IKE key exchange 20, authentication 10, ESP encryption 20, PFS 15, rekeying and liveness 5), followed by the
-daemon card. Compact/detailed toggle.
+daemon card. Compact/detailed toggle. When charon is not running, the daemon card is a red error if connections are
+configured, and a plain note when `/etc/config/swanctl` has no sections (the init script then never starts charon);
+the plugin reports this as `daemon.configured`.
 
 - IKE may float to UDP/4500 while ESP stays native (no UDP encapsulation); these are reported separately.
 - `xfrmN` interfaces are matched to child SAs by `if_id` (hex in VICI, decimal in uci `ifid`).
@@ -751,15 +754,24 @@ in RAM: every daemon's messages and the kernel's) or the **kernel log** (`dmesg`
   count are requested from the router.
 
 ### DHCP (route `#dhcp`)
-Shows and edits odhcpd, the router's DHCPv4, DHCPv6 and router advertisement (RA) server, which is configured in
+Shows and edits odhcpd, the router's DHCPv6 and router advertisement (RA) server and, when it is the main server,
+its DHCPv4 server too; it is configured in
 `/etc/config/dhcp`. It refreshes every 10 s and reads through the ubus `dhcp` object (`ipv4leases`,
 `ipv6leases`, `ipv6ra`), `network.interface dump` (which device belongs to which interface and its subnet),
-`service list odhcpd` and rpcd's `uci` object; it needs no plugin, only the ACL fragment
+`service list odhcpd` and `service list dnsmasq` and rpcd's `uci` object; it needs no plugin, only the ACL fragment
 `rpcd/acl.d/flab-dhcp.json`. Leases are keyed by device (`br-lan`) in the ubus replies and shown under their
 logical interface (`lan`). Top to bottom the page shows the tiles, then the settings (daemon, pools), then the
 advertised prefixes, the leases and last the reservations.
-- **Tiles**: whether odhcpd runs, DHCPv4 leases (reserved and dynamic), DHCPv6 leases, reservations (how many hold
-  a lease now).
+- **Who serves DHCPv4** is detected: odhcpd when `odhcpd.maindhcp` is on, otherwise dnsmasq when its procd service
+  runs (the usual split of dnsmasq for IPv4 and an IPv6-only odhcpd). In the dnsmasq case odhcpd has no
+  `ipv4leases`, so the page reads dnsmasq's lease file (the `leasefile` option of `config dnsmasq`, default
+  `/tmp/dhcp.leases`, through rpcd's `file` object, which the ACL fragment limits to `/tmp/*.leases`) and parses its
+  `expiry MAC address hostname client-id` lines. A lease gets its interface from the subnet it falls in, counts as
+  reserved when a reservation has its MAC or address, and shows the time left (0 means it never expires; the time
+  is counted with the browser's clock). The tiles and the leases card say "from dnsmasq"; a lease file that cannot
+  be read is reported instead of being shown as no leases.
+- **Tiles**: whether odhcpd runs (and who serves DHCPv4), DHCPv4 leases (reserved and dynamic), DHCPv6 leases,
+  reservations (how many hold a lease now).
 - **Daemon** (`config odhcpd`): main DHCPv4 server switch, legacy mode, log level, lease file, trigger script,
   hosts directory, and so on. Like the pools it is folded to its header (main switch and log level) until opened.
 - **Pools** (`config dhcp`, one card per interface, folded to its header until opened, groups collapsible): Services (DHCPv4, DHCPv6, RA, NDP),
@@ -875,7 +887,8 @@ it). The browser pass adds peer removed, peer added and eight peers.
 Captures `swanctl --list-conns|--list-sas|--stats|--version --raw`, `ip -s xfrm state` (key material is
 redacted before it is copied; a canary key is planted), the xfrm interface addresses and their uci/netifd
 data. Scenarios: `base`, `down`, `rekey` (two child SAs), `multi` (two IKE SAs under one name), `orphan` (SA
-without connection, child SA without child config), `ipv6`, `daemondown`. `tests/ipsec/rates.test.mjs` unit
+without connection, child SA without child config), `ipv6`, `daemondown`, `unconfigured` (charon stopped with an
+empty swanctl config). `tests/ipsec/rates.test.mjs` unit
 tests the throughput history (rates, counter resets, gaps, pauses, per-SA keys, removed connections).
 
 ### Network suite
@@ -915,7 +928,8 @@ check; `network/uci.test.mjs` covers `applyChange`. The browser pass (`live.mjs`
 leases, reservations and pools with every uci write blocked, then switches to a stateful mock of `uci`, the
 `dhcp` object, the interface dump and `service list` and drives filtering, reservation edits (duplicates, the
 router's own address, bad MACs, Reserve from a lease, Add, Remove and Undo), pool and daemon edits, a successful
-save, a change the router does not keep, a late confirmation, a stopped odhcpd, a login without write access,
+save, a change the router does not keep, a late confirmation, a stopped odhcpd, dnsmasq serving DHCPv4 (leases read
+from its lease file, an unreadable file), a login without write access,
 the dark theme and an expired session.
 
 ### Wi-Fi suite

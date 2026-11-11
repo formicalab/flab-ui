@@ -1,10 +1,14 @@
 {
   "flab": {
-    "description": "flab-ui DHCP page: odhcpd leases and announcements (read), and the dhcp config through staged uci edits with automatic rollback",
+    "description": "flab-ui DHCP page: odhcpd leases and announcements and dnsmasq's lease file (read), and the dhcp config through staged uci edits with automatic rollback",
     "read": {
       "ubus": {
         "dhcp": ["ipv4leases", "ipv6leases", "ipv6ra"],
+        "file": ["read"],
         "uci": ["get", "changes"]
+      },
+      "file": {
+        "/tmp/*.leases": ["read"]
       },
       "uci": ["dhcp"]
     },

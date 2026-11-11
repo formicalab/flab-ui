@@ -8,12 +8,13 @@
 //     pools:  [{ section, iface, values, info }],       one per dhcp section; `info` is the interface (or null)
 //     hosts:  [{ section, values }],                    the reservations
 //     interfaces: [{ name, device, v4: { address, mask } | null }],
-//     leases4: [...], leases6: [...], ra: [...] }
+//     leases4: [...], leases6: [...], ra: [...],
+//     server: 'odhcpd' | 'dnsmasq' | 'other' (who serves DHCPv4), leasesUnreadable (dnsmasq's lease file could not be read) }
 // Draft shape (what the forms edit; values are strings, booleans and arrays as in core/fields.js):
 //   { daemon: { <option>: value }, pools: { <section>: { <option>: value } },
 //     hosts: [{ key, section | null, removed, values: { name, ip, mac, duid, hostid, leasetime } }], next }
 //   A new reservation has section null. mac and duid are edited as one text separated by spaces.
-import { MAC, asList, differs, errorsOf, flag, hasBlankRows, normalize, sectionsOf, show, valueOf } from '../../core/fields.js';
+import { MAC, asList, differs, errorsOf, flag, hasBlankRows, normalize, sectionsOf, show, uciBool, valueOf } from '../../core/fields.js';
 import { CONFIG, DAEMON_FIELDS, HOST_FIELDS, POOL_FIELDS } from './schema.js';
 
 export { CONFIG };
@@ -67,10 +68,42 @@ export function macOf(raw) {
 // The words of a text: values separated by spaces, commas or line breaks.
 const tokens = v => String(v ?? '').split(/[\s,]+/).filter(Boolean);
 
+// Which daemon serves DHCPv4: 'odhcpd' when it is the main DHCPv4 server, 'dnsmasq' when it is not and dnsmasq
+// runs (the usual split: dnsmasq for IPv4, odhcpd for DHCPv6 and router advertisements), otherwise 'other'.
+// `dnsmasqSvc` is the reply of `service list dnsmasq`.
+export function dhcpv4Server(cfg, dnsmasqSvc) {
+  if (uciBool(sectionsOf(cfg, 'odhcpd')[0]?.values.maindhcp, false)) return 'odhcpd';
+  return Object.values(dnsmasqSvc?.dnsmasq?.instances ?? {}).some(i => i.running) ? 'dnsmasq' : 'other';
+}
+
+// The lease file dnsmasq writes (its `leasefile` option; OpenWrt's default when unset).
+export const dnsmasqLeaseFile = cfg => sectionsOf(cfg, 'dnsmasq')[0]?.values.leasefile || '/tmp/dhcp.leases';
+
+// The DHCPv4 leases in dnsmasq's lease file ("expiry MAC address hostname client-id" per line; expiry is a Unix
+// time and 0 means never). DHCPv6 lines (the "duid" line and addresses with colons) are skipped. A lease is
+// reserved when a reservation has its MAC or address. `now` is the Unix time the remaining time is counted from.
+function dnsmasqLeases(text, now, interfaces, hosts) {
+  const reservedMacs = new Set(hosts.flatMap(r => asList(r.values.mac)).map(macOf));
+  const reservedIps = new Set(hosts.map(r => r.values.ip).filter(Boolean));
+  return String(text ?? '').split('\n').flatMap(line => {
+    const [expiry, mac, address, name] = line.trim().split(/\s+/);
+    if (!/^\d+$/.test(expiry ?? '') || ipToInt(address ?? '') == null) return [];
+    const net = interfaces.find(i => i.v4 && inSubnet(address, i.v4.address, i.v4.mask));
+    const isStatic = reservedMacs.has(macOf(mac)) || reservedIps.has(address);
+    return [{
+      device: net?.device ?? '', iface: net?.name ?? '', address, mac: macOf(mac), hostname: name === '*' ? '' : name ?? '',
+      flags: isStatic ? ['static'] : [], static: isStatic, valid: +expiry === 0 ? null : Math.max(0, +expiry - now),
+    }];
+  });
+}
+
 // The settings, leases and announcements from the replies of `uci get dhcp` (all sections), the `dhcp` object's
 // ipv4leases, ipv6leases and ipv6ra, `network.interface dump` and `service list odhcpd`. The ubus replies are
 // optional: without them the lists are empty and `daemonRunning` is null.
-export function readDhcp(cfg, v4, v6, ra, dump, svc) {
+// `dns` describes dnsmasq: { svc: the reply of `service list dnsmasq`, leases: the text of its lease file (null when
+// unreadable), now }. When dnsmasq serves DHCPv4 (dhcpv4Server), its leases replace the odhcpd ones, which are
+// then empty because odhcpd only does DHCPv6 and router advertisements.
+export function readDhcp(cfg, v4, v6, ra, dump, svc, dns = {}) {
   const interfaces = (dump?.interface ?? []).map(i => ({
     name: i.interface, device: i.l3_device ?? i.device ?? null, up: Boolean(i.up),
     v4: i['ipv4-address']?.[0] ? { address: i['ipv4-address'][0].address, mask: i['ipv4-address'][0].mask } : null,
@@ -78,10 +111,13 @@ export function readDhcp(cfg, v4, v6, ra, dump, svc) {
   const byDevice = new Map(interfaces.filter(i => i.device).map(i => [i.device, i]));
   const ifaceOf = device => byDevice.get(device)?.name ?? device;
 
-  const leases4 = Object.entries(v4?.device ?? {}).flatMap(([device, d]) => (d.leases ?? []).map(l => ({
-    device, iface: ifaceOf(device), address: l.address, mac: macOf(l.mac ?? ''), hostname: l.hostname ?? '',
-    flags: l.flags ?? [], static: (l.flags ?? []).includes('static'), valid: l.valid ?? null,
-  })));
+  const server = dhcpv4Server(cfg, dns.svc);
+  const hosts = sectionsOf(cfg, 'host');
+  const leases4 = server === 'dnsmasq' ? dnsmasqLeases(dns.leases, dns.now ?? Date.now() / 1000, interfaces, hosts)
+    : Object.entries(v4?.device ?? {}).flatMap(([device, d]) => (d.leases ?? []).map(l => ({
+      device, iface: ifaceOf(device), address: l.address, mac: macOf(l.mac ?? ''), hostname: l.hostname ?? '',
+      flags: l.flags ?? [], static: (l.flags ?? []).includes('static'), valid: l.valid ?? null,
+    })));
   const leases6 = Object.entries(v6?.device ?? {}).flatMap(([device, d]) => (d.leases ?? []).map(l => ({
     device, iface: ifaceOf(device), duid: l.duid ?? '', iaid: l.iaid ?? null, hostname: l.hostname ?? '',
     flags: l.flags ?? [], static: (l.flags ?? []).includes('static'), valid: l.valid ?? null,
@@ -100,7 +136,8 @@ export function readDhcp(cfg, v4, v6, ra, dump, svc) {
       const iface = s.values.interface ?? s.section;
       return { section: s.section, iface, values: s.values, info: interfaces.find(i => i.name === iface) ?? null };
     }),
-    hosts: sectionsOf(cfg, 'host'),
+    hosts,
+    server, leasesUnreadable: server === 'dnsmasq' && dns.leases == null,
     interfaces, leases4, leases6, ra: announced,
   };
 }

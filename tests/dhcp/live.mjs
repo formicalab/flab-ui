@@ -50,7 +50,7 @@ const LEASES6 = { device: { 'br-lan': { leases: [
 const RA = { interfaces: { 'br-lan': [{ prefix: '2a01:827::1', length: 60, stale: false }, { prefix: 'fd92::1', length: 60, stale: true }] } };
 
 const WRITES = ['set', 'add', 'delete', 'apply', 'confirm', 'rollback', 'revert', 'commit', 'order', 'rename'];
-const mock = { on: false, cfg: baseCfg(), staged: [], restage: [], snapshot: null, calls: [], dropWrites: false, confirmFails: false, expired: false, noDaemon: false, unsafe: [] };
+const mock = { on: false, cfg: baseCfg(), staged: [], restage: [], snapshot: null, calls: [], dropWrites: false, confirmFails: false, expired: false, noDaemon: false, dnsmasq: false, leaseFile: null, unsafe: [] };
 let nextId = 1;
 
 // Applies the staged edits to the mock's config, the way rpcd's uci apply does.
@@ -107,10 +107,11 @@ function answer(body) {
   }
   if (mock.expired && ['uci', 'dhcp', 'system', 'service', 'session', 'network.interface'].includes(obj)) return denied;
   if (obj === 'uci') { mock.calls.push(`uci.${method}`); return ok(uci(method, args)); }
-  if (obj === 'dhcp') return mock.noDaemon ? ok([4]) : ok([0, method === 'ipv4leases' ? LEASES4 : method === 'ipv6leases' ? LEASES6 : RA]);
+  if (obj === 'dhcp') return mock.noDaemon ? ok([4]) : mock.dnsmasq && method === 'ipv4leases' ? ok([4]) : ok([0, method === 'ipv4leases' ? LEASES4 : method === 'ipv6leases' ? LEASES6 : RA]);
+  if (obj === 'file' && method === 'read') return mock.leaseFile == null ? ok([2]) : ok([0, { data: mock.leaseFile }]);
   if (obj === 'network.interface' && method === 'dump') return ok([0, DUMP]);
   if (obj === 'system' && method === 'board') return ok([0, { hostname: 'openwrt', model: 'GL.iNet GL-MT6000' }]);
-  if (obj === 'service' && method === 'list') return ok([0, mock.noDaemon ? {} : { odhcpd: { instances: { instance1: { running: true } } } }]);
+  if (obj === 'service' && method === 'list') return ok([0, mock.noDaemon ? {} : { odhcpd: { instances: { instance1: { running: true } } }, ...(mock.dnsmasq ? { dnsmasq: { instances: { cfg01: { running: true } } } } : {}) }]);
   return null;
 }
 //#endregion
@@ -363,6 +364,27 @@ await refresh();
 check(/odhcpd is not running/.test(await page.locator('main').innerText()) && await tile(0) === 'Stopped' && await tile(1) === '0' && await hostRows().count() === 5 && await hostInput(hostRows().first(), 'Name').isEnabled(), 'without the daemon there are no leases, the state says so, and the config can still be edited');
 mock.noDaemon = false;
 await refresh();
+
+console.log('\n== dnsmasq serves DHCPv4, odhcpd only DHCPv6 and router advertisements ==');
+const soon = Math.floor(Date.now() / 1000) + 5000;
+mock.cfg.odhcpd.maindhcp = '0';
+mock.dnsmasq = true;
+mock.leaseFile = `${soon} 88:ae:dd:66:16:05 192.168.1.2 flabn01 *\n${soon} cc:dd:ee:00:11:22 192.168.1.151 phone *\n${soon} 66:55:44:33:22:11 192.168.100.131 * *\n`;
+await refresh();
+check(await tile(0) === 'Running' && /dnsmasq serves DHCPv4/.test(await tileSub(0)) && await tile(1) === '3' && /from dnsmasq/.test(await tileSub(1)) && await tile(2) === '2', 'the summary says dnsmasq serves DHCPv4 and counts its leases next to odhcpd\'s DHCPv6 ones', `${await tile(0)} | ${await tileSub(0)} | ${await tile(1)} | ${await tileSub(1)} | ${await tile(2)}`);
+check(/served by dnsmasq/.test(await cardOf('DHCPv4 leases').locator('.card-header').innerText()) && await bodyRows('DHCPv4 leases').count() === 3, 'the DHCPv4 card names dnsmasq and lists its leases');
+const row4 = await bodyRows('DHCPv4 leases').allInnerTexts();
+check(row4.some(t => t.includes('192.168.1.2') && t.includes('flabn01') && t.includes('reserved')), 'a lease with a reservation is marked reserved', row4.join(' || '));
+check(row4.some(t => t.includes('phone') && t.includes('dynamic')) && row4.some(t => t.includes('lan100') && t.includes('192.168.100.131')), 'other leases are dynamic and sit on the interface of their subnet', JSON.stringify(row4));
+await shot('dnsmasq');
+mock.leaseFile = null;
+await refresh();
+check(/lease file could not be read/.test(await page.locator('main').innerText()) && await tile(1) === '0', 'an unreadable lease file is reported, not shown as no leases');
+mock.dnsmasq = false;
+mock.cfg.odhcpd.maindhcp = '1';
+mock.leaseFile = null;
+await refresh();
+check(await tile(1) === '4' && !/dnsmasq/.test(await tileSub(0)), 'with odhcpd as the main server its own leases are back');
 
 console.log('\n== a login that may not write ==');
 const ro = await open({ ubus: { system: ['board', 'info'], service: ['list'], 'network.interface': ['dump'], dhcp: ['ipv4leases', 'ipv6leases', 'ipv6ra'], uci: ['get', 'changes'] } });

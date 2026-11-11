@@ -1,4 +1,5 @@
-// The read-only tables of the DHCP page: the DHCPv4 and DHCPv6 leases odhcpd hands out right now, and the IPv6
+// The read-only tables of the DHCP page: the DHCPv4 leases (odhcpd's, or dnsmasq's when it serves DHCPv4) and the
+// DHCPv6 leases odhcpd hands out right now, and the IPv6
 // prefixes it announces. They share one filter (text and interface) that the command bar edits.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
@@ -26,13 +27,14 @@ function typeBadges(lease) {
 const expires = seconds => (seconds == null ? muted('–') : fmtSpan(Math.max(0, seconds)));
 
 // The DHCPv4 leases card. `reservedMacs` is the set of MACs that already have a reservation (in the draft), and
-// `reserve(lease)` turns a dynamic lease into a new reservation; it is offered only when `canReserve`.
+// `reserve(lease)` turns a dynamic lease into a new reservation; it is offered only when `canReserve`. The header
+// names the server when it is dnsmasq.
 export function leases4Card(data, filter, { reservedMacs, canReserve, reserve }) {
   const rows = data.leases4
     .filter(l => passes(filter, l.iface, [l.iface, l.address, l.mac, l.hostname, l.static ? 'reserved' : 'dynamic']))
     .sort((a, b) => a.iface.localeCompare(b.iface) || (ipToInt(a.address) ?? 0) - (ipToInt(b.address) ?? 0));
   return card(
-    [icon('list-ul'), h('span', {}, 'DHCPv4 leases'), h('span', { className: 'sub' }, `${rows.length} of ${data.leases4.length}`)],
+    [icon('list-ul'), h('span', {}, 'DHCPv4 leases'), h('span', { className: 'sub' }, `${rows.length} of ${data.leases4.length}${data.server === 'dnsmasq' ? ' · served by dnsmasq' : ''}`)],
     table(['Interface', 'Address', 'MAC address', 'Hostname', 'Type', 'Expires in', ''], rows.map(l => [
       l.iface, mono(l.address), mono(l.mac), l.hostname || muted('none'), typeBadges(l), expires(l.valid),
       !l.static && canReserve && !reservedMacs.has(l.mac) ? button('Reserve', 'plus-lg', () => reserve(l)) : '',

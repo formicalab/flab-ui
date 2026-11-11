@@ -19,6 +19,8 @@ const files = {
   'swanctl_list_sas_raw.txt': read('swanctl_list_sas_raw.txt'),
   'swanctl_stats_raw.txt': read('swanctl_stats_raw.txt'),
   'swanctl_version.txt': read('swanctl_version.txt'),
+  // The router's swanctl UCI config is not captured; one section says that connections are configured.
+  'uci_swanctl.json': JSON.stringify({ values: { cfg01: { '.name': 'cfg01', '.type': 'connection' } } }),
   'ip_s_xfrm_state.txt': read('ip_s_xfrm_state.txt').replace(/^(\s+(?:aead|enc|auth-trunc|auth) \S+) 0x00/gm, `$1 0x${CANARY}`),
 };
 
@@ -93,6 +95,7 @@ const scenarios = {
       + '22: xfrm0    inet6 fd00:cd::1 peer fd00:cd::2/128 scope global \\       valid_lft forever preferred_lft forever\n',
   }),
   daemondown: f => ({ ...f, 'swanctl_stats_raw.txt': '' }),
+  unconfigured: f => ({ ...f, 'swanctl_stats_raw.txt': '', 'uci_swanctl.json': JSON.stringify({ values: {} }) }),
 };
 
 for (const [name, build] of Object.entries(scenarios)) {

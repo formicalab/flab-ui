@@ -26,11 +26,13 @@ const SCORE_MODEL = [
 ];
 
 // charon status: version, uptime, IKE SA counts, worker-thread usage and loaded plugins. When charon is
-// not running the backend reports `running: false` and only an error message is shown.
+// not running the backend reports `running: false` and only a message is shown: an error when connections are
+// configured (they should be up), a plain note when none are (the init script then does not start charon).
 export function daemonCard(daemon) {
   if (!daemon.running) {
-    return card([icon('shield-exclamation'), 'strongSwan daemon'], h('div', { className: 'card-body text-danger' },
-      'charon is not running or its VICI socket is unreachable.'));
+    return card([icon('shield-exclamation'), 'strongSwan daemon'], daemon.configured === false
+      ? h('div', { className: 'card-body muted' }, 'strongSwan is not running because no connection is configured (/etc/config/swanctl is empty).')
+      : h('div', { className: 'card-body text-danger' }, 'charon is not running or its VICI socket is unreachable.'));
   }
   const w = daemon.workers;
   const active = Object.entries(w.active ?? {}).map(([k, v]) => `${k} ${v}`).join(' · ');

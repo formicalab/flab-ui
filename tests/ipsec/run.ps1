@@ -46,7 +46,7 @@ $libs = Join-Path $root 'rpcd\lib\flab'
 $work = Join-Path ([IO.Path]::GetTempPath()) 'flab-ipsec-test'
 $remote = '/tmp/flab-ipsec-test'
 # Scenario directories built by mkfx.mjs (base = unchanged capture); each is also the name of its output JSON.
-$scenarios = 'base', 'down', 'rekey', 'multi', 'orphan', 'ipv6', 'daemondown'
+$scenarios = 'base', 'down', 'rekey', 'multi', 'orphan', 'ipv6', 'daemondown', 'unconfigured'
 
 #region Helpers
 function Invoke-Native {

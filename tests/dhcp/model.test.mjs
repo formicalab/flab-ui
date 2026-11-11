@@ -80,6 +80,31 @@ const empty = m.readDhcp({}, null, null, null, null, null);
 check(empty.pools.length === 0 && empty.hosts.length === 0 && empty.daemon.section === null && empty.leases4.length === 0, 'nothing known: everything empty, no error');
 check(d.hosts[2].values.mac.length === 2 && m.draftFrom(d).hosts[2].values.mac === '02:F0:F4:50:6B:7D 02:F0:F4:50:6B:7E', 'a list of MACs is edited as one text');
 
+console.log('== who serves DHCPv4 ==');
+const dnsmasqSvc = { dnsmasq: { instances: { cfg01: { running: true } } } };
+const stopped = { dnsmasq: { instances: { cfg01: { running: false } } } };
+const split = over => cfg({ ...over, daemon: { maindhcp: '0', ...over?.daemon } });
+const NOW = 1_800_000_000;
+const leaseFile = [
+  `${NOW + 3000} 88:ae:dd:66:16:05 192.168.1.2 flabn01 01:88:ae:dd:66:16:05`,
+  `${NOW + 600} AA:BB:CC:DD:EE:FF 192.168.1.150 * *`,
+  '0 de:ad:be:ef:00:01 192.168.100.20 infinite *',
+  `${NOW - 10} 11:22:33:44:55:66 10.99.0.5 outside *`,
+  'duid 00:01:00:01:aa:bb',
+  `${NOW + 100} 5 fd00::5 v6host 00:01`,
+  '',
+].join('\n');
+check(m.dhcpv4Server(cfg(), dnsmasqSvc) === 'odhcpd' && m.dhcpv4Server(split(), dnsmasqSvc) === 'dnsmasq' && m.dhcpv4Server(split(), stopped) === 'other' && m.dhcpv4Server(split(), null) === 'other', 'DHCPv4 is odhcpd\'s when it is the main server, dnsmasq\'s when that runs, otherwise unknown');
+check(m.dhcpv4Server({ lan: cfg().lan }, dnsmasqSvc) === 'dnsmasq', 'without an odhcpd section odhcpd is not the main server');
+check(m.dnsmasqLeaseFile(cfg()) === '/tmp/dhcp.leases' && m.dnsmasqLeaseFile({ x: section('x', 'dnsmasq', { leasefile: '/tmp/other.leases' }) }) === '/tmp/other.leases', 'the lease file is dnsmasq\'s option, with OpenWrt\'s default');
+const dd = m.readDhcp(split(), null, v6, ra, dump, svc, { svc: dnsmasqSvc, leases: leaseFile, now: NOW });
+check(dd.server === 'dnsmasq' && dd.leases4.length === 4 && !dd.leasesUnreadable, 'dnsmasq\'s IPv4 leases are listed (IPv6 and "duid" lines skipped)', j(dd.leases4.map(l => l.address)));
+check(dd.leases4[0].iface === 'lan' && dd.leases4[0].device === 'br-lan' && dd.leases4[0].mac === '88:ae:dd:66:16:05' && dd.leases4[0].hostname === 'flabn01' && dd.leases4[0].valid === 3000, 'a lease gets its interface from the subnet, a MAC in one spelling and the time left', j(dd.leases4[0]));
+check(dd.leases4[0].static && dd.leases4[0].flags.includes('static') && !dd.leases4[1].static && dd.leases4[1].hostname === '' && dd.leases4[1].mac === 'aa:bb:cc:dd:ee:ff', 'a lease matching a reservation is reserved; "*" means no hostname');
+check(dd.leases4[2].iface === 'lan100' && dd.leases4[2].valid === null && dd.leases4[3].iface === '' && dd.leases4[3].valid === 0, 'a lease that never expires has no time left, one outside every subnet no interface, an expired one 0');
+check(m.readDhcp(split(), null, v6, ra, dump, svc, { svc: dnsmasqSvc, leases: null, now: NOW }).leasesUnreadable === true && m.readDhcp(split(), null, v6, ra, dump, svc, { svc: dnsmasqSvc, leases: '', now: NOW }).leasesUnreadable === false, 'an unreadable lease file is flagged, an empty one is not');
+check(m.readDhcp(cfg(), v4, v6, ra, dump, svc, { svc: dnsmasqSvc, leases: leaseFile, now: NOW }).leases4.length === 3 && m.readDhcp(split(), v4, v6, ra, dump, svc).leases4.length === 3, 'odhcpd\'s own leases are shown when it is the main server, or when no other server is known');
+
 console.log('== no edit, no change ==');
 check(m.changesOf(d, m.draftFrom(d)).length === 0 && !m.isDirty(d, m.draftFrom(d)) && m.plan(d, m.draftFrom(d)).length === 0, 'an untouched form has no changes and writes nothing');
 check(m.problems(d, m.draftFrom(d)).errors.length === 0, 'the router\'s own configuration is valid (a reservation with only a name and a MAC included)', j(m.problems(d, m.draftFrom(d)).errors));

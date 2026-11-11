@@ -21,7 +21,7 @@ export function sectionsOf(cfg, type) {
 }
 
 // UCI spells booleans several ways; `fallback` is the value when the option is absent or unrecognized.
-function uciBool(v, fallback) {
+export function uciBool(v, fallback) {
   const s = String(v ?? '').toLowerCase();
   if (['1', 'true', 'yes', 'on', 'enabled'].includes(s)) return true;
   if (['0', 'false', 'no', 'off', 'disabled'].includes(s)) return false;

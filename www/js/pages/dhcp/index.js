@@ -1,9 +1,11 @@
-// DHCP page (route #dhcp): odhcpd, the router's DHCPv4, DHCPv6 and router-advertisement server. It shows the leases
+// DHCP page (route #dhcp): odhcpd, the router's DHCPv6 and router-advertisement server, and its DHCPv4 server when it
+// is the main one (otherwise dnsmasq serves DHCPv4 and the page shows dnsmasq's leases). It shows the leases
 // handed out right now, the reservations (static leases) and the IPv6 prefixes announced, and edits the config
 // behind them: the reservations, every option of each interface pool and of the daemon (the option tables are in
 // schema.js, taken from the odhcpd documentation; validation, the change list and the UCI operations in model.js).
 //
-// It reads through rpcd's `uci` object and the daemon's own `dhcp` ubus object, so no plugin is needed, and writes
+// It reads through rpcd's `uci` and `file` objects (dnsmasq's lease file) and the daemons' own `dhcp` ubus object,
+// so no plugin is needed, and writes
 // through core/uci.js applyChange(): stage, apply with the rollback countdown, read the config back, confirm.
 // The controls and the review banner are shared with System settings (core/forms.js). The page redraws on every
 // poll, so polling is suspended while there is something to lose: unsaved edits, a focused control or a save.
@@ -17,7 +19,7 @@ import { uci } from '../../core/uci.js';
 import { announcedCard, leases4Card, leases6Card } from './leases.js';
 import { daemonCard, poolCard } from './pools.js';
 import { reservationsCard, reserveFrom } from './reservations.js';
-import { CONFIG, changesOf, checkApplied, draftFrom, hostNorm, isDirty, plan, problems, readDhcp } from './model.js';
+import { CONFIG, changesOf, checkApplied, dhcpv4Server, dnsmasqLeaseFile, draftFrom, hostNorm, isDirty, plan, problems, readDhcp } from './model.js';
 
 // The draft, the review banner, saving and discarding, shared with the other editing pages (core/editpage.js).
 const editor = createEditor({
@@ -31,16 +33,20 @@ const { state } = editor;
 // The lease filter of the command bar.
 const filter = { q: '', iface: 'all' };
 
-// Reads the config, the leases and announcements, the interfaces and the daemon's state, plus how many changes
+// Reads the config, the leases and announcements, the interfaces and the daemons' state, plus how many changes
 // are already staged in this session (applying would commit those too, so the page warns about them). The ubus
 // replies are optional: a stopped odhcpd has no `dhcp` object, and the page still shows and edits the config.
+// dnsmasq's lease file is read only when dnsmasq is the DHCPv4 server.
 async function load() {
-  const [cfg, v4, v6, ra, dump, svc] = await Promise.all([
+  const [cfg, v4, v6, ra, dump, svc, dnsSvc] = await Promise.all([
     uci.get(CONFIG),
     optional(ubus('dhcp', 'ipv4leases')), optional(ubus('dhcp', 'ipv6leases')), optional(ubus('dhcp', 'ipv6ra')),
     optional(ubus('network.interface', 'dump')), optional(ubus('service', 'list', { name: 'odhcpd' })),
+    optional(ubus('service', 'list', { name: 'dnsmasq' })),
   ]);
-  return editor.withStaged(readDhcp(cfg, v4, v6, ra, dump, svc));
+  const dns = { svc: dnsSvc, leases: null, now: Date.now() / 1000 };
+  if (dhcpv4Server(cfg, dnsSvc) === 'dnsmasq') dns.leases = (await optional(ubus('file', 'read', { path: dnsmasqLeaseFile(cfg) })))?.data ?? null;
+  return editor.withStaged(readDhcp(cfg, v4, v6, ra, dump, svc, dns));
 }
 
 //#region Pieces of the page
@@ -48,13 +54,13 @@ async function load() {
 // The four summary tiles: the daemon, the two kinds of lease and the reservations.
 function summary(data) {
   const running = data.daemonRunning;
-  const main = data.daemon.values.maindhcp;
   const reserved4 = data.leases4.filter(l => l.static).length;
   const reserved6 = data.leases6.filter(l => l.static).length;
+  const by = data.server === 'dnsmasq' ? ' · from dnsmasq' : '';
   return tiles(
     tile('odhcpd', running == null ? 'Unknown' : running ? 'Running' : 'Stopped',
-      !main || ['0', 'false', 'off', 'no'].includes(String(main).toLowerCase()) ? 'DHCPv4 is left to another server' : 'the main DHCPv4 server', running === false ? 'text-danger' : ''),
-    tile('DHCPv4 leases', String(data.leases4.length), `${reserved4} reserved · ${data.leases4.length - reserved4} dynamic`),
+      data.server === 'odhcpd' ? 'the main DHCPv4 server' : data.server === 'dnsmasq' ? 'DHCPv6 and router advertisements; dnsmasq serves DHCPv4' : 'DHCPv4 is left to another server', running === false ? 'text-danger' : ''),
+    tile('DHCPv4 leases', String(data.leases4.length), `${reserved4} reserved · ${data.leases4.length - reserved4} dynamic${by}`),
     tile('DHCPv6 leases', String(data.leases6.length), `${reserved6} reserved · ${data.leases6.length - reserved6} dynamic`),
     tile('Reservations', String(data.hosts.length), `${reserved4} with a lease now`));
 }
@@ -110,7 +116,10 @@ export default {
     const page = [
       summary(data),
       ...editor.notes(data),
-      data.daemonRunning === false ? note('bad', 'odhcpd is not running, so there are no leases and no clients are being served. The configuration can still be edited.') : null,
+      data.daemonRunning === false ? note('bad', data.server === 'dnsmasq'
+        ? 'odhcpd is not running, so DHCPv6 and router advertisements are not served (DHCPv4 comes from dnsmasq). The configuration can still be edited.'
+        : 'odhcpd is not running, so there are no leases and no clients are being served. The configuration can still be edited.') : null,
+      data.leasesUnreadable ? note('bad', 'dnsmasq serves DHCPv4, but its lease file could not be read, so the DHCPv4 leases are not shown.') : null,
       settings,
       announcedCard(data, filter),
       leases4Card(data, filter, { reservedMacs, canReserve: canEdit, reserve }),

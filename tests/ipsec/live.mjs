@@ -91,6 +91,10 @@ check(/IPv6 address/.test(body6) && body6.includes('fd00:ab::1/64') && body6.inc
 await stage('charon stopped', scenario('daemondown'));
 check(await cards() === 0 && /No IPsec connections are configured/.test(await text()), 'no cards and an empty-state message');
 check(/charon is not running/.test(await text()), 'daemon card reports charon is not running');
+check(await page.locator('.card-body.text-danger:has-text("charon is not running")').count() === 1, 'with connections configured the message is an error');
+
+await stage('charon stopped, nothing configured', scenario('unconfigured'));
+check(/no connection is configured/.test(await text()) && await page.locator('.text-danger').count() === 0, 'with nothing configured the message is a plain note, not an error');
 
 await stage('back to normal', scenario('base'));
 check(await cards() === 4 && await tile(0) === '4 / 4', 'everything is back after the daemon returns', `${await cards()} / ${await tile(0)}`);
