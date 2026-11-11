@@ -46,7 +46,7 @@ check(programsOf(entries).join() === 'dnsmasq,hostapd,netifd,odhcpd,pppd', 'the 
 console.log('== summary ==');
 const sum = summarize(entries);
 check(sum.errors === 1 && sum.warnings === 1 && sum.newest === 104, 'errors, warnings and the newest timestamp', JSON.stringify(sum));
-check(summarize([]).errors === 0 && summarize([]).newest === null, 'an empty log summarises to zero');
+check(summarize([]).errors === 0 && summarize([]).newest === null, 'an empty log summarizes to zero');
 check(summarize([entry(0, 'a', 'x'), entry(1, 'a', 'x'), entry(2, 'a', 'x'), entry(3, 'a', 'x')]).errors === 4, 'emerg, alert, crit and err all count as errors');
 
 console.log('== formatting ==');

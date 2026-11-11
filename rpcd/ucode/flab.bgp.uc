@@ -41,7 +41,7 @@ function birdc(cmd) {
 	return source(replace(cmd, /[^A-Za-z0-9]+/g, '_'), 'birdc ' + cmd + ' 2>&1');
 }
 
-// Normalised object key for a birdc label: lower case, runs of non-alphanumerics become "_"
+// Normalized object key for a birdc label: lower case, runs of non-alphanumerics become "_"
 // ("Neighbor AS" -> "neighbor_as").
 function key_of(text) {
 	return lc(replace(trim(text), /[^A-Za-z0-9]+/g, '_'));

@@ -7,11 +7,11 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins.
 > **Hard rule: no LuCI components.** flab-ui is a replacement for LuCI, so it must never call
 > `luci-rpc`, `luci.*` ubus objects or any LuCI library. Read data directly from `swanctl`, `netifd`,
 > `procd`, `nft`, `wg`, sysfs, the kernel (`ip`, `iw`, `hostapd_cli`) and `uci`. rpcd's own `uci` object
-> (staged edits, apply with rollback) is part of rpcd, not LuCI, and is what future configuration changes
-> use.
+> (staged edits, apply with rollback) is part of rpcd, not LuCI, and is what configuration changes use.
 
-It is deployed to tmpfs for testing and removed again with one command; nothing is installed permanently.
-Today every page is read-only; the groundwork for configuration changes is described in
+It is deployed to tmpfs for testing and removed again with one command; nothing is installed permanently. Like
+LuCI, it signs in with the router's own `root` login and creates no login of its own. Every page only reads the
+router except System settings, which changes `/etc/config/system`; how changes are made safely is described in
 [Configuration changes](#configuration-changes).
 
 ## Contents
@@ -38,7 +38,7 @@ Browser (ES modules, Bootstrap 5.3 + Fluent theme, no build step)
 uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
    |  ubus
    v
-rpcd ---- built-in objects:  session, system, network.interface, service, (uci, for future edits)
+rpcd ---- built-in objects:  session, system, network.interface, service, uci (configuration changes)
    |
    '----- ucode plugins (this repo): flab.wifi, flab.radio, flab.mesh, flab.wireguard, flab.firewall,
                 |                    flab.network, flab.ipsec, flab.bgp, flab.sensors, flab.system, flab.logs
@@ -57,8 +57,10 @@ Design principles:
 - **Thin server, rich client.** Plugins return sanitized JSON; the browser does all presentation.
 - **Everything is discovered at run time.** Ports, bridges, radios, tunnels, zones and peers come from the
   router on every poll; nothing is hard-coded to one board, so another router is reflected correctly.
-- **Least privilege.** A dedicated read-only rpcd login whose ACL lists exactly the ubus calls the pages
-  use; writing is a separate, opt-in role.
+- **The router's own login.** The UI signs in as `root` through rpcd, exactly as LuCI does, and creates no login.
+  rpcd gives root read and write `*`, which means every ACL group installed on the router; the ACL fragments in
+  `rpcd/acl.d` are what add the flab-ui calls to it. Everything the plugins and pages read or write is therefore
+  limited by what root may do, and by the safeguards below (validation, apply with rollback).
 - **Modular by page.** One folder or file per page on each side, registered in one list.
 - **No secrets leave the router.** Plugins whitelist fields; key material is never forwarded, and log lines
   that look like secrets are redacted.
@@ -68,7 +70,9 @@ Design principles:
 ```
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
-  tests/                     bgp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), security/
+  tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
+  tests/                     bgp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), settings/,
+                             TestSession.ps1 (the temporary rpcd session the browser tests sign in with)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
@@ -80,7 +84,7 @@ flab-ui/
       core/                  Framework-level modules shared by all pages
         app.js               Shell: nav pane, command bar, hash routing, refresh loop
         ubus.js              ubus JSON-RPC transport, session, AuthError, optional(), can()
-        uci.js               The one wrapper for rpcd's `uci` object (staged edits, apply with rollback)
+        uci.js               The one wrapper for rpcd's `uci` object (staged edits, apply with rollback, applyChange())
         login.js             Sign-in screen (inline SVG and CSS only)
         dom.js               h() element builder (XSS-safe), byId()
         ui.js                Components: card, tile(s), table, badge, chip, kv, lifebar, meter, sparkline,
@@ -104,6 +108,7 @@ flab-ui/
         bgp/                 index.js, topology.js, peer.js, routes.js, announced.js, system.js, util.js
         services.js          procd services
         logs/                index.js, entries.js (pure helpers)
+        settings/            System settings: index.js, schema.js (the options), model.js (pure: validation, change plan), zones.js (generated)
   rpcd/
     ucode/flab.<name>.uc     rpcd plugins  -> /usr/share/rpcd/ucode/
     acl.d/flab-<name>.json   ACL fragments -> /usr/share/rpcd/acl.d/
@@ -132,6 +137,7 @@ Every page is a plain object, default-exported from its module (full text in `js
 | `id` | yes | Route name / URL hash |
 | `label` | yes | Navigation text (`title` optionally overrides the command-bar heading) |
 | `icon` | yes | Name from `core/icons.js` |
+| `nav` | no | `'bottom'` puts the link below the spacer, next to Sign out (System settings); default is the main list |
 | `interval` | yes | Auto-refresh period in ms |
 | `load()` | yes | Async; returns the page data, usually one ubus call |
 | `view(data, rerender)` | yes | Returns an array of DOM nodes |
@@ -164,8 +170,10 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   or ACL denial), so it asks `session.access` to tell them apart: an expired session raises
   `AuthError`; an ACL denial raises a normal error naming the object and method. `optional(promise)`
   resolves to `null` for data a page can do without (a missing plugin or ACL) but still raises
-  `AuthError`. `can(object, method)` answers from the ACLs returned at sign-in.
+  `AuthError`. `can(object, method)` answers from the ACLs returned at sign-in (root's `*` allows everything),
+  so a page can disable controls the login may not use.
 - **`uci.js`**: the only code that calls rpcd's `uci` object, see [Configuration changes](#configuration-changes).
+  `applyChange()` runs a whole change with its safety net; pages should call that, not the single steps.
 - The session id and ACLs live in `sessionStorage` (cleared when the tab closes). Login timeout is 900 s.
 
 ### Styling
@@ -194,8 +202,9 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
 - **BGP**: `index.js` owns the page state and composes the sections; `topology.js`, `peer.js`, `routes.js`,
   `announced.js` and `system.js` each export card builders that take the backend data; `util.js` holds the
   per-peer color helpers, AS-path chips and prefix sort key.
-- **Pure models**: `firewall/model.js` (zone matrix), `interfaces/layers.js` (network layers) and
-  `logs/entries.js` (log filtering and formatting) have no DOM access and are unit-tested on their own.
+- **Pure models**: `firewall/model.js` (zone matrix), `interfaces/layers.js` (network layers),
+  `logs/entries.js` (log filtering and formatting) and `settings/model.js` (validation and the UCI change plan)
+  have no DOM access and are unit-tested on their own.
 
 ## Backend (rpcd plugins)
 
@@ -224,6 +233,9 @@ return {
 | `flab.system.uc` | `flab.system` | `cpu` | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime` |
 | `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
 
+The System settings page needs no plugin: it reads `/etc/config/system` through rpcd's own `uci` object, whose
+calls (on the `system` config only) are granted by `rpcd/acl.d/flab-settings.json`.
+
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
 - **`flab.util`**: `run(cmd)`, `ubus_call(conn, object, method, args)`, `uci_all(config)`, `sysfs(path)`,
@@ -250,8 +262,8 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
   is dropped. `flab.wifi` never copies Wi-Fi keys from `network.wireless status`; `flab.wireguard` only uses
   `wg show` forms that never print keys.
 - **Redact free text.** `flab.logs` replaces values after `password`, `psk`, `secret`, `token`, `key` and
-  similar names with `<redacted>`, because daemons sometimes log them and the page is readable by a
-  read-only login.
+  similar names with `<redacted>`, because daemons sometimes log them and the page shows them to anyone who
+  can sign in (and they end up in downloaded files).
 - **Never call a ubus object served by rpcd itself** from a plugin (any `flab.*`, `session`, `file`, ...).
   rpcd runs plugins in-process, so the call blocks its own event loop. Calling `netifd`, `hostapd.*`,
   `dhcp`, `network.*` objects is fine.
@@ -267,72 +279,79 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
 ## Security model
 
-- **Read-only login.** `deploy.ps1` adds an rpcd login section `rpcd.flab_ui` (user `flab`) with only a
-  `read` group `flab`; there is no `write` group. The password is stored as a SHA-512 crypt hash.
-- **ACL fragments.** Each page ships `rpcd/acl.d/flab-<name>.json` granting its ubus calls under the
-  `flab` group; rpcd merges them. `flab-base.json` holds the shared calls (`system board/info`,
-  `network.interface dump`, `service list`, `session access/destroy`). The read-only login is denied
-  `uci`, `file`, `rc`, `service` control, `session list` and every `luci.*` object.
-- **Optional admin login.** `deploy.ps1 -Admin` also creates `flab-admin`, which holds the `flab-admin` ACL
-  on top. That ACL grants the `uci` methods but lists no config as readable or writable, so the login is
-  inert until a page opts a config in. Without `-Admin`, and after Cleanup, no admin login exists.
-- **Verified by `tests/security/run.ps1`**: the read-only login can call what the pages use and is denied
-  every method that could change or run something; a wrong password and an unknown user cannot sign in; the
-  admin login exists only when deployed with `-Admin`, reads like `flab`, and cannot change or even read any
-  config through `uci`.
-- **Known exposure.** `ubus list *` shows object names to a logged-in user (names only; calls stay blocked).
-  `uci configs` returns config names to the admin login.
+- **The router's own login.** The UI signs in with rpcd's `session login`, as `root` (the login every OpenWrt
+  router has, with read and write `*` on everything), exactly as LuCI does. flab-ui creates no login, installs no
+  ACL and changes no rpcd configuration, so it can never grant itself or anyone else more than root already has,
+  and nothing about it persists in `/etc/config/rpcd`.
+- **What protects the router** is therefore the root password, HTTPS, the ACL fragments (each lists exactly the
+  ubus calls and uci configs its page uses; the settings fragment grants `uci` write on `system` only), and the
+  care the pages take: input is validated before it is staged, changes are applied with an automatic rollback,
+  and nothing secret is forwarded or displayed (see [Backend rules](#backend-rules)).
+- **Session.** The session id and the ACLs rpcd returned live in `sessionStorage` (this tab only, gone when it
+  closes). The session expires after 900 s without use, and Sign out destroys it on the router.
+- **Known exposure.** The page lists and edits the options of `/etc/config/system` for anyone who can sign in as
+  root; there is no per-option restriction and none is needed. Plugins run inside rpcd with its privileges, which
+  is why they whitelist the fields they return.
 - **Transport.** uhttpd redirects HTTP to HTTPS and serves with the router certificate. The session token
   travels in the request body, not a cookie, so cross-site requests cannot ride on it.
-- **Default test password** is `flab` for convenience; pass `-Password` to `deploy.ps1` for anything
-  other than a short test.
+- **Tests never need the root password.** The browser tests create a temporary rpcd session over ssh and grant
+  it exactly what the ACL fragments grant, which is what root holds (`tests/TestSession.ps1`); a missing or wrong
+  fragment fails a test as it fails a page for root. The session is destroyed when the test ends.
 
 ## Configuration changes
 
-The UI is read-only today. The pieces that make editing safe are in place and inert, so the first page that
-edits something only has to opt in:
+System settings is the first page that changes the router, and it sets the pattern every later editing page
+follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
+page with every control disabled and a note saying why.
 
-**Roles.** `flab` (read-only, the default) and the optional `flab-admin` login (see above). What an admin
-session may change is decided by the router, in `rpcd/acl.d/flab-admin.json`: its `uci` read and write lists
-are empty. A page that edits `firewall` adds `"firewall"` to those lists, and only that config becomes
-readable and writable through rpcd's `uci` object.
+**Flow** (all of it is rpcd's `uci` object, wrapped by `www/js/core/uci.js`; pages call `applyChange()`, not the
+single steps):
 
-**Flow** (all of it is rpcd's `uci` object, wrapped by `www/js/core/uci.js`; pages never call it directly):
+1. **Stage.** `uci.set`, `uci.add`, `uci.delete` write into the session's staging area; the configuration on
+   flash is untouched. rpcd keeps the staging area **per session**, so a second session never sees it.
+2. **Review.** `uci.changes()` lists what is staged and `uci.pending()` counts it; `uci.revert()` throws it
+   away. `set` takes values as given (rpcd rejects `null`); to remove an option use `uci.delete(config,
+   section, [option])`.
+3. **Apply.** `uci.apply()` commits the staged changes, reloads the affected services (procd reload
+   triggers, for example `system` and `sysntpd` on a `system` change) and starts a countdown
+   (`APPLY_TIMEOUT_S`, 30 s).
+4. **Verify and confirm.** The page reads the config back (which also proves the router is still reachable) and
+   then calls `uci.confirm()` within the countdown. If the check fails the page calls `uci.rollback()` at once;
+   if the page is closed or the connection is cut, the countdown runs out and rpcd restores the previous
+   configuration by itself. That rollback is what makes it safe to edit network and firewall settings remotely.
+5. **Clean up.** After any rollback rpcd puts the rolled-back edits back into the session's staging area so
+   they can be retried. `applyChange()` discards them, so the next attempt starts clean, and refuses to start
+   while something is already staged (apply would commit it too); System settings shows such leftovers with a
+   "Discard them" button.
 
-1. **Stage.** `uci.set`, `uci.add`, `uci.delete` write into the session's staging area (`/tmp/.uci`); the
-   configuration on flash is untouched.
-2. **Review.** `uci.changes()` lists what is staged and `uci.pending()` counts it, for a "N changes pending"
-   indicator; `uci.revert()` throws it away.
-3. **Apply.** `uci.apply()` commits the staged changes, reloads the affected services and starts a
-   countdown (`APPLY_TIMEOUT_S`, 30 s).
-4. **Confirm.** The UI checks it can still reach the router and calls `uci.confirm()` within the countdown.
-   If the change cut the connection, rpcd restores the previous configuration by itself. That rollback is what
-   makes it safe to edit network and firewall settings remotely.
+`applyChange(ed, configs, stage, verify)` does steps 1 to 5 and throws an Error whose message says what
+happened; the router is on its previous configuration after every failure.
 
 **Rules for the page that edits.**
-- Show edit controls only when `can('uci', 'set')` is true (`core/ubus.js`), so a read-only login never sees
-  them.
-- Add configs to the ACL one at a time, and never list `rpcd` (it defines the logins), `dropbear` or `uhttpd`
-  (editing them can lock the router out).
-- Validate input in the page before staging; `uci` itself has no schema.
-- Keep the page's read model (what it shows) separate from the edit model (what it stages), and show the
-  effect of staged changes before apply.
+- Describe the options as data (`settings/schema.js`) and keep the model pure (`settings/model.js`: the form's
+  draft, validation, the change list, the UCI operations, the read-back check), so the page is only controls.
+- Validate input in the page before staging; `uci` itself has no schema. Show the effect of the edits (the
+  review list) before saving, and disable Save while anything is invalid.
+- Write only what changed, delete an emptied option instead of storing an empty string, and leave options the
+  page does not know untouched.
+- Do not poll over unsaved edits: the shell redraws the page on every poll, so `isPaused()` must return true
+  while there is something to lose.
+- Mirror a change made to the router's configuration into `build/MT6000/etc/config/` in this repository.
 
-**Status.** `core/ubus.js` (`can`, `optional`) and `core/uci.js` are unit-tested against a fake transport
-(`tests/network/uci.test.mjs`), and `tests/security/run.ps1` proves the inert state on the router. The
-`apply`/`confirm`/`rollback` calls follow rpcd's documented `uci` object but have not been run against a
-real change yet: the first page that edits something must test them on the router first.
+**Status.** `core/ubus.js` and `core/uci.js` (including `applyChange`) are unit-tested against a fake transport
+(`tests/network/uci.test.mjs`); the System settings suite tests the model and drives the whole flow in a browser
+against a mock router. The real path was exercised against the router with the same model and `applyChange`,
+restoring the configuration afterwards: a confirmed change (zone, description, log port, NTP servers and
+switch), the removal of options, a custom zone rule, a forced rollback and the countdown rollback of an
+unconfirmed apply.
 
 ## Deploy, test, clean up
 
 Requires PowerShell 7, `ssh`/`scp` with key auth to the router (default `root@openwrt.lab.formicalab.casa`).
 
 ```powershell
-# Install (random password unless -Password is given). Open https://<router>/flab/
-pwsh -File flab-ui\deploy.ps1 -Action Deploy -Password flab
-
-# Also create the optional, still inert, admin login
-pwsh -File flab-ui\deploy.ps1 -Action Deploy -Password flab -Admin
+# Install. Open https://<router>/flab/ and sign in as root with the router's root password
+pwsh -File flab-ui\deploy.ps1 -Action Deploy
 
 # Remove every trace from the router
 pwsh -File flab-ui\deploy.ps1 -Action Cleanup
@@ -344,23 +363,20 @@ What Deploy does:
 2. Copies `www/` to `/tmp/flab` (tmpfs, gone after a reboot) and symlinks `/www/flab` to it.
 3. Copies `rpcd/ucode/*` to `/usr/share/rpcd/ucode/`, `rpcd/acl.d/*` to `/usr/share/rpcd/acl.d/` and
    `rpcd/lib/flab/*` to `/usr/share/ucode/flab/`.
-4. Creates the `flab` rpcd login (and `flab-admin` with `-Admin`); password hashes are computed on the
-   router and the passwords are passed over stdin, never on a command line. Then **restarts rpcd**.
+4. **Restarts rpcd**, which only reads its plugins and ACL fragments at start.
 
-Cleanup removes all of the above and restarts rpcd again.
+Cleanup removes all of the above and restarts rpcd again. No login or rpcd setting is created or changed.
 
 Things to know:
 
-- `rpcd` must be **restarted** (not reloaded) to pick up new logins, so every deploy/cleanup logs out
-  active LuCI sessions.
-- Flash writes are limited to the rpcd files, the rpcd logins and the symlink; Cleanup removes them.
+- `rpcd` is **restarted**, so every deploy/cleanup ends the active rpcd sessions (LuCI's and flab-ui's).
+- Flash writes are limited to the rpcd plugin and ACL files and the symlink; Cleanup removes them.
 - `scp -O` is required (dropbear has no sftp-server).
 - After editing a front-end file, a quick iteration is `scp -O <file> root@<router>:/tmp/flab/<path>` and
   Ctrl+F5. Backend changes need the file copied to `/usr/share/rpcd/ucode/` (or `/usr/share/ucode/flab/`) and
   `/etc/init.d/rpcd restart`.
 - To test a plugin without rpcd: copy it and `rpcd/lib/flab/` to `/tmp`, then run it with
-  `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile), or call it as the
-  `flab` user over HTTP.
+  `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile).
 
 ## How to add a page
 
@@ -369,12 +385,15 @@ Example: a `dhcp` page.
 1. **Backend (only if new data is needed).**
    - `rpcd/ucode/flab.dhcp.uc` returning `{ 'flab.dhcp': { status: { call() {...} } } }`. Reuse
      `import { run } from 'flab.util'` and, for strongSwan-style output, `flab.vici`.
-   - `rpcd/acl.d/flab-dhcp.json`:
+   - `rpcd/acl.d/flab-dhcp.json`, so that root (read and write `*`) may call it:
      ```json
      { "flab": { "description": "flab-ui DHCP page",
                  "read": { "ubus": { "flab.dhcp": ["status"] } }, "write": {} } }
      ```
-   - Prefer data sources that are not LuCI (see the hard rule above).
+     A page that reads or writes a config through rpcd's `uci` object needs a fragment too, listing the config
+     in its `uci` read (and write) lists, like `flab-settings.json`.
+   - Prefer data sources that are not LuCI (see the hard rule above), and rpcd's own `uci`, `system` and
+     `service` objects where they are enough: no plugin is needed for those.
 2. **Frontend.** Create `www/js/pages/dhcp.js` (or a `dhcp/` folder with `index.js` plus helpers):
    ```js
    import { ubus } from '../core/ubus.js';
@@ -402,8 +421,9 @@ unit test.
 ## Pages
 
 Navigation order: Overview · Wired network · Bridges · Wi-Fi · Mesh · IPsec VPN · WireGuard · Firewall ·
-Devices and Interfaces · BGP · Services · Logs. The network pages run from the physical layer up; Devices and
-Interfaces recaps how they fit together, followed by routing (BGP), the procd services and the logs.
+Devices and Interfaces · BGP · Services · Logs, then Settings at the bottom, next to Sign out. The network
+pages run from the physical layer up; Devices and Interfaces recaps how they fit together, followed by routing
+(BGP), the procd services and the logs.
 
 ### Overview (default)
 KPI tiles (uptime, CPU usage, load, memory, CPU temperature, hottest sensor), a CPU load card, a
@@ -434,7 +454,7 @@ address helpers the three network pages share.
   below what both ends support), link flaps and new errors since the page was opened.
 - **Port topology** (`topology.js`, `tile.js`, `chips.js`): the wiring of the Ethernet ports, drawn from what
   the router reports: SoC, its MAC(s), the CPU port and link speed into the switch chip, the chip with its
-  numbered switch ports, an external PHY where one exists, and one jack per column (green/amber/grey by link
+  numbered switch ports, an external PHY where one exists, and one jack per column (green/amber/gray by link
   state, LAN/WAN label, speed, live rate, chart, bridge, STP role, VLAN devices). Jacks follow the order
   `/etc/board.json` lists its ports (usually the order on the case) with each switch's ports kept together; a
   switch's CPU port and the SoC MAC behind it come from the device tree (`ports/port@N` with an `ethernet`
@@ -444,7 +464,7 @@ address helpers the three network pages share.
   its name.
 - **Port table** (`ports.js`): the hardware, link, speed and duplex, negotiation (auto/forced, max speed,
   partner speed, pause), live and total traffic, errors and drops, link-change counter, STP state and role,
-  learned MACs and VLAN devices per port. A missing link is shown in neutral grey, not red: an unplugged port
+  learned MACs and VLAN devices per port. A missing link is shown in neutral gray, not red: an unplugged port
   is normal.
 - **Hardware** (when known): the PHY chip (driver name, ID, MDIO address and bus), the switch chip (from the
   device tree of the DSA switch node), the SoC Ethernet MAC, the kernel driver and bus, and the medium. The
@@ -462,7 +482,7 @@ Same data as the Wired network page (one `flab.network` call), one card per brid
 bridges, spanning-tree position, learned MACs. The health banner lists a blocked (alternate) STP port, a
 topology change, a down bridge, STP off with several linked ports. Each card shows the spanning-tree position
 (this bridge is the root, or the root bridge ID, the root port and path cost), bridge ID, priority, timers,
-ageing, learned MACs, VLAN filtering and default PVID, IGMP snooping, VLAN devices, addresses of the logical
+aging, learned MACs, VLAN filtering and default PVID, IGMP snooping, VLAN devices, addresses of the logical
 interfaces on it, and a member table with type (Ethernet or Wi-Fi with SSID), link, STP state and role, port
 cost, MACs learned per port and live throughput.
 
@@ -475,10 +495,10 @@ is excluded from the throughput tile.
 Two sections, both refreshed every 5 s.
 
 **Radios** (`flab.radio`, `wifi/radios.js`): one card per radio from UCI `wifi-device`. Header with band, phy,
-state, standards and hardware; key figures (running channel, frequency, width, centre, TX power, noise floor,
+state, standards and hardware; key figures (running channel, frequency, width, center, TX power, noise floor,
 antennas, clients); the configuration next to what is actually running (channel, mode, TX power with the
 regulatory limit of that channel, country vs active regulatory domain, cell density, beacon interval,
-options); channel utilisation (busy, RX and TX airtime as a percentage and chart, derived in the browser from
+options); channel utilization (busy, RX and TX airtime as a percentage and chart, derived in the browser from
 the driver's cumulative survey counters); the channels allowed by the regulatory domain with the running
 channel and its width span highlighted and DFS (radar) channels marked; and a table of the SSIDs (BSSID,
 networks, security, clients, live and total traffic, 802.11r/k/v, WPS, OCV, hidden, isolation, MAC filter
@@ -562,7 +582,7 @@ up on the next poll and every number is a real kernel counter.
   the destination, and the router itself is both. The policies follow firewall4: *zone › router* is the zone's
   `input`, *router › zone* its `output`, *zone › same zone* its `forward`, and *zone › other zone* is open
   only through a `forwarding` section. A cell is green when the policy allows it, amber when it is blocked but
-  specific rules or port forwards open parts of it ("N rules"), grey when closed; an open cell notes rules
+  specific rules or port forwards open parts of it ("N rules"), gray when closed; an open cell notes rules
   that block part of it. Hover a cell for the rule names. Disabled rules, rules naming an unknown zone and
   rules with neither side are ignored, as the firewall does.
 - **Zones**: configured interfaces, the kernel devices the loaded rules really match for the zone (read from
@@ -578,7 +598,7 @@ up on the next poll and every number is a real kernel counter.
   (protocol, ports, ICMP types, addresses, limit, family), action and hit counters. nft counters are matched
   to the UCI section through the comment firewall4 puts on each rule (`!fw4: <name>`; an unnamed rule is
   `@<type>[N]`, N counting sections of that type); a rule that expands to several nft rules has its counters
-  summed. A disabled rule is greyed out and has no counters.
+  summed. A disabled rule is grayed out and has no counters.
 - **Findings**: firewall not loaded (no fw4 table), an Internet-facing zone that accepts input or forwards
   within itself, a rule accepting every TCP/UDP port from it, rules naming a zone that does not exist,
   interfaces in no zone (their traffic is rejected), zones with no interface, SYN-flood protection off,
@@ -664,7 +684,8 @@ Notes:
 Refreshed every 5 s, from `flab.logs`. The last entries of the **system log** (`logread`, logd's ring buffer
 in RAM: every daemon's messages and the kernel's) or the **kernel log** (`dmesg`), newest at the bottom.
 - **Parsing** happens on the router: a system line `Wed Nov 11 12:06:15 2026 daemon.info odhcpd[2571]: ...`
-  becomes time, facility, severity (emerg 0 to debug 7), program, pid and message; a kernel line
+  becomes time, facility, severity (emerg 0 to debug 7; logd's short names `warn`, `error` and `panic` count as
+  warning, err and emerg), program, pid and message; a kernel line
   `<6>[ 272373.68] ...` takes its severity and facility from the syslog priority and its wall-clock time from
   the boot time. A line that does not parse is kept whole, with no time or origin, so nothing is dropped.
 - **Controls**: log to read, text filter (origin, priority and message; every word must match), minimum
@@ -679,22 +700,64 @@ in RAM: every daemon's messages and the kernel's) or the **kernel log** (`dmesg`
 - Filtering is done in the browser on the loaded tail, so changing a filter is instant; the log and the line
   count are requested from the router.
 
+### System settings (route `#settings`)
+The only page that changes the router. It shows and edits `/etc/config/system`: every option the OpenWrt wiki
+documents for the `system` section and for its `timeserver` (NTP) section, in four cards that each take the full
+width of the page: General, Time zone and NTP, System log, and Kernel, cron and memory. It is shown at the
+bottom of the navigation pane and refreshes every 10 s. It reads through rpcd's `uci` object (`uci get system`),
+`system info` (the clock) and `service list sysntpd` (what the NTP client runs with); it needs no plugin, only
+the ACL fragment `rpcd/acl.d/flab-settings.json`.
+- **Tiles**: the router's clock with its UTC offset, the hostname and description, the time zone and its POSIX
+  rule, the NTP client (on or off, and whether `ntpd` runs).
+- **The options are data.** `settings/schema.js` lists every field (key, section, card, type, label, hint,
+  default, check, bounds); the controls, validation, change list and UCI operations are generated from it by
+  `index.js` and `model.js`, so supporting another option is one entry. Options in the file that the table does
+  not know are left untouched.
+- **General**: `hostname`, `description`, `notes`, `ttylogin`, `urandom_seed`; the fields flow in as many
+  columns as fit.
+- **Time zone and NTP**: one pane with three columns side by side. *Time zone*: pick an IANA zone. Saving writes
+  **both** `zonename` (the name) and `timezone` (its POSIX rule, which is what the system applies, including
+  daylight saving time). The router has no zoneinfo files, so `pages/settings/zones.js` carries the table (about
+  420 zones, from the IANA database); regenerate it with `python tools/gen-zones.py` (needs `pip install tzdata`;
+  `--check` tells whether it is current). "Custom POSIX rule" edits the rule alone and drops `zonename`; a router
+  whose zone name is not in the table (a hand-written rule) is shown that way and left alone unless the zone is
+  touched. *NTP client* (`timeserver` section): `enabled`, `use_dhcp`, the ordered `server` list,
+  `dhcp_interface`, and what `ntpd` is running with. *NTP server for the network*: `enable_server`, `interface`.
+  NTP on with no way to find a server is only a warning. A missing `timeserver` section is created, named `ntp`.
+- **System log**: `log_size`, `log_buffer_size`, `log_type`, `log_file`, `log_remote`, `log_ip`, `log_port`,
+  `log_proto`, `log_hostname`, `log_prefix`, `log_trailer_null`.
+- **Kernel, cron and memory**: `buffersize`, `conloglevel`, `cronloglevel`, `zram_comp_algo`, `zram_size_mb`.
+- **Controls**: switches show the value, or OpenWrt's default when the option is absent. An empty text control
+  shows "default: ..." or an example in gray italics, never a value-looking placeholder. Numbers, hosts, IP
+  addresses, paths, interface names, enums and the time zone rule are validated; a bad entry is marked, explained
+  and blocks saving. An emptied option is deleted from the file instead of being stored empty.
+- **Review banner**: a row at the bottom of the sticky command bar, so Save is always on screen however far the
+  form is scrolled. It is hidden while there is nothing to report and appears with the first edit: the number and
+  names of the pending changes, Details (the full list of what changes from what to what, and how a save works),
+  Discard edits and Save and apply (flow in [Configuration changes](#configuration-changes)), then the
+  validation errors and warnings and the outcome of the last save (dismissable; it also disappears with the next
+  edit). A renamed router shows its new hostname in the navigation header right away. Changes already staged in
+  the session (for example from an attempt that was rolled back) are shown with a "Discard them" button. The page
+  does not poll over unsaved edits, a focused control or a save in progress.
+
 ## Testing
 
-Four suites, all driven by `run.ps1` scripts that never change the router's configuration. They share one
-mechanism: the repository's plugins run **on the router** against saved fixtures (`FLAB_FIXTURES`, with
-`ucode -L` so the uploaded libraries win over the deployed ones), and an optional browser pass opens the
-deployed UI in Edge through `playwright-core` (installed into a temporary folder) with the plugin calls
-intercepted and answered with the scenario JSON.
+Four suites, driven by `run.ps1` scripts that never change the router's configuration. The BGP, IPsec and
+network suites share one mechanism: the repository's plugins run **on the router** against saved fixtures
+(`FLAB_FIXTURES`, with `ucode -L` so the uploaded libraries win over the deployed ones), and an optional browser
+pass opens the deployed UI in Edge through `playwright-core` (installed into a temporary folder) with the plugin
+calls intercepted and answered with the scenario JSON.
 
 | Suite | Command | Covers |
 |---|---|---|
 | BGP | `pwsh -File flab-ui\tests\bgp\run.ps1 [-Browser]` | `flab.bgp` parser and findings, BGP page |
 | IPsec | `pwsh -File flab-ui\tests\ipsec\run.ps1 [-Browser]` | `flab.ipsec`, IPsec page, throughput history |
-| Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers |
-| Security | `pwsh -File flab-ui\tests\security\run.ps1 [-IncludeAdmin]` | what the read-only and admin logins can and cannot call |
+| Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
+| Settings | `pwsh -File flab-ui\tests\settings\run.ps1 [-Browser]` | System settings model, option table and zone table; the whole editing flow against a mock router |
 
-`-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy -Password flab`). Each suite removes its
+`-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
+`tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
+password is needed. Each suite removes its
 `/tmp/flab-*-test` folder on the router and its local temp folder when it finishes.
 
 ### Common mechanism
@@ -728,8 +791,8 @@ tests the throughput history (rates, counter resets, gaps, pauses, per-SA keys, 
 - **Unit tests** (`tests/network/*.test.mjs`, no router): `rates` (the rate tracker), `layers` (bridge and VLAN
   stacking, PPPoE over a VLAN, shared protocol devices, tunnels, unknown devices, parent loops, wireless nodes
   and unattached wireless), `firewall` (zone matrix and findings), `logs` (level and text filters,
-  summaries, formatting) and `uci` (the session helpers `can()`/`optional()` and the `uci` wrapper against a
-  fake transport).
+  summaries, formatting) and `uci` (the session helper `can()`, `optional()`, the `uci` wrapper and `applyChange`
+  against a fake transport).
 - **Scenarios**: `n-linkdown`, `n-downshift`, `n-root`, `n-blocked`, `n-nostp`, `n-vlanfilter`, `n-newbridge`,
   `n-highport`, `n-nodevices`, `n-board` (a different router: other model, four LAN ports in reverse order, no
   external PHY), `n-nodsa` (no switch), `n-errors`; radios `r-down`, `r-dfs`, `r-channel`, `r-disabled`,
@@ -739,16 +802,38 @@ tests the throughput history (rates, counter resets, gaps, pauses, per-SA keys, 
   unknown severity, another kernel facility) and `l-empty`. A capture's handshake times age while the test
   runs, so the base scenario pins the connected WireGuard peer to "30 s ago".
 
-### Security suite
-Calls rpcd the way the browser does and only uses calls that are harmless if an ACL were wrong (a missing
-config, a file under `/tmp`, `/bin/true`). With `-IncludeAdmin` it redeploys with and without `-Admin` and
-ends deployed without the admin login.
+### Settings suite
+Unlike the other suites it has no backend part: the page reads rpcd's `uci` object, which is not ours to fake on
+the router. The unit tests (`model.test.mjs`) cover the option table (every wiki option present, every entry
+well-formed), the zone table (every rule passes the rule check), reading `uci get system`, every validator, the
+change plan (what is written for each kind of edit: set, delete, create a section, the two zone options, a
+custom rule), staging and the read-back check; `network/uci.test.mjs` covers `applyChange`. The browser pass
+(`live.mjs`) first reads the router's own `/etc/config/system` through the real page, with any uci write blocked
+and failing the test, then switches to a stateful mock of `uci`, the clock and the NTP client and drives:
+validation of each kind of field, the review list, a page that does not poll over edits, Discard edits, a
+successful save (call order, what was written, the new hostname in the navigation header), removing an option and
+a list, a change the router does not keep (rolled back), a confirmation that comes too late, leftovers from an
+earlier attempt, a login without write access, the dark theme and an expired session. The mock keeps the real
+router's configuration out of reach, so the suite never writes to it.
 
 ## Implementation notes
 
-- **`rpcd reload` does not pick up new logins**; use `restart`.
-- **Password hashes**: rpcd rejects `$1$` MD5 hashes on this build; use SHA-512 (`openssl passwd -6`).
-  PowerShell adds `\r` to piped input, so strip it before hashing.
+- **rpcd reads its plugins and ACL fragments only at start**: copy them and `restart` rpcd (`reload` is not enough).
+- **A session without a password**: `ubus call session create` plus `session grant` (scopes `ubus` and `uci`)
+  over ssh gives a session that works through `/ubus` like a real sign-in; the browser tests grant it what the
+  ACL fragments list.
+- **Root's `*`**: `read` and `write` `*` in an rpcd login is a list (`list read '*'`) naming every ACL group in
+  `/usr/share/rpcd/acl.d`. It is not a wildcard over objects, so a call that no fragment grants is denied even
+  for root (JSON-RPC `-32002`). A login that sets `*` as a plain option gets no groups at all.
+- **rpcd `uci` object**: staged edits are kept per session, `set` rejects `null` values (use `delete` with
+  `options`), `apply` takes no config list (it applies everything staged), and after any rollback (explicit or
+  by the countdown) the rolled-back edits reappear in the staging area. `uci get <config>` returns every section
+  keyed by name with `.type`, `.name` and `.anonymous`, and a list option as an array. A method the session may
+  not call is refused with JSON-RPC `-32002`; a config it may not use is refused by rpcd with ubus status 6.
+- **Time zone**: `/etc/config/system` holds `zonename` (IANA name) and `timezone` (POSIX rule); the system only
+  uses the rule. `uci apply` on `system` triggers procd to reload `system` (rewrites `/etc/TZ`) and `sysntpd`.
+- **UCI file order**: deleting and re-adding an option moves it within the section, and an explicit default
+  (`enabled '1'`) stays in the file, so a change and its undo are equivalent but not byte-identical.
 - **BusyBox** has no `od`; `scp` needs `-O`; shell snippets sent over ssh must be LF-only.
 - **Splatting a single path** in PowerShell iterates its characters; wrap it in `@(...)`.
 - **hostapd rate units**: `ubus hostapd.<if> get_clients` reports rates in units of 10 bit/s, so divide by

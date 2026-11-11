@@ -1,14 +1,15 @@
 // Live-update test for the IPsec page. A real browser opens the deployed UI; the flab.ipsec status call is
 // intercepted and answered with the scenario JSON produced by the backend run, so the page can be driven
 // through "tunnel down", "second IKE SA", "SA without configuration", IPv6 and a stopped daemon WITHOUT
-// touching the router's tunnels. Usage: node live.mjs <dir with scenario JSON>   (env: FLAB_URL, FLAB_PASSWORD, FLAB_SHOTS)
+// touching the router's tunnels. Usage: node live.mjs <dir with scenario JSON>   (env: FLAB_SID, FLAB_URL, FLAB_SHOTS)
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const out = process.argv[2];
 const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/flab/';
-const password = process.env.FLAB_PASSWORD ?? 'flab';
+const sid = process.env.FLAB_SID;   // a session made by tests/TestSession.ps1, so no password is needed
+const acls = JSON.parse(process.env.FLAB_ACLS);   // what that session may call, like the ACLs of a real sign-in
 const shots = process.env.FLAB_SHOTS;
 // Loads one backend scenario (see mkfx.mjs / assert.mjs) as the object the page would receive from flab.ipsec status.
 const scenario = n => JSON.parse(fs.readFileSync(path.join(out, `${n}.json`), 'utf8'));
@@ -50,9 +51,12 @@ const refresh = async () => { await page.click('button:has-text("Refresh")'); aw
 // Switches the intercepted backend response to `data`, clears any tick, refreshes and optionally saves a screenshot.
 const stage = async (label, data) => { console.log(`\n== ${label} ==`); current = data; tick = null; await refresh(); if (shots) await page.screenshot({ path: path.join(shots, `ipsec-${label.replace(/\W+/g, '-')}.png`) }); };
 
+// Start signed in, the way a real sign-in leaves the tab: the session id and its ACLs in sessionStorage.
+await page.addInitScript(([id, granted]) => {
+  sessionStorage.setItem('sid', id);
+  sessionStorage.setItem('acls', JSON.stringify(granted));
+}, [sid, acls]);
 await page.goto(baseUrl);
-await page.fill('input[name=password]', password);
-await page.click('button[type=submit]');
 await page.waitForSelector('.tile');
 await page.click('a[href="#ipsec"]');
 await page.waitForSelector('.vpn-card');
@@ -69,11 +73,11 @@ check(/Tunnel is not established/.test(await page.locator('.vpn-card.is-down').i
 
 await stage('a second IKE SA appears', scenario('multi'));
 check(await cards() === 5 && await tile(0) === '5 / 5', 'five cards, tunnels tile 5 / 5', `${await cards()} / ${await tile(0)}`);
-check(await page.locator('.vpn-head :text("IKE SA #900")').count() === 1, 'the extra IKE SA is labelled with its id');
+check(await page.locator('.vpn-head :text("IKE SA #900")').count() === 1, 'the extra IKE SA is labeled with its id');
 
 await stage('SAs without configuration', scenario('orphan'));
 check(await page.locator('.vpn-head :text("Not in configuration")').count() === 1, 'one card is flagged "Not in configuration"');
-check(await page.locator(':text("(not in configuration)")').count() >= 2, 'orphan child tunnels are labelled', String(await page.locator(':text("(not in configuration)")').count()));
+check(await page.locator(':text("(not in configuration)")').count() >= 2, 'orphan child tunnels are labeled', String(await page.locator(':text("(not in configuration)")').count()));
 check(/not in the loaded configuration/.test(await page.locator('.vpn-card:has(.vpn-head :text("Not in configuration")) .warnings').innerText()), 'the card explains why it cannot be fully rated');
 
 await stage('child rekey overlap', scenario('rekey'));

@@ -123,7 +123,7 @@ check(bridgeOf(two, 'br-guest').is_root === true, 'new bridge computed from its 
 
 console.log('== network: bridge port number above 255 ==');
 const high = net('n-highport');
-check(memberOf(high, 'lan5').macs === 4 && memberOf(high, 'lan2').macs === 1, 'high byte of the port number is honoured', JSON.stringify([memberOf(high, 'lan5').macs, memberOf(high, 'lan2').macs]));
+check(memberOf(high, 'lan5').macs === 4 && memberOf(high, 'lan2').macs === 1, 'high byte of the port number is honored', JSON.stringify([memberOf(high, 'lan5').macs, memberOf(high, 'lan2').macs]));
 
 console.log('== network: netifd reports nothing ==');
 const none = net('n-nodevices');
@@ -287,6 +287,8 @@ check(lb.limit === 500 && Array.isArray(lb.system) && Array.isArray(lb.kernel) &
 const parsed = lb.system.filter(e => e.t != null);
 check(parsed.length > lb.system.length * 0.9 && parsed.every(e => Number.isInteger(e.t) && SEV.includes(e.severity) && e.level === SEV.indexOf(e.severity) && e.facility && e.program && typeof e.message === 'string'), 'system log lines parsed into time, facility, severity, program and message', JSON.stringify(parsed[0]));
 check(parsed.some(e => e.pid > 0) && parsed.every((e, i) => i === 0 || e.t >= parsed[i - 1].t - 1), 'process ids are read and entries stay in time order');
+const warnEntry = lb.system.find(e => e.program === 'flab-test' && /^a warning/.test(e.message));
+check(warnEntry?.severity === 'warning' && warnEntry.level === 4, 'logd\'s short name "warn" is reported as the warning severity', JSON.stringify(warnEntry));
 check(lb.kernel.every(e => SEV.includes(e.severity) && e.level >= 0 && e.level <= 7 && typeof e.facility === 'string' && e.program === 'kernel' && typeof e.uptime === 'number'), 'kernel lines parsed from the raw priority and uptime', JSON.stringify(lb.kernel.find(e => !(SEV.includes(e.severity) && typeof e.facility === 'string' && typeof e.uptime === 'number'))));
 check(lb.kernel.every(e => Math.abs((e.t - e.uptime) - (lb.kernel[0].t - lb.kernel[0].uptime)) < 2), 'kernel wall-clock times share one boot time');
 check(lb.kernel.every((e, i) => i === 0 || e.uptime >= lb.kernel[i - 1].uptime), 'kernel entries are in boot order');

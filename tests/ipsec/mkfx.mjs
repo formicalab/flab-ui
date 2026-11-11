@@ -10,7 +10,7 @@ const real = path.join(work, 'fx-real');
 // Reads one captured file with LF line endings.
 const read = f => fs.readFileSync(path.join(real, f), 'utf8').replace(/\r/g, '');
 
-// A recognisable fake key replaces the redacted one so the assertions can prove it never leaves the plugin.
+// A recognizable fake key replaces the redacted one so the assertions can prove it never leaves the plugin.
 const CANARY = 'deadbeefdeadbeefdeadbeefdeadbeef';
 
 //#region Baseline files

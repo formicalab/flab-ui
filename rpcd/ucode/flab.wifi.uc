@@ -83,7 +83,7 @@ function iw_stations(ifname) {
 	return result;
 }
 
-// Normalises the various PMF (802.11w, protected management frames) indications to 1 (in use), 0 (not
+// Normalizes the various PMF (802.11w, protected management frames) indications to 1 (in use), 0 (not
 // in use) or null (unknown). Precedence: the [MFP] station flag, then hostapd's explicit value, then
 // inference from the AKM.
 function normalize_pmf(akm_code, raw, flags) {
@@ -202,7 +202,7 @@ function ipv6_rank(addr) {
 	return match(addr, /^fe80:/i) ? 10 : match(addr, /^(fc|fd)/i) ? 20 : 30;
 }
 
-// Netdevs behind wireless networks ({ device: true }); ARP/neighbour rows on WAN, VPN or service links are ignored.
+// Netdevs behind wireless networks ({ device: true }); ARP/neighbor rows on WAN, VPN or service links are ignored.
 function wireless_devices(uci) {
 	let devices = {};
 	uci.foreach('wireless', 'wifi-iface', (s) => {
@@ -254,7 +254,7 @@ function ipv6_by_mac(devices) {
 		if (index(cache[mac], p[0]) < 0)
 			push(cache[mac], p[0]);
 	}
-	// Rank globally routable addresses first; ties keep neighbour-table order like the CLI utility.
+	// Rank globally routable addresses first; ties keep neighbor-table order like the CLI utility.
 	for (let mac, list in cache) {
 		let seen = slice(list);
 		cache[mac] = sort(list, (a, b) => (ipv6_rank(b) - ipv6_rank(a)) || (index(seen, a) - index(seen, b)));

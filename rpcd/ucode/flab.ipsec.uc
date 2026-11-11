@@ -29,7 +29,7 @@ const KE = {
 	ML_KEM_512: 0.9, ML_KEM_768: 1, ML_KEM_1024: 1,
 };
 
-// Colour band for a 0..1 strength: good from 0.85, fair from 0.55, otherwise weak.
+// Color band for a 0..1 strength: good from 0.85, fair from 0.55, otherwise weak.
 function level(fraction) {
 	return fraction >= 0.85 ? 'good' : fraction >= 0.55 ? 'fair' : 'weak';
 }
@@ -98,7 +98,7 @@ function rate_auth(cls) {
 
 //#region Assessment
 
-// One line of the score breakdown: `max` points scaled by `fraction` (clamped to 0..1), with its colour
+// One line of the score breakdown: `max` points scaled by `fraction` (clamped to 0..1), with its color
 // level, the displayed `value` and an optional explanatory `note`.
 function part(key, label, max, fraction, value, note) {
 	fraction = fraction < 0 ? 0 : fraction > 1 ? 1 : fraction;

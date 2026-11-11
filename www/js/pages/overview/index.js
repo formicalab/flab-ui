@@ -10,7 +10,7 @@ import { fmtBytes, fmtDur } from '../../core/format.js';
 import { temperatureCard, sensorLabel, sensorLevel, hottest, fmtTemp } from './temperatures.js';
 import { cpuCard, record, hasDelta, current, level, levelText } from './cpu.js';
 
-// Text colour classes for the good/fair/weak levels.
+// Text color classes for the good/fair/weak levels.
 const TEXT = { good: 'text-success', fair: 'text-warning', weak: 'text-danger' };
 
 export default {

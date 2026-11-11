@@ -8,8 +8,8 @@ import { showLogin } from './login.js';
 import { card } from './ui.js';
 import { pages } from '../pages/index.js';
 
-// Module-level state: the refresh interval of the open page, the cached `system board` reply
-// (fetched once per session) and the stylesheets already added to <head>.
+// Module-level state: the refresh interval of the open page, the last `system board` reply and the
+// stylesheets already added to <head>.
 let timer = null;
 let board = null;
 const loadedCss = new Set();
@@ -35,19 +35,21 @@ async function route() {
   const page = pages.find(p => p.id === location.hash.slice(1)) ?? pages[0];
   ensureCss(page.css);
 
-  // The board info feeds the navigation header on every page; failing to read it is not fatal.
-  if (!board) {
-    try {
-      board = await ubus('system', 'board');
-    } catch (e) {
-      if (e instanceof AuthError) return expire();
-    }
+  // The board info feeds the navigation header on every page, and is read on every route so a renamed router
+  // shows its new hostname; failing to read it is not fatal (the last reply stays).
+  try {
+    board = await ubus('system', 'board');
+  } catch (e) {
+    if (e instanceof AuthError) return expire();
   }
 
+  // Pages marked nav: 'bottom' (Settings) sit under the spacer with Sign out; the rest fill the main list.
+  const link = p => h('a', { href: `#${p.id}`, className: `nav-link-fl ${p === page ? 'active' : ''}` }, icon(p.icon), p.label);
   const nav = h('nav', { className: 'nav-pane' },
     h('div', { className: 'brand' }, h('strong', {}, board ? board.hostname : 'Router'), h('span', {}, board ? board.model : '')),
-    ...pages.map(p => h('a', { href: `#${p.id}`, className: `nav-link-fl ${p === page ? 'active' : ''}` }, icon(p.icon), p.label)),
+    ...pages.filter(p => p.nav !== 'bottom').map(link),
     h('div', { className: 'nav-spacer' }),
+    ...pages.filter(p => p.nav === 'bottom').map(link),
     h('button', { type: 'button', className: 'nav-link-fl', onclick: signOut }, icon('box-arrow-right'), 'Sign out'));
 
   const results = h('main', {}, h('div', { className: 'text-center muted p-5' }, h('div', { className: 'spinner-border spinner-border-sm' })));

@@ -13,7 +13,7 @@
 //
 // Only the last `lines` entries of each log are returned (default 500, at most 2000) so a poll stays cheap on
 // a small router. Values that look like secrets (password=..., key: ..., psk=...) are replaced with
-// <redacted>: daemons sometimes log them in verbose mode, and this page is readable by a read-only login.
+// <redacted>: daemons sometimes log them in verbose mode, and this page shows them to anyone who can sign in.
 //
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
@@ -25,6 +25,8 @@ const DEFAULT_LINES = 500;
 const MAX_LINES = 2000;
 
 const SEVERITIES = [ 'emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug' ];
+// logd prints the short syslog names ("warn", "error", "panic"); they are reported under the canonical ones.
+const SEVERITY_ALIASES = { warn: 'warning', error: 'err', panic: 'emerg' };
 const FACILITIES = [ 'kern', 'user', 'mail', 'daemon', 'auth', 'syslog', 'lpr', 'news', 'uucp', 'cron', 'authpriv', 'ftp' ];
 const MONTHS = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
 
@@ -62,11 +64,12 @@ function parse_system(line) {
 	let m = match(line, /^[A-Za-z]{3} ([A-Za-z]{3}) +([0-9]+) ([0-9]{2}):([0-9]{2}):([0-9]{2}) ([0-9]{4}) ([a-z0-9]+)\.([a-z]+) ([^ :[]+)(\[([0-9]+)\])?: (.*)$/);
 	if (!m)
 		return { t: null, facility: null, severity: null, level: null, program: null, pid: null, message: redact(line) };
-	let level = index(SEVERITIES, m[8]);
+	let name = SEVERITY_ALIASES[m[8]] ?? m[8];
+	let level = index(SEVERITIES, name);
 	return {
 		t: timelocal({ year: +m[6], mon: MONTHS[m[1]] ?? 1, mday: +m[2], hour: +m[3], min: +m[4], sec: +m[5], isdst: -1 }),
 		facility: m[7],
-		severity: level >= 0 ? m[8] : null,
+		severity: level >= 0 ? name : null,
 		level: level >= 0 ? level : null,
 		program: m[9],
 		pid: num(m[11]),

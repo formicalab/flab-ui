@@ -75,7 +75,7 @@ function stats_view(d) {
 //#region Bridge forwarding table
 
 // Learned and local MAC entries per bridge port number, from the kernel's binary forwarding table
-// (16 bytes per entry: MAC[6], port, is_local, ageing timer[4], high port byte, padding[3]).
+// (16 bytes per entry: MAC[6], port, is_local, aging timer[4], high port byte, padding[3]).
 // The result is keyed by the port number as a string; the full number is port + (high byte << 8).
 function fdb_counts(bridge) {
 	let raw = fixture('brforward_' + bridge);

@@ -1,6 +1,7 @@
-// Unit test for the browser-side session helpers and the configuration-change wrapper
-// (www/js/core/ubus.js: can(), optional(); www/js/core/uci.js). They run against a fake transport, so it needs
-// no router and changes nothing. Usage: node uci.test.mjs
+// Unit test for the browser-side session helpers and the configuration-change layer (www/js/core/ubus.js: can(),
+// optional(); www/js/core/uci.js: the uci wrapper and applyChange()). They run against a fake transport, so it
+// needs no router and changes nothing.
+// Usage: node uci.test.mjs
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
@@ -32,8 +33,8 @@ check((await createUci(fake({ 'uci.configs': {} }).call).configs()).length === 0
 console.log('== uci: staging ==');
 f = fake({ 'uci.add': { section: 'cfg123' } });
 uci = createUci(f.call);
-await uci.set('network', 'lan', { ipaddr: '192.168.1.1', gateway: null });
-check(JSON.stringify(f.calls[0]) === '["uci","set",{"config":"network","section":"lan","values":{"ipaddr":"192.168.1.1","gateway":null}}]', 'set stages option values (null deletes an option)', JSON.stringify(f.calls[0]));
+await uci.set('network', 'lan', { ipaddr: '192.168.1.1', metric: 10 });
+check(JSON.stringify(f.calls[0]) === '["uci","set",{"config":"network","section":"lan","values":{"ipaddr":"192.168.1.1","metric":10}}]', 'set stages option values as given', JSON.stringify(f.calls[0]));
 check(await uci.add('firewall', 'rule', { name: 'x' }) === 'cfg123' && JSON.stringify(f.calls[1][2]) === '{"config":"firewall","type":"rule","values":{"name":"x"}}', 'add returns the new section name');
 await uci.add('firewall', 'zone', {}, 'wg');
 check(f.calls[2][2].name === 'wg', 'a named section passes its name');
@@ -64,15 +65,49 @@ await uci.rollback();
 check(APPLY_TIMEOUT_S >= 10 && f.calls[0][1] === 'apply' && f.calls[0][2].rollback === true && f.calls[0][2].timeout === APPLY_TIMEOUT_S, 'apply always arms the rollback, with the default countdown');
 check(f.calls[1][2].timeout === 10 && f.calls[2][1] === 'confirm' && f.calls[3][1] === 'rollback', 'a custom countdown, confirm and rollback are plain calls');
 
+console.log('== uci: applyChange, the whole change with its safety net ==');
+const { applyChange } = await core('uci.js');
+const names = calls => calls.map(c => c[1]).join(' ');
+const attempt = async fn => { try { await fn(); return null; } catch (e) { return e.message; } };
+const noWait = { settleMs: 0, sleep: async () => {} };
+let verified = 0;
+f = fake({ 'uci.changes': { changes: [] } });
+await applyChange(createUci(f.call), ['system'], ed => ed.set('system', 'ntp', { enabled: '0' }), async () => { verified++; }, noWait);
+check(names(f.calls) === 'changes set apply confirm' && verified === 1 && f.calls[2][2].rollback === true, 'checks nothing is staged, stages, applies with the rollback armed, verifies, then confirms', names(f.calls));
+f = fake({ 'uci.changes': { changes: [['set', 'ntp', 'enabled', '0']] } });
+let msg = await attempt(() => applyChange(createUci(f.call), ['system'], ed => ed.set('system', 'ntp', {}), async () => {}, noWait));
+check(/already staged/.test(msg) && names(f.calls) === 'changes', 'staged changes from someone else stop it before anything is written', `${msg} / ${names(f.calls)}`);
+f = fake({ 'uci.changes': { changes: [] } });
+msg = await attempt(() => applyChange(createUci(f.call), ['system'], async () => { throw new Error('bad value'); }, async () => {}, noWait));
+check(msg === 'bad value' && names(f.calls) === 'changes revert', 'a failure while staging reverts what was staged and never applies', `${msg} / ${names(f.calls)}`);
+f = fake({ 'uci.changes': { changes: [] }, 'uci.apply': () => { throw new Error('reload failed'); } });
+msg = await attempt(() => applyChange(createUci(f.call), ['system'], ed => ed.set('system', 'ntp', {}), async () => {}, noWait));
+check(msg === 'reload failed' && names(f.calls) === 'changes set apply revert', 'a failed apply reverts the staged edits', `${msg} / ${names(f.calls)}`);
+f = fake({ 'uci.changes': { changes: [] } });
+msg = await attempt(() => applyChange(createUci(f.call), ['system'], ed => ed.set('system', 'ntp', {}), async () => { throw new Error('the zone was not saved'); }, noWait));
+check(/rolled back/.test(msg) && /zone was not saved/.test(msg) && names(f.calls) === 'changes set apply rollback revert', 'a failed check rolls back at once, discards the re-staged edits and never confirms', `${msg} / ${names(f.calls)}`);
+f = fake({ 'uci.changes': { changes: [] }, 'uci.confirm': () => { throw new Error('nothing to confirm'); } });
+msg = await attempt(() => applyChange(createUci(f.call), ['system'], ed => ed.set('system', 'ntp', {}), async () => {}, noWait));
+check(/did not accept the confirmation/.test(msg) && names(f.calls) === 'changes set apply confirm revert', 'a confirmation that comes too late (the router already rolled back) is reported and the leftovers discarded', `${msg} / ${names(f.calls)}`);
+f = fake({ 'uci.changes': { changes: [] }, 'uci.rollback': () => { throw new Error('gone'); } });
+msg = await attempt(() => applyChange(createUci(f.call), ['system'], ed => ed.set('system', 'ntp', {}), async () => { throw new Error('x'); }, noWait));
+check(/rolled back/.test(msg), 'even if the rollback call itself fails the error is reported (the countdown restores the config)', msg);
+f = fake({ 'uci.changes': { changes: [] } });
+await applyChange(createUci(f.call), ['system', 'dhcp'], async () => {}, async () => {}, noWait);
+check(f.calls.filter(c => c[1] === 'changes').length === 2, 'every config in the list is checked for staged changes');
+
 console.log('== session: what this login may call ==');
 const real = globalThis.fetch;
 const reply = result => { globalThis.fetch = async () => ({ json: async () => ({ result }) }); };
 reply([0, { ubus_rpc_session: 'abc', acls: { ubus: { 'flab.network': ['status'], uci: ['set', 'apply'], 'flab.any': ['*'] } } }]);
-await login('flab-admin', 'x');
+await login('someone', 'x');
 check(can('flab.network', 'status') && !can('flab.network', 'reload') && can('uci', 'set') && !can('uci', 'commit') && can('flab.any', 'whatever') && !can('nope', 'x'), 'can() answers from the ACLs returned at sign-in; "*" grants every method');
 check(JSON.parse(store.get('acls')).ubus.uci.length === 2 && store.get('sid') === 'abc', 'the ACLs are kept with the session id');
+reply([0, { ubus_rpc_session: 'ghi', acls: { ubus: { '*': ['*'] }, uci: { '*': ['read', 'write'] } } }]);
+await login('root', 'x');
+check(can('uci', 'set') && can('system', 'board') && can('anything', 'at all'), 'root\'s ACL (object "*", method "*") allows every call');
 reply([0, { ubus_rpc_session: 'def' }]);
-await login('flab', 'x');
+await login('nobody', 'x');
 check(!can('uci', 'set') && !can('flab.network', 'status'), 'a login that reports no ACLs may call nothing from the UI\'s point of view');
 clearSession();
 check(store.get('sid') === undefined && store.get('acls') === undefined && !can('flab.network', 'status'), 'signing out forgets the ACLs too');

@@ -61,6 +61,21 @@ const fwRuleCount = Object.values(uciFw).filter(s => s['.type'] === 'rule').leng
 const sysLog = 'logread_l_500.txt';
 const kernLog = 'dmesg_r.txt';
 
+// The tail of a real log is whatever the router did last (a busy ssh session fills it with a single program), so
+// the first captured system log lines are replaced by entries of several programs, one an error and one a warning,
+// which keeps the filters testable whatever the router was doing. The number of lines stays the same.
+{
+  const lines = raw[sysLog].split('\n');
+  const synthetic = [
+    'Wed Nov 11 00:00:01 2026 daemon.info flab-test[1]: an entry from another program',
+    'Wed Nov 11 00:00:02 2026 daemon.err flab-test[1]: an error from another program',
+    'Wed Nov 11 00:00:03 2026 daemon.warn flab-test[2]: a warning from another program',
+    'Wed Nov 11 00:00:04 2026 auth.info dropbear[3]: a login handled by dropbear',
+  ];
+  lines.splice(0, synthetic.length, ...synthetic);
+  raw[sysLog] = lines.join('\n');
+}
+
 // Adds a counting rule with an fw4 comment to a chain of the captured ruleset.
 function nftAdd(fx, chain, comment, packets, bytes) {
   const doc = JSON.parse(fx.raw[nftFile]);
@@ -78,7 +93,7 @@ const ifaces = Object.keys(files).map(p => p.match(/^\/sys\/class\/net\/([^/]+)\
 //#endregion
 
 //#region Synthetic bridge forwarding table
-// The kernel table is binary, so it is generated: 16 bytes per entry (MAC, port, is_local, ageing, port high byte).
+// The kernel table is binary, so it is generated: 16 bytes per entry (MAC, port, is_local, aging, port high byte).
 const LEARNED = { lan1: 3, lan2: 1, 'phy0-ap0': 11, 'phy0-mesh0': 1, 'phy1-ap0': 5 };
 const LOCAL = 2;
 

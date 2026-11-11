@@ -45,7 +45,7 @@ const field = (iconName, input, ...after) => h('div', { className: 'login-field'
 // The sign-in screen: builds the hero and the form, signs in on submit and calls `onSuccess`; a failed attempt
 // shows the screen again with `message` (also used for "Session expired").
 export function showLogin(onSuccess, message) {
-  const user = h('input', { className: 'form-control', name: 'username', value: 'flab', autocomplete: 'username', placeholder: 'User name' });
+  const user = h('input', { className: 'form-control', name: 'username', value: 'root', autocomplete: 'username', placeholder: 'User name' });
   const pass = h('input', { className: 'form-control', name: 'password', type: 'password', autocomplete: 'current-password', autofocus: true, placeholder: 'Password' });
 
   // Not a submit button, so the form still has exactly one.
@@ -65,7 +65,7 @@ export function showLogin(onSuccess, message) {
     h('label', {}, h('span', { className: 'form-label' }, 'User name'), field('person', user)),
     h('label', {}, h('span', { className: 'form-label' }, 'Password'), field('key', pass, reveal)),
     submit,
-    h('div', { className: 'login-note muted small' }, icon('shield-check', 14), 'Read-only access. The session ends when you close this tab.'));
+    h('div', { className: 'login-note muted small' }, icon('shield-check', 14), 'Sign in with the router login. The session ends when you close this tab.'));
 
   form.onsubmit = async ev => {
     ev.preventDefault();

@@ -31,7 +31,7 @@ const signalLevel = s => s == null ? '' : s >= -60 ? 'good' : s >= -72 ? 'fair' 
 const failRatio = p => p.tx_packets > 100 ? (p.tx_failed ?? 0) / p.tx_packets * 100 : null;
 
 // The first five octets identify the same physical device (its interfaces use consecutive addresses), which
-// is how a mesh peer is recognised as the bridge's root bridge. The comparison drops separators and case
+// is how a mesh peer is recognized as the bridge's root bridge. The comparison drops separators and case
 // and looks at the first 10 hex digits.
 const sameDevice = (a, b) => a && b && a.replace(/[^0-9a-f]/gi, '').slice(0, 10).toLowerCase() === b.replace(/[^0-9a-f]/gi, '').slice(0, 10).toLowerCase();
 // MAC part of an STP bridge ID ("8000.aabbccddeeff" -> "aabbccddeeff"); empty when absent.

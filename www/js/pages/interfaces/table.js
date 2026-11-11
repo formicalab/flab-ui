@@ -78,7 +78,7 @@ function interfaceCell(row) {
     row.over && row.roots.length ? h('div', { className: 'muted small' }, 'on the protocol device of ', h('b', {}, row.over)) : null);
 }
 
-// Protocol device column (pppoe-wan, wg0, ...); a device owned by another interface is labelled "(shared)".
+// Protocol device column (pppoe-wan, wg0, ...); a device owned by another interface is labeled "(shared)".
 function protoCell(row) {
   const d = row.protoDevice;
   if (!d) return muted('–');

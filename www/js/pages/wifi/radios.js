@@ -1,5 +1,5 @@
 // Radios section of the Wi-Fi page: one card per radio with its live state (channel, width, tx power,
-// noise, channel utilisation), its configuration next to what is actually running, the channels the
+// noise, channel utilization), its configuration next to what is actually running, the channels the
 // regulatory domain allows, and a table of the SSIDs on it (mesh interfaces are on the Mesh page). Data
 // comes from the flab.radio plugin; counters (airtime, bytes) are turned into rates here, so the cards
 // follow channel changes, DFS events and interfaces coming and going on every poll.
@@ -18,7 +18,7 @@ const BAND = { '2g': '2.4 GHz', '5g': '5 GHz', '6g': '6 GHz', '60g': '60 GHz' };
 // Band label of a radio, derived from the live frequency (MHz) when the band code is unknown.
 const bandOf = r => BAND[r.band] ?? (r.live?.freq ? `${(r.live.freq / 1000).toFixed(1)} GHz` : '–');
 
-// Badge colour of a security label: modern (WPA3, OWE) green, WPA2 amber, open or broken (WEP, WPA1) red.
+// Badge color of a security label: modern (WPA3, OWE) green, WPA2 amber, open or broken (WEP, WPA1) red.
 export const SECURITY_KIND = s => /WPA3|OWE/.test(s) ? 'success' : /WPA2/.test(s) ? 'warning' : /Open|WEP|^WPA-/.test(s) ? 'danger' : '';
 
 // The frequency is part of the key: airtime counters restart when the radio changes channel.
@@ -98,20 +98,20 @@ function hero(r) {
   const stat = (label, value, sub) => h('div', { className: 'rd-stat' }, h('div', { className: 'label' }, label), h('div', { className: 'value' }, value), sub ? h('div', { className: 'sub' }, sub) : null);
   return h('div', { className: 'rd-hero' },
     stat('Channel', live.channel ?? '–', live.freq ? `${live.freq} MHz` : 'not running'),
-    stat('Width', live.width ? `${live.width} MHz` : '–', live.center ? `centre ${live.center} MHz` : ''),
+    stat('Width', live.width ? `${live.width} MHz` : '–', live.center ? `center ${live.center} MHz` : ''),
     stat('TX power', live.txpower != null ? `${live.txpower} dBm` : '–', live.txpower != null ? `${Math.round(10 ** (live.txpower / 10))} mW` : ''),
     stat('Noise floor', r.survey?.noise != null ? `${r.survey.noise} dBm` : '–', 'on this channel'),
     stat('Antennas', r.antennas ? `${r.antennas.tx} × ${r.antennas.rx}` : '–', 'TX × RX chains'),
     stat('Clients', fmtNum(r.interfaces.reduce((n, i) => n + (i.clients ?? 0), 0)), `${r.interfaces.length} interface${r.interfaces.length === 1 ? '' : 's'}`));
 }
 
-// Channel utilisation: busy share now (meter turns amber from 40 % and red from 70 %), this radio's own
+// Channel utilization: busy share now (meter turns amber from 40 % and red from 70 %), this radio's own
 // receive and transmit share, and the busy history as a sparkline.
 function airtimeBlock(r) {
   const a = airtime(r);
-  if (a.busyNow == null) return h('div', { className: 'rd-air' }, h('div', { className: 'label' }, 'Channel utilisation'), muted('measuring…'));
+  if (a.busyNow == null) return h('div', { className: 'rd-air' }, h('div', { className: 'label' }, 'Channel utilization'), muted('measuring…'));
   return h('div', { className: 'rd-air' },
-    h('div', { className: 'label' }, 'Channel utilisation'),
+    h('div', { className: 'label' }, 'Channel utilization'),
     h('div', { className: 'rd-air-top' },
       h('b', { className: 'big' }, `${a.busyNow.toFixed(1)} %`),
       h('span', { className: 'muted small' }, `busy · this radio ↓ ${(a.rxNow ?? 0).toFixed(1)} % ↑ ${(a.txNow ?? 0).toFixed(1)} %`)),

@@ -112,7 +112,7 @@ function phy_info(phy) {
 }
 
 // Cumulative airtime counters of the channel in use (milliseconds) from `iw dev <if> survey dump`, or
-// null when no channel is marked "[in use]". The UI turns two samples into a utilisation percentage,
+// null when no channel is marked "[in use]". The UI turns two samples into a utilization percentage,
 // so this stays a plain counter dump.
 function survey(ifname) {
 	// `current` is true while inside the survey block of the channel in use.

@@ -41,7 +41,7 @@ function settings(b) {
     ['Bridge ID', mono(b.bridge_id ?? '–')],
     b.stp ? ['Priority', `${b.priority} (lower wins)`] : null,
     b.stp ? ['Timers', `hello ${fmtSpan(b.hello_time)} · forward delay ${fmtSpan(b.forward_delay)} · max age ${fmtSpan(b.max_age)}`] : null,
-    ['MAC ageing', fmtSpan(b.ageing_time)],
+    ['MAC aging', fmtSpan(b.ageing_time)],
     ['Learned MACs', fmtNum(b.macs)],
     ['VLAN filtering', b.vlan_filtering ? h('span', {}, onOff(true), ` default PVID ${b.default_pvid ?? '–'}`) : onOff(false)],
     ['IGMP snooping', h('span', {}, onOff(b.igmp_snooping), b.igmp_snooping ? h('span', {}, ' querier ', onOff(b.multicast_querier)) : null)],

@@ -3,13 +3,14 @@
 // To add a page:
 //   1. Create js/pages/<name>.js (or a js/pages/<name>/ folder) that default-exports a page object.
 //   2. Import it below and add it to the list.
-//   3. If it needs server-side data, add rpcd/ucode/flab.<name>.uc plus rpcd/acl.d/flab-<name>.json;
-//      deploy.ps1 installs every file in those folders automatically.
+//   3. If it needs server-side data that rpcd's own objects (uci, system, service, ...) do not give, add
+//      rpcd/ucode/flab.<name>.uc; deploy.ps1 installs every file in that folder automatically.
 //
-// Page contract (all members except the first five are optional):
+// Page contract (id, label, icon, interval, load and view are required; the rest is optional):
 //   id        route name, used as the URL hash (#id)
 //   label     navigation text            title?  command-bar heading (defaults to label)
 //   icon      icon name from core/icons.js
+//   nav       'bottom' places the link below the spacer, next to Sign out (default: the main list)
 //   interval  auto-refresh period in ms
 //   load()    async; returns the page data (usually one ubus call)
 //   view(data, rerender)  returns an array of nodes; rerender() redraws from cached data
@@ -29,7 +30,9 @@ import interfaces from './interfaces/index.js';
 import bgp from './bgp/index.js';
 import services from './services.js';
 import logs from './logs/index.js';
+import settings from './settings/index.js';
 
 // Network pages go from the physical layer up (ports, bridges, radios, tunnels, firewall); Devices and
 // Interfaces is the recap that ties them together, followed by routing (BGP), the services and the logs.
-export const pages = [overview, network, bridges, wifi, mesh, ipsec, wireguard, firewall, interfaces, bgp, services, logs];
+// System settings is the only page that changes the router; it sits at the bottom of the navigation, by Sign out.
+export const pages = [overview, network, bridges, wifi, mesh, ipsec, wireguard, firewall, interfaces, bgp, services, logs, settings];

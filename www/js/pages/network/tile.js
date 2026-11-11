@@ -6,7 +6,7 @@ import { badge, sparkline } from '../../core/ui.js';
 import { fmtLine } from '../../core/format.js';
 import { fmtSpeed, traffic, newFlaps, newErrors, hwLines, STP_ROLE, stpKind } from './util.js';
 
-// Tile colour state: 'down' without carrier, 'warn' when downshifted or flapping/erroring since the page
+// Tile color state: 'down' without carrier, 'warn' when downshifted or flapping/erroring since the page
 // was opened, else 'up'.
 function portState(p) {
   if (!p.carrier) return 'down';

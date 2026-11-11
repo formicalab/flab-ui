@@ -4,14 +4,15 @@
 // the scenario JSON produced by the backend run, so every page can be driven through link loss, STP changes,
 // new bridges, radios going down, DFS, a stale VPN peer, a stopped firewall, secret-looking log lines and so on
 // WITHOUT touching the router. Everything else (login, the netifd interface dump) goes to the real router.
-// Usage: node live.mjs <dir with scenario JSON>   (env: FLAB_URL, FLAB_PASSWORD, FLAB_SHOTS)
+// Usage: node live.mjs <dir with scenario JSON>   (env: FLAB_SID, FLAB_URL, FLAB_SHOTS)
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const out = process.argv[2];
 const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/flab/';
-const password = process.env.FLAB_PASSWORD ?? 'flab';
+const sid = process.env.FLAB_SID;   // a session made by tests/TestSession.ps1, so no password is needed
+const acls = JSON.parse(process.env.FLAB_ACLS);   // what that session may call, like the ACLs of a real sign-in
 const shots = process.env.FLAB_SHOTS;
 // Reads <scenario>.flab.<plugin>.json from the backend run.
 const scenario = (n, plugin) => JSON.parse(fs.readFileSync(path.join(out, `${n}.flab.${plugin}.json`), 'utf8'));
@@ -62,11 +63,14 @@ const stage = async (label, plugin, name) => {
 // CSS classes of a port tile on the Wired network page.
 const portClass = async name => (await page.locator(`.port:has(.pname:text-is("${name}"))`).first().getAttribute('class')) ?? '';
 
+// Start signed in, the way a real sign-in leaves the tab: the session id and its ACLs in sessionStorage.
+await page.addInitScript(([id, granted]) => {
+  sessionStorage.setItem('sid', id);
+  sessionStorage.setItem('acls', JSON.stringify(granted));
+}, [sid, acls]);
 await page.goto(baseUrl);
-await page.fill('input[name=password]', password);
-await page.click('button[type=submit]');
 await page.waitForSelector('.tile');
-check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wired network', 'Bridges', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'Devices and Interfaces', 'BGP', 'Services', 'Logs'].join(' | '), 'navigation order: network layers, Firewall, Devices and Interfaces recap, BGP, Services, Logs last', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
+check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wired network', 'Bridges', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'Devices and Interfaces', 'BGP', 'Services', 'Logs', 'System settings'].join(' | '), 'navigation order: network layers, Firewall, Devices and Interfaces recap, BGP, Services, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
 //#region Wired network page
 await page.click('a[href="#network"]');
 await page.waitForSelector('.port');
@@ -83,8 +87,8 @@ await stage('a link goes down', 'network', 'n-linkdown');
 check((await portClass('lan1')).includes('down'), 'lan1 turns into a down tile', await portClass('lan1'));
 check(await tile(0) !== liveLinked || (await portClass('lan1')).includes('down'), 'ports-linked tile follows');
 const noLink = page.locator('.port-table tr:has(strong:text-is("lan1")) .fl-badge:text-is("no link")');
-check(await noLink.count() === 1 && !/danger|warning/.test(await noLink.getAttribute('class')), 'a missing link is a neutral tag, not an error colour', await noLink.getAttribute('class'));
-check(await page.locator('.port-table tr:has(strong:text-is("lan1")) .dot.idle').count() === 1 && await page.locator('.port-table tr:has(strong:text-is("lan1")) .dot.down').count() === 0, 'its status dot is grey, not red');
+check(await noLink.count() === 1 && !/danger|warning/.test(await noLink.getAttribute('class')), 'a missing link is a neutral tag, not an error color', await noLink.getAttribute('class'));
+check(await page.locator('.port-table tr:has(strong:text-is("lan1")) .dot.idle').count() === 1 && await page.locator('.port-table tr:has(strong:text-is("lan1")) .dot.down').count() === 0, 'its status dot is gray, not red');
 
 await stage('a port logs errors', 'network', 'n-errors');
 check(await page.locator('.topo-box.phy').count() >= 1 && /RTL8221B/.test(await text('.topo-box.phy')), 'topology shows the external PHY chipset', await text('.topo-box.phy'));
@@ -299,7 +303,7 @@ await stage('Internet-facing zone wide open', 'firewall', 'f-exposed');
 check(/accepts all traffic to the router/.test(await text('.net-health')) && /Open-All accepts every TCP\/UDP port/.test(await text('.net-health')) && await page.locator('.net-health.bad').count() === 1, 'an open WAN is a red finding', await text('.net-health'));
 
 await stage('a disabled rule', 'firewall', 'f-disabled');
-check(/1 rule is disabled: Allow-Ping/.test(await text('.net-health')) && await page.locator('.fw-table tr.fw-off').count() === 1, 'a disabled rule is greyed out and reported');
+check(/1 rule is disabled: Allow-Ping/.test(await text('.net-health')) && await page.locator('.fw-table tr.fw-off').count() === 1, 'a disabled rule is grayed out and reported');
 
 await stage('an unnamed rule', 'firewall', 'f-anonymous');
 check(/@rule\[\d+\]/.test(await text('.fw-table')) && /unnamed/.test(await text('.fw-table')) && /TCP 2222/.test(await text('.fw-table')), 'an unnamed rule is listed by its position');
@@ -418,11 +422,11 @@ await stage('new SSID', 'radio', 'r-newssid');
 check(await page.locator('.rd-card').first().locator('tbody tr').count() === baseRows + 1, 'new SSID row appears', String(baseRows));
 check(/guest is an open network/.test(await text('.rd-find')), 'open network warned about', await text('.rd-find'));
 
-console.log('\n== live channel utilisation ==');
+console.log('\n== live channel utilization ==');
 mock.radio = scenario('base', 'radio');
 tick = (plugin, d) => { if (plugin === 'radio') for (const r of d.radios) if (r.survey) { r.survey.active += 1000; r.survey.busy += 250; r.survey.rx += 100; r.survey.tx += 50; } };
 await refresh(); await refresh(); await refresh();
-check(/25\.0 %/.test(await text('.rd-air .big')), 'airtime counters become a utilisation percentage', await text('.rd-air .big'));
+check(/25\.0 %/.test(await text('.rd-air .big')), 'airtime counters become a utilization percentage', await text('.rd-air .big'));
 //#endregion
 
 check(errors.length === 0, 'no console or page errors', errors.join(' | '));

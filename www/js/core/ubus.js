@@ -2,7 +2,7 @@
 //
 // Session state lives in sessionStorage, so it ends with the tab and is never written to disk. The ACLs
 // granted at login are cached next to the session id; `can()` answers "may this login call that method?"
-// without a round trip, which is how the UI will hide editing controls from a read-only login.
+// without a round trip, so a page can disable controls the login is not allowed to use.
 
 const NULL_SID = '00000000000000000000000000000000';   // the anonymous session rpcd gives to unauthenticated calls
 const SESSION_TIMEOUT_S = 900;
@@ -45,7 +45,6 @@ export async function ubus(obj, method, args) {
     throw new Error(`Access denied by ACL: ${obj}.${method}`);
   }
 }
-
 // For data a page can do without (an optional plugin, an ACL that was not granted): resolves to null instead
 // of failing the page. An expired session is still raised, because the whole page needs a new sign-in then.
 export const optional = promise => promise.catch(e => {
@@ -53,9 +52,10 @@ export const optional = promise => promise.catch(e => {
   return null;
 });
 
-// Whether the signed-in login may call `obj.method`, from the ACLs rpcd returned at sign-in. "*" grants everything.
+// Whether the signed-in login may call `obj.method`, from the ACLs rpcd returned at sign-in. "*" grants every
+// method, and an object named "*" (root's ACL) every object.
 export function can(obj, method) {
-  const methods = acls.ubus?.[obj] ?? [];
+  const methods = [...(acls.ubus?.[obj] ?? []), ...(acls.ubus?.['*'] ?? [])];
   return methods.includes('*') || methods.includes(method);
 }
 

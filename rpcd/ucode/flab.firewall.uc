@@ -151,7 +151,7 @@ function zone_view(s, all, nft) {
 		forwards,
 		enabled: s.enabled != '0',
 		// Packets the zone's reject/drop chains turned away: traffic from the zone to the router (`from`) and
-		// traffic forwarded towards the zone (`to`).
+		// traffic forwarded toward the zone (`to`).
 		blocked_from: blocked(nft, 'from', name),
 		blocked_to: blocked(nft, 'to', name),
 	};

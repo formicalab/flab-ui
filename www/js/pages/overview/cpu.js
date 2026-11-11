@@ -72,9 +72,9 @@ function series(id, pick) {
 //#endregion
 
 //#region presentation
-// Colour level for a busy percentage: good below 60 %, fair below 85 %, weak above.
+// Color level for a busy percentage: good below 60 %, fair below 85 %, weak above.
 export const level = busy => busy < 60 ? 'good' : busy < 85 ? 'fair' : 'weak';
-// Text colour class per level.
+// Text color class per level.
 export const levelText = { good: 'text-success', fair: 'text-warning', weak: 'text-danger' };
 
 // Stacked-bar segments as [key in shares(), label, tooltip]; idle is the unfilled remainder and is not listed.

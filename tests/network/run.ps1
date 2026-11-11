@@ -29,9 +29,6 @@ SSH destination of the router.
 .PARAMETER Url
 Base URL of the deployed UI (used by -Browser).
 
-.PARAMETER Password
-Password of the 'flab' rpcd login (used by -Browser).
-
 .PARAMETER Browser
 Also run the live-update browser test.
 #>
@@ -39,7 +36,6 @@ Also run the live-update browser test.
 param(
     [string]$Router = 'root@openwrt.lab.formicalab.casa',
     [string]$Url = 'https://openwrt.lab.formicalab.casa/flab/',
-    [string]$Password = 'flab',
     [switch]$Browser
 )
 
@@ -47,6 +43,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $here = $PSScriptRoot
+. (Join-Path $here '..\TestSession.ps1')
+$sid = $null
 $root = (Resolve-Path (Join-Path $here '..\..')).Path
 # Every rpcd plugin the suite exercises; each is captured once and then run against every scenario.
 $plugins = 'flab.network', 'flab.radio', 'flab.mesh', 'flab.wireguard', 'flab.firewall', 'flab.logs'
@@ -155,7 +153,10 @@ done
             Invoke-Native 'npm' @('init', '-y', '--silent')
             Invoke-Native 'npm' @('install', '--silent', 'playwright-core')
             $env:FLAB_URL = $Url
-            $env:FLAB_PASSWORD = $Password
+            $session = New-TestSession -Router $Router
+            $sid = $session.Sid
+            $env:FLAB_SID = $sid
+            $env:FLAB_ACLS = $session.Acls
             Invoke-Native 'node' @('live.mjs', (Join-Path $work 'out'))
         }
         finally {
@@ -166,6 +167,7 @@ done
 }
 finally {
     # Always remove the router-side work folder and the local one, even after a failure.
+    Remove-TestSession -Router $Router -Sid $sid
     ssh $Router "rm -rf $remote" 2>$null
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }

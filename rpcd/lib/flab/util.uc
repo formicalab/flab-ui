@@ -144,7 +144,7 @@ export function as_list(v) {
 	return v == null ? [] : (type(v) == 'array' ? v : split(trim(v), /[[:space:]]+/));
 }
 
-// Channel, frequency, width, centre frequency and TX power of a wireless interface, from `iw dev <if> info`.
+// Channel, frequency, width, center frequency and TX power of a wireless interface, from `iw dev <if> info`.
 // Only the keys iw reports are set. The interface name must already have passed safe_ifname().
 export function iw_channel_info(ifname) {
 	let out = {};
@@ -164,7 +164,7 @@ export function iw_channel_info(ifname) {
 }
 
 // Human label for a UCI wireless `encryption` value. Order matters: the more specific patterns
-// (psk2+psk3, psk-mixed) are tested before the substrings they contain (psk2, psk). An unrecognised
+// (psk2+psk3, psk-mixed) are tested before the substrings they contain (psk2, psk). An unrecognized
 // value is returned unchanged.
 export function security_label(enc) {
 	enc ??= '';

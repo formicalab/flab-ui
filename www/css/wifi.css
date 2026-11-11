@@ -29,7 +29,7 @@
 .rd-find .bad { color: var(--fl-bad-fg); }
 .rd-find .info { color: var(--fl-info-fg); }
 
-/* ── Configuration, utilisation, channels: two detail columns, airtime meter and the channel strip ── */
+/* ── Configuration, utilization, channels: two detail columns, airtime meter and the channel strip ── */
 .rd-cols { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr); gap: 1.75rem; padding: 1.1rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
 .rd-card h3 { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--fl-muted); margin: 0 0 .6rem; }
 .rd-air { display: grid; gap: .45rem; margin-bottom: 1.2rem; }
