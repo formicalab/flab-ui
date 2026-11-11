@@ -20,7 +20,8 @@
 import overview from './overview/index.js';
 import wifi from './wifi.js';
 import ipsec from './ipsec/index.js';
+import bgp from './bgp/index.js';
 import network from './network.js';
 import services from './services.js';
 
-export const pages = [overview, wifi, ipsec, network, services];
+export const pages = [overview, wifi, ipsec, bgp, network, services];

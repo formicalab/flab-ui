@@ -12,9 +12,6 @@
 /* ── Header ── */
 .vpn-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: 1.2rem 1.25rem .5rem; }
 .vpn-head .name { font-size: 1.2rem; font-weight: 600; }
-.dot { width: 10px; height: 10px; border-radius: 50%; }
-.dot.up { background: var(--fl-ok-fg); animation: pulse 2.4s ease-out infinite; }
-.dot.down { background: var(--fl-bad-fg); }
 .grade { margin-left: auto; padding: .25rem .9rem; border-radius: 999px; font-size: 1.05rem; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); white-space: nowrap; }
 .grade small { font-weight: 400; opacity: .8; }
 .grade.success { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
@@ -57,10 +54,6 @@
 .score-model { display: grid; grid-template-columns: 15rem 1fr; gap: .3rem 1rem; padding: .3rem 0; }
 
 @keyframes flow { to { background-position: 20px 0; } }
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fl-ok-fg) 55%, transparent); }
-  70%, 100% { box-shadow: 0 0 0 8px transparent; }
-}
 
 @media (max-width: 767.98px) {
   .vpn-flow, .vpn-daemon, .score-model { grid-template-columns: 1fr; }

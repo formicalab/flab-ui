@@ -34,13 +34,13 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
    v
 rpcd ---- built-in objects:  session, system, network.interface, service
    |
-   '----- ucode plugins:    flab.wifi, flab.ipsec, flab.sensors   (this repo)
+   '----- ucode plugins:    flab.wifi, flab.ipsec, flab.bgp, flab.sensors   (this repo)
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici
                 |
                 v
-   swanctl --raw (VICI) · ip xfrm · hostapd_cli · iw · netifd · uci · sysfs
+   swanctl --raw (VICI) · birdc · ip xfrm/route · hostapd_cli · iw · netifd · uci · sysfs
 ```
 
 Design principles:
@@ -63,7 +63,7 @@ flab-ui/
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
     css/
       base.css               Fluent tokens, app shell, shared component styles
-      <page>.css             Page-specific styles, loaded on first visit (overview, ipsec)
+      <page>.css             Page-specific styles, loaded on first visit (overview, ipsec, bgp)
     js/
       main.js                Entry point: theme + start the app
       core/                  Framework-level modules shared by all pages
@@ -81,6 +81,7 @@ flab-ui/
         overview/            index.js + temperatures.js
         wifi.js              Wi-Fi clients
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
+        bgp/                 index.js, topology.js, peer.js, routes.js, announced.js, system.js, util.js
         network.js           Interfaces
         services.js          procd services
   rpcd/
@@ -156,6 +157,10 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   the score model.
 - **Overview** (`pages/overview/`): the sensors call is optional (`optional()` wrapper), so a missing
   plugin or ACL hides the temperature section instead of breaking the page.
+- **BGP** (`pages/bgp/`): `index.js` owns the page state and composes the sections; `topology.js`,
+  `peer.js`, `routes.js`, `announced.js` and `system.js` each export card builders that take the backend
+  data; `util.js` holds the per-peer color helpers, AS-path chips and prefix sort key. Shared styles for
+  the pulsing status `.dot` live in `base.css` because page CSS is loaded lazily.
 
 ## Backend (rpcd plugins)
 
@@ -174,6 +179,7 @@ return {
 |---|---|---|---|
 | `flab.wifi.uc` | `flab.wifi` | `clients` | uci wireless/network/dhcp, ubus `network.wireless`, `dhcp`, `hostapd.<if>`; `hostapd_cli all_sta`, `iw station dump`, `/proc/net/arp`, `ip -6 neigh` |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
+| `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
 
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
@@ -317,6 +323,46 @@ Facts worth remembering:
 - Pre-shared-key authentication caps the authentication score at 6/10 and raises a warning, because
   key entropy cannot be observed.
 
+### BGP
+Status of BIRD 3 (`flab.bgp`); the lab setup is four eBGP sessions to Azure (AS 65515) over the `xfrm0..3`
+tunnels (`build/MT6000/etc/bird.conf`). Sections, top to bottom:
+- **Tiles:** sessions established, prefixes learned (and paths), prefixes announced, multipath (ECMP) share,
+  kernel sync, BIRD version/uptime.
+- **Topology:** this router, one node per peer, remote AS node. CSS grid plus SVG connectors (animated
+  while a session is Established). Peers keep one color (`pc-0..5`) across every table on the page. The
+  connector math needs equal-height, touching peer cells (see the comment in `bgp/topology.js`).
+- **Health** (findings from the backend) and **active next hops per peer** (how many prefixes use each
+  peer as an installed next hop).
+- **One card per peer:** session (state, neighbor/local AS, session type, interface, hold/keepalive/
+  send-hold timers as remaining-time bars), capability comparison for both directions (rows where only one
+  side offers a capability are highlighted), channel (state, filters, route counts) and the BIRD
+  route-change statistics.
+- **Learned routes:** every BGP path grouped by prefix. Status is Best, ECMP (installed in the kernel
+  as an equal-cost next hop) or Backup. Columns: peer, next hop, interface, AS path chips (prepending
+  collapses to `65520 x2`), origin, local pref, MED and communities (the last two only appear when some
+  path has them), since. Filter, peer selector, "Best paths only", sortable columns.
+- **Announced routes:** prefix x peer matrix plus export-filter results per peer (considered, blocked by
+  filter, rejected, announced). **Local & connected routes**, **BIRD protocols**, **daemon** and
+  **memory** cards close the page.
+
+Facts worth remembering:
+- A path counts as "in kernel" when the kernel route (`ip -4 route show proto bird`) has a next hop via
+  that path's next-hop address. With `merge paths on` in the kernel protocol this gives ECMP across both
+  gateways of a region; paths with a longer AS path (`65515 65520 65520`, learned through the other
+  region) are Backup.
+- BIRD prints only the **date** in `Since` for anything older than a day, so session uptime cannot be
+  shown precisely.
+- BIRD's **kernel protocol re-exports the whole table every `scan time`** (20 s in `bird.conf`): in v3.3.3
+  `krt_prune()` calls `channel_request_full_refeed()` after each scan. So `show protocols all kernel1`
+  shows "Export updates received" growing by the table size (45 here) every 20 s, about 2.25/s and
+  hundreds of thousands per few days, while "accepted" grows by the number of exportable prefixes (16).
+  This is normal: `krt_rt_notify()` drops updates for routes already in the kernel, no netlink message
+  is sent (verified with `ip monitor route`), and BIRD used about 10 ms of CPU per 25 s. Do not report
+  these counters as churn. (The page once did; that finding was removed.)
+- Findings are computed in the backend: sessions not Established, best routes missing from the kernel,
+  prefixes learned from only one peer, import-filter drops, graceful-restart mismatch, peers receiving no
+  announcement.
+
 ### Network
 `network.interface dump`: state, protocol, device, addresses, uptime per interface.
 
@@ -333,6 +379,13 @@ Facts worth remembering:
 - **hostapd rate units**: `ubus hostapd.<if> get_clients` reports rates in units of 10 bit/s, so divide
   by 100000 to get Mbit/s.
 - **VICI parsing**: scalar values can contain spaces; see `flab.vici`.
+- **`ip monitor` on the router**: `timeout ip ...` runs BusyBox's reduced `ip` applet, which has no
+  `monitor`. Call `/sbin/ip` (iproute2) by full path.
+- **BIRD has no JSON output**: `flab.bgp` parses `birdc` text (indentation-based sections for protocols,
+  header plus tab-indented attribute lines for routes). The parser skips unknown lines, so a newer BIRD
+  only loses fields. Protocol names from `birdc` are validated before being used in a shell command.
+- **ucode numbers and time**: `+"08"` is 8 (decimal), `timelocal({...})` works for BIRD timestamps,
+  `match(s, /re/g)` returns an array of `[full, group]` pairs, `split(s, sep, limit)` is supported.
 - **The 404 for `favicon.ico`** is avoided with an empty data-URI icon in `index.html`.
 - All pages were exercised in light and dark at 1920x1080 with no console errors; the Wi-Fi page was
   also checked at 2560x1300. None showed horizontal page overflow.

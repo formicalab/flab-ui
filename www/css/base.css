@@ -153,6 +153,15 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
 .spark .rx { stroke: var(--fl-brand); }
 .spark .tx { stroke: var(--fl-ok-fg); }
 
+/* Status dot with a pulse while up (used by IPsec and BGP) */
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.dot.up { background: var(--fl-ok-fg); animation: pulse 2.4s ease-out infinite; }
+.dot.down { background: var(--fl-bad-fg); }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fl-ok-fg) 55%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 8px transparent; }
+}
+
 .progress { height: 6px; background: var(--fl-neutral-bg); border-radius: 3px; }
 .progress-bar { background: var(--fl-brand); }
 details.legend { color: var(--fl-muted); }

@@ -1,0 +1,98 @@
+// "Learned routes" table: every BGP path in the table, grouped by prefix, with best/ECMP/backup status.
+
+import { h } from '../../core/dom.js';
+import { icon } from '../../core/icons.js';
+import { badge, card } from '../../core/ui.js';
+import { peerDot, peerClass, asPath, communityText, prefixKey } from './util.js';
+
+const muted = t => h('span', { className: 'muted' }, t);
+
+// Best + installed -> Best (and ECMP when several next hops are installed); installed only -> ECMP; else Backup.
+function status(r) {
+  if (r.best && !r.in_kernel) return badge('Best · not in kernel', 'danger', 'BIRD selected this path but the kernel has no matching next hop');
+  if (r.best) return badge(r.kernel_paths > 1 ? `Best · ECMP ×${r.kernel_paths}` : 'Best', 'success', r.kernel_paths > 1 ? 'Traffic is load-shared over all installed next hops' : 'Installed in the kernel');
+  if (r.in_kernel) return badge('ECMP', 'info', 'Not the selected path, but installed as an equal-cost next hop');
+  return badge('Backup', '', 'Valid path, used only if the better paths disappear');
+}
+
+const COLS = [
+  { key: 'prefix', label: 'Prefix', w: 10, sort: r => prefixKey(r.prefix) },
+  { key: 'status', label: 'Status', w: 12, sort: r => (r.best ? 0 : r.in_kernel ? 1 : 2) },
+  { key: 'peer', label: 'Peer', w: 11, sort: r => r.peer },
+  { key: 'next_hop', label: 'Next hop', w: 9, sort: r => prefixKey(`${r.next_hop ?? '0.0.0.0'}/0`) },
+  { key: 'dev', label: 'Interface', w: 6, sort: r => r.dev ?? '' },
+  { key: 'as_path', label: 'AS path', w: 15, sort: r => r.as_path.length },
+  { key: 'origin', label: 'Origin', w: 5, sort: r => r.origin ?? '' },
+  { key: 'local_pref', label: 'Local pref', w: 6, sort: r => r.local_pref ?? -1 },
+  { key: 'med', label: 'MED', w: 5, sort: r => r.med ?? -1, optional: paths => paths.some(r => r.med != null) },
+  { key: 'communities', label: 'Communities', w: 13, sort: r => r.communities.length, optional: paths => paths.some(r => r.communities.length || r.large_communities.length) },
+  { key: 'since', label: 'Since', w: 8, sort: r => r.since ?? '' },
+];
+
+function cell(col, r, data, first) {
+  switch (col.key) {
+    case 'prefix': return h('span', { className: `mono ${first ? 'fw-semibold' : 'muted'}` }, r.prefix);
+    case 'status': return status(r);
+    case 'peer': return h('span', { className: 'peer-label', title: r.peer }, peerDot(data, r.peer), r.peer);
+    case 'next_hop': return h('span', { className: 'mono' }, r.next_hop ?? '–');
+    case 'dev': return h('span', { className: 'mono' }, r.dev ?? '–');
+    case 'as_path': return asPath(r.as_path);
+    case 'origin': return r.origin ?? '–';
+    case 'local_pref': return r.local_pref ?? '–';
+    case 'med': return r.med ?? '–';
+    case 'communities': {
+      const all = [...r.communities.map(communityText), ...r.large_communities.map(c => 'L ' + communityText(c))];
+      return all.length ? h('span', { className: 'chips' }, all.map(c => h('span', { className: 'chip', title: 'BGP community' }, c))) : muted('–');
+    }
+    default: return r.since ?? '–';
+  }
+}
+
+export function filterPaths(paths, state) {
+  const q = state.q.toLowerCase().split(/\s+/).filter(Boolean);
+  return paths.filter(r => {
+    if (state.peer !== 'all' && r.peer !== state.peer) return false;
+    if (state.best && !r.best) return false;
+    if (!q.length) return true;
+    const hay = [r.prefix, r.peer, r.next_hop, r.dev, r.as_path.join(' '), ...r.communities, r.origin].join(' ').toLowerCase();
+    return q.every(t => hay.includes(t));
+  });
+}
+
+function sorted(paths, state, cols) {
+  const col = cols.find(c => c.key === state.sort.key) ?? cols[0];
+  return [...paths].sort((a, b) => {
+    const x = col.sort(a), y = col.sort(b);
+    const primary = (x < y ? -1 : x > y ? 1 : 0) * state.sort.dir;
+    // Ties keep each prefix together with its best path first.
+    return primary || prefixKey(a.prefix) - prefixKey(b.prefix) || (b.best - a.best) || a.peer.localeCompare(b.peer);
+  });
+}
+
+export function routesCard(data, state, rerender) {
+  const cols = COLS.filter(c => !c.optional || c.optional(data.paths));
+  const totalWeight = cols.reduce((n, c) => n + c.w, 0);
+  const shown = sorted(filterPaths(data.paths, state), state, cols);
+  const prefixes = new Set(shown.map(r => r.prefix)).size;
+
+  const head = cols.map(col => {
+    const active = state.sort.key === col.key;
+    return h('th', { className: 'sortable', title: 'Sort', onclick: () => { state.sort = { key: col.key, dir: active ? -state.sort.dir : 1 }; rerender(); } },
+      col.label, active ? (state.sort.dir > 0 ? ' ▲' : ' ▼') : '');
+  });
+
+  let previous = null;
+  const rows = shown.map(r => {
+    const first = r.prefix !== previous;
+    previous = r.prefix;
+    return h('tr', { className: `${first ? 'group-start' : 'group-more'} ${r.best ? 'is-best' : ''} ${peerClass(data, r.peer)}` },
+      cols.map(c => h('td', { className: c.key === 'communities' ? 'wrap' : '' }, cell(c, r, data, first))));
+  });
+
+  return card([icon('signpost-split'), 'Learned routes',
+    h('span', { className: 'sub' }, `${shown.length} of ${data.paths.length} paths · ${prefixes} prefixes`)],
+  h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover fixed-grid routes-table', style: 'min-width:1200px' },
+    h('colgroup', {}, cols.map(c => h('col', { style: `width:${(c.w / totalWeight * 100).toFixed(2)}%` }))),
+    h('thead', {}, h('tr', {}, head)),
+    h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No routes match the filter'))))));
+}
