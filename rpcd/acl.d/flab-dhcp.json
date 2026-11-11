@@ -1,0 +1,18 @@
+{
+  "flab": {
+    "description": "flab-ui DHCP page: odhcpd leases and announcements (read), and the dhcp config through staged uci edits with automatic rollback",
+    "read": {
+      "ubus": {
+        "dhcp": ["ipv4leases", "ipv6leases", "ipv6ra"],
+        "uci": ["get", "changes"]
+      },
+      "uci": ["dhcp"]
+    },
+    "write": {
+      "ubus": {
+        "uci": ["set", "add", "delete", "revert", "apply", "confirm", "rollback"]
+      },
+      "uci": ["dhcp"]
+    }
+  }
+}

@@ -9,8 +9,12 @@
 // Draft shape (what the form edits):
 //   { values: { <option>: string | boolean | string[] }, zone: { name, rule } }
 //   An empty string or list means "not set". `zone.name` '' means "custom rule".
+import { differs, errorsOf, flag, hasBlankRows, normalize, sectionsOf, show, valueOf, validServer } from '../../core/fields.js';
+import { stageOps } from '../../core/ops.js';
 import { FIELDS } from './schema.js';
 import { ZONES } from './zones.js';
+
+export { validServer };
 
 // The config both sections live in, and the name given to the `timeserver` section when the router has none.
 export const CONFIG = 'system';
@@ -18,16 +22,8 @@ export const NTP_SECTION = 'ntp';
 
 //#region Reading
 
-// The options of a section as UCI returns it, without its bookkeeping keys (.type, .name, .anonymous).
-const optionsOf = section => Object.fromEntries(Object.entries(section).filter(([k]) => !k.startsWith('.')));
-
 // The first section of a type as { section, values }; { section: null, values: {} } when there is none.
-function firstSection(cfg, type) {
-  for (const [name, s] of Object.entries(cfg ?? {})) {
-    if (s['.type'] === type) return { section: s['.name'] ?? name, values: optionsOf(s) };
-  }
-  return { section: null, values: {} };
-}
+const firstSection = (cfg, type) => sectionsOf(cfg, type)[0] ?? { section: null, values: {} };
 
 // The settings from the replies of `uci get system` (all sections), `system info` and `service list sysntpd`.
 // The last two are optional: without them the clock and the NTP client state are null.
@@ -47,24 +43,8 @@ export function readSettings(cfg, info, svc) {
   };
 }
 
-// UCI spells booleans several ways; `fallback` is the value when the option is absent or unrecognized.
-export function uciBool(v, fallback) {
-  const s = String(v ?? '').toLowerCase();
-  if (['1', 'true', 'yes', 'on', 'enabled'].includes(s)) return true;
-  if (['0', 'false', 'no', 'off', 'disabled'].includes(s)) return false;
-  return fallback;
-}
-
-// A UCI option as a list: a single value may hold several words separated by spaces; absent is empty.
-const asList = v => (v == null ? [] : Array.isArray(v) ? v.map(String) : String(v).trim().split(/\s+/).filter(Boolean));
-
 // The form value of a field on the router: a boolean (the default when absent), a list, or a string ('' = not set).
-export function currentValue(field, data) {
-  const raw = data[field.section].values[field.key];
-  if (field.type === 'bool') return uciBool(raw, field.default ?? false);
-  if (field.type === 'list') return asList(raw);
-  return raw == null ? '' : String(raw);
-}
+export const currentValue = (field, data) => valueOf(field, data[field.section].values[field.key]);
 
 //#endregion
 
@@ -102,23 +82,6 @@ export const draftFrom = data => ({
   zone: zoneOf(data),
 });
 
-// A value as it will be written: strings trimmed (notes keep inner line breaks), lists trimmed without blanks.
-function normalize(field, v) {
-  if (field.type === 'list') return v.map(s => s.trim()).filter(Boolean);
-  if (field.type === 'bool') return v;
-  return field.type === 'text' ? v.replace(/\r\n/g, '\n').trim() : v.trim();
-}
-
-// A value for the review list: on/off, a comma list, the text, or "default" when empty.
-function show(field, v) {
-  if (field.type === 'bool') return v ? 'on' : 'off';
-  if (field.type === 'list') return v.length ? v.join(', ') : 'none';
-  return v === '' ? 'default' : v.length > 60 ? `${v.slice(0, 57)}…` : v;
-}
-
-// Whether two normalized values differ.
-const differs = (field, a, b) => (field.type === 'list' ? a.join('\n') !== b.join('\n') : a !== b);
-
 // The differences between the router's values and the draft, for the review list:
 // [{ key, label, from, to }]. The time zone is reported under the key 'zone'.
 export function changesOf(data, draft) {
@@ -144,44 +107,11 @@ function zoneChange(data, draft) {
 
 // Whether the draft differs from the router in any way, including blank list rows that were added.
 export const isDirty = (data, draft) => changesOf(data, draft).length > 0
-  || FIELDS.some(f => f.type === 'list' && draft.values[f.key].length !== normalize(f, draft.values[f.key]).length);
+  || FIELDS.some(f => hasBlankRows(f, draft.values[f.key]));
 
 //#endregion
 
 //#region Validation
-
-const HOSTNAME = /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
-const LABEL = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
-const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-const IPV6 = /^(?=.*:.*:)[0-9A-Fa-f:]+(\.[0-9]{1,3}){0,3}$/;
-
-// Whether `s` can be given to ntpd as a server: a host name, an IPv4 address or an IPv6 address.
-export const validServer = s => HOSTNAME.test(s) || IPV6.test(s);
-
-// The checks a field's `check` names: each returns an error message, or null when the value is fine.
-// They run on non-empty values only (an empty value means "not set").
-const CHECKS = {
-  label: v => (LABEL.test(v) ? null : 'must be one name of letters, digits and hyphens, without dots or spaces'),
-  host: v => (validServer(v) ? null : 'is not a valid host name or IP address'),
-  ip: v => (IPV4.test(v) || IPV6.test(v) ? null : 'is not an IP address'),
-  path: v => (/^\/\S+$/.test(v) ? null : 'must be an absolute path without spaces'),
-  seed: v => (v === '0' || /^\/\S+$/.test(v) ? null : 'must be 0 or an absolute path without spaces'),
-  ifname: v => (/^[A-Za-z0-9_.-]+$/.test(v) ? null : 'must be a network interface name (letters, digits, _ . -)'),
-};
-
-// The error for one non-empty value of a field, or null.
-function fieldError(field, v) {
-  if (field.type === 'int') {
-    if (!/^\d+$/.test(v)) return 'must be a whole number';
-    const n = +v;
-    if (field.min != null && n < field.min) return `must be at least ${field.min}`;
-    if (field.max != null && n > field.max) return `must be at most ${field.max}`;
-    return null;
-  }
-  if (field.type === 'enum') return field.options.includes(v) ? null : `must be one of ${field.options.join(', ')}`;
-  if (field.type === 'string' && /[\r\n]/.test(v)) return 'must be a single line';
-  return field.check ? CHECKS[field.check](v) : null;
-}
 
 // What stops the form from being saved (`errors`: { key, index?, text }) and what only deserves a warning.
 // `index` is the row of a list; the zone's custom rule is reported under the key 'zone'.
@@ -191,22 +121,7 @@ export function problems(data, draft) {
   const value = key => normalize(FIELDS.find(f => f.key === key), draft.values[key]);
 
   for (const f of FIELDS) {
-    if (f.type === 'bool') continue;
-    if (f.type === 'list') {
-      const seen = new Set();
-      draft.values[f.key].forEach((raw, index) => {
-        const v = raw.trim();
-        if (!v) return;
-        const bad = fieldError(f, v);
-        if (bad) errors.push({ key: f.key, index, text: `${f.label}: "${v}" ${bad}.` });
-        else if (seen.has(v.toLowerCase())) errors.push({ key: f.key, index, text: `${f.label}: "${v}" is listed twice.` });
-        seen.add(v.toLowerCase());
-      });
-      continue;
-    }
-    const v = normalize(f, draft.values[f.key]);
-    const bad = v ? fieldError(f, v) : null;
-    if (bad) errors.push({ key: f.key, text: `${f.label} ${bad}.` });
+    for (const e of errorsOf(f, draft.values[f.key])) errors.push({ key: f.key, ...e });
   }
 
   if (zoneChange(data, draft) && !draft.zone.name) {
@@ -225,9 +140,6 @@ export function problems(data, draft) {
 //#endregion
 
 //#region Writing
-
-// UCI booleans are written as '1' / '0'.
-const flag = b => (b ? '1' : '0');
 
 // The UCI operations that turn the router's config into the draft, as data:
 //   { op: 'set' | 'add' | 'delete', config, section, type?, name?, values? | options? }
@@ -271,13 +183,7 @@ export function plan(data, draft) {
 }
 
 // Stages the planned operations through a uci API (core/uci.js).
-export async function stage(ed, ops) {
-  for (const o of ops) {
-    if (o.op === 'set') await ed.set(o.config, o.section, o.values);
-    else if (o.op === 'add') await ed.add(o.config, o.type, o.values, o.name);
-    else await ed.delete(o.config, o.section, o.options);
-  }
-}
+export const stage = stageOps;
 
 // Throws unless the settings `after` (read back once the change is applied) hold what the draft asked for.
 // `before` is what the draft was made from: the zone rule is only checked when the draft changed the zone.

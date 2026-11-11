@@ -1,0 +1,51 @@
+/* DHCP page styling (the form controls and the review banner are in forms.css). Loaded on demand by core/app.js
+   when the page is first opened. */
+
+/* Badges next to each other in a lease row. */
+.dhcp-badges { display: inline-flex; gap: .35rem; flex-wrap: wrap; }
+
+/* The lease and prefix tables: tighter cells, and text columns (hostname, type, expiry) may wrap, so the tables
+   fit the page instead of scrolling sideways. Addresses stay whole. */
+.dhcp-tbl .table > :not(caption) > * > * { padding: .45rem .6rem; white-space: normal; }
+.dhcp-tbl .table .mono { white-space: nowrap; }
+
+/* DHCPv6 leases: a DUID is long, so it is cut with the full value in the tooltip; addresses stack. */
+.dhcp-duid { display: inline-block; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.dhcp-addrs { display: flex; flex-direction: column; gap: .15rem; }
+
+/* The reservations table: an input in every cell, as narrow as still shows an address; changed rows are tinted.
+   The state column wraps its badge and address, so the table fits the page down to a laptop screen. */
+.dhcp-hosts td, .dhcp-hosts th { padding: .3rem .4rem; }
+.dhcp-hosts th { white-space: nowrap; }
+.dhcp-hosts td { white-space: normal; }
+.dhcp-hosts input { min-width: 5.5rem; width: 100%; }
+.dhcp-hosts td:nth-child(2) input { min-width: 7.5rem; }
+.dhcp-hosts td:nth-child(3) input { min-width: 11rem; }
+.dhcp-hosts td:nth-child(4) input { min-width: 7rem; }
+.dhcp-hosts td:nth-child(5) input { min-width: 4rem; }
+.dhcp-hosts td:nth-child(6) input { min-width: 5rem; }
+
+/* Below a laptop screen the tables squeeze further: long values wrap and the DUID is cut shorter. */
+@media (max-width: 1150px) {
+  .dhcp-tbl .table .mono { white-space: normal; overflow-wrap: anywhere; }
+  .dhcp-duid { max-width: 6rem; }
+  .dhcp-hosts td, .dhcp-hosts th { padding: .25rem .2rem; }
+  .dhcp-hosts input { min-width: 4rem; }
+  .dhcp-hosts td:nth-child(2) input { min-width: 6.5rem; }
+  .dhcp-hosts td:nth-child(3) input { min-width: 9.5rem; }
+  .dhcp-hosts td:nth-child(4) input { min-width: 5rem; }
+  .dhcp-hosts td:nth-child(5) input { min-width: 3.5rem; }
+  .dhcp-hosts td:nth-child(6) input { min-width: 4.5rem; }
+}
+.dhcp-new > td { background: var(--fl-info-bg); }
+.dhcp-removed > td { background: var(--fl-bad-bg); opacity: .8; }
+.dhcp-removed input { text-decoration: line-through; }
+
+/* The editable cards (daemon and pools, or the reservations): one card each, full width. */
+.dhcp-form { display: flex; flex-direction: column; gap: 1.25rem; }
+.dhcp-groups { display: flex; flex-direction: column; gap: .6rem; }
+.dhcp-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
+.dhcp-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
+.dhcp-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+.dhcp-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
+.dhcp-group-body p { margin: 0; }

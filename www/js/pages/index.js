@@ -26,13 +26,15 @@ import mesh from './mesh/index.js';
 import ipsec from './ipsec/index.js';
 import wireguard from './wireguard/index.js';
 import firewall from './firewall/index.js';
+import dhcp from './dhcp/index.js';
 import interfaces from './interfaces/index.js';
 import bgp from './bgp/index.js';
 import services from './services.js';
 import logs from './logs/index.js';
 import settings from './settings/index.js';
 
-// Network pages go from the physical layer up (ports, bridges, radios, tunnels, firewall); Devices and
-// Interfaces is the recap that ties them together, followed by routing (BGP), the services and the logs.
-// System settings is the only page that changes the router; it sits at the bottom of the navigation, by Sign out.
-export const pages = [overview, network, bridges, wifi, mesh, ipsec, wireguard, firewall, interfaces, bgp, services, logs, settings];
+// Network pages go from the physical layer up (ports, bridges, radios, tunnels, firewall); DHCP and router
+// advertisements, a service on top of those, come next; Devices and Interfaces is the recap that ties them
+// together, followed by routing (BGP), the services and the logs.
+// System settings is the only other page that changes the router; it sits at the bottom of the navigation, by Sign out.
+export const pages = [overview, network, bridges, wifi, mesh, ipsec, wireguard, firewall, dhcp, interfaces, bgp, services, logs, settings];

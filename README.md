@@ -11,7 +11,7 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins.
 
 It is deployed to tmpfs for testing and removed again with one command; nothing is installed permanently. Like
 LuCI, it signs in with the router's own `root` login and creates no login of its own. Every page only reads the
-router except System settings, which changes `/etc/config/system`; how changes are made safely is described in
+router except System settings (`/etc/config/system`) and DHCP (`/etc/config/dhcp`); how changes are made safely is described in
 [Configuration changes](#configuration-changes).
 
 ## Contents
@@ -71,7 +71,7 @@ Design principles:
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
-  tests/                     bgp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), settings/,
+  tests/                     bgp/, dhcp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), settings/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -79,12 +79,16 @@ flab-ui/
     css/
       base.css               Fluent tokens, app shell, shared component styles, sign-in screen
       <page>.css             Page-specific styles, loaded on first visit
+      forms.css              Shared form and review-banner styles (System settings, DHCP)
     js/
       main.js                Entry point: theme + start the app
       core/                  Framework-level modules shared by all pages
         app.js               Shell: nav pane, command bar, hash routing, refresh loop
         ubus.js              ubus JSON-RPC transport, session, AuthError, optional(), can()
         uci.js               The one wrapper for rpcd's `uci` object (staged edits, apply with rollback, applyChange())
+        ops.js               stageOps(): turns a change plan (set / add / delete operations) into staged uci calls
+        fields.js            Pure form-field model: option readers, value checks (IP, MAC, duration, ...), fieldError()
+        forms.js             Form building blocks: legend, note, fieldRow(), the sticky review banner
         login.js             Sign-in screen (inline SVG and CSS only)
         dom.js               h() element builder (XSS-safe), byId()
         ui.js                Components: card, tile(s), table, badge, chip, kv, lifebar, meter, sparkline,
@@ -104,6 +108,7 @@ flab-ui/
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         wireguard/           index.js, iface.js
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js
+        dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js
         interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
         bgp/                 index.js, topology.js, peer.js, routes.js, announced.js, system.js, util.js
         services.js          procd services
@@ -203,7 +208,8 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   `announced.js` and `system.js` each export card builders that take the backend data; `util.js` holds the
   per-peer color helpers, AS-path chips and prefix sort key.
 - **Pure models**: `firewall/model.js` (zone matrix), `interfaces/layers.js` (network layers),
-  `logs/entries.js` (log filtering and formatting) and `settings/model.js` (validation and the UCI change plan)
+  `logs/entries.js` (log filtering and formatting), `settings/model.js` and `dhcp/model.js` (validation and the
+  UCI change plan) and `core/fields.js` (field checks)
   have no DOM access and are unit-tested on their own.
 
 ## Backend (rpcd plugins)
@@ -234,7 +240,8 @@ return {
 | `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
 
 The System settings page needs no plugin: it reads `/etc/config/system` through rpcd's own `uci` object, whose
-calls (on the `system` config only) are granted by `rpcd/acl.d/flab-settings.json`.
+calls (on the `system` config only) are granted by `rpcd/acl.d/flab-settings.json`; the DHCP page likewise uses
+`rpcd/acl.d/flab-dhcp.json` (ubus `dhcp` methods, `uci` read and write on `dhcp`).
 
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
@@ -300,8 +307,7 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
 ## Configuration changes
 
-System settings is the first page that changes the router, and it sets the pattern every later editing page
-follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
+System settings and DHCP change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
 page with every control disabled and a note saying why.
 
 **Flow** (all of it is rpcd's `uci` object, wrapped by `www/js/core/uci.js`; pages call `applyChange()`, not the
@@ -328,8 +334,10 @@ single steps):
 happened; the router is on its previous configuration after every failure.
 
 **Rules for the page that edits.**
-- Describe the options as data (`settings/schema.js`) and keep the model pure (`settings/model.js`: the form's
-  draft, validation, the change list, the UCI operations, the read-back check), so the page is only controls.
+- Describe the options as data (`settings/schema.js`, `dhcp/schema.js`) and keep the model pure
+  (`settings/model.js`: the form's draft, validation, the change list, the UCI operations, the read-back check),
+  so the page is only controls. Field checks, form rows and the sticky review banner are shared
+  (`core/fields.js`, `core/forms.js`, `core/ops.js`, `css/forms.css`).
 - Validate input in the page before staging; `uci` itself has no schema. Show the effect of the edits (the
   review list) before saving, and disable Save while anything is invalid.
 - Write only what changed, delete an emptied option instead of storing an empty string, and leave options the
@@ -339,8 +347,9 @@ happened; the router is on its previous configuration after every failure.
 - Mirror a change made to the router's configuration into `build/MT6000/etc/config/` in this repository.
 
 **Status.** `core/ubus.js` and `core/uci.js` (including `applyChange`) are unit-tested against a fake transport
-(`tests/network/uci.test.mjs`); the System settings suite tests the model and drives the whole flow in a browser
-against a mock router. The real path was exercised against the router with the same model and `applyChange`,
+(`tests/network/uci.test.mjs`); the System settings and DHCP suites test their models and drive the whole flow in a
+browser against a mock router. The real path was exercised against the router with the System settings model and
+`applyChange`,
 restoring the configuration afterwards: a confirmed change (zone, description, log port, NTP servers and
 switch), the removal of options, a custom zone rule, a forced rollback and the countdown rollback of an
 unconfirmed apply.
@@ -420,7 +429,7 @@ unit test.
 
 ## Pages
 
-Navigation order: Overview · Wired network · Bridges · Wi-Fi · Mesh · IPsec VPN · WireGuard · Firewall ·
+Navigation order: Overview · Wired network · Bridges · Wi-Fi · Mesh · IPsec VPN · WireGuard · Firewall · DHCP ·
 Devices and Interfaces · BGP · Services · Logs, then Settings at the bottom, next to Sign out. The network
 pages run from the physical layer up; Devices and Interfaces recaps how they fit together, followed by routing
 (BGP), the procd services and the logs.
@@ -700,8 +709,45 @@ in RAM: every daemon's messages and the kernel's) or the **kernel log** (`dmesg`
 - Filtering is done in the browser on the loaded tail, so changing a filter is instant; the log and the line
   count are requested from the router.
 
+### DHCP (route `#dhcp`)
+Shows and edits odhcpd, the router's DHCPv4, DHCPv6 and router advertisement (RA) server, which is configured in
+`/etc/config/dhcp`. It refreshes every 10 s and reads through the ubus `dhcp` object (`ipv4leases`,
+`ipv6leases`, `ipv6ra`), `network.interface dump` (which device belongs to which interface and its subnet),
+`service list odhcpd` and rpcd's `uci` object; it needs no plugin, only the ACL fragment
+`rpcd/acl.d/flab-dhcp.json`. Leases are keyed by device (`br-lan`) in the ubus replies and shown under their
+logical interface (`lan`). Top to bottom the page shows the tiles, then the settings (daemon, pools), then the
+announced prefixes, the leases and last the reservations.
+- **Tiles**: whether odhcpd runs, DHCPv4 leases (reserved and dynamic), DHCPv6 leases, reservations (how many hold
+  a lease now).
+- **Daemon** (`config odhcpd`): main DHCPv4 server switch, legacy mode, log level, lease file, trigger script,
+  hosts directory, and so on.
+- **Pools** (`config dhcp`, one card per interface, groups collapsible): Services (DHCPv4, DHCPv6, RA, NDP),
+  DHCPv4 pool and options, DHCPv6, Router advertisements, Neighbor discovery proxy and Other, about 50 options
+  from the odhcpd documentation. The header shows the subnet and the address range the pool resolves to
+  (start and limit are offsets in the interface's subnet).
+- **Leases**: the IPv6 prefixes the router announces (a stale one is flagged), DHCPv4 (address, MAC, hostname,
+  reserved or dynamic, time left) with a *Reserve* button on every dynamic lease that adds a reservation to the
+  form, and DHCPv6 (DUID, addresses, delegated prefixes). The command bar filters all three by text and by
+  interface.
+- **Reservations** (`config host`): one editable row each with name, IPv4 address, MAC address(es), DUID(s), IPv6
+  host ID and lease time, and whether the client holds a lease now. A reservation with only a name and a MAC
+  keeps the address dynamic. Rows can be added, removed (shown struck through, with Undo) and edited. New
+  sections get their names from uci, so a saved reservation is recognized by its content.
+- **Validation**: field checks come from `core/fields.js`; on top of them an address or MAC reserved twice
+  (both rows are marked), the router's own address and a pool that starts beyond its subnet are errors. Warnings
+  (they do not block Save): an address outside every served subnet, a pool longer than its subnet, DHCPv4 on an
+  interface with no IPv4 address, odhcpd no longer the main DHCPv4 server, advertisement intervals out of
+  proportion, the RA flag `none` combined with others, and `managed-config` with DHCPv6 disabled. Every
+  reservation needs a MAC or a DUID. A value already invalid in the router's file is reported the same way and
+  blocks Save until fixed.
+- **Not offered**: adding or removing pools (they follow the interfaces), the pool's `interface`, `ifname`,
+  `networkid` and `dnr`, and `boot6`.
+- Saving uses the same flow and review banner as System settings (see
+  [Configuration changes](#configuration-changes)); a pool or daemon change reloads odhcpd, which does not drop
+  existing leases. A daemon that is not running is reported, and the configuration stays editable.
+
 ### System settings (route `#settings`)
-The only page that changes the router. It shows and edits `/etc/config/system`: every option the OpenWrt wiki
+Changes the router: it shows and edits `/etc/config/system`: every option the OpenWrt wiki
 documents for the `system` section and for its `timeserver` (NTP) section, in four cards that each take the full
 width of the page: General, Time zone and NTP, System log, and Kernel, cron and memory. It is shown at the
 bottom of the navigation pane and refreshes every 10 s. It reads through rpcd's `uci` object (`uci get system`),
@@ -742,7 +788,7 @@ the ACL fragment `rpcd/acl.d/flab-settings.json`.
 
 ## Testing
 
-Four suites, driven by `run.ps1` scripts that never change the router's configuration. The BGP, IPsec and
+Five suites, driven by `run.ps1` scripts that never change the router's configuration. The BGP, IPsec and
 network suites share one mechanism: the repository's plugins run **on the router** against saved fixtures
 (`FLAB_FIXTURES`, with `ucode -L` so the uploaded libraries win over the deployed ones), and an optional browser
 pass opens the deployed UI in Edge through `playwright-core` (installed into a temporary folder) with the plugin
@@ -754,6 +800,7 @@ calls intercepted and answered with the scenario JSON.
 | IPsec | `pwsh -File flab-ui\tests\ipsec\run.ps1 [-Browser]` | `flab.ipsec`, IPsec page, throughput history |
 | Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
 | Settings | `pwsh -File flab-ui\tests\settings\run.ps1 [-Browser]` | System settings model, option table and zone table; the whole editing flow against a mock router |
+| DHCP | `pwsh -File flab-ui\tests\dhcp\run.ps1 [-Browser]` | DHCP model (address helpers, reading config and leases, validation, change plan); the page against the router's own data, then the whole editing flow against a mock router |
 
 `-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
@@ -815,6 +862,17 @@ successful save (call order, what was written, the new hostname in the navigatio
 a list, a change the router does not keep (rolled back), a confirmation that comes too late, leftovers from an
 earlier attempt, a login without write access, the dark theme and an expired session. The mock keeps the real
 router's configuration out of reach, so the suite never writes to it.
+
+### DHCP suite
+Same shape as the Settings suite, with no backend part. `model.test.mjs` covers the option tables, the address
+and range helpers, reading `uci get dhcp` with the lease replies (leases mapped from device to interface),
+validation, the change plan (reservations added, removed and edited, pool and daemon options) and the read-back
+check; `network/uci.test.mjs` covers `applyChange`. The browser pass (`live.mjs`) first shows the router's own
+leases, reservations and pools with every uci write blocked, then switches to a stateful mock of `uci`, the
+`dhcp` object, the interface dump and `service list` and drives filtering, reservation edits (duplicates, the
+router's own address, bad MACs, Reserve from a lease, Add, Remove and Undo), pool and daemon edits, a successful
+save, a change the router does not keep, a late confirmation, a stopped odhcpd, a login without write access,
+the dark theme and an expired session.
 
 ## Implementation notes
 

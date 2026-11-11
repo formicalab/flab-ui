@@ -1,0 +1,51 @@
+/* Styles shared by the pages that edit a config (System settings, DHCP): the controls built by core/forms.js and
+   the review banner. Loaded with the page's own stylesheet. The `set-` prefix means "settings-style form". */
+
+/* The explanation at the top of a card. */
+.set-legend { padding: .8rem 1rem .4rem; border-bottom: 1px solid var(--fl-stroke); }
+.set-legend p { margin: 0 0 .4rem; }
+
+/* A card's controls flow in as many columns as fit; a wide one (a text area) takes a whole row. */
+.set-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); gap: 1rem 2rem; align-items: start; }
+.set-field.wide { grid-column: 1 / -1; }
+.set-field .form-label { margin-bottom: .25rem; }
+.set-hint { margin-top: .25rem; }
+
+textarea.form-control { resize: vertical; }
+/* An empty control shows a default or an example in gray italics, so it is not mistaken for a value. */
+.set-fields ::placeholder, .set-col ::placeholder { font-style: italic; opacity: .65; }
+.set-fields .form-control, .set-col .form-control { font-family: Consolas, "Cascadia Mono", monospace; }
+
+/* Switches: the toggle on the left, label and hint beside it. */
+.set-switch { display: flex; align-items: flex-start; gap: .6rem; padding-left: 0; margin: 0; }
+.set-switch .form-check-input { float: none; margin: .2rem 0 0; flex: none; }
+
+/* List fields: one input per row with a remove button, then the add button. */
+.set-list { display: grid; gap: .4rem; margin-bottom: .5rem; }
+.set-row { display: flex; gap: .4rem; }
+.set-row .form-control { flex: 1; }
+
+/* The review banner: a full-width row at the bottom of the sticky command bar, so Save stays in sight. It scrolls
+   inside itself when there are many errors or a long list of changes. It is yellow while edits are pending (red
+   when one is invalid), so unsaved work cannot be missed. */
+.cmdbar .set-bar { order: 99; flex: 1 0 100%; display: flex; flex-direction: column; gap: .4rem; padding: .6rem .9rem; border: 1px solid var(--fl-stroke); border-radius: 6px; max-height: 45vh; overflow: auto; }
+.set-bar.pending { background: var(--fl-warn-bg); border-color: color-mix(in srgb, var(--fl-warn-fg) 40%, transparent); color: var(--fl-warn-fg); }
+.set-bar.pending.invalid { background: var(--fl-bad-bg); border-color: color-mix(in srgb, var(--fl-bad-fg) 40%, transparent); color: var(--fl-bad-fg); }
+.set-bar.pending .muted, .set-bar.pending .small { color: inherit; opacity: .85; }
+.set-bar.pending .set-note { background: color-mix(in srgb, var(--fl-surface) 55%, transparent); }
+.set-bar[hidden], .set-bar [hidden] { display: none; }
+.set-bar-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.set-bar-head > svg { color: var(--fl-brand); }
+.set-bar.pending .set-bar-head > svg { color: inherit; }
+.set-bar-spacer { flex: 1; }
+.set-bar-details p { margin: 0 0 .3rem; }
+.set-changes { margin: 0; padding-left: 1.2rem; }
+.set-bar .set-note { margin-top: 0; }
+
+/* Status lines: errors block saving, warnings only inform, ok and info report the outcome of a save. */
+.set-notes { display: grid; gap: .4rem; }
+.set-note { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .45rem .75rem; border-radius: 6px; font-size: .875rem; margin-top: .4rem; }
+.set-note.bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
+.set-note.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
+.set-note.ok { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
+.set-note.info { background: var(--fl-info-bg); color: var(--fl-info-fg); }

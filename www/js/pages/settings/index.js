@@ -1,6 +1,7 @@
 // System settings page (route #settings, at the bottom of the navigation next to Sign out): shows and edits
 // /etc/config/system, the `system` section and the `timeserver` (NTP) section. What can be edited is the table in
-// schema.js, taken from the OpenWrt wiki; validation, the change list and the UCI operations are in model.js.
+// schema.js, taken from the OpenWrt wiki; validation, the change list and the UCI operations are in model.js; the
+// controls and the review banner are shared with the other editing pages (core/forms.js).
 //
 // It reads through rpcd's own `uci` object, so no plugin is needed, and writes through core/uci.js applyChange():
 // stage, apply with the rollback countdown, read the settings back, confirm. The page redraws on every poll, so
@@ -10,18 +11,21 @@ import { icon } from '../../core/icons.js';
 import { AuthError, can, optional, ubus } from '../../core/ubus.js';
 import { badge, button, card, kv, mono, muted, tile, tiles } from '../../core/ui.js';
 import { refreshControl } from '../../core/controls.js';
+import { fieldRow, legend, note, reviewBanner } from '../../core/forms.js';
 import { applyChange, uci } from '../../core/uci.js';
 import { FIELDS, GROUPS } from './schema.js';
 import { CONFIG, changesOf, checkApplied, currentValue, draftFrom, fmtDate, fmtOffset, fmtTime, isDirty, plan, problems, readSettings, ruleOf, stage, zoneGroups } from './model.js';
 
 // What the form holds (`draft`) and the data it was made from (`base`), kept here so they survive the redraw on
-// every poll. `message` is the outcome of the last save or discard ({ kind: ok | bad | info, text }); `reviewOpen`
-// is whether the banner shows the full list of changes.
-const state = { base: null, draft: null, busy: false, message: null, focusKey: null, reviewOpen: false };
+// every poll. `message` is the outcome of the last save or discard ({ kind: ok | bad | info, text }).
+const state = { base: null, draft: null, busy: false, message: null };
 
 // The page's redraw and reload callbacks, set when the shell builds the page.
 let redraw = () => {};
 let reloadPage = () => {};
+
+// The review banner in the command bar, created with the page's controls.
+let bar = null;
 
 // Whether the form has edits that are not saved yet.
 const dirty = () => Boolean(state.base && state.draft && isDirty(state.base, state.draft));
@@ -97,85 +101,34 @@ function summary(data) {
     tile('NTP client', ntpOn ? 'On' : 'Off', ntpSub, ntpOn && ntpd && !ntpd.running ? 'text-warning' : ''));
 }
 
-// The explanation at the top of a card.
-const legend = paragraphs => h('div', { className: 'muted small set-legend' }, paragraphs.map(p => h('p', {}, p)));
-
-// A note line: kind is bad | warn | ok | info.
-const note = (kind, text, ...extra) => h('div', { className: `set-note ${kind}` },
-  icon(kind === 'ok' ? 'check-circle' : kind === 'bad' || kind === 'warn' ? 'exclamation-triangle' : kind === 'info' ? 'info-circle' : 'hourglass-split'), text, ...extra);
-
-// A change made to the form: forget the outcome of the last save (it no longer describes the form) and
-// refresh the banner.
-function touched(ctx) {
-  state.message = null;
-  ctx.sync();
-}
-
-// One row of a list field (a server, an interface): the text input and its remove button.
-function listRow(ctx, f, index) {
-  const list = state.draft.values[f.key];
-  const input = h('input', { className: 'form-control form-control-sm', placeholder: f.placeholder ?? '', value: list[index], disabled: !ctx.canEdit,
-    spellcheck: false, autocomplete: 'off', oninput: e => { list[index] = e.target.value; touched(ctx); } });
-  ctx.inputs[f.key][index] = input;
-  const remove = h('button', { type: 'button', className: 'btn btn-sm btn-fl', title: 'Remove', disabled: !ctx.canEdit,
-    onclick: () => { list.splice(index, 1); redraw(); } }, icon('x-lg'));
-  return h('div', { className: 'set-row' }, input, remove);
-}
-
-// The control for one schema field, with its label and hint.
-function fieldRow(ctx, f) {
+// The control for one schema field, connected to the draft.
+function control(ctx, f) {
   const values = state.draft.values;
-  const change = value => { values[f.key] = value; touched(ctx); };
-  const disabled = !ctx.canEdit;
-  const hint = f.hint ? h('div', { className: 'muted small set-hint' }, f.hint) : null;
-  const placeholder = f.default != null ? `default: ${f.default}` : f.placeholder ?? '';
-
-  if (f.type === 'bool') {
-    return h('label', { className: 'form-check form-switch set-switch' },
-      h('input', { className: 'form-check-input', type: 'checkbox', role: 'switch', checked: values[f.key], disabled, onchange: e => change(e.target.checked) }),
-      h('span', {}, f.label, hint));
-  }
-
-  let input;
-  if (f.type === 'list') {
-    ctx.inputs[f.key] = [];
-    const rows = values[f.key].map((_, i) => listRow(ctx, f, i));
-    const add = button(f.addLabel ?? 'Add', 'plus-lg', () => { values[f.key].push(''); state.focusKey = f.key; redraw(); });
-    add.disabled = disabled;
-    input = h('div', {}, h('div', { className: 'set-list' }, rows.length ? rows : muted('None.')), add);
-    if (state.focusKey === f.key) {
-      state.focusKey = null;
-      requestAnimationFrame(() => ctx.inputs[f.key].at(-1)?.focus());
-    }
-  } else if (f.type === 'enum') {
-    // A value the router has that the wiki does not list is kept selectable, so it is not silently replaced.
-    const options = [['', `Default (${f.default})`], ...f.options.map(o => [o, o])];
-    if (values[f.key] && !f.options.includes(values[f.key])) options.push([values[f.key], values[f.key]]);
-    input = h('select', { className: 'form-select form-select-sm', disabled, onchange: e => change(e.target.value) }, options.map(([v, label]) => h('option', { value: v }, label)));
-    input.value = values[f.key];
-    ctx.inputs[f.key] = input;
-  } else if (f.type === 'text') {
-    input = h('textarea', { className: 'form-control form-control-sm', rows: 3, value: values[f.key], disabled, spellcheck: false, oninput: e => change(e.target.value) });
-    ctx.inputs[f.key] = input;
-  } else {
-    input = h('input', { className: 'form-control form-control-sm', placeholder, value: values[f.key], disabled, spellcheck: false, autocomplete: 'off',
-      ...(f.type === 'int' ? { inputMode: 'numeric' } : {}), oninput: e => change(e.target.value) });
-    ctx.inputs[f.key] = input;
-  }
-  return h('div', { className: `set-field${f.type === 'text' ? ' wide' : ''}` }, h('label', { className: 'form-label' }, f.label), input, hint);
+  return fieldRow(f, {
+    id: f.key,
+    get: () => values[f.key],
+    set: v => { values[f.key] = v; },
+    disabled: !ctx.canEdit,
+    // A change made to the form: forget the outcome of the last save (it no longer describes the form) and
+    // refresh the banner.
+    touched: () => { state.message = null; ctx.sync(); },
+    redraw: () => redraw(),
+    register: (el, index) => { if (index == null) ctx.inputs[f.key] = el; else (ctx.inputs[f.key] ??= [])[index] = el; },
+  });
 }
 
 // The time zone control: a drop-down of every IANA zone plus "Custom rule", with the rule input shown for the latter.
 function zoneRows(ctx) {
   const zone = state.draft.zone;
+  const touched = () => { state.message = null; ctx.sync(); };
   const select = h('select', { className: 'form-select form-select-sm', disabled: !ctx.canEdit, title: 'Time zone',
-    onchange: e => { zone.name = e.target.value; ruleRow.hidden = Boolean(zone.name); touched(ctx); } });
+    onchange: e => { zone.name = e.target.value; ruleRow.hidden = Boolean(zone.name); touched(); } });
   select.append(h('option', { value: '' }, 'Custom POSIX rule…'));
   for (const [region, names] of zoneGroups()) select.append(h('optgroup', { label: region }, names.map(n => h('option', { value: n }, n))));
   select.value = zone.name;
 
   const rule = h('input', { className: 'form-control form-control-sm', placeholder: 'e.g. CET-1CEST,M3.5.0,M10.5.0/3', value: zone.rule, disabled: !ctx.canEdit, spellcheck: false,
-    oninput: e => { zone.rule = e.target.value; touched(ctx); } });
+    oninput: e => { zone.rule = e.target.value; touched(); } });
   ctx.inputs.zone = rule;
   const ruleRow = h('div', { className: 'set-field', hidden: Boolean(zone.name) },
     h('label', { className: 'form-label' }, 'POSIX rule'), rule,
@@ -204,7 +157,7 @@ function ntpStatus(data) {
 // One card of the form, from its schema group: its legend on top, then either side-by-side columns (the time card:
 // the zone, the NTP client, the NTP server) or its fields in a flowing grid.
 function groupCard(ctx, g) {
-  const fieldsOf = col => FIELDS.filter(f => f.group === g.id && (col == null || f.col === col)).map(f => fieldRow(ctx, f));
+  const fieldsOf = col => FIELDS.filter(f => f.group === g.id && (col == null || f.col === col)).map(f => control(ctx, f));
   const body = g.columns
     ? h('div', { className: 'card-body set-cols' }, g.columns.map(c => h('section', { className: 'set-col' },
       h('h3', { className: 'set-col-title' }, c.title),
@@ -214,62 +167,16 @@ function groupCard(ctx, g) {
   return card([icon(g.icon), h('span', {}, g.title)], h('div', {}, legend(g.legend), body));
 }
 
-// The review banner: it lives in the sticky command bar, so Save is always on screen however far the form is
-// scrolled, and it is hidden while there is nothing to report. It shows how many edits are pending and which,
-// the errors and warnings, the outcome of the last save, and the buttons; a toggle opens the full list of what
-// changes from what to what. render() keeps it current as the user types, without redrawing the form (which
-// would lose the focus).
-let bar = null;
-
-// Builds the banner once per visit of the page (the command bar is rebuilt on every route); `bar.render()`
-// updates it from the draft, and `bar.canEdit` says whether Save may be enabled.
-function buildBar() {
-  const summaryNode = h('span', { className: 'set-bar-summary' });
-  const detailsToggle = h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: () => { state.reviewOpen = !state.reviewOpen; bar.render(); } });
-  const discard = h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: discardEdits }, icon('arrow-clockwise'), 'Discard edits');
-  const saveButton = h('button', { type: 'button', className: 'btn btn-sm btn-brand', onclick: save }, icon('check2'), 'Save and apply');
-  const dismiss = h('button', { type: 'button', className: 'btn btn-sm btn-fl', title: 'Dismiss', onclick: () => { state.message = null; bar.render(); } }, icon('x-lg'));
-  const outcome = h('div', { className: 'set-bar-outcome' });
-  const notes = h('div', { className: 'set-notes' });
-  const list = h('ul', { className: 'set-changes' });
-  const details = h('div', { className: 'set-bar-details' },
-    h('p', { className: 'muted small' }, 'Save applies the change and checks that the router kept it. If the check fails, or the page is closed before it finishes, the router puts the previous settings back by itself within 30 seconds.'),
-    list);
-  const root = h('div', { className: 'set-bar', hidden: true },
-    h('div', { className: 'set-bar-head' }, icon('check-circle'), summaryNode, h('span', { className: 'set-bar-spacer' }), detailsToggle, discard, saveButton, dismiss),
-    outcome, notes, details);
-
-  bar = {
-    node: root,
-    canEdit: false,
-    render() {
-      const ready = state.base && state.draft;
-      const found = ready ? problems(state.base, state.draft) : { errors: [], warnings: [] };
-      const changes = ready ? changesOf(state.base, state.draft) : [];
-      const msg = state.message;
-      root.hidden = !(changes.length || msg || found.errors.length);
-      // Yellow while edits are pending, red when one of them is invalid, so unsaved work cannot be missed.
-      root.classList.toggle('pending', changes.length > 0);
-      root.classList.toggle('invalid', found.errors.length > 0);
-
-      summaryNode.replaceChildren(
-        changes.length ? h('b', {}, `${changes.length} unsaved change${changes.length > 1 ? 's' : ''}`) : muted('No unsaved changes'),
-        changes.length ? muted(`: ${changes.map(c => c.label).join(', ')}`) : null);
-      detailsToggle.replaceChildren(icon(state.reviewOpen ? 'chevron-up' : 'chevron-down'), state.reviewOpen ? 'Hide details' : 'Details');
-      detailsToggle.hidden = !changes.length;
-      details.hidden = !state.reviewOpen || !changes.length;
-      list.replaceChildren(...changes.map(c => h('li', {}, h('b', {}, c.label), ': ', mono(c.from), ' → ', mono(c.to))));
-      notes.replaceChildren(...found.errors.map(e => note('bad', e.text)), ...found.warnings.map(t => note('warn', t)));
-
-      const outcomeNote = msg ? note(msg.kind, msg.text) : null;
-      outcomeNote?.classList.add('set-outcome');
-      outcome.replaceChildren(...(outcomeNote ? [outcomeNote] : []));
-      dismiss.hidden = !msg || state.busy;
-      saveButton.disabled = !bar.canEdit || !changes.length || found.errors.length > 0;
-      discard.disabled = state.busy || !dirty();
-    },
-  };
-  return bar;
+// Updates the review banner from the draft.
+function renderBar(canEdit) {
+  const ready = state.base && state.draft;
+  const found = ready ? problems(state.base, state.draft) : { errors: [], warnings: [] };
+  bar.render({
+    changes: ready ? changesOf(state.base, state.draft) : [],
+    errors: found.errors, warnings: found.warnings, message: state.message,
+    busy: state.busy, canEdit, dirty: dirty(),
+    dismiss: () => { state.message = null; renderBar(canEdit); },
+  });
 }
 
 //#endregion
@@ -281,14 +188,15 @@ export default {
   // Shown at the bottom of the navigation pane, next to Sign out.
   nav: 'bottom',
   interval: 10000,
-  css: 'css/settings.css',
+  css: ['css/forms.css', 'css/settings.css'],
   isPaused: () => state.busy || dirty() || Boolean(document.activeElement?.closest?.('.settings-form')),
 
   load,
 
   controls({ reload }) {
     reloadPage = reload;
-    return { nodes: [refreshControl(reload), buildBar().node] };
+    bar = reviewBanner({ onSave: save, onDiscard: discardEdits });
+    return { nodes: [refreshControl(reload), bar.node] };
   },
 
   view(data, rerender) {
@@ -311,8 +219,7 @@ export default {
         (Array.isArray(el) ? el[e.index] : el)?.classList.add('is-invalid');
       }
       if (ctx.ruleAfter) ctx.ruleAfter.textContent = (state.draft.zone.name ? ruleOf(state.draft.zone.name) : state.draft.zone.rule.trim()) || data.system.values.timezone || '';
-      bar.canEdit = ctx.canEdit;
-      bar.render();
+      renderBar(ctx.canEdit);
     };
     ctx.sync();
     return [
