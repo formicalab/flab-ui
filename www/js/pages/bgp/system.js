@@ -41,20 +41,24 @@ function routesText(ch) {
   return r && Object.keys(r).length ? `${r.imported ?? 0} in · ${r.exported ?? 0} out · ${r.preferred ?? 0} best` : '–';
 }
 
+// One line per channel; the address family prefixes the numbers when a protocol has several.
+function channelLines(p, text) {
+  if (!p.channels.length) return muted('–');
+  return h('div', {}, p.channels.map(ch => h('div', {}, p.channels.length > 1 ? h('small', { className: 'muted' }, `${ch.afi} `) : null, text(ch))));
+}
+
 export function protocolsCard(data) {
   const stateKind = s => s === 'up' ? 'success' : 'warning';
-  const rows = data.protocols.map(p => {
-    const ch = p.channels[0];
-    return h('tr', {},
-      h('td', {}, h('b', {}, p.name)),
-      h('td', {}, p.proto),
-      h('td', { className: 'mono' }, p.table ?? '–'),
-      h('td', {}, badge(p.state, stateKind(p.state)), p.info ? ' ' : null, p.info ? h('small', { className: 'muted' }, p.info) : null),
-      h('td', {}, p.since),
-      h('td', {}, routesText(ch)),
-      h('td', {}, ch?.preference ?? '–'),
-      h('td', {}, ch ? h('span', { className: 'chips' }, [ch.input_filter, ch.output_filter].map(f => f ? chip(f, f === 'ACCEPT' ? 'good' : f === 'REJECT' ? 'fair' : 'info') : muted('–'))) : muted('–')));
-  });
+  const filterChips = ch => h('span', { className: 'chips' }, [ch.input_filter, ch.output_filter].map(f => f ? chip(f, f === 'ACCEPT' ? 'good' : f === 'REJECT' ? 'fair' : 'info') : muted('–')));
+  const rows = data.protocols.map(p => h('tr', {},
+    h('td', {}, h('b', {}, p.name)),
+    h('td', {}, p.proto),
+    h('td', { className: 'mono' }, (p.table ?? [...new Set(p.channels.map(c => c.table).filter(Boolean))].join(', ')) || '–'),
+    h('td', {}, badge(p.state, stateKind(p.state)), p.info ? ' ' : null, p.info ? h('small', { className: 'muted' }, p.info) : null),
+    h('td', {}, p.since),
+    h('td', {}, channelLines(p, routesText)),
+    h('td', {}, channelLines(p, ch => ch.preference ?? '–')),
+    h('td', {}, channelLines(p, filterChips))));
   return card([icon('hdd-stack'), 'BIRD protocols', h('span', { className: 'sub' }, `${data.protocols.length} instances`)],
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover' },
       h('thead', {}, h('tr', {}, ['Name', 'Type', 'Table', 'State', 'Since', 'Routes', 'Pref', 'Filters (in · out)'].map(c => h('th', {}, c)))),

@@ -50,6 +50,7 @@
 .bgp-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: 1.2rem 1.25rem .6rem; }
 .bgp-card-head .name { font-size: 1.15rem; font-weight: 600; }
 .bgp-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 1.75rem; padding: .9rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
+.bgp-channels { display: grid; gap: 1.75rem; align-content: start; }
 
 .cap-table th, .cap-table td { padding: .35rem .5rem; white-space: normal; }
 .cap-table .cap-cell { white-space: nowrap; }

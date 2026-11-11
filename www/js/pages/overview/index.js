@@ -1,3 +1,7 @@
+// Overview page (default): uptime, load, memory, CPU and hottest-sensor temperature tiles, the
+// temperature cards (temperatures.js), system information and the memory breakdown.
+// System data comes from the standard system board/info calls; temperatures come from the flab.sensors
+// plugin, which is optional here so that a missing plugin or ACL only hides the temperature section.
 import { h } from '../../core/dom.js';
 import { ubus, AuthError } from '../../core/ubus.js';
 import { card, tile, tiles, table } from '../../core/ui.js';

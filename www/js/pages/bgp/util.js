@@ -1,14 +1,46 @@
 // Helpers shared by the BGP page modules.
 
 import { h } from '../../core/dom.js';
-import { ipNum } from '../../core/format.js';
 
 const PALETTE_SIZE = 6;
 
-// Each peer keeps one color across the topology, the route table and the announcement matrix.
-export const peerClass = (data, name) => `pc-${Math.max(0, data.peers.findIndex(p => p.name === name)) % PALETTE_SIZE}`;
+//#region peer colors
+// A peer keeps its color while it exists: slots are assigned on first sight (lowest least-used slot) and
+// are not reshuffled when other peers appear or disappear. More peers than colors reuse the least-used slot.
+const slots = new Map();
+const synced = new WeakSet();
+
+function syncColors(data) {
+  if (synced.has(data)) return;
+  synced.add(data);
+  const present = new Set(data.peers.map(p => p.name));
+  for (const name of [...slots.keys()]) if (!present.has(name)) slots.delete(name);
+  for (const p of data.peers) {
+    if (slots.has(p.name)) continue;
+    const used = new Map();
+    for (const s of slots.values()) used.set(s, (used.get(s) ?? 0) + 1);
+    let best = 0;
+    for (let s = 1; s < PALETTE_SIZE; s++) if ((used.get(s) ?? 0) < (used.get(best) ?? 0)) best = s;
+    slots.set(p.name, best);
+  }
+}
+
+export const peerClass = (data, name) => { syncColors(data); return `pc-${slots.get(name) ?? 0}`; };
 export const peerDot = (data, name) => h('span', { className: `peer-dot ${peerClass(data, name)}` });
 export const peerTitle = p => p.description || p.name;
+
+// Peer names without the prefix they all share ("azure_xfrm0".."azure_xfrm3" -> "xfrm0".."xfrm3").
+export function peerLabels(peers) {
+  const names = peers.map(p => p.name);
+  const labels = new Map(names.map(n => [n, n]));
+  if (names.length < 2) return labels;
+  let prefix = names[0];
+  for (const n of names) while (!n.startsWith(prefix)) prefix = prefix.slice(0, -1);
+  const cut = Math.max(prefix.lastIndexOf('_'), prefix.lastIndexOf('-'), prefix.lastIndexOf('.')) + 1;
+  if (cut > 0) for (const n of names) labels.set(n, n.slice(cut) || n);
+  return labels;
+}
+//#endregion
 
 export const stateKind = s => s === 'Established' ? 'success' : /idle|down/i.test(s ?? '') ? 'danger' : 'warning';
 export const isUp = p => p.state === 'Established';
@@ -16,11 +48,43 @@ export const isUp = p => p.state === 'Established';
 // RFC 6996 private AS ranges (16-bit and 32-bit).
 export const isPrivateAs = n => (n >= 64512 && n <= 65534) || (n >= 4200000000 && n <= 4294967294);
 
-// Numeric sort key for "a.b.c.d/len" prefixes.
-export const prefixKey = prefix => {
-  const [ip, len] = prefix.split('/');
-  return ipNum(ip) * 64 + Number(len ?? 0);
+//#region prefix ordering (IPv4 before IPv6, then numerically)
+function parseV4(s) {
+  const p = s.split('.').map(Number);
+  if (p.length !== 4 || p.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+  return BigInt(((p[0] * 256 + p[1]) * 256 + p[2]) * 256 + p[3]);
+}
+
+function parseV6(s) {
+  const [head, tail] = s.split('::');
+  const part = x => x ? x.split(':') : [];
+  let groups;
+  if (s.includes('::')) {
+    const a = part(head), b = part(tail ?? '');
+    groups = [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b];
+  } else {
+    groups = s.split(':');
+  }
+  if (groups.length !== 8 || groups.some(g => !/^[0-9a-f]{1,4}$/i.test(g))) return null;
+  return groups.reduce((acc, g) => (acc << 16n) | BigInt(parseInt(g, 16)), 0n);
+}
+
+// BigInt sort key for "address/len" (len optional); works for both families.
+export function prefixKey(prefix) {
+  const [ip, len] = String(prefix ?? '').split('/');
+  const v6 = ip.includes(':');
+  const addr = (v6 ? parseV6(ip) : parseV4(ip)) ?? 0n;
+  return ((v6 ? 1n : 0n) << 140n) | (addr << 8n) | BigInt(Number(len) || 0);
+}
+
+export const cmpPrefix = (a, b) => {
+  const x = prefixKey(a), y = prefixKey(b);
+  return x < y ? -1 : x > y ? 1 : 0;
 };
+
+// First address of a next-hop string (IPv6 next hops may list a global and a link-local address).
+export const firstAddress = text => String(text ?? '').split(/\s+/)[0] ?? '';
+//#endregion
 
 // AS path as chips; consecutive repeats (prepending) collapse into "65520 ×2".
 export function asPath(path) {

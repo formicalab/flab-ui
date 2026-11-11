@@ -1,3 +1,5 @@
+// Network page: every netifd interface (state, protocol, device, addresses, uptime) from the standard
+// network.interface dump call, so it needs no plugin of its own.
 import { ubus } from '../core/ubus.js';
 import { badge, card, table } from '../core/ui.js';
 import { fmtDur } from '../core/format.js';

@@ -21,7 +21,8 @@ is installed permanently.
 6. [Deploy, test, clean up](#deploy-test-clean-up)
 7. [How to add a page](#how-to-add-a-page)
 8. [Existing pages](#existing-pages)
-9. [Gotchas learned the hard way](#gotchas-learned-the-hard-way)
+9. [Testing](#testing)
+10. [Gotchas learned the hard way](#gotchas-learned-the-hard-way)
 
 ## Architecture at a glance
 
@@ -58,6 +59,7 @@ Design principles:
 ```
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
+  tests/bgp/                 Test suite for the BGP page (run.ps1, see "Testing")
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
@@ -255,8 +257,9 @@ Things to know:
 - To test a plugin without rpcd: copy it to `/tmp`, then
   `ucode -e 'print(sprintf("%.1J", loadfile("/tmp/x.uc")()["flab.x"].status.call()))'`
   (use a script file rather than inline quoting over ssh), or call it as the `flab` user over HTTP.
-- Browser testing used Playwright (`playwright-core` with the installed Edge) from a temp folder, with
-  screenshots at 1920x1080 in both themes, then deleted. Keep test tooling out of the repo.
+- Ad-hoc browser checks used Playwright (`playwright-core` with the installed Edge) from a temp folder
+  with screenshots at 1920x1080 in both themes, then deleted. The BGP page has a repeatable suite, see
+  [Testing](#testing).
 
 ## How to add a page
 
@@ -328,15 +331,19 @@ Status of BIRD 3 (`flab.bgp`); the lab setup is four eBGP sessions to Azure (AS 
 tunnels (`build/MT6000/etc/bird.conf`). Sections, top to bottom:
 - **Tiles:** sessions established, prefixes learned (and paths), prefixes announced, multipath (ECMP) share,
   kernel sync, BIRD version/uptime.
-- **Topology:** this router, one node per peer, remote AS node. CSS grid plus SVG connectors (animated
-  while a session is Established). Peers keep one color (`pc-0..5`) across every table on the page. The
-  connector math needs equal-height, touching peer cells (see the comment in `bgp/topology.js`).
+- **Topology:** this router, one node per peer, remote AS node (peers are grouped by neighbor AS). The
+  router node lists what its peers actually receive ("Announces"), whichever BIRD protocol produced it.
+  CSS grid plus SVG connectors (animated while a session is Established). Each peer keeps one color
+  (`pc-0..5`) across every table on the page; colors are assigned on first sight and never reshuffled when
+  other peers come and go (more than 6 peers reuse the least-used color). The connector math needs
+  equal-height, touching peer cells (see the comment in `bgp/topology.js`).
 - **Health** (findings from the backend) and **active next hops per peer** (how many prefixes use each
   peer as an installed next hop).
 - **One card per peer:** session (state, neighbor/local AS, session type, interface, hold/keepalive/
-  send-hold timers as remaining-time bars), capability comparison for both directions (rows where only one
-  side offers a capability are highlighted), channel (state, filters, route counts) and the BIRD
-  route-change statistics.
+  send-hold timers as remaining-time bars; a session that is down shows its last error and the next
+  connect attempt), capability comparison for both directions (rows where only one side offers a
+  capability are highlighted), one routing block per channel (ipv4, ipv6, ...: state, filters, route
+  counts) and the BIRD route-change statistics.
 - **Learned routes:** every BGP path grouped by prefix. Status is Best, ECMP (installed in the kernel
   as an equal-cost next hop) or Backup. Columns: peer, next hop, interface, AS path chips (prepending
   collapses to `65520 x2`), origin, local pref, MED and communities (the last two only appear when some
@@ -346,8 +353,13 @@ tunnels (`build/MT6000/etc/bird.conf`). Sections, top to bottom:
   **memory** cards close the page.
 
 Facts worth remembering:
-- A path counts as "in kernel" when the kernel route (`ip -4 route show proto bird`) has a next hop via
-  that path's next-hop address. With `merge paths on` in the kernel protocol this gives ECMP across both
+- **Everything is derived from live data on every poll** (5 s): peers, channels, routes, announcements
+  (`show route export <peer>` per peer), findings. Nothing about the Azure setup is hard-coded. IPv4 and
+  IPv6 are both handled (`master4`/`master6` tables, `ip -4`/`ip -6` kernel routes, prefixes sort IPv4
+  first, then IPv6 numerically).
+- A path counts as "in kernel" when the kernel route (`ip -4/-6 route show proto bird`) has a next hop via
+  one of that path's next-hop addresses (an IPv6 BGP next hop can list a global and a link-local address).
+  With `merge paths on` in the kernel protocol this gives ECMP across both
   gateways of a region; paths with a longer AS path (`65515 65520 65520`, learned through the other
   region) are Backup.
 - BIRD prints only the **date** in `Since` for anything older than a day, so session uptime cannot be
@@ -368,6 +380,38 @@ Facts worth remembering:
 
 ### Services
 `service list` (procd): running vs idle/one-shot services with PIDs.
+
+## Testing
+
+`tests/bgp/run.ps1` tests the BGP page without touching the router's BGP sessions. The page parses BIRD's
+text output, so this guards against both parser regressions and a new BIRD version changing the format.
+
+```powershell
+pwsh -File flab-ui\tests\bgp\run.ps1            # backend: parser + findings against 4 scenarios
+pwsh -File flab-ui\tests\bgp\run.ps1 -Browser   # plus the live-update test in Edge (needs the UI deployed)
+```
+
+How it works:
+1. **Capture** the real `birdc`/`ip` output the plugin parses (read-only commands).
+2. **Build scenarios** (`mkfx.mjs`) from it: `base` (unchanged), `down` (a peer in Active with an error and a
+   connect timer; synthetic, modeled on BIRD's documented format, not captured), `dual` (IPv6 channels,
+   IPv6 ECMP routes with link-local next hops, one best route deliberately missing from the kernel, an
+   IPv6 announcement) and `announce` (different announcements per peer, a non-static origin, a peer that
+   receives nothing).
+3. **Run the repository's `flab.bgp.uc` on the router** against each scenario. The plugin has a small test
+   seam: when `FLAB_BGP_FIXTURES=<dir>` is set it reads `<dir>/<command>.txt` instead of running `birdc`
+   and `ip`. rpcd never sets it, so production behavior is unchanged.
+4. **Assert** (`assert.mjs`): parsed fields, findings, kernel-sync detection, IPv6 handling.
+5. **Browser test** (`live.mjs`, `-Browser`): the deployed UI is opened in Edge via `playwright-core`
+   (installed into the temporary work folder). The `flab.bgp status` call is intercepted and answered with
+   the scenario JSON, so the page is driven through normal, peer down, IPv6, changed announcements, peer
+   removed, peer added and eight peers, and back to the live router, all without a reload. It checks the
+   tiles, topology, cards, tables, findings, the peer dropdown, color stability and the absence of console
+   errors.
+
+The suite removes `/tmp/flab-bgp-test` on the router and its local temp folder when it finishes. Add a
+scenario by extending `mkfx.mjs` and `assert.mjs`; add a captured sample of a state you want to keep
+testing as extra `.txt` files.
 
 ## Gotchas learned the hard way
 

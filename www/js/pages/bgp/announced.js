@@ -5,7 +5,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, card, chip } from '../../core/ui.js';
 import { fmtNum } from '../../core/format.js';
-import { peerDot, peerTitle, prefixKey, isUp } from './util.js';
+import { peerDot, peerTitle, cmpPrefix, isUp, peerLabels } from './util.js';
 
 const muted = t => h('span', { className: 'muted' }, t);
 const yes = () => h('span', { className: 'cap-yes', title: 'Announced' }, icon('check-circle', 17));
@@ -20,11 +20,12 @@ function matrix(data) {
       byPrefix.set(e.prefix, row);
     }
   }
-  const rows = [...byPrefix.values()].sort((a, b) => prefixKey(a.prefix) - prefixKey(b.prefix));
+  const rows = [...byPrefix.values()].sort((a, b) => cmpPrefix(a.prefix, b.prefix));
+  const labels = peerLabels(data.peers);
 
   return h('div', { className: 'grid-wrap' }, h('table', { className: 'table' },
     h('thead', {}, h('tr', {}, h('th', {}, 'Prefix'), h('th', {}, 'Origin'),
-      data.peers.map(p => h('th', { className: 'text-center', title: peerTitle(p) }, h('span', { className: 'peer-label justify-content-center' }, peerDot(data, p.name), p.name.replace(/^azure_/, ''))))),
+      data.peers.map(p => h('th', { className: 'text-center', title: peerTitle(p) }, h('span', { className: 'peer-label justify-content-center' }, peerDot(data, p.name), labels.get(p.name))))),
     ),
     h('tbody', {}, rows.length ? rows.map(r => h('tr', {},
       h('td', {}, h('span', { className: 'mono fw-semibold' }, r.prefix)),
@@ -35,15 +36,15 @@ function matrix(data) {
 
 const FILTER_COLS = [['received', 'Considered'], ['filtered', 'Blocked by filter'], ['rejected', 'Rejected'], ['accepted', 'Announced']];
 
-// BIRD's export statistics are cumulative since the session came up.
+// BIRD's export statistics are cumulative since the session came up; one row per peer and channel.
 function filterResults(data) {
+  const rows = data.peers.flatMap(p => (p.channels.length ? p.channels : [null]).map(ch => ({ p, ch })));
   return h('div', { className: 'grid-wrap' }, h('table', { className: 'table' },
     h('thead', {}, h('tr', {}, h('th', {}, 'Peer'), h('th', {}, 'Export filter'), FILTER_COLS.map(([, l]) => h('th', { className: 'text-end' }, l)))),
-    h('tbody', {}, data.peers.map(p => {
-      const ch = p.channels[0];
+    h('tbody', {}, rows.map(({ p, ch }) => {
       const s = ch?.stats?.export_updates ?? {};
       return h('tr', {},
-        h('td', {}, h('span', { className: 'peer-label' }, peerDot(data, p.name), p.name)),
+        h('td', {}, h('span', { className: 'peer-label' }, peerDot(data, p.name), p.name, ch && p.channels.length > 1 ? h('small', { className: 'muted' }, ch.afi) : null)),
         h('td', {}, ch?.output_filter ? chip(ch.output_filter, 'info') : muted('none')),
         FILTER_COLS.map(([k]) => h('td', { className: 'text-end' }, s[k] == null ? '–' : fmtNum(s[k]))));
     }))));
@@ -57,7 +58,7 @@ export function announcedCard(data) {
 }
 
 export function localCard(data) {
-  const rows = [...data.local].sort((a, b) => prefixKey(a.prefix) - prefixKey(b.prefix)).map(r => h('tr', {},
+  const rows = [...data.local].sort((a, b) => cmpPrefix(a.prefix, b.prefix)).map(r => h('tr', {},
     h('td', {}, h('span', { className: 'mono fw-semibold' }, r.prefix)),
     h('td', {}, badge(r.protocol, '')),
     h('td', {}, chip(r.kind, r.kind === 'blackhole' ? 'fair' : ''), ' ', r.source ? h('small', { className: 'muted' }, r.source) : null),

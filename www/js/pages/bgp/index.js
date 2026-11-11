@@ -1,3 +1,14 @@
+// BGP page: entry point and composition of the sections.
+//
+// Data comes from one ubus call, flab.bgp status (see rpcd/ucode/flab.bgp.uc), and everything shown is
+// derived from it on every poll, so peers, routes and announcements that come and go are reflected on the
+// next refresh without any page-side configuration. Each section is a card builder in a sibling module:
+//   topology.js   router -> peers -> remote AS diagram
+//   system.js     health findings, protocol list, daemon and memory cards
+//   peer.js       one card per peer (session, capabilities, channels)
+//   routes.js     learned routes table (filter, peer selector, best-only, sort)
+//   announced.js  announcement matrix, export-filter results, local routes
+
 import { h } from '../../core/dom.js';
 import { ubus } from '../../core/ubus.js';
 import { tile, tiles, emptyState } from '../../core/ui.js';
@@ -10,8 +21,20 @@ import { routesCard } from './routes.js';
 import { announcedCard, localCard } from './announced.js';
 import { healthCard, protocolsCard, daemonCard, memoryCard } from './system.js';
 
+// View state that must survive the auto-refresh redraws: the routes filter text (q), the selected peer
+// ('all' or a protocol name), best-paths-only, the routes table sort, and the paused flag.
 const state = { q: '', peer: 'all', best: false, sort: { key: 'prefix', dir: 1 }, paused: false };
 
+/**
+ * Builds the row of summary tiles at the top of the page.
+ *
+ * Counts are taken from the status data: `paths` holds every BGP path, `kernel_paths` is the number of
+ * equal-cost next hops installed in the kernel for the path's prefix, and `in_kernel` tells whether the
+ * path's own next hop is installed. "Kernel sync" is only healthy when every best path is installed.
+ *
+ * @param {object} data Result of flab.bgp status.
+ * @returns {HTMLElement} The tile row.
+ */
 function summary(data) {
   const up = data.peers.filter(isUp).length;
   const prefixes = new Set(data.paths.map(p => p.prefix));
@@ -30,6 +53,7 @@ function summary(data) {
     tile('BIRD', d.version ?? '?', `up ${d.uptime ? fmtSpan(d.uptime) : '–'}`));
 }
 
+// Page object registered in pages/index.js (contract documented there).
 export default {
   id: 'bgp',
   label: 'BGP',
@@ -41,6 +65,8 @@ export default {
 
   load: () => ubus('flab.bgp', 'status'),
 
+  // Command-bar controls are created once per visit; `update` runs after every load so the peer dropdown
+  // follows peers that appear or disappear (the selection falls back to "All peers" if its peer is gone).
   controls({ rerender, reload }) {
     const peer = selectControl(state, 'peer', rerender, 'Peer');
     return {
@@ -50,6 +76,8 @@ export default {
     };
   },
 
+  // `rerender` redraws from the cached data (used by the routes table for sorting); when BIRD is not
+  // running the backend returns daemon.running = false and only an explanatory message is shown.
   view(data, rerender) {
     if (!data.daemon.running) {
       return [emptyState(`BIRD is not running or its control socket is unreachable${data.daemon.error ? ': ' + data.daemon.error : '.'}`)];

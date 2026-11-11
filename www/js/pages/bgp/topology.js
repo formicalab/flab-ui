@@ -8,9 +8,11 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, card } from '../../core/ui.js';
 import { fmtNum } from '../../core/format.js';
-import { peerClass, peerTitle, isUp, stateKind, isPrivateAs } from './util.js';
+import { peerClass, peerTitle, isUp, stateKind, isPrivateAs, cmpPrefix } from './util.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const MAX_ANNOUNCE_CHIPS = 6;
+const sumRoutes = (p, key) => p.channels.reduce((n, c) => n + (c.routes?.[key] ?? 0), 0);
 
 // One animated connector per peer. `toPeer` selects the curve direction.
 function links(items, toPeer) {
@@ -28,23 +30,33 @@ function links(items, toPeer) {
   return svg;
 }
 
+// What the peers actually receive from this router, whichever protocol it comes from.
+function announcedPrefixes(data) {
+  const seen = new Map();
+  for (const p of data.peers) for (const e of p.exported) if (!seen.has(e.prefix)) seen.set(e.prefix, e);
+  return [...seen.values()].sort((a, b) => cmpPrefix(a.prefix, b.prefix));
+}
+
 function routerNode(data) {
-  const local = data.peers[0]?.local_as;
-  const origin = data.local.filter(r => r.source === 'static');
+  const localAs = [...new Set(data.peers.map(p => p.local_as).filter(v => v != null))];
+  const announced = announcedPrefixes(data);
+  const shown = announced.slice(0, MAX_ANNOUNCE_CHIPS);
   const learned = new Set(data.paths.map(p => p.prefix)).size;
   return h('div', { className: 'bgp-node router' },
     icon('router', 30),
     h('b', {}, data.daemon.hostname ?? 'Router'),
-    h('div', { className: 'chips justify-content-center' }, local != null ? badge(`AS ${local}`, 'info') : null, badge('BIRD ' + (data.daemon.version ?? ''))),
+    h('div', { className: 'chips justify-content-center' }, localAs.length ? badge(`AS ${localAs.join(' / ')}`, 'info') : null, badge('BIRD ' + (data.daemon.version ?? ''))),
     h('div', { className: 'muted small' }, `Router ID ${data.daemon.router_id ?? '–'}`),
     h('div', { className: 'node-sep' }),
-    h('div', { className: 'muted small' }, 'Originates'),
-    origin.length ? h('div', { className: 'chips justify-content-center' }, origin.map(r => h('span', { className: 'alg-chip info mono', title: `${r.protocol} · ${r.kind}` }, r.prefix))) : h('span', { className: 'muted small' }, 'nothing'),
+    h('div', { className: 'muted small' }, 'Announces'),
+    shown.length
+      ? h('div', { className: 'chips justify-content-center' }, shown.map(r => h('span', { className: 'alg-chip info mono', title: `${r.protocol} · ${r.kind}` }, r.prefix)),
+        announced.length > shown.length ? h('span', { className: 'muted small', title: announced.slice(shown.length).map(r => r.prefix).join('\n') }, `+${announced.length - shown.length} more`) : null)
+      : h('span', { className: 'muted small' }, 'nothing'),
     h('div', { className: 'muted small mt-1' }, `Learns ${fmtNum(learned)} prefixes`));
 }
 
 function peerNode(data, p) {
-  const ch = p.channels[0];
   const cls = peerClass(data, p.name);
   const up = isUp(p);
   return h('div', { className: 'bgp-peer-cell' }, h('div', { className: `bgp-peer ${cls} ${up ? 'is-up' : 'is-down'}` },
@@ -53,8 +65,8 @@ function peerNode(data, p) {
       h('b', { title: p.name }, peerTitle(p)),
       h('div', { className: 'mono small muted' }, `${p.neighbor ?? '–'}${p.iface ? ' · ' + p.iface : ''}`)),
     h('div', { className: 'pn-stats' },
-      h('span', { title: 'Routes received from this peer' }, icon('download', 14), fmtNum(ch?.routes?.imported ?? 0)),
-      h('span', { title: 'Routes announced to this peer' }, icon('upload', 14), fmtNum(ch?.routes?.exported ?? 0))),
+      h('span', { title: 'Routes received from this peer' }, icon('download', 14), fmtNum(sumRoutes(p, 'imported'))),
+      h('span', { title: 'Routes announced to this peer' }, icon('upload', 14), fmtNum(sumRoutes(p, 'exported')))),
     badge(p.state, stateKind(p.state))));
 }
 

@@ -1,3 +1,7 @@
+// Wi-Fi page: connected clients per radio and SSID, from the flab.wifi plugin, which ports
+// utilities/list_connected_devices.uc. The table columns mirror that tool (MAC, addresses, hostname,
+// signal, standard, bandwidth, bitrate, security, AKM/cipher/PMF details, 0-100 score).
+// Filter text, sort order, selected radio and the paused flag live in `state` so they survive refreshes.
 import { h } from '../core/dom.js';
 import { ubus } from '../core/ubus.js';
 import { badge, card, tile, tiles } from '../core/ui.js';

@@ -13,10 +13,19 @@
 
 'use strict';
 
+import { readfile } from 'fs';
 import { run, num } from 'flab.util';
 
 const MEM_UNITS = { B: 1, kB: 1024, MB: 1048576, GB: 1073741824 };
 const STAT_COLUMNS = ['received', 'rejected', 'filtered', 'ignored', 'rx_limit', 'limit', 'accepted'];
+
+// Test seam: with FLAB_BGP_FIXTURES=<dir> set (never the case inside rpcd) saved command output is read
+// from <dir>/<name>.txt instead of running birdc/ip, so down-state and IPv6 samples can be tested.
+const FIXTURES = getenv('FLAB_BGP_FIXTURES');
+
+function source(name, cmd) {
+	return FIXTURES ? (readfile(`${FIXTURES}/${name}.txt`) ?? '') : run(cmd);
+}
 
 // Protocol names come from birdc output and are interpolated into a shell command, so validate them.
 function safe_name(name) {
@@ -24,7 +33,7 @@ function safe_name(name) {
 }
 
 function birdc(cmd) {
-	return run('birdc ' + cmd + ' 2>&1');
+	return source(replace(cmd, /[^A-Za-z0-9]+/g, '_'), 'birdc ' + cmd + ' 2>&1');
 }
 
 function key_of(text) {
@@ -129,6 +138,7 @@ function finish_bgp(bgp) {
 	bgp.hold_timer = parse_timer(bgp.hold_timer);
 	bgp.keepalive_timer = parse_timer(bgp.keepalive_timer);
 	bgp.send_hold_timer = parse_timer(bgp.send_hold_timer);
+	bgp.connect_delay = parse_timer(bgp.connect_delay);
 	bgp.neighbor_as = number_or_null(bgp.neighbor_as);
 	bgp.local_as = number_or_null(bgp.local_as);
 	bgp.tx_pending = number_or_null(match(bgp.tx_pending ?? '', /^[0-9]+/)?.[0]);
@@ -291,9 +301,16 @@ function parse_routes(text) {
 	let routes = [];
 	let cur = null;
 	let last_prefix = null;
+	let table = null;
 
 	for (let line in split(text, '\n')) {
-		if (trim(line) == '' || match(line, /^(BIRD |Table )/))
+		let t = match(line, /^Table (.+):$/);
+		if (t) {
+			table = t[1];
+			last_prefix = null;
+			continue;
+		}
+		if (trim(line) == '' || match(line, /^BIRD /))
 			continue;
 
 		if (ord(line, 0) == 9) {
@@ -316,6 +333,7 @@ function parse_routes(text) {
 		if (cur)
 			finish_route(cur);
 		cur = head;
+		cur.table = table;
 		last_prefix = head.prefix;
 		push(routes, cur);
 	}
@@ -327,36 +345,41 @@ function parse_routes(text) {
 
 //#region kernel routes
 
-// Prefix -> [{ via, dev }] as installed by BIRD's kernel protocol.
+// Prefix -> { kind, nexthops: [{ via, dev }] } as installed by BIRD's kernel protocol, IPv4 and IPv6.
 function kernel_routes() {
 	let table = {};
 	let cur = null;
 
-	for (let line in split(run('ip -4 route show proto bird 2>/dev/null'), '\n')) {
-		if (trim(line) == '')
-			continue;
-		let tok = split(trim(line), /[ ]+/);
+	for (let family in [4, 6]) {
+		let host = family == 4 ? '/32' : '/128';
+		let any = family == 4 ? '0.0.0.0/0' : '::/0';
 
-		if (ord(line, 0) == 9 || ord(line, 0) == 32) {
-			let m = match(trim(line), /^nexthop via ([^ ]+) dev ([^ ]+)/);
-			if (m && cur)
-				push(table[cur].nexthops, { via: m[1], dev: m[2] });
-			continue;
+		for (let line in split(source('ip' + family, `ip -${family} route show proto bird 2>/dev/null`), '\n')) {
+			if (trim(line) == '')
+				continue;
+			let tok = split(trim(line), /[ ]+/);
+
+			if (ord(line, 0) == 9 || ord(line, 0) == 32) {
+				let m = match(trim(line), /^nexthop via ([^ ]+) dev ([^ ]+)/);
+				if (m && cur)
+					push(table[cur].nexthops, { via: m[1], dev: m[2] });
+				continue;
+			}
+
+			let first = tok[0];
+			let kind = null;
+			if (first == 'blackhole' || first == 'unreachable' || first == 'prohibit') {
+				kind = first;
+				tok = slice(tok, 1);
+				first = tok[0];
+			}
+			cur = first == 'default' ? any : (index(first, '/') < 0 ? first + host : first);
+			table[cur] = { kind, nexthops: [] };
+
+			let via = index(tok, 'via'), dev = index(tok, 'dev');
+			if (dev >= 0)
+				push(table[cur].nexthops, { via: via >= 0 ? tok[via + 1] : null, dev: tok[dev + 1] });
 		}
-
-		let first = tok[0];
-		let kind = null;
-		if (first == 'blackhole' || first == 'unreachable' || first == 'prohibit') {
-			kind = first;
-			tok = slice(tok, 1);
-			first = tok[0];
-		}
-		cur = index(first, '/') < 0 ? first + '/32' : first;
-		table[cur] = { kind, nexthops: [] };
-
-		let via = index(tok, 'via'), dev = index(tok, 'dev');
-		if (dev >= 0)
-			push(table[cur].nexthops, { via: via >= 0 ? tok[via + 1] : null, dev: tok[dev + 1] });
 	}
 	return table;
 }
@@ -367,13 +390,15 @@ function kernel_routes() {
 function path_view(r, kernel) {
 	let k = kernel[r.prefix];
 	let via = r.next_hop ?? r.nexthops[0]?.via;
+	// An IPv6 BGP next hop may list a global and a link-local address; the kernel uses either one.
+	let candidates = [...split(trim(via ?? ''), /[ ]+/), ...map(r.nexthops, (n) => n.via)];
 	let installed = false;
 	for (let n in k?.nexthops ?? [])
-		if (n.via == via)
+		if (n.via != null && index(candidates, n.via) >= 0)
 			installed = true;
 
 	return {
-		prefix: r.prefix, peer: r.protocol, best: r.best, preference: r.preference,
+		prefix: r.prefix, table: r.table, peer: r.protocol, best: r.best, preference: r.preference,
 		local_pref: r.local_pref, med: r.med, as_path: r.as_path, origin: r.origin, origin_as: r.origin_as,
 		next_hop: via, dev: r.nexthops[0]?.dev, communities: r.communities, large_communities: r.large_communities,
 		ext_communities: r.ext_communities, aggregator: r.aggregator, since: r.since,
@@ -398,22 +423,23 @@ function peer_view(p, exports, interfaces) {
 		since: p.since, neighbor, neighbor_as: bgp.neighbor_as, local_as: bgp.local_as, router_id: bgp.neighbor_id,
 		session: bgp.session, source_address: bgp.source_address, iface,
 		hold_timer: bgp.hold_timer, keepalive_timer: bgp.keepalive_timer, send_hold_timer: bgp.send_hold_timer,
-		tx_pending: bgp.tx_pending, last_error: bgp.last_error,
+		tx_pending: bgp.tx_pending, last_error: bgp.last_error, connect_delay: bgp.connect_delay,
 		local_caps: bgp.local_caps ?? [], neighbor_caps: bgp.neighbor_caps ?? [],
 		channels: p.channels,
-		exported: map(exports[p.name] ?? [], (r) => ({ prefix: r.prefix, protocol: r.protocol, kind: r.type, preference: r.preference })),
+		exported: map(exports[p.name] ?? [], (r) => ({ prefix: r.prefix, table: r.table, protocol: r.protocol, kind: r.type, preference: r.preference })),
 	};
 }
 
-// Interface that carries each BGP neighbor, taken from BIRD's own routes (the peer /32 or a "via").
+// Interface that carries each BGP neighbor, taken from BIRD's own routes (the peer host route or a "via").
 function neighbor_interfaces(routes, neighbors) {
 	let map = {};
 	for (let r in routes) {
+		let host = replace(r.prefix, /\/(32|128)$/, '');
 		for (let n in r.nexthops) {
 			if (n.via != null && neighbors[n.via] && !map[n.via])
 				map[n.via] = n.dev;
-			if (n.via == null && neighbors[replace(r.prefix, /\/32$/, '')] && !map[replace(r.prefix, /\/32$/, '')])
-				map[replace(r.prefix, /\/32$/, '')] = n.dev;
+			if (n.via == null && neighbors[host] && !map[host])
+				map[host] = n.dev;
 		}
 	}
 	return map;
@@ -465,10 +491,11 @@ function findings(peers, paths) {
 	for (let p in peers) {
 		if (p.state != 'Established')
 			continue;
-		let ch = p.channels[0];
 		if (!length(p.exported))
 			warn(`${p.name} is not receiving any announcement from this router.`);
-		let dropped = (ch?.stats?.import_updates?.filtered ?? 0) + (ch?.stats?.import_updates?.rejected ?? 0);
+		let dropped = 0;
+		for (let ch in p.channels)
+			dropped += (ch.stats?.import_updates?.filtered ?? 0) + (ch.stats?.import_updates?.rejected ?? 0);
 		if (dropped > 0)
 			info(`${p.name}: the import filter dropped ${dropped} received route(s).`);
 		let local_gr = filter(p.local_caps, (c) => c.name == 'Graceful restart');
@@ -515,7 +542,7 @@ function collect() {
 		peers, paths, local,
 		protocols: map(protocols, (p) => ({
 			name: p.name, proto: p.proto, table: p.table, state: p.state, since: p.since, info: p.info,
-			channels: map(p.channels, (c) => ({ afi: c.afi, state: c.state, import_state: c.import_state, export_state: c.export_state,
+			channels: map(p.channels, (c) => ({ afi: c.afi, table: c.table, state: c.state, import_state: c.import_state, export_state: c.export_state,
 				preference: num(c.preference), input_filter: c.input_filter, output_filter: c.output_filter, routes: c.routes, stats: c.stats })),
 		})),
 		memory: parse_memory(birdc('show memory')),

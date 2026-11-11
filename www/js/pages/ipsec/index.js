@@ -1,3 +1,7 @@
+// IPsec page: strongSwan status from the flab.ipsec plugin. Summary tiles on top, then one card per
+// connection (connection.js), the daemon card and the score explanation (daemon.js).
+// Throughput is derived in the browser from successive counter samples (rates.js), which is why every
+// poll goes through record() before the data is rendered. `compact` hides the per-connection details.
 import { h } from '../../core/dom.js';
 import { ubus } from '../../core/ubus.js';
 import { tile, tiles, emptyState } from '../../core/ui.js';

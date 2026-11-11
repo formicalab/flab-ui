@@ -48,6 +48,7 @@ function sessionBlock(p) {
     ['Send hold timer', timer(p.send_hold_timer, 'Closes the session if the peer stops reading our messages')],
     ['TX queue', p.tx_pending != null ? `${fmtBytes(p.tx_pending)} pending` : '–'],
     p.last_error ? ['Last error', h('span', { className: 'text-danger' }, p.last_error)] : null,
+    p.connect_delay ? ['Next connect attempt', timer(p.connect_delay, 'BIRD retries the TCP connection when this reaches zero')] : null,
   ]));
 }
 
@@ -117,5 +118,6 @@ export function peerCard(p, data) {
       badge(p.name, ''),
       badge(p.state, stateKind(p.state)),
       badge(p.neighbor ?? '–', 'info')),
-    h('div', { className: 'bgp-cols' }, sessionBlock(p), capsBlock(p), channelBlock(p.channels[0], p)));
+    h('div', { className: 'bgp-cols' }, sessionBlock(p), capsBlock(p),
+      h('div', { className: 'bgp-channels' }, p.channels.length ? p.channels.map(c => channelBlock(c, p)) : channelBlock(null, p))));
 }

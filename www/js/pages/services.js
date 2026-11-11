@@ -1,3 +1,5 @@
+// Services page: procd services from the standard service list call. A service is "up" when it has
+// instances and all of them are running; one-shot services (firewall, system, ...) show as idle.
 import { ubus } from '../core/ubus.js';
 import { badge, card, table, tile, tiles } from '../core/ui.js';
 

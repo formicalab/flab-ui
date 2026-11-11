@@ -3,7 +3,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, card } from '../../core/ui.js';
-import { peerDot, peerClass, asPath, communityText, prefixKey } from './util.js';
+import { peerDot, peerClass, asPath, communityText, prefixKey, cmpPrefix, firstAddress } from './util.js';
 
 const muted = t => h('span', { className: 'muted' }, t);
 
@@ -19,13 +19,14 @@ const COLS = [
   { key: 'prefix', label: 'Prefix', w: 10, sort: r => prefixKey(r.prefix) },
   { key: 'status', label: 'Status', w: 12, sort: r => (r.best ? 0 : r.in_kernel ? 1 : 2) },
   { key: 'peer', label: 'Peer', w: 11, sort: r => r.peer },
-  { key: 'next_hop', label: 'Next hop', w: 9, sort: r => prefixKey(`${r.next_hop ?? '0.0.0.0'}/0`) },
+  { key: 'next_hop', label: 'Next hop', w: 9, sort: r => prefixKey(`${firstAddress(r.next_hop) || '0.0.0.0'}/0`) },
   { key: 'dev', label: 'Interface', w: 6, sort: r => r.dev ?? '' },
   { key: 'as_path', label: 'AS path', w: 15, sort: r => r.as_path.length },
   { key: 'origin', label: 'Origin', w: 5, sort: r => r.origin ?? '' },
   { key: 'local_pref', label: 'Local pref', w: 6, sort: r => r.local_pref ?? -1 },
   { key: 'med', label: 'MED', w: 5, sort: r => r.med ?? -1, optional: paths => paths.some(r => r.med != null) },
-  { key: 'communities', label: 'Communities', w: 13, sort: r => r.communities.length, optional: paths => paths.some(r => r.communities.length || r.large_communities.length) },
+  { key: 'communities', label: 'Communities', w: 13, sort: r => r.communities.length + r.large_communities.length + r.ext_communities.length,
+    optional: paths => paths.some(r => r.communities.length || r.large_communities.length || r.ext_communities.length) },
   { key: 'since', label: 'Since', w: 8, sort: r => r.since ?? '' },
 ];
 
@@ -41,7 +42,7 @@ function cell(col, r, data, first) {
     case 'local_pref': return r.local_pref ?? '–';
     case 'med': return r.med ?? '–';
     case 'communities': {
-      const all = [...r.communities.map(communityText), ...r.large_communities.map(c => 'L ' + communityText(c))];
+      const all = [...r.communities.map(communityText), ...r.large_communities.map(c => 'L ' + communityText(c)), ...r.ext_communities.map(c => 'E ' + communityText(c))];
       return all.length ? h('span', { className: 'chips' }, all.map(c => h('span', { className: 'chip', title: 'BGP community' }, c))) : muted('–');
     }
     default: return r.since ?? '–';
@@ -65,7 +66,7 @@ function sorted(paths, state, cols) {
     const x = col.sort(a), y = col.sort(b);
     const primary = (x < y ? -1 : x > y ? 1 : 0) * state.sort.dir;
     // Ties keep each prefix together with its best path first.
-    return primary || prefixKey(a.prefix) - prefixKey(b.prefix) || (b.best - a.best) || a.peer.localeCompare(b.peer);
+    return primary || cmpPrefix(a.prefix, b.prefix) || (b.best - a.best) || a.peer.localeCompare(b.peer);
   });
 }
 
