@@ -254,7 +254,8 @@ check(/^uci\.changes:?\S*( uci\.set:\S+)+ uci\.apply uci\.get:radio\d( uci\.get:
 check(!mock.calls.includes('uci.get'), 'the whole wireless config (which holds the Wi-Fi keys) is never read', mock.calls.join(' '));
 check(mock.cfg.radio0.channel === '11' && mock.cfg.radio1.channel === '36' && mock.cfg.radio1.htmode === 'HE160', 'only the channels were written, the width and the rest are untouched', JSON.stringify(mock.cfg));
 await page.waitForTimeout(600);
-check(await has(tile('radio1', 36), 'cur') && await bar().locator('.set-outcome.ok').count() === 1 && await saveBtn().isDisabled(), 'the page shows the new running channel and keeps the outcome');
+check(await has(tile('radio1', 36), 'cur') && await bar().locator('.set-outcome.ok').count() === 1 && await saveBtn().isHidden() && await page.locator('button:has-text("Discard edits")').isHidden(), 'the page shows the new running channel and keeps the outcome, without Save and Discard buttons');
+check(!/null|undefined/.test(await bar().innerText()) && /No unsaved changes/.test(await page.locator('.set-bar-summary').innerText()), 'the banner says nothing is unsaved, with no stray "null"');
 check(/configured 36/.test(await card('radio1').locator('.rd-cols').innerText()), 'the configuration block says configured 36');
 await shot('saved');
 

@@ -110,9 +110,9 @@ export function reviewBanner({ onSave, onDiscard }) {
       root.classList.toggle('pending', changes.length > 0);
       root.classList.toggle('invalid', errors.length > 0);
 
-      summaryNode.replaceChildren(
+      summaryNode.replaceChildren(...[
         changes.length ? h('b', {}, `${changes.length} unsaved change${changes.length > 1 ? 's' : ''}`) : muted('No unsaved changes'),
-        changes.length ? muted(`: ${changes.map(c => c.label).join(', ')}`) : null);
+        changes.length ? muted(`: ${changes.map(c => c.label).join(', ')}`) : null].filter(Boolean));
       detailsToggle.replaceChildren(icon(open ? 'chevron-up' : 'chevron-down'), open ? 'Hide details' : 'Details');
       detailsToggle.hidden = !changes.length;
       details.hidden = !open || !changes.length;
@@ -123,6 +123,8 @@ export function reviewBanner({ onSave, onDiscard }) {
       outcomeNote?.classList.add('set-outcome');
       outcome.replaceChildren(...(outcomeNote ? [outcomeNote] : []));
       dismiss.hidden = !message || view.busy;
+      // With nothing pending (after a save, or a discard) only the outcome is left: there is nothing to save or discard.
+      saveButton.hidden = discard.hidden = !changes.length;
       saveButton.disabled = !view.canEdit || !changes.length || errors.length > 0;
       discard.disabled = view.busy || !view.dirty;
     },

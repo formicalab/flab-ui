@@ -329,7 +329,7 @@ check(cfg.cfg1.ip === '192.168.1.20' && cfg.cfg1.mac === '88:AE:DD:66:16:05' && 
 const added = Object.values(cfg).filter(s => s['.type'] === 'host' && ['printer', 'laptop'].includes(s.name));
 check(added.length === 2 && added.find(s => s.name === 'printer').mac === 'DC:CD:2F:A8:B1:7A' && added.find(s => s.name === 'laptop').ip === '192.168.1.150', 'new reservations were added with their MACs in capitals', JSON.stringify(added));
 check(cfg.lan.start === '100' && cfg.lan.limit === '80' && cfg.lan.leasetime === '12h' && cfg.lan.dynamicdhcp === '0' && cfg.lan.ra_lifetime === '1800' && JSON.stringify(cfg.lan.dns) === '["192.168.1.1","1.1.1.1"]' && cfg.lan100.dhcpv4 === 'disabled' && cfg.odhcpd.loglevel === '5' && cfg.odhcpd.maindhcp === '1', 'pool and daemon options were written (a list as a list, switches as 0/1)', JSON.stringify([cfg.lan, cfg.lan100, cfg.odhcpd]));
-check(await tile(3) === '5' && await bar().locator('.set-outcome.ok').count() === 1 && await saveBtn().isDisabled(), 'the page shows the saved state and keeps the outcome');
+check(await tile(3) === '5' && await bar().locator('.set-outcome.ok').count() === 1 && await saveBtn().isHidden() && await page.locator('button:has-text("Discard edits")').isHidden() && !/null|undefined/.test(await bar().innerText()), 'the page shows the saved state and keeps the outcome, without Save and Discard buttons');
 check(await hostRows().count() === 5 && await hostInput(hostRow('printer'), 'MAC address(es)').inputValue() === 'DC:CD:2F:A8:B1:7A', 'the table lists the saved reservations');
 await shot('mock-saved');
 

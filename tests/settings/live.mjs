@@ -254,7 +254,7 @@ check(sys.hostname === 'router2' && sys.description === 'lab router' && sys.zone
 check(ntp.server[0] === 'time.cloudflare.com' && ntp.server.length === 3 && ntp.use_dhcp === '1' && sys.log_size === '512' && sys.ttylogin === '0', 'the NTP options were written and untouched options kept', JSON.stringify([ntp, sys.log_size]));
 check(await tile(1) === 'router2' && /UTC\+00:00/.test(await tileSub(0)) && await tile(2) === 'Europe/London', 'the tiles show the saved state', `${await tile(1)} ${await tileSub(0)}`);
 check((await page.locator('.nav-pane .brand strong').innerText()).trim() === 'router2', 'the new hostname appears in the navigation header');
-check(await saveBtn().isDisabled() && /Saved/.test(await page.locator('.set-bar .set-outcome.ok').innerText()), 'the form restarts clean and the banner keeps the outcome');
+check(await saveBtn().isHidden() && await page.locator('button:has-text("Discard edits")').isHidden() && !/null|undefined/.test(await page.locator('.set-bar').innerText()) && /Saved/.test(await page.locator('.set-bar .set-outcome.ok').innerText()), 'the form restarts clean and the banner keeps only the outcome, without Save and Discard buttons');
 await input('Hostname').fill('router3');
 check(await page.locator('.set-outcome.ok').count() === 0 && await page.locator('.set-bar').isVisible(), 'editing again forgets the old outcome and shows the pending change');
 await shot('mock-saved');
