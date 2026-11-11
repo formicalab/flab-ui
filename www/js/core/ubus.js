@@ -19,12 +19,20 @@ export const hasSession = () => Boolean(sid);
 // One JSON-RPC `call` to ubus. Returns the method's result object; throws on a transport error, a JSON-RPC
 // error (flagged `denied` for -32002, which is both "expired" and "not allowed") or a nonzero ubus status.
 async function rpc(obj, method, args = {}, token = sid || NULL_SID) {
-  const res = await fetch('/ubus', {
-    method: 'POST',
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'call', params: [token, obj, method, args] }),
-  });
-  const j = await res.json();
+  let res;
+  try {
+    res = await fetch('/ubus', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'call', params: [token, obj, method, args] }),
+    });
+  } catch {
+    throw new Error('The router cannot be reached.');
+  }
+  if (!res.ok) throw new Error(`The router answered HTTP ${res.status} to ${obj}.${method}.`);
+  let j;
+  try { j = await res.json(); } catch { throw new Error(`The router sent an unreadable reply to ${obj}.${method}.`); }
   if (j.error) throw Object.assign(new Error(j.error.message), { denied: j.error.code === -32002 });
+  if (!Array.isArray(j.result)) throw new Error(`The router sent an unexpected reply to ${obj}.${method}.`);
   const [code, data] = j.result;
   if (code !== 0) throw new Error(`${obj}.${method} failed (ubus code ${code})`);
   return data;
@@ -45,6 +53,7 @@ export async function ubus(obj, method, args) {
     throw new Error(`Access denied by ACL: ${obj}.${method}`);
   }
 }
+
 // For data a page can do without (an optional plugin, an ACL that was not granted): resolves to null instead
 // of failing the page. An expired session is still raised, because the whole page needs a new sign-in then.
 export const optional = promise => promise.catch(e => {

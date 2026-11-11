@@ -10,7 +10,7 @@
 //#region Reading UCI
 
 // The options of a section as `uci get` returns it, without its bookkeeping keys (.type, .name, .anonymous).
-export const optionsOf = section => Object.fromEntries(Object.entries(section).filter(([k]) => !k.startsWith('.')));
+const optionsOf = section => Object.fromEntries(Object.entries(section).filter(([k]) => !k.startsWith('.')));
 
 // Every section of a type in file order, as [{ section, values }] where `section` is the UCI name (anonymous
 // sections are named cfgXXXXXX by uci) and `values` the options.
@@ -21,7 +21,7 @@ export function sectionsOf(cfg, type) {
 }
 
 // UCI spells booleans several ways; `fallback` is the value when the option is absent or unrecognized.
-export function uciBool(v, fallback) {
+function uciBool(v, fallback) {
   const s = String(v ?? '').toLowerCase();
   if (['1', 'true', 'yes', 'on', 'enabled'].includes(s)) return true;
   if (['0', 'false', 'no', 'off', 'disabled'].includes(s)) return false;
@@ -70,10 +70,10 @@ export const flag = b => (b ? '1' : '0');
 
 //#region Validation
 
-export const HOSTNAME = /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
-export const LABEL = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
-export const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-export const IPV6 = /^(?=.*:.*:)[0-9A-Fa-f:]+(\.[0-9]{1,3}){0,3}$/;
+const HOSTNAME = /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+const LABEL = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+const IPV6 = /^(?=.*:.*:)[0-9A-Fa-f:]+(\.[0-9]{1,3}){0,3}$/;
 export const MAC = /^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$/;
 
 // Whether `s` can be given to a daemon as a server: a host name, an IPv4 address or an IPv6 address.
@@ -101,7 +101,7 @@ export const CHECKS = {
 };
 
 // The error for one non-empty value of a field, or null.
-export function fieldError(field, v) {
+function fieldError(field, v) {
   if (field.type === 'int') {
     if (!/^\d+$/.test(v)) return 'must be a whole number';
     const n = +v;

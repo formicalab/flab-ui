@@ -10,7 +10,7 @@ const store = new Map();
 globalThis.sessionStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: k => store.delete(k) };
 const core = f => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/core', f)).href);
 const { createUci, APPLY_TIMEOUT_S } = await core('uci.js');
-const { can, optional, AuthError, login, clearSession } = await core('ubus.js');
+const { can, optional, AuthError, login, clearSession, ubus } = await core('ubus.js');
 
 let failed = 0;
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
@@ -98,7 +98,7 @@ check(f.calls.filter(c => c[1] === 'changes').length === 2, 'every config in the
 
 console.log('== session: what this login may call ==');
 const real = globalThis.fetch;
-const reply = result => { globalThis.fetch = async () => ({ json: async () => ({ result }) }); };
+const reply = result => { globalThis.fetch = async () => ({ ok: true, json: async () => ({ result }) }); };
 reply([0, { ubus_rpc_session: 'abc', acls: { ubus: { 'flab.network': ['status'], uci: ['set', 'apply'], 'flab.any': ['*'] } } }]);
 await login('someone', 'x');
 check(can('flab.network', 'status') && !can('flab.network', 'reload') && can('uci', 'set') && !can('uci', 'commit') && can('flab.any', 'whatever') && !can('nope', 'x'), 'can() answers from the ACLs returned at sign-in; "*" grants every method');
@@ -111,6 +111,11 @@ await login('nobody', 'x');
 check(!can('uci', 'set') && !can('flab.network', 'status'), 'a login that reports no ACLs may call nothing from the UI\'s point of view');
 clearSession();
 check(store.get('sid') === undefined && store.get('acls') === undefined && !can('flab.network', 'status'), 'signing out forgets the ACLs too');
+const fails = async fetchImpl => { globalThis.fetch = fetchImpl; try { await ubus('system', 'board'); return null; } catch (e) { return e.message; } };
+check(/cannot be reached/.test(await fails(async () => { throw new TypeError('Failed to fetch'); })), 'a network failure says the router cannot be reached');
+check(/HTTP 502/.test(await fails(async () => ({ ok: false, status: 502, json: async () => ({}) }))), 'an HTTP error status is reported as such, not as a parse error');
+check(/unreadable/.test(await fails(async () => ({ ok: true, json: async () => { throw new SyntaxError('bad json'); } }))), 'a reply that is not JSON is reported as unreadable');
+check(/unexpected reply/.test(await fails(async () => ({ ok: true, json: async () => ({}) }))), 'a JSON reply without a result is reported as unexpected');
 globalThis.fetch = real;
 
 console.log('== optional() ==');

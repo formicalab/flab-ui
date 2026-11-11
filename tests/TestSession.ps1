@@ -57,7 +57,11 @@ function New-TestSession {
     foreach ($grant in @(@('ubus', $ubusPairs), @('uci', $uciPairs))) {
         $json = [ordered]@{ ubus_rpc_session = $sid; scope = $grant[0]; objects = $grant[1] } | ConvertTo-Json -Compress -Depth 5
         $json | ssh $Router 'ubus call session grant "$(cat)"' | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Could not grant the $($grant[0]) scope to the test session." }
+        if ($LASTEXITCODE -ne 0) {
+            # The caller never receives the session id, so nobody else could destroy it.
+            Remove-TestSession -Router $Router -Sid $sid
+            throw "Could not grant the $($grant[0]) scope to the test session."
+        }
     }
 
     $acls = [ordered]@{

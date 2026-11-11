@@ -113,7 +113,7 @@ export function readDhcp(cfg, v4, v6, ra, dump, svc) {
 const valuesOf = (fields, raw) => Object.fromEntries(fields.map(f => [f.key, valueOf(f, raw[f.key])]));
 
 // A reservation's options as the table edits them: strings, with the lists joined by spaces.
-export const hostValues = raw => ({
+const hostValues = raw => ({
   name: String(raw.name ?? ''), ip: String(raw.ip ?? ''), mac: asList(raw.mac).join(' '), duid: asList(raw.duid).join(' '),
   hostid: String(raw.hostid ?? ''), leasetime: String(raw.leasetime ?? ''),
 });

@@ -10,7 +10,7 @@ import { buildLayers } from './layers.js';
 import { addressesOf } from '../network/shared.js';
 
 // An address line in the Addressing column (smaller than the inline `mono` helper).
-const mono = t => h('div', { className: 'mono small' }, t);
+const addressLine = t => h('div', { className: 'mono small' }, t);
 
 // Default route's next hop (0.0.0.0/0 or ::/0), shown as the gateway.
 const gatewayOf = i => (i.route ?? []).find(r => r.mask === 0 && (r.target === '0.0.0.0' || r.target === '::'))?.nexthop;
@@ -100,7 +100,7 @@ function addressingCell(r) {
   const received = (i['ipv6-prefix'] ?? []).map(p => `${p.address}/${p.mask}`);
   const line = (label, v) => h('div', { className: 'muted small' }, `${label} `, h('span', { className: 'mono' }, v));
   return [
-    h('div', {}, addressesOf(i).map(mono)),
+    h('div', {}, addressesOf(i).map(addressLine)),
     gatewayOf(i) ? line('gateway', gatewayOf(i)) : null,
     (i['dns-server'] ?? []).length ? line('DNS', i['dns-server'].join(', ')) : null,
     ...routes.map(x => line('route', `${x.target}/${x.mask} ${onLink(x.nexthop) ? 'on link' : `via ${x.nexthop}`}${x.metric ? ` (metric ${x.metric})` : ''}`)),

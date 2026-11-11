@@ -89,6 +89,7 @@ flab-ui/
         ops.js               stageOps(): turns a change plan (set / add / delete operations) into staged uci calls
         fields.js            Pure form-field model: option readers, value checks (IP, MAC, duration, ...), fieldError()
         forms.js             Form building blocks: legend, note, fieldRow(), the sticky review banner
+        editpage.js          createEditor(): the draft, banner, save/discard and notes every editing page shares
         login.js             Sign-in screen (inline SVG and CSS only)
         dom.js               h() element builder (XSS-safe), byId()
         ui.js                Components: card, tile(s), table, badge, chip, kv, lifebar, meter, sparkline,
@@ -129,7 +130,9 @@ flab-ui/
 - On every route change the shell rebuilds: navigation pane, command bar (page title, the page's
   persistent controls, "Updated hh:mm:ss" stamp) and a `<main>` results area.
 - `page.load()` fetches data, `page.view(data, rerender)` returns nodes. A `setInterval` repeats
-  `load()` every `page.interval` ms unless `page.isPaused()` is true.
+  `load()` every `page.interval` ms unless `page.isPaused()` is true. A poll is also skipped while the previous
+  one is still running and while the browser tab is in the background (the tab refreshes when it is shown again).
+  Only the newest request counts: a late reply that was overtaken, or one for a page that was left, is dropped.
 - Page CSS (`page.css`) is added once to `<head>` the first time the page opens.
 - An `AuthError` anywhere returns the user to the sign-in screen ("Session expired").
 
@@ -336,8 +339,9 @@ happened; the router is on its previous configuration after every failure.
 **Rules for the page that edits.**
 - Describe the options as data (`settings/schema.js`, `dhcp/schema.js`) and keep the model pure
   (`settings/model.js`: the form's draft, validation, the change list, the UCI operations, the read-back check),
-  so the page is only controls. Field checks, form rows and the sticky review banner are shared
-  (`core/fields.js`, `core/forms.js`, `core/ops.js`, `css/forms.css`).
+  so the page is only controls. Field checks, form rows, the sticky review banner and the draft, save and discard
+  logic are shared (`core/fields.js`, `core/forms.js`, `core/ops.js`, `core/editpage.js` and `css/forms.css`): a
+  page creates an editor with `createEditor()`, which also gives it `isPaused` and the notes above the form.
 - Validate input in the page before staging; `uci` itself has no schema. Show the effect of the edits (the
   review list) before saving, and disable Save while anything is invalid.
 - Write only what changed, delete an emptied option instead of storing an empty string, and leave options the
@@ -790,10 +794,11 @@ the ACL fragment `rpcd/acl.d/flab-settings.json`.
 ## Testing
 
 Five suites, driven by `run.ps1` scripts that never change the router's configuration. The BGP, IPsec and
-network suites share one mechanism: the repository's plugins run **on the router** against saved fixtures
-(`FLAB_FIXTURES`, with `ucode -L` so the uploaded libraries win over the deployed ones), and an optional browser
-pass opens the deployed UI in Edge through `playwright-core` (installed into a temporary folder) with the plugin
-calls intercepted and answered with the scenario JSON.
+network suites share one mechanism (the "Common mechanism" below): the repository's plugins run **on the router**
+against saved fixtures (`FLAB_FIXTURES`, with `ucode -L` so the uploaded libraries win over the deployed ones), and
+an optional browser pass opens the deployed UI in Edge through `playwright-core` (installed into a temporary
+folder) with the plugin calls intercepted and answered with the scenario JSON. The Settings and DHCP suites have no
+plugin: they unit-test their models and, with `-Browser`, drive the page against a mock of rpcd's `uci` object.
 
 | Suite | Command | Covers |
 |---|---|---|
@@ -805,10 +810,10 @@ calls intercepted and answered with the scenario JSON.
 
 `-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
-password is needed. Each suite removes its
-`/tmp/flab-*-test` folder on the router and its local temp folder when it finishes.
+password is needed. Every suite removes its local temp folder when it finishes, and the BGP, IPsec and network
+suites also remove their `/tmp/flab-*-test` folder on the router.
 
-### Common mechanism
+### Common mechanism (BGP, IPsec and network suites)
 
 1. **Capture**: each plugin is run once on the router with `FLAB_RECORD` set, so it saves its own inputs
    (`ubus call` results, UCI, sysfs files, command output) under the fixture names. Keys and passwords

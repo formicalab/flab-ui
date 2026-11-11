@@ -51,6 +51,7 @@ export function summarize(entries) {
   return { errors, warnings, newest };
 }
 
+// Two-digit zero-padded number, for clock fields.
 const pad = n => String(n).padStart(2, '0');
 
 // "12 Nov 09:05:03" in the browser's time zone, or an en dash for an entry with no time.

@@ -10,7 +10,6 @@
 //   { values: { <option>: string | boolean | string[] }, zone: { name, rule } }
 //   An empty string or list means "not set". `zone.name` '' means "custom rule".
 import { differs, errorsOf, flag, hasBlankRows, normalize, sectionsOf, show, valueOf, validServer } from '../../core/fields.js';
-import { stageOps } from '../../core/ops.js';
 import { FIELDS } from './schema.js';
 import { ZONES } from './zones.js';
 
@@ -18,7 +17,7 @@ export { validServer };
 
 // The config both sections live in, and the name given to the `timeserver` section when the router has none.
 export const CONFIG = 'system';
-export const NTP_SECTION = 'ntp';
+const NTP_SECTION = 'ntp';
 
 //#region Reading
 
@@ -181,9 +180,6 @@ export function plan(data, draft) {
   emit('ntp', 'timeserver', NTP_SECTION);
   return ops;
 }
-
-// Stages the planned operations through a uci API (core/uci.js).
-export const stage = stageOps;
 
 // Throws unless the settings `after` (read back once the change is applied) hold what the draft asked for.
 // `before` is what the draft was made from: the zone rule is only checked when the draft changed the zone.

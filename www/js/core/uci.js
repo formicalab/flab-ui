@@ -84,7 +84,7 @@ export function createUci(call) {
 export const uci = createUci(ubus);
 
 // How long to wait after `apply` before verifying, so services that reload because of the change have restarted.
-export const SETTLE_MS = 1500;
+const SETTLE_MS = 1500;
 
 // Runs a whole change with its safety net and is what pages should call instead of the steps above:
 //   1. refuses to start when something is already staged in `configs` (apply would commit it too);

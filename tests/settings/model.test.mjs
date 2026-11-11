@@ -112,7 +112,8 @@ check(j(ops) === j([{ op: 'add', config: 'system', type: 'system', values: { hos
 console.log('== staging through a uci API ==');
 const calls = [];
 const ed = { set: async (...a) => calls.push(['set', ...a]), add: async (...a) => calls.push(['add', ...a]), delete: async (...a) => calls.push(['delete', ...a]) };
-await m.stage(ed, m.plan(d, draftOf(d, x => { x.values.hostname = 'r'; x.values.server = []; })));
+const { stageOps } = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/core/ops.js')).href);
+await stageOps(ed, m.plan(d, draftOf(d, x => { x.values.hostname = 'r'; x.values.server = []; })));
 check(j(calls) === j([['set', 'system', 'cfg0', { hostname: 'r' }], ['delete', 'system', 'ntp', ['server']]]), 'each operation becomes one uci call', j(calls));
 
 console.log('== reading back after apply ==');
