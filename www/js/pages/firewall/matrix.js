@@ -30,7 +30,7 @@ export function matrixCard(fw) {
     h('tbody', {}, m.rows.map(r => h('tr', {}, h('th', { className: r.src === ROUTER ? 'fwm-router' : '' }, label(r.src)), r.cells.map(cell)))));
   return card([icon('shield-check'), h('span', {}, 'Who can reach whom'), h('span', { className: 'sub' }, 'default policy per zone pair; hover a cell for the rules')],
     h('div', {},
-      h('div', { className: 'muted small fw-legend' },
+      h('div', { className: 'muted small fw-legend fw-matrix-legend' },
         h('span', { className: 'fwm-key fwm-open' }), ' allowed by policy   ',
         h('span', { className: 'fwm-key fwm-partial' }), ' blocked by policy, opened by specific rules   ',
         h('span', { className: 'fwm-key fwm-closed' }), ' blocked. A zone reaches another zone only through a forwarding, a rule or a port forward; the diagonal is traffic between interfaces of the same zone.'),

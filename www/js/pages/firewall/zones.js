@@ -35,9 +35,21 @@ function zoneRow(z) {
 }
 
 export function zonesCard(fw) {
-  const cols = ['Zone', 'Interfaces', 'Kernel devices', 'Input', 'Output', 'Forward', 'May forward to', 'Turned away'];
-  return card([icon('shield-check'), h('span', {}, 'Zones'), h('span', { className: 'sub' }, `${fw.zones.length} zones · input = zone to router · output = router to zone · forward = within the zone`)],
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table fw-table' },
-      h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
-      h('tbody', {}, fw.zones.length ? fw.zones.map(zoneRow) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No zones are configured.'))))));
+  // [label, tooltip]: the three policy columns are defaults, which the tooltips and the legend spell out.
+  const cols = [
+    ['Zone'], ['Interfaces'], ['Kernel devices'],
+    ['Input policy', 'Default for traffic from this zone to the router itself. reject/drop: refused unless a rule below allows it.'],
+    ['Output policy', 'Default for traffic from the router itself into this zone.'],
+    ['Forward policy (inside zone)', 'Default for traffic between two interfaces of this same zone. Traffic to other zones is governed by "May forward to".'],
+    ['May forward to', 'Other zones this zone may send traffic to (forwarding sections). Anything else is blocked unless a rule or port forward allows it.'],
+    ['Turned away'],
+  ];
+  return card([icon('shield-check'), h('span', {}, 'Zones'), h('span', { className: 'sub' }, `${fw.zones.length} zones · policies are defaults, specific rules are exceptions`)],
+    h('div', {},
+      h('div', { className: 'muted small fw-legend fw-zones-legend' },
+        h('p', {}, h('b', {}, 'accept'), ' lets everything through by default. ', h('b', {}, 'reject'), ' and ', h('b', {}, 'drop'), ' refuse everything by default except what a specific rule or forwarding allows (reject answers the sender with an error, drop silently discards); replies to connections that were allowed are always let back in.'),
+        h('p', {}, h('b', {}, 'Input'), ' = zone to the router itself · ', h('b', {}, 'Output'), ' = router to the zone · ', h('b', {}, 'Forward'), ' = between interfaces of the same zone only; reaching other zones is the "May forward to" column. So a wan input of reject means: nothing from the Internet reaches the router except the rules listed under "Reachable from the Internet".')),
+      h('div', { className: 'grid-wrap' }, h('table', { className: 'table fw-table' },
+        h('thead', {}, h('tr', {}, cols.map(([label, title]) => h('th', { title: title ?? '' }, label)))),
+        h('tbody', {}, fw.zones.length ? fw.zones.map(zoneRow) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No zones are configured.')))))));
 }

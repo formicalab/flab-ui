@@ -71,7 +71,7 @@ flab-ui/
       core/                  Framework-level modules shared by all pages
         app.js               Shell: nav pane, command bar, hash routing, refresh loop
         ubus.js              ubus JSON-RPC transport, session, AuthError
-        login.js             Sign-in screen
+        login.js             Sign-in screen: gradient hero with logo, network motif, icon fields, show-password toggle (inline SVG/CSS only)
         dom.js               h() element builder (XSS-safe), byId()
         ui.js                Components: card, tile(s), table, badge, chip, kv, lifebar, meter, sparkline, healthBanner
         controls.js          Command-bar controls: search, select, pause, toggle, refresh
@@ -425,8 +425,11 @@ next poll and every number is a real kernel counter.
   block part of it. Hover a cell for the rule names. Disabled rules, rules naming an unknown zone and rules with
   neither side are ignored, as the firewall does.
 - **Zones**: configured interfaces, the kernel devices the loaded rules really match for the zone (read from the
-  jumps in the base chains), input/output/forward policy, NAT and MSS clamping, where the zone may forward to, and
-  the packets its reject/drop chains turned away, in each direction, with a live rate.
+  jumps in the base chains), input/output/forward *policy*, NAT and MSS clamping, where the zone may forward to, and
+  the packets its reject/drop chains turned away, in each direction, with a live rate. The policies are defaults:
+  `reject`/`drop` refuse everything except what a specific rule or forwarding allows (replies to allowed
+  connections are always let back in), which the card's legend and the column tooltips spell out. *Forward* is
+  only traffic between interfaces of the same zone; reaching other zones is the "May forward to" column.
 - **Reachable from the Internet**: the zones that masquerade are treated as facing the Internet; this lists the
   accepting rules and port forwards that start there, i.e. everything a stranger can reach.
 - **Traffic rules** and **Port forwards and NAT**: every section in configuration order with its match

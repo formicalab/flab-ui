@@ -9,6 +9,8 @@
 .fw-flow { display: flex; align-items: center; gap: .35rem; color: var(--fl-muted); }
 .fw-pps { margin-left: .5rem; color: var(--fl-ok-fg); font-variant-numeric: tabular-nums; }
 .fw-legend { padding: .7rem 1rem .2rem; }
+.fw-legend p { margin: 0 0 .4rem; }
+.fw-zones-legend { border-bottom: 1px solid var(--fl-stroke); }
 
 /* Zone matrix */
 .fwm { border-collapse: separate; border-spacing: 4px; margin: .8rem 1rem 1rem; min-width: 32rem; }
