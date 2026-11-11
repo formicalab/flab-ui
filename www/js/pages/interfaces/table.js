@@ -139,11 +139,11 @@ export function interfacesCard(ifs, net, tunlinks, radios) {
   const cols = ['Ports, radios and Wi-Fi', 'Devices', 'Interface', 'Protocol device', 'Addressing', 'Firewall zone and services', 'State'];
   return card([icon('diagram-3'), h('span', {}, 'Network layers'), h('span', { className: 'sub' }, `${rows.length} rows, built up from the physical ports and radios`)],
     h('div', {},
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table layers-table' },
-        h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
-        h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No interfaces are configured.'))))),
-      h('div', { className: 'muted small layers-foot' },
+      h('div', { className: 'muted small layers-legend' },
         h('p', {}, h('b', {}, 'How to read a row: '), 'ports and Wi-Fi or mesh interfaces (each on its radio) are grouped into bridges; an 802.1q VLAN device can sit on a port or bridge; a network interface (netifd) binds to one device and holds the protocol and addresses; PPPoE and tunnels add a protocol device on top.'),
         h('p', {}, h('b', {}, 'Several interfaces on the same ports: '), 'a bridge hands its untagged frames to the interface bound to it, while a VLAN device on that bridge picks out only the frames carrying its tag and gives a second, separate interface on the same wires. The ports are listed once, and the other rows say "same ports as …"; the Devices column tells which frames each row carries.'),
-        h('p', {}, 'Wireless that belongs to no network interface, and radios with no interface, are listed at the end. The firewall zone and the DHCP and router-advertisement services come from the router configuration.'))));
+        h('p', {}, 'Wireless that belongs to no network interface, and radios with no interface, are listed at the end. The firewall zone and the DHCP and router-advertisement services come from the router configuration.')),
+      h('div', { className: 'grid-wrap' }, h('table', { className: 'table layers-table' },
+        h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
+        h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No interfaces are configured.')))))));
 }

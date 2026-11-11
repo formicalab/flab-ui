@@ -1,0 +1,11 @@
+{
+  "flab": {
+    "description": "flab-ui Firewall page (zones, rules, port forwards and live counters)",
+    "read": {
+      "ubus": {
+        "flab.firewall": ["status"]
+      }
+    },
+    "write": {}
+  }
+}

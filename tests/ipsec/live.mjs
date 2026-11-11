@@ -51,6 +51,7 @@ await page.waitForSelector('.vpn-card');
 console.log('== live router (pass-through) ==');
 check(await cards() === 4, '4 connection cards from the live router', String(await cards()));
 check(await tile(0) === '4 / 4', 'tunnels tile 4 / 4', await tile(0));
+check(await page.evaluate(() => { const A = document.querySelector('details.legend'), B = document.querySelector('.vpn-grid'); return !!A && !!B && !!(A.compareDocumentPosition(B) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'the score explanation sits above the connection cards');
 
 await stage('a tunnel goes down', scenario('down'));
 check(await tile(0) === '3 / 4', 'tunnels tile updates to 3 / 4', await tile(0));

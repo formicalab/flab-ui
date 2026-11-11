@@ -50,6 +50,20 @@ function wgSet(fx, field, key, value) {
 const wgNormalize = fx => wgSet(fx, 'latest_handshakes', wgSite.public_key, nowS() - 30);
 const editUci = (fx, file, fn) => { const o = JSON.parse(fx.raw[file]); fn(o.values); fx.raw[file] = JSON.stringify(o); };
 
+// Firewall facts from the capture. `nft -j list ruleset` is saved as nft_j_list_ruleset.txt.
+const nftFile = 'nft_j_list_ruleset.txt';
+const uciFw = JSON.parse(raw['uci_firewall.json']).values;
+const fwZones = Object.values(uciFw).filter(s => s['.type'] === 'zone');
+const fwWan = fwZones.find(z => z.masq === '1')?.name;
+if (!fwWan) throw new Error('the router has no masquerading (WAN) firewall zone to test with');
+const fwRuleCount = Object.values(uciFw).filter(s => s['.type'] === 'rule').length;
+// Adds a counting rule with an fw4 comment to a chain of the captured ruleset.
+function nftAdd(fx, chain, comment, packets, bytes) {
+  const doc = JSON.parse(fx.raw[nftFile]);
+  doc.nftables.push({ rule: { family: 'inet', table: 'fw4', chain, handle: 9000 + doc.nftables.length, comment, expr: [{ counter: { packets, bytes } }, { accept: null }] } });
+  fx.raw[nftFile] = JSON.stringify(doc);
+}
+
 const files = JSON.parse(text('files.json'));
 const uci = JSON.parse(text('uci_wireless.json')).values;
 for (const s of Object.values(uci)) if (s['.type'] === 'wifi-iface') { s.key = CANARY; s.r0kh = [CANARY]; s.r1kh = [CANARY]; }
@@ -244,6 +258,35 @@ const scenarios = {
     fx.raw['wg_show_interfaces.txt'] = '\n';
     return fx;
   },
+
+  // ── Firewall ──
+  'f-stopped': fx => { fx.raw[nftFile] = ''; return fx; },
+  // A port forward from the Internet: the UCI section plus the nft rule firewall4 would have loaded for it.
+  'f-redirect': fx => {
+    editUci(fx, 'uci_firewall.json', v => { v.cfgweb = { '.type': 'redirect', '.name': 'cfgweb', '.anonymous': true, '.index': 99, name: 'Web', src: 'wan', dest: 'lan', proto: ['tcp'], src_dport: '8080', dest_ip: '192.168.1.10', dest_port: '80', target: 'DNAT' }; });
+    nftAdd(fx, 'dstnat', '!fw4: Web', 7, 700);
+    return fx;
+  },
+  // The Internet-facing zone accepts everything to the router, and a rule opens all TCP/UDP ports from it.
+  'f-exposed': fx => {
+    editUci(fx, 'uci_firewall.json', v => {
+      for (const s of Object.values(v)) if (s['.type'] === 'zone' && s.name === fwWan) s.input = 'ACCEPT';
+      v.cfgall = { '.type': 'rule', '.name': 'cfgall', '.anonymous': true, '.index': 98, name: 'Open-All', src: fwWan, target: 'ACCEPT' };
+    });
+    return fx;
+  },
+  'f-disabled': fx => { editUci(fx, 'uci_firewall.json', v => { for (const s of Object.values(v)) if (s.name === 'Allow-Ping') s.enabled = '0'; }); return fx; },
+  // An unnamed rule is commented `@rule[N]` by firewall4, N counting rule sections in configuration order.
+  'f-anonymous': fx => {
+    editUci(fx, 'uci_firewall.json', v => { v.cfganon = { '.type': 'rule', '.name': 'cfganon', '.anonymous': true, '.index': 97, src: fwWan, proto: ['tcp'], dest_port: '2222', target: 'ACCEPT' }; });
+    nftAdd(fx, `input_${fwWan}`, `!fw4: @rule[${fwRuleCount}]`, 3, 300);
+    return fx;
+  },
+  'f-unzoned': fx => {
+    editUci(fx, 'uci_firewall.json', v => { for (const s of Object.values(v)) if (s['.type'] === 'zone' && s.name === 'lan') s.network = [].concat(s.network).filter(n => n !== 'lan100'); });
+    return fx;
+  },
+  'f-conntrack': fx => { fx.files['/proc/sys/net/netfilter/nf_conntrack_count'] = '60000\n'; return fx; },
 };
 //#endregion
 
@@ -276,6 +319,7 @@ fs.writeFileSync(path.join(work, 'expect.json'), JSON.stringify({
   phyIfaces: ifaces,
   mesh: { section: meshSection, id: meshSec.mesh_id, ifname: wl[meshSec.device].interfaces.find(i => i.section === meshSection)?.ifname },
   wg: { name: wgIf, peers: wgPeers.map(p => ({ name: p.description, key: p.public_key })), site: wgSite.public_key, siteName: wgSite.description, newKey: NEWKEY },
+  fw: { zones: fwZones.map(z => z.name), wan: fwWan, rules: fwRuleCount, ruleNames: Object.values(uciFw).filter(s => s['.type'] === 'rule').map(s => s.name) },
 }));
 console.log(`built ${Object.keys(scenarios).join(', ')}`);
 //#endregion

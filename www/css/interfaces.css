@@ -20,5 +20,5 @@
 .cn-over { color: var(--fl-muted); }
 .cn-same { display: flex; align-items: center; gap: .35rem; color: var(--fl-muted); font-size: .85rem; }
 .cn-carries { margin-top: .3rem; }
-.layers-foot p { margin: 0 0 .4rem; }
-.layers-foot { padding: .6rem 1rem .8rem; }
+.layers-legend p { margin: 0 0 .4rem; }
+.layers-legend { padding: .8rem 1rem .4rem; border-bottom: 1px solid var(--fl-stroke); }

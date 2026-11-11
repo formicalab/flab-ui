@@ -1,0 +1,26 @@
+/* Firewall page styling. Loaded on demand by core/app.js when the page is first opened. */
+
+.fw-table td { vertical-align: top; }
+.fw-table tr.fw-off { opacity: .55; }
+.fw-chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+.fw-chip { padding: .05rem .45rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface-hover); font-size: .8rem; }
+.fw-chip.mono { font-size: .75rem; }
+.fw-chip.router { border-style: dashed; color: var(--fl-muted); }
+.fw-flow { display: flex; align-items: center; gap: .35rem; color: var(--fl-muted); }
+.fw-pps { margin-left: .5rem; color: var(--fl-ok-fg); font-variant-numeric: tabular-nums; }
+.fw-legend { padding: .7rem 1rem .2rem; }
+
+/* Zone matrix */
+.fwm { border-collapse: separate; border-spacing: 4px; margin: .8rem 1rem 1rem; min-width: 32rem; }
+.fwm th { font-weight: 600; padding: .35rem .7rem; white-space: nowrap; }
+.fwm thead th { text-align: center; }
+.fwm tbody th { text-align: right; }
+.fwm .fwm-router { color: var(--fl-muted); font-style: italic; font-weight: 500; }
+.fwm td { border-radius: 8px; padding: .45rem .7rem; text-align: center; min-width: 7rem; }
+.fwm-open { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
+.fwm-partial { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
+.fwm-closed { background: var(--fl-surface-hover); color: var(--fl-muted); }
+.fwm-na { color: var(--fl-muted); }
+.fwm-main { font-weight: 600; }
+.fwm-sub { font-size: .72rem; opacity: .85; }
+.fwm-key { display: inline-block; width: .9rem; height: .9rem; border-radius: 4px; vertical-align: -2px; }

@@ -153,6 +153,6 @@ export default {
       h('div', { className: 'row mt-2' }, LEGEND.map(([title, items]) => h('div', { className: 'col-md-4' },
         h('div', { className: 'fw-semibold' }, title), h('ul', {}, items.map(t => h('li', {}, t)))))));
 
-    return [summary, ...radiosSection(data.hw), ...groups, legend];
+    return [summary, ...radiosSection(data.hw), legend, ...groups];
   },
 };

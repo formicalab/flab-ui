@@ -9,6 +9,7 @@ const net = n => read(`${n}.flab.network.json`);
 const rad = n => read(`${n}.flab.radio.json`);
 const mesh = n => read(`${n}.flab.mesh.json`);
 const wg = n => read(`${n}.flab.wireguard.json`);
+const fwr = n => read(`${n}.flab.firewall.json`);
 const expect = read('expect.json');
 let failed = 0;
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
@@ -238,6 +239,40 @@ check(wg('w-newpeer').interfaces[0].peers.at(-1).public_key === expect.wg.newKey
 check(wpeer(wg('w-noroutes')).route_allowed_ips === false, 'route_allowed_ips off is reported');
 check(wg('w-nozone').interfaces[0].zone === null, 'an interface in no firewall zone has zone null');
 check(wg('w-nowg').interfaces.length === 0, 'no WireGuard configured or running: empty list');
+
+console.log('== firewall ==');
+const fb = fwr('base');
+const zone = (d, n) => d.zones.find(z => z.name === n);
+const frule = (d, n) => d.rules.find(r => r.name === n || r.key === n);
+check(fb.engine === 'nftables' && fb.running === true && fb.hooks.input === 'drop' && fb.hooks.forward === 'drop' && fb.hooks.output === 'accept', 'nftables loaded, with its base chain policies', JSON.stringify(fb.hooks));
+check(same(fb.zones.map(z => z.name), expect.fw.zones) && fb.zones.every(z => z.enabled && ['input', 'output', 'forward'].every(k => /^(ACCEPT|REJECT|DROP)$/.test(z[k])) && Array.isArray(z.networks) && Array.isArray(z.forwards)), 'every configured zone with its policies', JSON.stringify(fb.zones.map(z => z.name)));
+check(fb.zones.filter(z => z.networks.length).every(z => z.devices.length > 0), 'the kernel devices behind each zone are read from the loaded rules', JSON.stringify(fb.zones.map(z => [z.name, z.devices])));
+check(zone(fb, expect.fw.wan).masq === true && zone(fb, expect.fw.wan).blocked_from?.packets > 0 && /^(reject|drop)$/.test(zone(fb, expect.fw.wan).blocked_from.action), 'the NAT zone counts the packets it turned away', JSON.stringify(zone(fb, expect.fw.wan).blocked_from));
+check(fb.zones.filter(z => z.input === 'ACCEPT').every(z => z.blocked_from === null), 'a zone that accepts input has no reject counter');
+check(fb.rules.length === expect.fw.rules && same(fb.rules.map(r => r.name), expect.fw.ruleNames), 'every traffic rule, in configuration order', JSON.stringify(fb.rules.map(r => r.name)));
+check(fb.rules.every(r => r.enabled && r.hits && r.hits.packets >= 0 && r.hits.bytes >= 0), 'live hit counters matched to every rule by its nft comment');
+check(frule(fb, 'Allow-WireGuard').dest_port.join() === '51820' && frule(fb, 'Allow-WireGuard').proto.join() === 'udp' && frule(fb, 'Allow-WireGuard').target === 'ACCEPT' && frule(fb, 'Allow-WireGuard').dest == null, 'a rule keeps its match fields; no destination means the router itself', JSON.stringify(frule(fb, 'Allow-WireGuard')));
+check(frule(fb, 'Allow-ICMPv6-Forward').dest === '*' && frule(fb, 'Allow-IPSec-IKE-UDP-500-4500').dest_port.join() === '500,4500', 'dest "*" and multi-value options');
+check(fb.defaults.input && typeof fb.defaults.synflood_protect === 'boolean' && typeof fb.defaults.flow_offloading === 'boolean', 'firewall defaults');
+check((!fb.defaults.flow_offloading) || (Array.isArray(fb.flowtable?.devices) && fb.flowtable.devices.length > 0), 'the flow-offload devices are read from the loaded flowtable', JSON.stringify(fb.flowtable));
+check(fb.conntrack.count > 0 && fb.conntrack.max >= fb.conntrack.count, 'connection tracking usage', JSON.stringify(fb.conntrack));
+check(Array.isArray(fb.unzoned) && fb.unzoned.length === 0 && fb.redirects.length === 0 && fb.nft.rules > 10 && fb.nft.chains > 10, 'no unzoned interface, no port forwards, ruleset size', JSON.stringify([fb.unzoned, fb.redirects.length, fb.nft]));
+
+const fstop = fwr('f-stopped');
+check(fstop.running === false && fstop.engine === 'none' && fstop.hooks === null && fstop.rules.length === fb.rules.length && fstop.rules.every(r => r.hits === null) && fstop.zones.every(z => z.devices.length === 0 && z.blocked_from === null), 'with no nftables the configuration is still reported, without live data');
+const fred = fwr('f-redirect');
+const web = fred.redirects.find(r => r.name === 'Web');
+check(fred.redirects.length === 1 && web.kind === 'redirect' && web.target === 'DNAT' && web.src === 'wan' && web.dest === 'lan' && web.proto.join() === 'tcp' && web.src_dport.join() === '8080' && web.dest_ip === '192.168.1.10' && web.dest_port.join() === '80' && web.enabled === true, 'a port forward with its match fields', JSON.stringify(web));
+check(web.hits.packets === 7 && web.hits.bytes === 700, 'its hit counter is read from the nat chain', JSON.stringify(web.hits));
+const fexp = fwr('f-exposed');
+check(zone(fexp, expect.fw.wan).input === 'ACCEPT' && frule(fexp, 'Open-All').src === expect.fw.wan && frule(fexp, 'Open-All').proto.length === 0 && frule(fexp, 'Open-All').hits === null, 'zone input and a rule with no restrictions are reported as configured (the rule is not in the loaded ruleset)', JSON.stringify(frule(fexp, 'Open-All')));
+const fdis = fwr('f-disabled');
+check(frule(fdis, 'Allow-Ping').enabled === false && frule(fdis, 'Allow-Ping').hits === null && frule(fdis, 'Allow-WireGuard').hits !== null, 'a disabled rule has no counters, the others keep theirs');
+const fanon = fwr('f-anonymous');
+const anon = fanon.rules.at(-1);
+check(anon.name === null && anon.key === `@rule[${expect.fw.rules}]` && anon.hits?.packets === 3 && anon.hits.bytes === 300, 'an unnamed rule is matched through the @rule[N] comment', JSON.stringify(anon));
+check(same(fwr('f-unzoned').unzoned, ['lan100']), 'an interface in no zone is listed', JSON.stringify(fwr('f-unzoned').unzoned));
+check(fwr('f-conntrack').conntrack.count === 60000, 'connection tracking follows the kernel counter');
 
 if (failed) { console.log(`\n${failed} check(s) FAILED`); process.exit(1); }
 console.log('\nall Network / Wi-Fi radio backend checks passed');

@@ -24,10 +24,11 @@ import wifi from './wifi/index.js';
 import mesh from './mesh/index.js';
 import ipsec from './ipsec/index.js';
 import wireguard from './wireguard/index.js';
-import bgp from './bgp/index.js';
+import firewall from './firewall/index.js';
 import interfaces from './interfaces/index.js';
+import bgp from './bgp/index.js';
 import services from './services.js';
 
-// Network pages go from the physical layer up (ports, bridges, radios, tunnels, routing); Devices and
-// Interfaces closes the network section as the recap that ties them together.
-export const pages = [overview, network, bridges, wifi, mesh, ipsec, wireguard, bgp, interfaces, services];
+// Network pages go from the physical layer up (ports, bridges, radios, tunnels, firewall); Devices and
+// Interfaces is the recap that ties them together, followed by routing (BGP) and the services.
+export const pages = [overview, network, bridges, wifi, mesh, ipsec, wireguard, firewall, interfaces, bgp, services];

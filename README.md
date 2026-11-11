@@ -35,7 +35,7 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
    v
 rpcd ---- built-in objects:  session, system, network.interface, service
    |
-   '----- ucode plugins:    flab.wifi, flab.radio, flab.mesh, flab.wireguard, flab.network, flab.ipsec, flab.bgp, flab.sensors, flab.system   (this repo)
+   '----- ucode plugins:    flab.wifi, flab.radio, flab.mesh, flab.wireguard, flab.firewall, flab.network, flab.ipsec, flab.bgp, flab.sensors, flab.system   (this repo)
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici
@@ -59,13 +59,13 @@ Design principles:
 ```
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
-  tests/bgp/, tests/ipsec/, tests/network/   Test suites for the BGP and IPsec pages, and for the Wired network, Bridges, Devices and Interfaces, Wi-Fi radio, Mesh and WireGuard pages (run.ps1, see "Testing")
+  tests/bgp/, tests/ipsec/, tests/network/   Test suites for the BGP and IPsec pages, and for the Wired network, Bridges, Devices and Interfaces, Wi-Fi radio, Mesh, WireGuard and Firewall pages (run.ps1, see "Testing")
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
     css/
       base.css               Fluent tokens, app shell, shared component styles
-      <page>.css             Page-specific styles, loaded on first visit (overview, wifi, ipsec, bgp, network, bridges, interfaces, mesh, wireguard)
+      <page>.css             Page-specific styles, loaded on first visit (overview, wifi, ipsec, bgp, network, bridges, interfaces, mesh, wireguard, firewall)
     js/
       main.js                Entry point: theme + start the app
       core/                  Framework-level modules shared by all pages
@@ -85,6 +85,7 @@ flab-ui/
         wifi/                index.js (page + clients table), radios.js (radio cards); mesh interfaces are left to mesh/
         mesh/                index.js, node.js (802.11s mesh: peers, paths, parameters)
         wireguard/           index.js, iface.js (interface cards, peers table, findings)
+        firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js (rates, findings)
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         bgp/                 index.js, topology.js, peer.js, routes.js, announced.js, system.js, util.js
         network/             Wired network: index.js, shared.js (loader + address helpers), topology.js, tile.js, chips.js, ports.js, diagnostics.js, util.js
@@ -190,6 +191,7 @@ return {
 | `flab.wifi.uc` | `flab.wifi` | `clients` | uci wireless/network/dhcp, ubus `network.wireless`, `dhcp`, `hostapd.<if>`; `hostapd_cli all_sta`, `iw station dump`, `/proc/net/arp`, `ip -6 neigh` |
 | `flab.radio.uc` | `flab.radio` | `status` | uci wireless, ubus `network.wireless`, `hostapd.<if>`; `iw dev/phy info`, `iw survey dump`, `iwinfo`, `iw reg get`; sysfs counters |
 | `flab.mesh.uc` | `flab.mesh` | `status` | uci wireless (`wifi-iface mode=mesh`), ubus `network.wireless`; `iw dev/station dump`, `iw mpath dump`, `iw mpp dump`, `iw get mesh_param`; sysfs counters |
+| `flab.firewall.uc` | `flab.firewall` | `status` | uci firewall (defaults, zones, forwardings, `rule`, `redirect`, `nat`, `include`, `ipset`), uci network (interface names); `nft -j list ruleset` (per-rule hit counters matched through the `!fw4: <name>` comment, reject/drop chain counters per zone, the devices behind each zone, flowtable devices, base chain policies); procfs conntrack count and limit |
 | `flab.wireguard.uc` | `flab.wireguard` | `status` | uci network (`proto wireguard` interfaces and `wireguard_<if>` peer sections), uci firewall (zone); `wg show <if> public-key/listen-port/peers/endpoints/allowed-ips/latest-handshakes/transfer/persistent-keepalive` (the single-field forms never print the private or pre-shared key); sysfs MTU and counters |
 | `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles and port order); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines) |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
@@ -409,6 +411,34 @@ poll (flagged as not in the configuration).
   `wg show` forms are used because they never print them. The test recorder scrubs both keys, and the test
   generator aborts if a capture still contains one.
 
+### Firewall (route `#firewall`)
+Refreshed every 5 s, from `flab.firewall` (firewall4 / nftables). The configuration comes from UCI firewall and the
+live state from `nft -j list ruleset` (about 10 ms, ~30 KB), so a new zone, rule or port forward shows up on the
+next poll and every number is a real kernel counter.
+- **Tiles**: zones, traffic rules (enabled / total), port forwards, packets turned away from the Internet (with a
+  live rate), connection tracking usage, flow offloading (off, software or hardware, and the flowtable devices).
+- **Who can reach whom** (`model.js` is the pure model, unit-tested; `matrix.js` draws it): rows are the source,
+  columns the destination, and the router itself is both. The policies follow firewall4: *zone › router* is the
+  zone's `input`, *router › zone* its `output`, *zone › same zone* its `forward`, and *zone › other zone* is open
+  only through a `forwarding` section. A cell is green when the policy allows it, amber when it is blocked but
+  specific rules or port forwards open parts of it ("N rules"), grey when closed; an open cell notes rules that
+  block part of it. Hover a cell for the rule names. Disabled rules, rules naming an unknown zone and rules with
+  neither side are ignored, as the firewall does.
+- **Zones**: configured interfaces, the kernel devices the loaded rules really match for the zone (read from the
+  jumps in the base chains), input/output/forward policy, NAT and MSS clamping, where the zone may forward to, and
+  the packets its reject/drop chains turned away, in each direction, with a live rate.
+- **Reachable from the Internet**: the zones that masquerade are treated as facing the Internet; this lists the
+  accepting rules and port forwards that start there, i.e. everything a stranger can reach.
+- **Traffic rules** and **Port forwards and NAT**: every section in configuration order with its match
+  (protocol, ports, ICMP types, addresses, limit, family), action and hit counters. nft counters are matched to
+  the UCI section through the comment firewall4 puts on each rule (`!fw4: <name>`; an unnamed rule is
+  `@<type>[N]`, N counting sections of that type); a rule that expands to several nft rules has its counters
+  summed. A disabled rule is greyed out and has no counters.
+- **Findings**: firewall not loaded (no fw4 table), an Internet-facing zone that accepts input or forwards within
+  itself, a rule accepting every TCP/UDP port from it, rules naming a zone that does not exist, interfaces in no zone
+  (their traffic is rejected), zones with no interface, SYN-flood protection off, disabled rules, connection tracking
+  over 80 % full.
+
 ### BGP
 Status of BIRD 3 (`flab.bgp`); the lab setup is four eBGP sessions to Azure (AS 65515) over the `xfrm0..3`
 tunnels (`build/MT6000/etc/bird.conf`). Sections, top to bottom:
@@ -554,7 +584,12 @@ never dropped.
 - **Tiles**: interfaces up, bridges, VLAN devices, protocol devices, tunnels, radios up, wireless interfaces.
 
 The page order is the layers of the network from the bottom: Wired network, Bridges, Wi-Fi, Mesh, IPsec VPN,
-WireGuard, BGP, and last Devices and Interfaces, which recaps how all of them fit together.
+WireGuard, Firewall, then Devices and Interfaces, which recaps how all of them fit together, followed by BGP
+(routing over the tunnels) and Services.
+
+**Legends and "how to read" notes sit at the top of the card or section they explain** (Devices and Interfaces,
+the port diagram, the zone matrix, the Wi-Fi client legend, the IPsec score explanation), so the key is read
+before the data rather than after scrolling past it. Keep that when adding a page.
 
 Facts worth remembering (Wired network, Bridges and Mesh pages):
 - Learned MACs per port come from the kernel's binary forwarding table (`/sys/class/net/<bridge>/brforward`,
@@ -624,11 +659,11 @@ pwsh -File flab-ui\tests\ipsec\run.ps1 -Browser   # plus the live-update test in
 
 It cleans up `/tmp/flab-ipsec-test` and its local temp folder.
 
-### Network, Wi-Fi radio, Mesh and WireGuard tests
+### Network, Wi-Fi radio, Mesh, WireGuard and Firewall tests
 
-`tests/network/run.ps1` covers the `flab.network`, `flab.radio`, `flab.mesh` and `flab.wireguard` plugins and
-the Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh and WireGuard pages, again without changing
-anything on the router:
+`tests/network/run.ps1` covers the `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard` and `flab.firewall`
+plugins and the Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard and Firewall pages, again
+without changing anything on the router:
 
 ```powershell
 pwsh -File flab-ui\tests\network\run.ps1            # unit test + backend scenarios
@@ -639,7 +674,8 @@ pwsh -File flab-ui\tests\network\run.ps1 -Browser   # plus the live-update test 
    `layers.test.mjs`: unit test of the network layer model (bridge and VLAN stacking, PPPoE over a VLAN,
    an interface riding on another's protocol device, tunnels with and without an underlay, unknown devices,
    parent loops, Wi-Fi and mesh nodes with their radio, configured-but-down interfaces, unattached wireless
-   and radios without interfaces).
+   and radios without interfaces); `firewall.test.mjs`: unit test of the zone matrix and the firewall findings
+   (forwardings, policies, `dest "*"`, port forwards, disabled and invalid rules, open WAN, unzoned interfaces).
 2. Capture what the plugins read: each plugin is run once on the router with `FLAB_RECORD` set, so it saves
    its own inputs (`ubus call` results, UCI, sysfs files, command output). Keys and passwords are blanked
    while recording (including WireGuard `private_key` / `preshared_key`), and `mkfx.mjs` plants a canary in every
@@ -653,16 +689,19 @@ pwsh -File flab-ui\tests\network\run.ps1 -Browser   # plus the live-update test 
    path), `m-weak` (weak, lossy link), `m-fwdoff`, `m-nopeer`, `m-down` (configured but not running),
    `m-nomesh` (no mesh configured), and for WireGuard `w-stale` (a handshake 1000 s old), `w-down` (configured
    but not running), `w-newpeer` (a peer the kernel has but UCI does not), `w-noroutes` (a site peer without
-   routes), `w-nozone` (interface in no firewall zone), `w-nowg` (no WireGuard at all). Handshake times in a
+   routes), `w-nozone` (interface in no firewall zone), `w-nowg` (no WireGuard at all), and for the firewall
+   `f-stopped` (no nftables), `f-redirect` (a port forward with a hit counter), `f-exposed` (the WAN zone accepts
+   input and a rule opens every port), `f-disabled`, `f-anonymous` (an unnamed rule, matched through `@rule[N]`),
+   `f-unzoned` (an interface in no zone), `f-conntrack` (table nearly full). Handshake times in a
    capture age while the test runs, so the base scenario pins the connected peer to "30 s ago".
    The bridge forwarding table is binary, so it is generated; everything else is the captured state with
    targeted edits. Device-tree files are recorded hex-encoded (`hex:...`) because JSON cannot carry bytes.
 4. The repository's plugins and `rpcd/lib/flab/*` run on the router with `FLAB_FIXTURES` and `ucode -L`
    (`harness.uc` runs the plugin named in `FLAB_PLUGIN`); `assert.mjs` checks the JSON.
 5. `live.mjs` (`-Browser`) intercepts the status calls and drives each page through every scenario (Wired
-   network, Bridges, Devices and Interfaces, Mesh, WireGuard, Wi-Fi), checking that mesh interfaces and clients stay off
-   the Wi-Fi page, then simulates traffic and airtime counters to check live rates and the utilisation
-   percentage.
+   network, Bridges, Devices and Interfaces, Mesh, WireGuard, Firewall, Wi-Fi), checking that mesh interfaces and
+   clients stay off the Wi-Fi page and that legends sit above what they explain, then simulates traffic, nft
+   counters and airtime counters to check live rates and the utilisation percentage.
 
 It cleans up `/tmp/flab-net-test` and its local temp folder.
 

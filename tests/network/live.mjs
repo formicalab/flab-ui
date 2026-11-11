@@ -17,7 +17,7 @@ const scenario = (n, plugin) => JSON.parse(fs.readFileSync(path.join(out, `${n}.
 let failed = 0;
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
-const mock = { network: null, radio: null, mesh: null, wireguard: null };   // null = pass through to the real router
+const mock = { network: null, radio: null, mesh: null, wireguard: null, firewall: null };   // null = pass through to the real router
 let tick = null;                                // optional per-poll mutation, used to simulate traffic and airtime
 const browser = await chromium.launch({ channel: 'msedge' });
 const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, colorScheme: 'light' });
@@ -26,7 +26,7 @@ const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
-const PLUGINS = { 'flab.network': 'network', 'flab.radio': 'radio', 'flab.mesh': 'mesh', 'flab.wireguard': 'wireguard' };
+const PLUGINS = { 'flab.network': 'network', 'flab.radio': 'radio', 'flab.mesh': 'mesh', 'flab.wireguard': 'wireguard', 'flab.firewall': 'firewall' };
 await page.route('**/ubus', async route => {
   let body = null;
   try { body = route.request().postDataJSON(); } catch { /* not JSON */ }
@@ -39,6 +39,8 @@ await page.route('**/ubus', async route => {
 });
 
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
+// Whether the first element matching `a` comes before the first matching `b` in the document.
+const before = (a, b) => page.evaluate(([x, y]) => { const A = document.querySelector(x), B = document.querySelector(y); return !!A && !!B && !!(A.compareDocumentPosition(B) & Node.DOCUMENT_POSITION_FOLLOWING); }, [a, b]);
 const text = sel => page.locator(sel).allInnerTexts().then(t => t.join('\n'));
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
 const stage = async (label, plugin, name) => {
@@ -64,6 +66,7 @@ const livePorts = await page.locator('.port').count();
 check(livePorts >= 5, 'port tiles drawn from the live router', String(livePorts));
 check(await page.locator('.br-card').count() === 0 && await page.locator('.layers-table').count() === 0, 'bridges and layers are not on this page any more');
 check(/^\d+ \/ \d+$/.test(await tile(0)), 'ports-linked tile', await tile(0));
+check(await before('.topo-legend', '.topo'), 'the port diagram key is above the diagram');
 const liveLinked = await tile(0);
 
 await stage('a link goes down', 'network', 'n-linkdown');
@@ -164,6 +167,7 @@ check(/eth1\.1036/.test(await layerRow('wan').innerText()) && /pppoe-wan/.test(a
 check(/protocol device of wan/.test(await layerRow('wan6').innerText()), 'layers: wan6 is shown riding on the PPPoE session of wan');
 check(/runs over interface\s+wan/.test(await layerRow('xfrm0').innerText()), 'layers: the IPsec interface runs over wan');
 check(/^\d+ \/ \d+$/.test(await tile(0)), 'interfaces-up tile', await tile(0));
+check(await before('.layers-legend', '.layers-table') && /How to read a row/.test(await text('.layers-legend')) && await page.locator('.layers-foot').count() === 0, 'the "how to read" legend is above the table, not below it');
 check(await layerRow('lan100').locator('.cn-same').count() === 1 && /same \d+ ports and radios as lan/.test(await layerRow('lan100').innerText()) && await layerRow('lan100').locator('.cn.k-port').count() === 0, 'layers: lan100 does not repeat the ports, it says they are the same as lan');
 check(/untagged/.test(await layerRow('lan').innerText()) && /only frames tagged VLAN 100 on br-lan/.test(await layerRow('lan100').innerText()), 'layers: each row says which frames it carries (untagged vs VLAN 100)');
 check(/\blan\b/.test(await layerRow('lan').locator('td:nth-child(6)').innerText()) && /DHCPv4/.test(await layerRow('lan').locator('td:nth-child(6)').innerText()), 'zone and DHCP service of lan');
@@ -260,6 +264,54 @@ check(/Mbit\/s|kbit\/s/.test(await text('.wg-table tbody')) && /[1-9]/.test((awa
 await stage('back to the live router', 'wireguard', null);
 //#endregion
 
+//#region Firewall page
+await page.click('a[href="#firewall"]');
+await page.waitForSelector('.fwm');
+console.log('\n== firewall: live router (pass-through) ==');
+mock.firewall = null;
+await refresh();
+const zoneNames = (await page.locator('.fwm thead th').allInnerTexts()).slice(1).filter(t => t !== 'Router itself');
+check(zoneNames.length >= 2 && await page.locator('.fwm tbody tr').count() === zoneNames.length + 1, 'the matrix has the router plus every zone', zoneNames.join());
+check(await page.locator('.fwm-open').count() >= 3 && await page.locator('.fwm-partial').count() >= 1 && await page.locator('.fwm-closed').count() >= 1, 'open, partial and closed cells');
+check(await page.locator('.fwm-legend, .fw-legend').count() === 1 && await before('.fw-legend', '.fwm'), 'the matrix legend is above the matrix');
+check(await page.locator('.fw-table').count() >= 3 && /Zones/.test(await text('.card-header')) && /Traffic rules/.test(await text('.card-header')), 'zones, exposure, rules and port-forward tables');
+check(await page.locator('.fw-table').nth(2).locator('tbody tr').count() >= 10, 'the traffic rules are listed', String(await page.locator('.fw-table').nth(2).locator('tbody tr').count()));
+check(/Reachable from the Internet/.test(await text('.card-header')) && /UDP 51820/.test(await text('main')), 'the exposure table lists what the Internet can reach (the WireGuard port)');
+check(/^\d+ \/ \d+$/.test(await tile(1)) && /^\d+$/.test((await tile(0)).trim()), 'summary tiles', `${await tile(0)} ${await tile(1)}`);
+
+await stage('a port forward from the Internet', 'firewall', 'f-redirect');
+check(await tile(2) === '1' && /Web/.test(await text('.fw-table')) && /8080/.test(await text('.fw-table')) && /192\.168\.1\.10:80/.test(await text('.fw-table')), 'the port forward is listed with what it forwards to');
+check(/Reachable from the Internet/.test(await text('.card-header')) && /port forward/.test(await text('main')), 'and appears among what the Internet can reach');
+check(/7/.test(await text('.fw-table tbody')) , 'its hit counter is shown');
+
+await stage('Internet-facing zone wide open', 'firewall', 'f-exposed');
+check(/accepts all traffic to the router/.test(await text('.net-health')) && /Open-All accepts every TCP\/UDP port/.test(await text('.net-health')) && await page.locator('.net-health.bad').count() === 1, 'an open WAN is a red finding', await text('.net-health'));
+
+await stage('a disabled rule', 'firewall', 'f-disabled');
+check(/1 rule is disabled: Allow-Ping/.test(await text('.net-health')) && await page.locator('.fw-table tr.fw-off').count() === 1, 'a disabled rule is greyed out and reported');
+
+await stage('an unnamed rule', 'firewall', 'f-anonymous');
+check(/@rule\[\d+\]/.test(await text('.fw-table')) && /unnamed/.test(await text('.fw-table')) && /TCP 2222/.test(await text('.fw-table')), 'an unnamed rule is listed by its position');
+
+await stage('an interface in no zone', 'firewall', 'f-unzoned');
+check(/lan100 is in no firewall zone/.test(await text('.net-health')), 'an unzoned interface is reported');
+
+await stage('connection table nearly full', 'firewall', 'f-conntrack');
+check(/Connection tracking is \d+ % full/.test(await text('.net-health')) && /text-warning/.test(await page.locator('.tile .value').nth(4).getAttribute('class')), 'a nearly full connection table is reported');
+
+await stage('firewall not loaded', 'firewall', 'f-stopped');
+check(/not loaded/.test(await text('.net-health')) && await page.locator('.net-health.bad').count() === 1, 'a stopped firewall is a red finding');
+
+console.log('\n== firewall: live counters ==');
+mock.firewall = scenario('base', 'firewall');
+tick = (plugin, d) => { if (plugin === 'firewall') { for (const r of d.rules) if (r.hits) { r.hits.packets += 50; r.hits.bytes += 5000; } for (const z of d.zones) if (z.blocked_from) { z.blocked_from.packets += 200; z.blocked_from.bytes += 20000; } } };
+await refresh(); await refresh(); await refresh();
+check(await page.locator('.fw-pps').count() >= 1 && /pkt\/s/.test(await text('.fw-pps')), 'zones show a live rate of turned-away packets', await text('.fw-pps'));
+check(await page.locator('.fw-table .dot.up').count() >= 1, 'rules with traffic show an activity dot');
+check(/pkt\/s/.test(await tile(3)) || /pkt\/s/.test(await text('.tile')), 'the summary tile shows the rate');
+await stage('back to the live router', 'firewall', null);
+//#endregion
+
 //#region Wi-Fi page
 await page.click('a[href="#wifi"]');
 await page.waitForSelector('.rd-card');
@@ -271,6 +323,7 @@ check(await page.locator('.rd-card').count() >= 1, 'radio cards drawn from the l
 check(await page.locator('.rd-card table tbody tr').count() >= 1, 'interfaces listed');
 check(!/formicalabmesh|\bmesh\b/.test(await text('.rd-card table')) && await page.locator('.rd-card a[href="#mesh"]').count() >= 1, 'the mesh interface is not in the Wi-Fi tables, only linked to the Mesh page');
 check(!/\bmesh\b/.test(await text('main .card-header')), 'no mesh client group on the Wi-Fi page');
+check(await before('details.legend', '.card-header .ms-auto'), 'the client legend sits above the client tables');
 
 await stage('a radio goes down', 'radio', 'r-down');
 check(await page.locator('.rd-card.is-down').count() === 1, 'one radio card switches to the down style');

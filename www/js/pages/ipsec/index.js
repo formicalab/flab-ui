@@ -85,11 +85,11 @@ export default {
 
     return [
       summary(data),
+      scoringCard(),
       shown.length
         ? h('div', { className: `vpn-grid ${state.compact ? 'compact' : ''}` }, shown.map(c => connectionCard(c, { compact: state.compact })))
         : emptyState(data.connections.length ? 'No connection matches the filter.' : 'No IPsec connections are configured.'),
       daemonCard(data.daemon),
-      scoringCard(),
     ];
   },
 };

@@ -121,6 +121,6 @@ export function topologyCard(net) {
   const linked = net.ports.filter(p => p.carrier).length;
   return card([icon('ethernet'), h('span', {}, 'Port topology'), h('span', { className: 'sub' }, `${linked} of ${net.ports.length} links up · wiring read from the device tree`)],
     h('div', { className: 'card-body topo-scroll' },
-      cols ? h('div', { className: 'topo', style: `grid-template-columns: repeat(${cols}, minmax(176px, 1fr))` }, cells) : h('div', { className: 'muted' }, 'No Ethernet ports were reported.'),
-      cols ? h('div', { className: 'muted small topo-foot' }, h('span', { className: 'dot up' }), ' green line: link up · grey: no link · jacks follow the order the board lists its ports') : null));
+      cols ? h('div', { className: 'muted small topo-legend' }, h('span', { className: 'dot up' }), ' green line: link up · grey: no link · jacks follow the order the board lists its ports') : null,
+      cols ? h('div', { className: 'topo', style: `grid-template-columns: repeat(${cols}, minmax(176px, 1fr))` }, cells) : h('div', { className: 'muted' }, 'No Ethernet ports were reported.')));
 }

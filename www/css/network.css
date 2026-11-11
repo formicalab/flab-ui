@@ -16,7 +16,7 @@
 .topo-box .tb-live { font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--fl-ok-fg); }
 .topo-box.mac.on, .topo-box.phy.on { border-color: color-mix(in srgb, var(--fl-ok-fg) 55%, var(--fl-stroke)); }
 .topo-box.chip { border-color: var(--fl-brand); background: color-mix(in srgb, var(--fl-info-bg) 55%, var(--fl-surface)); }
-.topo-foot { margin-top: .8rem; display: flex; align-items: center; gap: .35rem; }
+.topo-legend { margin-bottom: .8rem; display: flex; align-items: center; gap: .35rem; }
 
 /* Connectors: a centred vertical line, green while the link is up. */
 .vl { position: relative; min-height: 1.9rem; display: flex; align-items: center; justify-content: center; }
