@@ -8,13 +8,15 @@
 // PPPoE session of wan) or run over another interface (an XFRM or GRE tunnel over wan: `tunlink`).
 // Pure data in, plain objects out, so it is unit-tested without a browser.
 
+// Description of the device a netifd protocol creates under its interface, by protocol name.
 const PROTO_DEVICE = {
   pppoe: 'PPPoE session', pppoa: 'PPPoA session', wireguard: 'WireGuard tunnel', xfrm: 'IPsec (XFRM) interface',
   gre: 'GRE tunnel', gretap: 'GRE tunnel', vti: 'VTI tunnel', vxlan: 'VXLAN', '6in4': '6in4 tunnel', '6to4': '6to4 tunnel',
   '6rd': '6rd tunnel', openvpn: 'OpenVPN tunnel', l2tp: 'L2TP session', pptp: 'PPTP session', wwan: 'Mobile broadband', qmi: 'Mobile broadband',
 };
 
-export const protoDeviceLabel = proto => PROTO_DEVICE[proto] ?? null;
+// The protocol device's description for a netifd protocol, or null for protocols without a device of their own.
+const protoDeviceLabel = proto => PROTO_DEVICE[proto] ?? null;
 
 // A Wi-Fi or mesh interface as a node of a chain, with the radio it lives on.
 const wirelessNode = (w, radio) => ({
@@ -32,7 +34,9 @@ export function buildLayers(net, ifs, tunlinks = {}, radios = []) {
   const vlans = new Map(net.vlans.map(v => [v.name, v]));
   const byName = new Map(ifs.map(i => [i.interface, i]));
   const wireless = new Map();
+  // Names of wireless nodes already attached to some row; the rest become orphan rows at the end.
   const placed = new Set();
+  // Wireless interfaces by ifname, so a bridge member that is a Wi-Fi interface resolves to its radio node.
   for (const r of radios) for (const w of r.interfaces ?? []) if (w.ifname) wireless.set(w.ifname, wirelessNode(w, r));
   // Devices an interface's protocol creates (pppoe-wan, wg0, ...), by the interface that owns them.
   const owner = new Map();
@@ -62,6 +66,7 @@ export function buildLayers(net, ifs, tunlinks = {}, radios = []) {
     return { roots: [], devices: [{ name, kind: 'device', up: null }], host: null };
   }
 
+  // One row per netifd interface (loopback excluded).
   const rows = ifs.filter(i => i.interface !== 'loopback').map(i => {
     const below = resolve(i.device);
     let over = below.host;
@@ -94,6 +99,7 @@ export function buildLayers(net, ifs, tunlinks = {}, radios = []) {
     }
   }
 
+  // Orphans: a radio with no interface at all, and wireless interfaces no row reached.
   const extra = [];
   for (const radio of radios) {
     const own = radio.interfaces ?? [];

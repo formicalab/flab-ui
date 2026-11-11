@@ -9,6 +9,16 @@ export const badge = (text, kind = '', title = '') => h('span', { className: `fl
 // Algorithm / value chip colored by strength level: good | fair | weak | info
 export const chip = (text, lvl = '', title = '') => h('span', { className: `alg-chip ${lvl}`, title }, text);
 
+// Dimmed inline text for placeholders such as "none" or "not available".
+export const muted = text => h('span', { className: 'muted' }, text);
+
+// Monospace inline text for addresses, keys, names and other identifiers.
+export const mono = text => h('span', { className: 'mono' }, text);
+
+// Badge kind for the 0-100 security grades (A+ … D) shown for Wi-Fi clients and IPsec connections.
+export const GRADE_KIND = { 'A+': 'success', A: 'success', B: 'info', C: 'warning', D: 'danger' };
+
+// A card with an optional header row and a body (any node or list of nodes); `extra` adds CSS classes.
 export const card = (header, body, extra = '') => h('div', { className: `card ${extra}` },
   header ? h('div', { className: 'card-header' }, header) : null, body);
 
@@ -19,6 +29,7 @@ export const tile = (label, value, sub, valueClass = '') => h('div', { className
     h('div', { className: `value ${valueClass}` }, value),
     sub ? h('div', { className: 'sub' }, sub) : null)));
 
+// Row of KPI tiles (see tile) in a responsive grid.
 export const tiles = (...t) => h('div', { className: 'row row-cols-2 row-cols-md-3 row-cols-xl-4 row-cols-xxl-6 g-3' }, t);
 
 // Simple table: cols are labels, rows are arrays of nodes or strings.
@@ -28,6 +39,7 @@ export const table = (cols, rows) => h('div', { className: 'grid-wrap' }, h('tab
     ? rows.map(r => h('tr', {}, r.map(c => h('td', {}, c))))
     : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'Nothing to show')))));
 
+// Small button with an optional leading icon; `cls` picks the Bootstrap/brand variant.
 export const button = (label, iconName, onclick, cls = 'btn-fl') =>
   h('button', { type: 'button', className: `btn btn-sm ${cls}`, onclick }, iconName ? icon(iconName) : null, label);
 
@@ -73,6 +85,7 @@ export function sparkline(series, { width = 160, height = 36, max: fixedMax } = 
   return svg;
 }
 
+// A card holding one muted sentence, shown when a page has nothing to list.
 export const emptyState = text => h('div', { className: 'card' }, h('div', { className: 'card-body muted' }, text));
 
 // A banner listing what needs attention ({ level: 'bad' | 'warn' | 'info', text }), or a green all-clear.

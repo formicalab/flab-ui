@@ -1,21 +1,25 @@
 // Radios section of the Wi-Fi page: one card per radio with its live state (channel, width, tx power,
 // noise, channel utilisation), its configuration next to what is actually running, the channels the
-// regulatory domain allows, and a table of the SSIDs on it (mesh interfaces are on the Mesh page). Data comes from the
-// flab.radio plugin; counters (airtime, bytes) are turned into rates here, so the cards follow
-// channel changes, DFS events and interfaces coming and going on every poll.
+// regulatory domain allows, and a table of the SSIDs on it (mesh interfaces are on the Mesh page). Data
+// comes from the flab.radio plugin; counters (airtime, bytes) are turned into rates here, so the cards
+// follow channel changes, DFS events and interfaces coming and going on every poll.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, kv, meter, sparkline } from '../../core/ui.js';
+import { badge, kv, meter, sparkline, muted, mono } from '../../core/ui.js';
 import { createTracker, latest } from '../../core/rates.js';
-import { fmtBytes, fmtNum } from '../../core/format.js';
+import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
 
+// Module-level so rate history survives the redraw on every poll (keys: airtime per radio and channel,
+// byte counters per interface).
 const tracker = createTracker();
-const muted = t => h('span', { className: 'muted' }, t);
-const mono = t => h('span', { className: 'mono' }, t);
 
+// Band code from the radio plugin -> label.
 const BAND = { '2g': '2.4 GHz', '5g': '5 GHz', '6g': '6 GHz', '60g': '60 GHz' };
+// Band label of a radio, derived from the live frequency (MHz) when the band code is unknown.
 const bandOf = r => BAND[r.band] ?? (r.live?.freq ? `${(r.live.freq / 1000).toFixed(1)} GHz` : '–');
-const SECURITY_KIND = s => /WPA3|OWE/.test(s) ? 'success' : /WPA2/.test(s) ? 'warning' : /Open|WEP|^WPA-/.test(s) ? 'danger' : '';
+
+// Badge colour of a security label: modern (WPA3, OWE) green, WPA2 amber, open or broken (WEP, WPA1) red.
+export const SECURITY_KIND = s => /WPA3|OWE/.test(s) ? 'success' : /WPA2/.test(s) ? 'warning' : /Open|WEP|^WPA-/.test(s) ? 'danger' : '';
 
 // The frequency is part of the key: airtime counters restart when the radio changes channel.
 const airKey = r => `air:${r.name}:${r.survey?.freq}`;
@@ -37,19 +41,17 @@ export function recordRadios(hw) {
   tracker.keep(seen);
 }
 
+// Share of the channel's airtime that was busy / spent receiving / transmitting, from the survey counters.
 const airtime = r => {
   const k = airKey(r);
   const busy = tracker.ratios(k, 'busy', 'active'), rx = tracker.ratios(k, 'rx', 'active'), tx = tracker.ratios(k, 'tx', 'active');
   return { busy, busyNow: latest(busy), rxNow: latest(rx), txNow: latest(tx) };
 };
 
-const fmtLine = bps => {
-  if (bps == null) return '–';
-  const bits = bps * 8;
-  return bits >= 1e6 ? `${(bits / 1e6).toFixed(1)} Mbit/s` : bits >= 1e3 ? `${(bits / 1e3).toFixed(0)} kbit/s` : `${Math.round(bits)} bit/s`;
-};
-
 //#region findings
+// Things that look wrong on a radio, as { level, text }: state problems, a channel differing from the
+// configured one (radar avoidance), noise above -80 dBm, channel busy >= 70 %, non-enabled BSSs (DFS),
+// open networks and a country that differs from the active regulatory domain `reg`.
 function findings(r, reg) {
   const out = [];
   const cfgCh = /^[0-9]+$/.test(r.config.channel ?? '') ? +r.config.channel : null;
@@ -73,6 +75,8 @@ function findings(r, reg) {
 //#endregion
 
 //#region parts
+// Card header: state dot, name, band, phy, state badge, supported standards, links to mesh interfaces on
+// this radio and the hardware name.
 function header(r) {
   const state = !r.enabled ? ['disabled', ''] : r.retry_failed ? ['failed', 'danger'] : r.pending ? ['starting', 'warning'] : r.up ? ['up', 'success'] : ['down', 'danger'];
   return h('div', { className: 'rd-head' },
@@ -87,6 +91,8 @@ function header(r) {
     r.hardware?.hardware ? h('span', { className: 'rd-hw muted' }, r.hardware.hardware) : null);
 }
 
+// Row of live figures: channel, width, TX power (dBm, also shown in mW), noise floor, antenna chains and
+// the client count over the radio's non-mesh interfaces.
 function hero(r) {
   const live = r.live ?? {};
   const stat = (label, value, sub) => h('div', { className: 'rd-stat' }, h('div', { className: 'label' }, label), h('div', { className: 'value' }, value), sub ? h('div', { className: 'sub' }, sub) : null);
@@ -99,6 +105,8 @@ function hero(r) {
     stat('Clients', fmtNum(r.interfaces.reduce((n, i) => n + (i.clients ?? 0), 0)), `${r.interfaces.length} interface${r.interfaces.length === 1 ? '' : 's'}`));
 }
 
+// Channel utilisation: busy share now (meter turns amber from 40 % and red from 70 %), this radio's own
+// receive and transmit share, and the busy history as a sparkline.
 function airtimeBlock(r) {
   const a = airtime(r);
   if (a.busyNow == null) return h('div', { className: 'rd-air' }, h('div', { className: 'label' }, 'Channel utilisation'), muted('measuring…'));
@@ -111,6 +119,8 @@ function airtimeBlock(r) {
     sparkline([{ values: a.busy.map(v => v ?? 0), cls: 'rx' }], { width: 260, height: 40, max: 100 }));
 }
 
+// Configured values next to what is running (channel, width, TX power) plus the regulatory limit for the
+// running channel; `reg` is the active regulatory domain.
 function configBlock(r, reg) {
   const c = r.config, live = r.live ?? {};
   const allowed = r.channels?.find(ch => ch.freq === live.freq);
@@ -130,6 +140,7 @@ function configBlock(r, reg) {
 }
 
 // Allowed channels with the running one and the span of its width highlighted; radar (DFS) channels marked.
+// A channel is "covered" when its frequency lies within center ± width/2 of the running channel.
 function channelStrip(r) {
   const live = r.live;
   if (!r.channels?.length) return null;
@@ -145,6 +156,7 @@ function channelStrip(r) {
     h('div', { className: 'muted small' }, 'Highlighted: running channel and the span of its width · amber outline: radar (DFS) channel · struck: not allowed'));
 }
 
+// Badges for an interface's roaming (802.11r/k/v), WPS, OCV and access-control settings.
 const featureChips = i => [
   i.features?.roaming_11r ? badge('802.11r', 'info', 'Fast BSS transition (roaming)') : null,
   i.features?.neighbor_11k ? badge('802.11k', 'info', 'Neighbor reports') : null,
@@ -158,6 +170,8 @@ const featureChips = i => [
   i.macfilter ? badge(`MAC ${i.macfilter.policy} list (${i.macfilter.entries})`, '', 'Only the number of entries is shown') : null,
 ].filter(Boolean);
 
+// Table row for one SSID: identity, networks, security, client count, current and total traffic, features
+// and BSS state. Current throughput comes from the per-interface byte-counter series.
 function interfaceRow(i) {
   const k = `if:${i.ifname}`;
   const rx = latest(tracker.rates(k, 'rx')), tx = latest(tracker.rates(k, 'tx'));
@@ -174,6 +188,7 @@ function interfaceRow(i) {
     h('td', {}, status));
 }
 
+// Table of the non-mesh wireless interfaces (SSIDs) of a radio.
 function interfacesTable(r) {
   const cols = ['SSID', 'BSSID', 'Network', 'Security', 'Clients', 'Throughput now', 'Total', 'Features', 'State'];
   return h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover' },
@@ -182,6 +197,7 @@ function interfacesTable(r) {
 }
 //#endregion
 
+// One card per radio: header, live figures, findings, configuration and airtime/channels, interfaces.
 function radioCard(r, reg) {
   const list = findings(r, reg);
   return h('div', { className: `card rd-card ${r.up ? 'is-up' : 'is-down'}` },

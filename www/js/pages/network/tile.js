@@ -3,13 +3,17 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, sparkline } from '../../core/ui.js';
-import { fmtLine, fmtSpeed, traffic, newFlaps, newErrors, hwLines, STP_ROLE, stpKind } from './util.js';
+import { fmtLine } from '../../core/format.js';
+import { fmtSpeed, traffic, newFlaps, newErrors, hwLines, STP_ROLE, stpKind } from './util.js';
 
-export function portState(p) {
+// Tile colour state: 'down' without carrier, 'warn' when downshifted or flapping/erroring since the page
+// was opened, else 'up'.
+function portState(p) {
   if (!p.carrier) return 'down';
   return p.downshifted || newFlaps(p) || newErrors(p) ? 'warn' : 'up';
 }
 
+// The tile for one port; its tooltip lists the full hardware details.
 export function portTile(p) {
   const t = traffic(p.name);
   const title = [`${p.name} · ${p.mac ?? ''}`, p.carrier ? `Link ${fmtSpeed(p.speed)} ${p.duplex ?? ''}` : 'No link', ...hwLines(p).map(([k, v]) => `${k}: ${v}`)].join('\n');

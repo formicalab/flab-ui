@@ -4,16 +4,17 @@
 // comes from the flab.mesh plugin (mac80211) and is rediscovered on every poll, so peers, paths and
 // interfaces that appear or vanish are reflected without a reload.
 import { tile, tiles, emptyState, healthBanner } from '../../core/ui.js';
-import { ubus } from '../../core/ubus.js';
+import { ubus, optional } from '../../core/ubus.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
 import { fmtNum } from '../../core/format.js';
 import { nodeCard, recordMesh, findings } from './node.js';
 
+// Only the paused flag; the page has no filters, so nothing else needs to survive the redraw on every poll.
 const state = { paused: false };
 
-// A missing plugin or ACL must not break the page.
-const optional = promise => promise.catch(() => null);
-
+// Summary tiles over all mesh interfaces. Signals use each peer's averaged value when available;
+// "Forwarding" is On only when every interface relays frames (mesh_fwding = 1); "resolved" paths have a
+// known next hop.
 function summary(nodes) {
   const peers = nodes.flatMap(n => n.peers ?? []);
   const estab = peers.filter(p => p.plink === 'ESTAB');
@@ -27,6 +28,7 @@ function summary(nodes) {
     tile('Forwarding', nodes.length ? (nodes.every(n => n.params?.mesh_fwding === '1') ? 'On' : 'Off') : '–', 'frames relayed through this node'));
 }
 
+// Page object registered in pages/index.js (contract documented there).
 export default {
   id: 'mesh',
   label: 'Mesh',
@@ -36,6 +38,8 @@ export default {
   css: 'css/mesh.css',
   isPaused: () => state.paused,
 
+  // The network status is optional (it only adds the bridge/spanning-tree context of each mesh port);
+  // peer counters are fed to the rate tracker before rendering.
   load: async () => {
     const [mesh, net] = await Promise.all([ubus('flab.mesh', 'status'), optional(ubus('flab.network', 'status'))]);
     recordMesh(mesh);
@@ -46,6 +50,7 @@ export default {
     return { nodes: [pauseControl(state), refreshControl(reload)] };
   },
 
+  // With no mesh interface configured only an explanation is shown.
   view({ mesh, net }) {
     const nodes = mesh.nodes;
     if (!nodes.length) return [emptyState('No 802.11s mesh interface is configured. Add a wireless interface in mode "mesh" and it appears here.')];

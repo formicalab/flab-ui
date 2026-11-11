@@ -10,10 +10,13 @@ const out = process.argv[2];
 const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/flab/';
 const password = process.env.FLAB_PASSWORD ?? 'flab';
 const shots = process.env.FLAB_SHOTS;
+// Loads one backend scenario (see mkfx.mjs / assert.mjs) as the object the page would receive from flab.ipsec status.
 const scenario = n => JSON.parse(fs.readFileSync(path.join(out, `${n}.json`), 'utf8'));
+// Deep copy, so a mutating `tick` never alters the loaded scenario.
 const clone = o => JSON.parse(JSON.stringify(o));
 
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
 let current = null;   // null = pass through to the real router
@@ -25,6 +28,7 @@ const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
+// Answers the page's flab.ipsec status ubus call with the current scenario (after the optional tick); everything else goes to the real router.
 await page.route('**/ubus', async route => {
   let body = null;
   try { body = route.request().postDataJSON(); } catch { /* not JSON */ }
@@ -35,10 +39,15 @@ await page.route('**/ubus', async route => {
   return route.continue();
 });
 
+// Text of the i-th summary tile's value.
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
+// Number of connection cards currently drawn.
 const cards = () => page.locator('.vpn-card').count();
+// Full text of the page body.
 const text = () => page.locator('main').innerText();
+// Clicks Refresh and waits for the page to re-render.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
+// Switches the intercepted backend response to `data`, clears any tick, refreshes and optionally saves a screenshot.
 const stage = async (label, data) => { console.log(`\n== ${label} ==`); current = data; tick = null; await refresh(); if (shots) await page.screenshot({ path: path.join(shots, `ipsec-${label.replace(/\W+/g, '-')}.png`) }); };
 
 await page.goto(baseUrl);
@@ -85,6 +94,7 @@ check(await cards() === 4 && await tile(0) === '4 / 4', 'everything is back afte
 console.log('\n== live throughput ==');
 const traffic = clone(scenario('base'));
 current = traffic;
+// Each poll adds 5 MB rx / 1 MB tx to every SA's interface counters, so the page can derive a non-zero rate.
 tick = d => { for (const c of d.connections) for (const ch of c.children) for (const sa of ch.sas) if (sa.iface) { sa.iface.rx_bytes += 5_000_000; sa.iface.tx_bytes += 1_000_000; } };
 await refresh(); await refresh(); await refresh();
 check((await tile(2)).startsWith('↓') && !/^↓ 0 ?b/i.test(await tile(2)) && !(await tile(2)).includes('–'), 'throughput tile shows a measured rate', await tile(2));

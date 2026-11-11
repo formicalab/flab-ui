@@ -3,15 +3,15 @@
 // chains have turned away (with a live rate).
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card } from '../../core/ui.js';
+import { badge, card, muted } from '../../core/ui.js';
 import { fmtBytes, fmtNum } from '../../core/format.js';
 import { packetsPerSec, fmtPps } from './util.js';
 
-const muted = t => h('span', { className: 'muted' }, t);
-const mono = t => h('span', { className: 'mono' }, t);
+// A zone's policy as a badge: accept is green, reject/drop are neutral (refusing by default is normal).
+const policyBadge = (p, title = '') => badge(String(p).toLowerCase(), p === 'ACCEPT' ? 'success' : 'info', title);
 
-export const policyBadge = (p, title = '') => badge(String(p).toLowerCase(), p === 'ACCEPT' ? 'success' : 'info', title);
-
+// One line counting what the zone's reject/drop chains turned away in a direction ('from' the zone to the
+// router, or 'to' the zone), with the byte total and a live packet rate; null when nft has no such counter.
 function blockedLine(z, dir, text) {
   const b = dir === 'from' ? z.blocked_from : z.blocked_to;
   if (!b) return null;
@@ -20,6 +20,8 @@ function blockedLine(z, dir, text) {
     h('span', { className: 'muted' }, ` · ${fmtBytes(b.bytes)}`), pps ? h('span', { className: 'fw-pps' }, pps) : null);
 }
 
+// One table row per zone: interfaces, kernel devices, the three default policies, forwarding targets and
+// the traffic turned away. Disabled zones are dimmed.
 function zoneRow(z) {
   return h('tr', { className: z.enabled ? '' : 'fw-off' },
     h('td', {}, h('strong', {}, z.name), z.masq ? [' ', badge('NAT', 'info', 'Outgoing traffic is masqueraded: this zone faces the Internet')] : null,
@@ -34,6 +36,7 @@ function zoneRow(z) {
       !z.blocked_from && !z.blocked_to ? muted('nothing counted') : null));
 }
 
+// The zones card: a legend explaining the policy semantics, then the zones table.
 export function zonesCard(fw) {
   // [label, tooltip]: the three policy columns are defaults, which the tooltips and the legend spell out.
   const cols = [

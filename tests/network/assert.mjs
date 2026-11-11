@@ -1,22 +1,28 @@
-// Checks the backend JSON produced for each Network / Wi-Fi radio scenario.
+// Checks the backend JSON produced for each scenario of the network-related plugins (flab.network, flab.radio,
+// flab.mesh, flab.wireguard, flab.firewall, flab.logs), grouped by plugin, and that no secret is forwarded.
 // Usage: node assert.mjs <dir with <scenario>.<plugin>.json files and expect.json>
 import fs from 'node:fs';
 import path from 'node:path';
 
 const dir = process.argv[2];
+// One plugin's output for a scenario, and the facts expect.json holds about the captured router.
 const read = f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
 const net = n => read(`${n}.flab.network.json`);
 const rad = n => read(`${n}.flab.radio.json`);
 const mesh = n => read(`${n}.flab.mesh.json`);
 const wg = n => read(`${n}.flab.wireguard.json`);
 const fwr = n => read(`${n}.flab.firewall.json`);
+const lgs = n => read(`${n}.flab.logs.json`);
 const expect = read('expect.json');
 let failed = 0;
+// Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
+// Lookups into a plugin's output: a port, a bridge (default: the captured one), one of its members, a radio.
 const port = (d, n) => d.ports.find(p => p.name === n);
 const bridgeOf = (d, n = expect.bridge) => d.bridges.find(b => b.name === n);
 const memberOf = (d, n, b = expect.bridge) => bridgeOf(d, b).members.find(m => m.name === n);
 const radio = (d, n) => d.radios.find(r => r.name === n);
+// Sum of an object's values; whether two lists hold the same items in any order.
 const sum = o => Object.values(o).reduce((a, b) => a + b, 0);
 const same = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
@@ -273,6 +279,31 @@ const anon = fanon.rules.at(-1);
 check(anon.name === null && anon.key === `@rule[${expect.fw.rules}]` && anon.hits?.packets === 3 && anon.hits.bytes === 300, 'an unnamed rule is matched through the @rule[N] comment', JSON.stringify(anon));
 check(same(fwr('f-unzoned').unzoned, ['lan100']), 'an interface in no zone is listed', JSON.stringify(fwr('f-unzoned').unzoned));
 check(fwr('f-conntrack').conntrack.count === 60000, 'connection tracking follows the kernel counter');
+
+console.log('== logs ==');
+const lb = lgs('base');
+const SEV = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug'];
+check(lb.limit === 500 && Array.isArray(lb.system) && Array.isArray(lb.kernel) && lb.system.length > 0 && lb.system.length <= 500 && lb.kernel.length > 0 && lb.kernel.length <= 500, 'both logs, at most the default number of lines', JSON.stringify([lb.limit, lb.system.length, lb.kernel.length]));
+const parsed = lb.system.filter(e => e.t != null);
+check(parsed.length > lb.system.length * 0.9 && parsed.every(e => Number.isInteger(e.t) && SEV.includes(e.severity) && e.level === SEV.indexOf(e.severity) && e.facility && e.program && typeof e.message === 'string'), 'system log lines parsed into time, facility, severity, program and message', JSON.stringify(parsed[0]));
+check(parsed.some(e => e.pid > 0) && parsed.every((e, i) => i === 0 || e.t >= parsed[i - 1].t - 1), 'process ids are read and entries stay in time order');
+check(lb.kernel.every(e => SEV.includes(e.severity) && e.level >= 0 && e.level <= 7 && typeof e.facility === 'string' && e.program === 'kernel' && typeof e.uptime === 'number'), 'kernel lines parsed from the raw priority and uptime', JSON.stringify(lb.kernel.find(e => !(SEV.includes(e.severity) && typeof e.facility === 'string' && typeof e.uptime === 'number'))));
+check(lb.kernel.every(e => Math.abs((e.t - e.uptime) - (lb.kernel[0].t - lb.kernel[0].uptime)) < 2), 'kernel wall-clock times share one boot time');
+check(lb.kernel.every((e, i) => i === 0 || e.uptime >= lb.kernel[i - 1].uptime), 'kernel entries are in boot order');
+check(!JSON.stringify(lb).includes(expect.canary), 'no canary in the log output');
+
+const lo = lgs('l-odd');
+const sysOdd = lo.system.at(-3), sysRaw = lo.system.at(-2), sysBogus = lo.system.at(-1);
+check(!JSON.stringify(lo).includes(expect.canary) && /password=<redacted>/.test(sysOdd.message) && /driver key: <redacted>/.test(lo.kernel.at(-3).message), 'secret-looking values are redacted in both logs', `${sysOdd.message} | ${lo.kernel.at(-3).message}`);
+check(sysOdd.severity === 'err' && sysOdd.program === 'pppd' && sysOdd.pid === 99 && /auth failed/.test(sysOdd.message) && /user=x/.test(sysOdd.message), 'the rest of a redacted line survives', JSON.stringify(sysOdd));
+check(sysRaw.t === null && sysRaw.program === null && sysRaw.severity === null && /kept whole/.test(sysRaw.message), 'a line without a syslog header is kept whole, with no time or origin', JSON.stringify(sysRaw));
+check(sysBogus.severity === null && sysBogus.level === null && sysBogus.program === 'odd' && sysBogus.facility === 'daemon', 'an unknown severity name leaves severity empty', JSON.stringify(sysBogus));
+const kd = lo.kernel.at(-2), kraw = lo.kernel.at(-1);
+check(kd.facility === 'daemon' && kd.severity === 'info' && kd.level === 6, 'a kernel line of another facility: <30> is daemon.info', JSON.stringify(kd));
+check(kraw.t === null && kraw.severity === null && /without a prefix/.test(kraw.message), 'a kernel line with no <N> prefix is kept whole', JSON.stringify(kraw));
+check(lo.kernel.at(-3).level === 3 && lo.kernel.at(-3).severity === 'err', 'kernel priority <3> is err');
+const le = lgs('l-empty');
+check(le.system.length === 0 && le.kernel.length === 0, 'empty logs give empty lists');
 
 if (failed) { console.log(`\n${failed} check(s) FAILED`); process.exit(1); }
 console.log('\nall Network / Wi-Fi radio backend checks passed');

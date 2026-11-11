@@ -1,5 +1,6 @@
-/* Firewall page styling. Loaded on demand by core/app.js when the page is first opened. */
+/* Firewall page styling (rules, port forwards and the zone matrix). Loaded on demand by core/app.js when the page is first opened. */
 
+/* Rules and port-forward tables: top-aligned cells, disabled rules dimmed, match chips and flow arrows */
 .fw-table td { vertical-align: top; }
 .fw-table tr.fw-off { opacity: .55; }
 .fw-chips { display: flex; flex-wrap: wrap; gap: .25rem; }
@@ -8,11 +9,12 @@
 .fw-chip.router { border-style: dashed; color: var(--fl-muted); }
 .fw-flow { display: flex; align-items: center; gap: .35rem; color: var(--fl-muted); }
 .fw-pps { margin-left: .5rem; color: var(--fl-ok-fg); font-variant-numeric: tabular-nums; }
+/* Explanatory text above the zone and rule tables */
 .fw-legend { padding: .7rem 1rem .2rem; }
 .fw-legend p { margin: 0 0 .4rem; }
 .fw-zones-legend { border-bottom: 1px solid var(--fl-stroke); }
 
-/* Zone matrix */
+/* Zone matrix: source zone (row) × destination zone (column); each cell is tinted open / partial / closed */
 .fwm { border-collapse: separate; border-spacing: 4px; margin: .8rem 1rem 1rem; min-width: 32rem; }
 .fwm th { font-weight: 600; padding: .35rem .7rem; white-space: nowrap; }
 .fwm thead th { text-align: center; }

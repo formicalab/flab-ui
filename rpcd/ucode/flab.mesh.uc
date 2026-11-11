@@ -20,7 +20,7 @@
 'use strict';
 
 import { connect } from 'ubus';
-import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label } from 'flab.util';
+import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label, iw_channel_info } from 'flab.util';
 
 // Mesh parameters worth showing, read with `iw dev <if> get mesh_param <name>`.
 const PARAMS = [
@@ -34,19 +34,25 @@ const PATH_FLAGS = [ [ 0x1, 'active' ], [ 0x2, 'resolving' ], [ 0x4, 'sn_valid' 
 
 //#region Peers
 
+// True for the string "yes", which iw uses for booleans in station dumps.
 const yes = (v) => v == 'yes';
 
+// Parses an iw bitrate such as "130.0 MBit/s MCS 15 short GI" into { mbit, detail }; null when absent.
 function bitrate(v) {
 	let m = match(v ?? '', /^([0-9.]+) MBit\/s(.*)$/);
 	return m ? { mbit: +m[1], detail: trim(m[2]) } : null;
 }
 
+// Parses one block of `iw dev <if> station dump` (the text after "Station ") into a peer object keyed by
+// its MAC, or null when the block does not start with a MAC. Counters are numbers (null when unparsable),
+// inactive_ms is milliseconds and connected_s seconds, signal values are dBm.
 function parse_station(block) {
 	let m = match(block, /^([0-9a-f:]{17})/i);
 	if (!m)
 		return null;
 	let st = { mac: lc(m[1]) };
 	for (let line in split(block, '\n')) {
+		// Attribute lines are indented "key:   value"; n is the leading number of the value, if any.
 		let kv = match(line, /^[[:space:]]+([^:]+):[[:space:]]*(.*)$/);
 		if (!kv)
 			continue;
@@ -76,8 +82,10 @@ function parse_station(block) {
 	return st;
 }
 
+// Mesh peers of `ifname` from `iw dev <if> station dump`, sorted by MAC.
 function peers(ifname) {
 	let out = [];
+	// The leading "\n" lets the first station match the "\nStation " separator too.
 	for (let block in split('\n' + run(`iw dev ${ifname} station dump 2>/dev/null`), /\nStation /)) {
 		let st = parse_station(block);
 		if (st)
@@ -89,9 +97,12 @@ function peers(ifname) {
 
 //#region Paths and parameters
 
+// iw prints this all-zero address as the next hop of a path that has none yet.
 const NO_HOP = '00:00:00:00:00:00';
 
+// Mesh paths of `ifname` from `iw dev <if> mpath dump`, sorted by destination. Columns are:
 // DEST ADDR  NEXT HOP  IFACE  SN  METRIC  QLEN  EXPTIME  DTIM  DRET  FLAGS  HOP_COUNT  PATH_CHANGE
+// exptime_ms is milliseconds; flags is the list of PATH_FLAGS names set in the hex FLAGS column.
 function paths(ifname) {
 	let out = [];
 	for (let line in split(run(`iw dev ${ifname} mpath dump 2>/dev/null`), '\n')) {
@@ -108,7 +119,8 @@ function paths(ifname) {
 	return sort(out, (a, b) => a.dest < b.dest ? -1 : a.dest > b.dest);
 }
 
-// Destinations reached through a mesh proxy gate (mpp dump): DEST ADDR  PROXY NODE  IFACE
+// Destinations reached through a mesh proxy gate (`iw dev <if> mpp dump`) as [{ dest, proxy }]; columns:
+// DEST ADDR  PROXY NODE  IFACE
 function proxied(ifname) {
 	let out = [];
 	for (let line in split(run(`iw dev ${ifname} mpp dump 2>/dev/null`), '\n')) {
@@ -120,7 +132,10 @@ function proxied(ifname) {
 }
 
 // Mesh parameters change only when someone edits the configuration, so they are read at most once a minute.
+// Per-interface cache of { at: epoch seconds, values }; it lives as long as rpcd keeps the plugin loaded.
 let param_cache = {};
+
+// Values of the PARAMS mesh parameters for `ifname` as { name: value string }; unreadable ones are left out.
 function params(ifname) {
 	let hit = param_cache[ifname];
 	if (hit && time() - hit.at < 60)
@@ -136,26 +151,13 @@ function params(ifname) {
 }
 //#endregion
 
-function iface_info(ifname) {
-	let out = {};
-	for (let line in split(run(`iw dev ${ifname} info 2>/dev/null`), '\n')) {
-		let m = match(line, /channel ([0-9]+) \(([0-9]+) MHz\), width: ([0-9]+) MHz(, center1: ([0-9]+) MHz)?/);
-		if (m) {
-			out.channel = +m[1];
-			out.freq = +m[2];
-			out.width = +m[3];
-		}
-		if ((m = match(line, /txpower ([0-9.]+) dBm/)))
-			out.txpower = +m[1];
-	}
-	return out;
-}
-
+// Every mesh interface of the configuration, with live data for the ones that are running.
 function collect() {
 	let conn = connect();
 	let all = uci_all('wireless');
 	let wl = ubus_call(conn, 'network.wireless', 'status') ?? {};
 
+	// Mesh sections in configuration order.
 	let sections = [];
 	for (let name in keys(all))
 		if (all[name]['.type'] == 'wifi-iface' && all[name].mode == 'mesh')
@@ -164,6 +166,7 @@ function collect() {
 
 	let nodes = [];
 	for (let s in sections) {
+		// netifd knows the live interface name only for sections that are up; null means down.
 		let radio = wl[s.device] ?? {};
 		let ifname = filter(radio.interfaces ?? [], (i) => i.section == s['.name'])[0]?.ifname;
 		let nets = type(s.network) == 'array' ? s.network : split(s.network ?? '', /[[:space:]]+/);
@@ -182,7 +185,7 @@ function collect() {
 			node.mac = sysfs(`/sys/class/net/${ifname}/address`);
 			node.rx_bytes = num(sysfs(`/sys/class/net/${ifname}/statistics/rx_bytes`));
 			node.tx_bytes = num(sysfs(`/sys/class/net/${ifname}/statistics/tx_bytes`));
-			node.live = iface_info(ifname);
+			node.live = iw_channel_info(ifname);
 			node.peers = peers(ifname);
 			node.paths = paths(ifname);
 			node.proxied = proxied(ifname);
@@ -194,6 +197,7 @@ function collect() {
 	return { generated: time(), nodes };
 }
 
+// rpcd registration: ubus object flab.mesh with the single method `status` (no arguments).
 return {
 	'flab.mesh': {
 		status: {

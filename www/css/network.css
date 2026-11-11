@@ -1,7 +1,7 @@
-/* Wired network page styling (port topology, jacks, port table, error breakdown). The shared pieces live in
-   wired.css. Loaded on demand by core/app.js when the page is first opened. */
+/* Wired network page styling (port topology, jacks, port table, error breakdown). Shared pieces (tiles, cards,
+   tables, badges, health banner) live in base.css. Loaded on demand by core/app.js when the page is first opened. */
 
-/* ── Port topology ── */
+/* ── Port topology: SoC/switch/PHY boxes joined by connectors, with the jacks below ── */
 .topo-scroll { overflow-x: auto; }
 .topo { display: grid; column-gap: 1rem; row-gap: 0; align-items: stretch; min-width: min-content; }
 .topo-soc { display: flex; align-items: center; justify-content: center; gap: .7rem; padding: .55rem 1rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
@@ -27,7 +27,7 @@
 .vl.on .swnum { border-color: var(--fl-ok-fg); color: var(--fl-ok-fg); }
 .topo .port { width: auto; }
 
-/* ── Port tile (the jack) ── */
+/* ── Port tile (the jack): link state tints, speed, rates and sparkline ── */
 .port .prole { font-size: .68rem; font-weight: 700; letter-spacing: .08em; color: var(--fl-muted); }
 .port { position: relative; display: grid; gap: .3rem; justify-items: center; text-align: center; width: 176px; padding: .85rem .7rem .75rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: var(--fl-surface-hover); transition: border-color .25s, background .25s; }
 .port .jack { display: grid; place-items: center; width: 52px; height: 40px; border-radius: 8px; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
@@ -45,13 +45,14 @@
 .port.down { opacity: .72; }
 .port.down .pspeed { color: var(--fl-muted); font-weight: 400; }
 
+/* Port table: per-port rows with hardware lines and negotiated-link column */
 .port-table td { vertical-align: top; }
 .port-table th, .port-table td { padding-left: .6rem; padding-right: .6rem; }
 .hw-lines { font-size: .75rem; line-height: 1.35; max-width: 15rem; white-space: normal; }
 .hw-lines > div { overflow-wrap: anywhere; }
 .neg { max-width: 13rem; }
 
-/* ── Error breakdown ── */
+/* ── Error breakdown: expandable row under a port with counters, driver statistics and log excerpt ── */
 .diag-btn { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }
 .diag-btn svg { margin-right: .3rem; }
 .port-table tr.diag-row > td { padding: 0; background: color-mix(in srgb, var(--fl-surface-hover) 60%, transparent); }

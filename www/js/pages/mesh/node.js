@@ -3,14 +3,14 @@
 // mesh paths and the mesh parameters. Also exports the findings (what looks wrong) and the rate recorder.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, kv, meter, section } from '../../core/ui.js';
+import { badge, kv, meter, section, muted, mono } from '../../core/ui.js';
 import { createTracker, latest } from '../../core/rates.js';
-import { fmtBytes, fmtNum, fmtSpan } from '../../core/format.js';
-import { STP_ROLE, stpKind, fmtLine } from '../network/util.js';
+import { fmtBytes, fmtLine, fmtNum, fmtSpan } from '../../core/format.js';
+import { STP_ROLE, stpKind } from '../network/util.js';
 
+// Module-level so the rate history survives the redraw on every poll; a peer series is keyed by the
+// interface and the peer's MAC.
 const tracker = createTracker();
-const muted = t => h('span', { className: 'muted' }, t);
-const mono = t => h('span', { className: 'mono' }, t);
 const peerKey = (n, p) => `${n.ifname}/${p.mac}`;
 
 // Feeds one poll into the tracker and drops peers that disappeared.
@@ -25,12 +25,16 @@ export function recordMesh(mesh) {
   tracker.keep(seen);
 }
 
+// Meter color for a peer's signal in dBm: >= -60 good, >= -72 fair, below that weak.
 const signalLevel = s => s == null ? '' : s >= -60 ? 'good' : s >= -72 ? 'fair' : 'weak';
+// Percentage of a peer's transmitted packets that failed; null below 100 packets (too few to be meaningful).
 const failRatio = p => p.tx_packets > 100 ? (p.tx_failed ?? 0) / p.tx_packets * 100 : null;
 
 // The first five octets identify the same physical device (its interfaces use consecutive addresses), which
-// is how a mesh peer is recognised as the bridge's root bridge.
+// is how a mesh peer is recognised as the bridge's root bridge. The comparison drops separators and case
+// and looks at the first 10 hex digits.
 const sameDevice = (a, b) => a && b && a.replace(/[^0-9a-f]/gi, '').slice(0, 10).toLowerCase() === b.replace(/[^0-9a-f]/gi, '').slice(0, 10).toLowerCase();
+// MAC part of an STP bridge ID ("8000.aabbccddeeff" -> "aabbccddeeff"); empty when absent.
 const bridgeMac = id => (id ?? '').split('.')[1] ?? '';
 
 // The bridge this mesh interface is a port of, with its STP view.
@@ -42,6 +46,9 @@ function bridgeOf(n, net) {
   return null;
 }
 
+// What looks wrong on one mesh interface, as { level, text }: disabled or down (returned alone), no peers,
+// peers not in ESTAB, signal <= -75 dBm, more than 10 % failed transmissions, forwarding off and
+// unresolved mesh paths.
 export function findings(n) {
   const out = [];
   const name = n.mesh_id ?? n.ifname ?? n.section;
@@ -62,6 +69,7 @@ export function findings(n) {
 }
 
 //#region parts
+// Card header: state dot, mesh ID, interface, radio, channel, security, state and the port's STP role.
 function header(n, link) {
   const state = !n.enabled ? ['disabled', ''] : n.up ? ['up', 'success'] : ['down', 'danger'];
   const role = link?.member.brport?.role;
@@ -91,6 +99,7 @@ function bridgeNote(n, link) {
       : [`This mesh port is a member of `, h('b', {}, b.name), ` (${STP_ROLE[m.brport?.role] ?? 'no STP role'}).`]));
 }
 
+// Table of the interface's peers with link state, signal, rates, airtime metric, failures and live traffic.
 function peersTable(n) {
   const peers = n.peers ?? [];
   const cols = ['Peer', 'Link', 'Signal', 'Bit rate', 'Expected', 'Airtime metric', 'Tx retries / failed', 'Traffic now', 'Idle', 'Connected'];
@@ -99,6 +108,7 @@ function peersTable(n) {
     h('tbody', {}, peers.length ? peers.map(p => peerRow(n, p)) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No peers heard on this interface.')))));
 }
 
+// One peer row. Live traffic comes from the rate tracker; idle time is shown in ms below one second.
 function peerRow(n, p) {
   const k = peerKey(n, p);
   const rx = latest(tracker.rates(k, 'rx')), tx = latest(tracker.rates(k, 'tx'));
@@ -107,6 +117,7 @@ function peerRow(n, p) {
   return h('tr', {},
     h('td', {}, mono(p.mac), p.gate ? h('div', {}, badge('gate', 'info', 'Connected to a mesh gate')) : null, p.mfp ? h('div', { className: 'muted small' }, 'protected management frames') : null),
     h('td', {}, badge(p.plink ?? '?', p.plink === 'ESTAB' ? 'success' : 'warning', p.plink === 'ESTAB' ? 'Peer link established' : 'Peer link is not established')),
+    // The meter maps -90..-30 dBm onto 0..60.
     h('td', { className: 'num' }, sig != null ? h('div', {}, `${sig} dBm`, meter(Math.max(0, Math.min(60, sig + 90)), 60, signalLevel(sig))) : '–'),
     h('td', { className: 'num' }, p.tx_rate ? h('div', {}, h('div', {}, icon('arrow-up', 12), `${p.tx_rate.mbit} Mbit/s`), h('div', { className: 'muted small' }, p.tx_rate.detail)) : '–',
       p.rx_rate ? h('div', {}, h('div', {}, icon('arrow-down', 12), `${p.rx_rate.mbit} Mbit/s`), h('div', { className: 'muted small' }, p.rx_rate.detail)) : null),
@@ -118,6 +129,8 @@ function peerRow(n, p) {
     h('td', { className: 'num' }, p.connected_s != null ? fmtSpan(p.connected_s) : '–'));
 }
 
+// HWMP mesh path table: destination, next hop (unresolved paths have none yet), hops, metric, expiry and
+// flags; destinations that are direct peers are tagged.
 function pathsTable(n) {
   const peers = new Set((n.peers ?? []).map(p => p.mac));
   const paths = n.paths ?? [];
@@ -133,6 +146,8 @@ function pathsTable(n) {
       h('td', {}, p.flags.length ? p.flags.map(f => badge(f.replace('_', ' '), f === 'resolved' || f === 'active' ? 'success' : '')) : badge('discovering', 'warning')))) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No mesh paths.')))));
 }
 
+// Mesh parameter (mac80211 mesh config name) -> [label, value formatter] for the configuration block;
+// parameters the interface does not report are skipped.
 const PARAM_LABELS = {
   mesh_fwding: ['Forwarding', v => (v === '1' ? 'on: relays frames for other nodes' : 'off')],
   mesh_ttl: ['Time to live', v => `${v} hops`],
@@ -147,6 +162,7 @@ const PARAM_LABELS = {
   mesh_power_mode: ['Power mode', v => v],
 };
 
+// Mesh ID, security, bridged networks and the reported mesh parameters as key/value rows.
 function configBlock(n) {
   const rows = Object.entries(PARAM_LABELS).filter(([k]) => n.params?.[k] != null).map(([k, [label, fmt]]) => [label, fmt(n.params[k])]);
   return kv([
@@ -158,6 +174,8 @@ function configBlock(n) {
 }
 //#endregion
 
+// The card for one mesh interface. `net` is the optional flab.network status (null when unavailable); a
+// down interface shows only the header and an explanation.
 export function nodeCard(n, net) {
   const link = bridgeOf(n, net);
   return h('div', { className: `card mesh-card ${n.up ? 'is-up' : 'is-down'}` },

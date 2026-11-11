@@ -4,19 +4,20 @@
 // AKM/cipher/PMF details, 0-100 score).
 // Filter text, sort order, selected radio and the paused flag live in `state` so they survive refreshes.
 import { h } from '../../core/dom.js';
-import { ubus } from '../../core/ubus.js';
-import { badge, card, tile, tiles } from '../../core/ui.js';
+import { ubus, optional } from '../../core/ubus.js';
+import { badge, card, tile, tiles, muted, GRADE_KIND } from '../../core/ui.js';
 import { searchControl, selectControl, pauseControl, refreshControl } from '../../core/controls.js';
 import { fmtRate, ipNum } from '../../core/format.js';
-import { radiosSection, recordRadios } from './radios.js';
+import { radiosSection, recordRadios, SECURITY_KIND } from './radios.js';
 
+// Badge color for a client's signal strength in dBm: >= -50 strong, >= -70 usable, below that weak.
 const SIGNAL_KIND = s => s == null ? '' : s >= -50 ? 'success' : s >= -70 ? 'warning' : 'danger';
-const GRADE_KIND = { 'A+': 'success', A: 'success', B: 'info', C: 'warning', D: 'danger' };
-const SECURITY_KIND = s => /WPA3|OWE/.test(s) ? 'success' : /WPA2/.test(s) ? 'warning' : /Open|WEP|^WPA-/.test(s) ? 'danger' : '';
 
+// Filter text, selected radio ('all' or a radio name), table sort and the paused flag: module-level so
+// they survive the redraw on every poll.
 const state = { q: '', radio: 'all', sort: { key: 'signal', dir: -1 }, paused: false };
 
-const muted = text => h('span', { className: 'muted' }, text);
+// A fixed-width monospace cell that is cut with an ellipsis; the full text is the tooltip.
 const clip = (text, title) => h('span', { className: 'mono clip', title: title || text }, text);
 
 // Each column pairs a header with a width (% of the fixed table layout, so every SSID table aligns),
@@ -43,12 +44,15 @@ const COLS = [
       c.rating.partial ? 'Some fields were unavailable; neutral defaults were used' : '') },
 ];
 
+// True when every whitespace-separated search term occurs (case-insensitive) in one of the client's
+// searchable fields or its SSID; an empty query matches everything.
 function matches(c, ssid, q) {
   if (!q) return true;
   const hay = [c.mac, c.ipv4, ...c.ipv6, c.hostname, ssid, c.security, c.akm, c.cipher, c.standard].join(' ').toLowerCase();
   return q.toLowerCase().split(/\s+/).every(t => hay.includes(t));
 }
 
+// Copy of `list` ordered by the active column of `state.sort` (dir 1 ascending, -1 descending).
 function sortClients(list) {
   const col = COLS.find(c => c.key === state.sort.key);
   return [...list].sort((a, b) => {
@@ -57,7 +61,10 @@ function sortClients(list) {
   });
 }
 
+// Table of one SSID's clients with the shared COLS layout; clicking a header sets or reverses the sort
+// and calls `rerender` to redraw from the cached data.
 function clientTable(clients, rerender) {
+  // Clickable column headers; the active sort column shows an arrow for its direction.
   const head = COLS.map(col => {
     const active = state.sort.key === col.key;
     return h('th', {
@@ -76,6 +83,7 @@ function clientTable(clients, rerender) {
       : h('tr', {}, h('td', { colSpan: COLS.length, className: 'muted' }, 'No clients connected')))));
 }
 
+// Help text for the legend: [heading, explanations] for the AKM, cipher/PMF and score columns.
 const LEGEND = [
   ['AKM (Authentication & Key Management)', [
     'SAE = WPA3 (password not sent, resistant to offline attacks, forward secrecy)',
@@ -91,9 +99,7 @@ const LEGEND = [
     '* means unavailable fields used neutral defaults']],
 ];
 
-// A missing plugin or ACL must not break the clients list.
-const optional = promise => promise.catch(() => null);
-
+// Page object registered in pages/index.js (contract documented there).
 export default {
   id: 'wifi',
   label: 'Wi-Fi',
@@ -102,6 +108,8 @@ export default {
   interval: 5000,
   css: 'css/wifi.css',
 
+  // Clients and radio hardware are fetched together; the radio call is optional so the client tables still
+  // work when flab.radio is not installed. Counters go to the rate tracker before rendering.
   load: async () => {
     const [clients, hw] = await Promise.all([ubus('flab.wifi', 'clients'), optional(ubus('flab.radio', 'status'))]);
     recordRadios(hw);
@@ -109,6 +117,7 @@ export default {
   },
   isPaused: () => state.paused,
 
+  // The radio dropdown is refreshed after every load so it follows radios that appear or disappear.
   controls({ rerender, reload }) {
     const radio = selectControl(state, 'radio', rerender, 'Radio');
     return {
@@ -117,6 +126,9 @@ export default {
     };
   },
 
+  // Summary tiles, radio cards, legend, then one client card per radio interface (SSID). With a filter
+  // active, SSIDs without a matching client are hidden. Client counts and averages cover all radios,
+  // regardless of the radio selector.
   view(data, rerender) {
     // Mesh interfaces and their peers have their own page (Mesh).
     const ifsOf = r => r.interfaces.filter(i => i.mode !== 'mesh');

@@ -8,6 +8,8 @@ import { showLogin } from './login.js';
 import { card } from './ui.js';
 import { pages } from '../pages/index.js';
 
+// Module-level state: the refresh interval of the open page, the cached `system board` reply
+// (fetched once per session) and the stylesheets already added to <head>.
 let timer = null;
 let board = null;
 const loadedCss = new Set();
@@ -21,8 +23,11 @@ function ensureCss(hrefs) {
   }
 }
 
+// The first registered page opens when the URL has no hash.
 const defaultPageId = pages[0].id;
 
+// Renders the page named by the URL hash (shell, navigation, command bar) and starts its refresh loop.
+// Runs on start and on every hashchange; shows the login form first when there is no session.
 async function route() {
   if (!hasSession()) return showLogin(route);
   clearInterval(timer);
@@ -49,12 +54,15 @@ async function route() {
   const stamp = h('span', { className: 'muted small' });
   let data = null;
 
+  // Redraws the page from the last data without polling; controls call it so filter changes apply instantly.
   const rerender = () => { if (data) results.replaceChildren(...page.view(data, rerender)); };
   const ctl = page.controls ? page.controls({ rerender, reload: () => load() }) : { nodes: [] };
   const cmdbar = h('header', { className: 'cmdbar' }, h('h1', {}, page.title ?? page.label), ...ctl.nodes, stamp);
 
   byId('app').replaceChildren(h('div', { className: 'shell' }, nav, h('div', { className: 'content' }, cmdbar, results)));
 
+  // Polls the page once and redraws it. A failed poll shows the error in place of the content;
+  // an expired session returns to the login form.
   async function load() {
     try {
       data = await page.load();
@@ -68,21 +76,25 @@ async function route() {
   }
 
   await load();
+  // Pages may suspend polling (Pause button) without stopping the timer.
   timer = setInterval(() => { if (!page.isPaused?.()) load(); }, page.interval);
 }
 
+// Stops polling, drops the stored session and returns to the login form with an explanation.
 function expire() {
   clearInterval(timer);
   clearSession();
   showLogin(route, 'Session expired');
 }
 
+// Ends the session on the router, then shows the login form.
 async function signOut() {
   clearInterval(timer);
   await logout();
   showLogin(route);
 }
 
+// Entry point: picks the default page, routes on hash changes and renders the current page.
 export function start() {
   if (!location.hash) location.hash = defaultPageId;
   addEventListener('hashchange', route);

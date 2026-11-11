@@ -2,11 +2,11 @@
 
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card, kv, chip, meter } from '../../core/ui.js';
+import { badge, card, kv, chip, meter, muted } from '../../core/ui.js';
 import { fmtBytes, fmtNum, fmtSpan } from '../../core/format.js';
 import { peerDot } from './util.js';
 
-const muted = t => h('span', { className: 'muted' }, t);
+// Icon per finding level (the levels produced by flab.bgp.uc: good, info, warn, bad).
 const LEVEL_ICON = { good: 'check-circle', info: 'info-circle', warn: 'exclamation-triangle', bad: 'shield-exclamation' };
 
 // How many prefixes use each peer as an installed (active) next hop: shows how traffic is spread.
@@ -25,6 +25,8 @@ function nextHopShare(data) {
     h('div', { className: 'muted small' }, 'Prefixes whose traffic can leave through each peer (equal-cost multipath).'));
 }
 
+// Health card: the backend's findings list (data.findings, computed server-side) under a verdict badge
+// that summarizes the worst level, followed by the next-hop distribution.
 export function healthCard(data) {
   const f = data.findings;
   const bad = f.filter(x => x.level === 'bad').length, warn = f.filter(x => x.level === 'warn').length;
@@ -36,6 +38,7 @@ export function healthCard(data) {
     'h-100');
 }
 
+// "N in · N out · N best" for a channel's route counters, or a dash when BIRD reports none.
 function routesText(ch) {
   const r = ch?.routes;
   return r && Object.keys(r).length ? `${r.imported ?? 0} in · ${r.exported ?? 0} out · ${r.preferred ?? 0} best` : '–';
@@ -47,6 +50,8 @@ function channelLines(p, text) {
   return h('div', {}, p.channels.map(ch => h('div', {}, p.channels.length > 1 ? h('small', { className: 'muted' }, `${ch.afi} `) : null, text(ch))));
 }
 
+// Table of every BIRD protocol instance (BGP sessions, kernel, direct, ...): state, routing table, and
+// per-channel route counts, preference and import/export filters.
 export function protocolsCard(data) {
   const stateKind = s => s === 'up' ? 'success' : 'warning';
   const filterChips = ch => h('span', { className: 'chips' }, [ch.input_filter, ch.output_filter].map(f => f ? chip(f, f === 'ACCEPT' ? 'good' : f === 'REJECT' ? 'fair' : 'info') : muted('–')));
@@ -65,6 +70,7 @@ export function protocolsCard(data) {
       h('tbody', {}, rows))));
 }
 
+// BIRD daemon facts; `started` and `reconfigured` are epoch seconds shown in the browser's locale.
 export function daemonCard(data) {
   const d = data.daemon;
   return card([icon('cpu'), 'BIRD daemon'], h('div', { className: 'card-body' }, kv([
@@ -79,6 +85,8 @@ export function daemonCard(data) {
   ])), 'h-100');
 }
 
+// BIRD memory by pool: stacked bars of effective (used) bytes plus allocator overhead, all scaled to the
+// largest pool so they are comparable; the "Total" row has no bar, only the text.
 export function memoryCard(data) {
   const rows = data.memory.filter(m => m.overhead != null);
   const max = Math.max(1, ...rows.filter(m => m.name !== 'Total').map(m => m.effective + m.overhead));

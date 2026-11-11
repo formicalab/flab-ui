@@ -7,9 +7,11 @@ import path from 'node:path';
 
 const root = process.argv[2];
 const real = path.join(root, 'fx-real');
+// Reads one captured fixture file with LF line endings (Windows checkouts may convert them).
 const read = n => fs.readFileSync(path.join(real, n), 'utf8').replace(/\r\n/g, '\n');
 const files = fs.readdirSync(real);
 
+// Writes a scenario directory: a fresh copy of every captured file, after `edit` has modified the in-memory contents.
 function scenario(name, edit) {
   const dir = path.join(root, name);
   fs.rmSync(dir, { recursive: true, force: true });
@@ -21,18 +23,21 @@ function scenario(name, edit) {
 
 // Splits `show protocols all` into per-protocol blocks (a block starts at a non-indented line).
 const blocks = text => text.split(/^(?=\S)/m);
+// Inverse of blocks(): concatenates the (possibly edited) blocks back into one text.
 const joinBlocks = bs => bs.join('');
 
-// Drops route entries of one protocol from `show route all`, handing the prefix (and the best marker) to the next path.
+// Drops route entries of one protocol from `show route all`, handing the prefix (and the best marker) to the next path
+// (BIRD prints the prefix only on a prefix's first path, so removing it would otherwise orphan the remaining paths).
 function dropRoutes(text, proto) {
   const lines = text.split('\n');
+  // Group the text into entries: a head line (route header) followed by its indented attribute lines.
   const entries = [];
   for (const line of lines) {
     const isHead = !line.startsWith('\t') && /\s(unicast|blackhole|unreachable)\s/.test(line);
     if (isHead || !entries.length) entries.push({ head: line, body: [] }); else entries.at(-1).body.push(line);
   }
   const out = [];
-  let carry = null;
+  let carry = null;   // prefix/best-marker of a dropped entry waiting for the next path of the same prefix
   for (const e of entries) {
     const hasPrefix = /^\S/.test(e.head) && /\s(unicast|blackhole|unreachable)\s/.test(e.head);
     if (e.head.includes(`[${proto} `)) {
@@ -110,6 +115,8 @@ scenario('dual', d => {
   bs.push('static2    Static     master6    up     2026-11-06    \n  Created:            2026-11-06\n  Channel ipv6\n    State:          UP\n    Table:          master6\n    Preference:     200\n    Input filter:   ACCEPT\n    Output filter:  REJECT\n    Routes:         1 imported, 0 exported, 1 preferred\n');
   d['show_protocols_all.txt'] = joinBlocks(bs);
 
+  // Builds the `show route all` body of one IPv6 BGP path learned over the link-local next hop `ll` on interface
+  // `via`; `id` varies the next-hop address and the route id so every path is distinct.
   const bgp6 = (proto, via, ll, id) => [
     `\tvia ${ll} on ${via}`, `\thostentry: via ${ll} table master6`, '\tpreference: 100', '\tlocal_metric: 0',
     '\tfrom: 2001:db8:ffff::1', '\tsource: BGP', '\tbgp_origin: IGP', '\tbgp_path: 65515',
@@ -131,6 +138,7 @@ scenario('dual', d => {
 });
 
 // --- announcements change: per-peer differences, a non-static origin, and one peer receiving nothing
+// (the strings below are `show route export <peer>` entries appended to the captured output)
 scenario('announce', d => {
   const head = 'BIRD 3.3.3 ready.\nTable master4:\n';
   const direct = '10.0.0.12/32         unicast [direct1 2026-11-06] * (240)\n\tdev xfrm0\n\tpreference: 240\n\tsource: device\n';

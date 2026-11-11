@@ -16,13 +16,16 @@
 import { readfile } from 'fs';
 import { run, num } from 'flab.util';
 
+// Multipliers from the unit printed by `birdc show memory` to bytes (BIRD uses 1024-based units).
 const MEM_UNITS = { B: 1, kB: 1024, MB: 1048576, GB: 1073741824 };
+// Order of the counter columns in the "Import updates:" / "Export withdraws:" rows of `show protocols all`.
 const STAT_COLUMNS = ['received', 'rejected', 'filtered', 'ignored', 'rx_limit', 'limit', 'accepted'];
 
 // Test seam: with FLAB_BGP_FIXTURES=<dir> set (never the case inside rpcd) saved command output is read
 // from <dir>/<name>.txt instead of running birdc/ip, so down-state and IPv6 samples can be tested.
 const FIXTURES = getenv('FLAB_BGP_FIXTURES');
 
+// Output of the command `cmd`, or of the fixture file `name` when the test seam is active.
 function source(name, cmd) {
 	return FIXTURES ? (readfile(`${FIXTURES}/${name}.txt`) ?? '') : run(cmd);
 }
@@ -32,14 +35,19 @@ function safe_name(name) {
 	return name && match(name, /^[A-Za-z0-9_.-]+$/) != null;
 }
 
+// Output of `birdc <cmd>` (stderr included so a connection failure is visible); the fixture name is the
+// command with non-alphanumerics turned into "_".
 function birdc(cmd) {
 	return source(replace(cmd, /[^A-Za-z0-9]+/g, '_'), 'birdc ' + cmd + ' 2>&1');
 }
 
+// Normalised object key for a birdc label: lower case, runs of non-alphanumerics become "_"
+// ("Neighbor AS" -> "neighbor_as").
 function key_of(text) {
 	return lc(replace(trim(text), /[^A-Za-z0-9]+/g, '_'));
 }
 
+// Numeric value of a birdc cell, or null for the placeholders "---", "-" and empty.
 function number_or_null(v) {
 	return (v == null || v == '---' || v == '' || v == '-') ? null : +v;
 }
@@ -62,6 +70,8 @@ function groups(text) {
 
 //#region birdc show status / memory
 
+// Parses `birdc show status` into { version, router_id, hostname, now, started, reconfigured, state };
+// the three times are epoch seconds (see parse_time).
 function parse_status(text) {
 	let s = {};
 	for (let line in split(text, '\n')) {
@@ -85,6 +95,7 @@ function parse_status(text) {
 }
 
 // Each line looks like "Routing tables:    162.9 kB     13.4 kB" (effective, overhead).
+// Returns [{ name, effective, overhead }] with both values converted to bytes.
 function parse_memory(text) {
 	let rows = [];
 	for (let line in split(text, '\n')) {
@@ -93,6 +104,7 @@ function parse_memory(text) {
 			continue;
 		let tok = split(trim(m[2]), /[ ]+/);
 		let values = [];
+		// Tokens come in (number, unit) pairs; a non-unit token means this is not a memory row.
 		for (let i = 0; i + 1 < length(tok); i += 2) {
 			let unit = MEM_UNITS[tok[i + 1]];
 			if (unit == null)
@@ -108,11 +120,14 @@ function parse_memory(text) {
 
 //#region birdc show protocols all
 
+// A BGP timer value "left/total" (seconds, e.g. "3.2/10") as { left, total }; null when it does not parse.
 function parse_timer(value) {
 	let m = match(value ?? '', /^([0-9.]+)\/([0-9.]+)/);
 	return m ? { left: +m[1], total: +m[2] } : null;
 }
 
+// Parses the counters of one "Import updates:" style row into an object keyed by STAT_COLUMNS
+// (extra columns become c<N>); "---" cells become null.
 function parse_stats_row(rest) {
 	let tok = split(trim(rest), /[ ]+/);
 	let row = {};
@@ -121,6 +136,7 @@ function parse_stats_row(rest) {
 	return row;
 }
 
+// Turns a channel's "Routes:" text ("3 imported, 1 filtered, ...") into { imported, filtered, ... } counts.
 function finish_channel(ch) {
 	let r = ch.routes;
 	if (type(r) == 'string') {
@@ -134,6 +150,8 @@ function finish_channel(ch) {
 	}
 }
 
+// Converts the raw strings of a parsed BGP section into typed values: timers become { left, total },
+// AS numbers numbers, and tx_pending the leading number of its text.
 function finish_bgp(bgp) {
 	bgp.hold_timer = parse_timer(bgp.hold_timer);
 	bgp.keepalive_timer = parse_timer(bgp.keepalive_timer);
@@ -144,8 +162,13 @@ function finish_bgp(bgp) {
 	bgp.tx_pending = number_or_null(match(bgp.tx_pending ?? '', /^[0-9]+/)?.[0]);
 }
 
+// Parses `birdc show protocols all` into [{ name, proto, table, state, since, info, channels: [...], bgp }].
+// The output is indentation based: column 0 is the protocol summary line, 2 spaces a protocol attribute
+// or "Channel <afi>", and deeper levels are BGP capabilities and channel statistics. `mode` records which
+// block the deeper lines belong to.
 function parse_protocols(text) {
 	let protos = [];
+	// p: current protocol, ch: current channel, caps/cap: BGP capability list and entry being filled.
 	let p = null, ch = null, caps = null, cap = null, mode = null;
 
 	for (let line in split(text, '\n')) {
@@ -159,6 +182,7 @@ function parse_protocols(text) {
 
 		if (indent == 0) {
 			let m = match(line, /^([A-Za-z0-9_.-]+)[ ]+([A-Za-z0-9]+)[ ]+([^ ]+)[ ]+([^ ]+)[ ]+([^ ]+)[ ]*(.*)$/);
+			// Summary columns: Name Proto Table State Since Info; the header and banner lines are skipped.
 			if (!m || m[1] == 'Name' || m[1] == 'BIRD')
 				continue;
 			let since = m[5], info = trim(m[6]);
@@ -249,6 +273,8 @@ function parse_protocols(text) {
 //#region birdc show route all
 
 // Parse the first line of a route entry (prefix may be omitted for additional paths of a prefix).
+// Returns the route skeleton { prefix, type, protocol, since, best, preference, origin_as, nexthops,
+// attrs }, or null when the line is not a route head. Format: "<prefix> unicast [peer since] * (pref) [ASnnni]".
 function parse_route_head(line, last_prefix) {
 	let m = match(line, /^([^ ]*)[ ]+(unicast|blackhole|unreachable|prohibit|multicast)[ ]+/);
 	if (!m)
@@ -261,6 +287,7 @@ function parse_route_head(line, last_prefix) {
 
 	let src = split(substr(rest, 1, end - 1), ' ', 2);
 	let after = substr(rest, end + 1);
+	// "*" marks the best path; the number in parentheses is the route preference.
 	let flags = match(after, /^[ ]*(\*?)[ ]*\(([0-9]+)/);
 	let summary = match(after, /\[(AS[0-9]+)([ie?])\]/);
 
@@ -277,6 +304,8 @@ function parse_route_head(line, last_prefix) {
 	};
 }
 
+// Derives the BGP-specific fields of a parsed route from its attribute lines (AS path, communities, MED,
+// ...). Non-BGP routes only get source and from.
 function finish_route(r) {
 	let a = r.attrs;
 	r.source = a.source;
@@ -297,6 +326,9 @@ function finish_route(r) {
 	r.atomic_aggregate = a.bgp_atomic_aggr != null;
 }
 
+// Parses `birdc show route all` (or `show route export <peer>`) into a list of routes, one per path.
+// Unindented lines start a route, tab-indented lines are its next hops ("via X on dev") and attributes
+// ("bgp_path: ...").
 function parse_routes(text) {
 	let routes = [];
 	let cur = null;
@@ -346,8 +378,11 @@ function parse_routes(text) {
 //#region kernel routes
 
 // Prefix -> { kind, nexthops: [{ via, dev }] } as installed by BIRD's kernel protocol, IPv4 and IPv6.
+// Parsed from `ip -4/-6 route show proto bird`; "default" is expanded to 0.0.0.0/0 or ::/0 and a bare
+// address gets a host mask so the keys match birdc's prefixes. `kind` is set for blackhole-style routes.
 function kernel_routes() {
 	let table = {};
+	// Prefix of the route being read, so indented ECMP "nexthop via ..." lines attach to it.
 	let cur = null;
 
 	for (let family in [4, 6]) {
@@ -387,6 +422,8 @@ function kernel_routes() {
 
 //#region assembly
 
+// JSON view of one BGP path: the route's attributes plus whether the kernel has a next hop for it
+// (`kernel` is the kernel_routes() table).
 function path_view(r, kernel) {
 	let k = kernel[r.prefix];
 	let via = r.next_hop ?? r.nexthops[0]?.via;
@@ -406,6 +443,7 @@ function path_view(r, kernel) {
 	};
 }
 
+// JSON view of a route that BIRD did not learn through BGP (static, direct, ...).
 function local_view(r, kernel) {
 	return {
 		prefix: r.prefix, protocol: r.protocol, kind: r.type, source: r.source, preference: r.preference,
@@ -413,6 +451,8 @@ function local_view(r, kernel) {
 	};
 }
 
+// JSON view of one BGP peer: session state and timers, negotiated capabilities, the carrying interface
+// and the routes this router exports to it (`exports` is keyed by protocol name).
 function peer_view(p, exports, interfaces) {
 	let bgp = p.bgp ?? {};
 	let neighbor = bgp.neighbor_address;
@@ -445,8 +485,11 @@ function neighbor_interfaces(routes, neighbors) {
 	return map;
 }
 
+// Plain-language health notes as [{ level: good|warn|bad|info, text }]: session states, kernel
+// installation of best routes, single-peer prefixes, empty exports, import filtering and graceful restart.
 function findings(peers, paths) {
 	let out = [];
+	// Shorthands that append a finding of the given level.
 	let ok = (text) => push(out, { level: 'good', text });
 	let warn = (text) => push(out, { level: 'warn', text });
 	let bad = (text) => push(out, { level: 'bad', text });
@@ -462,6 +505,7 @@ function findings(peers, paths) {
 	else
 		ok(`All ${length(peers)} BGP sessions are Established.`);
 
+	// Per prefix: which peers offer it and whether the best path made it into the kernel.
 	let by_prefix = {};
 	for (let r in paths) {
 		by_prefix[r.prefix] ??= { peers: {}, best_in_kernel: false, has_best: false };
@@ -506,6 +550,8 @@ function findings(peers, paths) {
 	return out;
 }
 
+// Builds the flab.bgp status reply. When birdc cannot reach the daemon it returns the same shape with
+// daemon.running false and empty lists, so the page can show a "BIRD is down" state.
 function collect() {
 	let status_text = birdc('show status');
 	if (match(status_text, /Unable to connect|No such file|not found/))
@@ -551,6 +597,7 @@ function collect() {
 }
 //#endregion
 
+// rpcd registration: ubus object flab.bgp with the single method `status` (no arguments).
 return {
 	'flab.bgp': {
 		status: {

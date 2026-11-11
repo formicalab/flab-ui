@@ -1,6 +1,6 @@
 #!/usr/bin/ucode
 //
-// rpcd ucode plugin reporting physical Ethernet ports and bridges as JSON:
+// rpcd ucode plugin reporting physical Ethernet ports, bridges, VLAN devices and the board's switch wiring as JSON:
 //   ubus call flab.network status
 //
 // Everything is discovered at run time (nothing is hard-coded to this router's port names), so a changed
@@ -10,6 +10,8 @@
 //   - netifd (network.device status): device types, link speed and negotiation, bridge membership, counters
 //   - sysfs: carrier and link-flap counters, bridge/STP state (/sys/class/net/<if>/bridge and brport)
 //   - the bridge forwarding table (/sys/class/net/<bridge>/brforward): learned MAC addresses per port
+//   - ethtool, /sys/class/mdio_bus, /proc/device-tree and /etc/board.json: driver, PHY and switch wiring
+//   - UCI network, firewall and dhcp: tunnel links, zone membership and DHCP/RA service per interface
 //
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
@@ -17,21 +19,25 @@
 
 import { connect } from 'ubus';
 import { readfile } from 'fs';
-import { fixture, record_file, run, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname, num } from 'flab.util';
+import { fixture, record_file, run, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname, num, as_list } from 'flab.util';
 
+// Names of the kernel's bridge port STP states, indexed by the number in brport/state.
 const STP_STATES = [ 'disabled', 'listening', 'learning', 'forwarding', 'blocking' ];
 
 //#region Helpers
 
+// Trimmed contents of /sys/class/net/<dev>/<file>; null when the device name is unsafe or the file is missing.
 function sys(dev, file) {
 	return safe_ifname(dev) ? sysfs(`/sys/class/net/${dev}/${file}`) : null;
 }
 
+// Number from a hex string such as "0x8001" (bridge port numbers are printed this way); null when absent.
 function hex_value(text) {
 	return text == null ? null : hex(replace(text, /^0x/, ''));
 }
 
-// netifd reports the negotiated speed as "2500F" (Mbit/s plus F/H for full/half duplex).
+// netifd reports the negotiated speed as "2500F" (Mbit/s plus F/H for full/half duplex); returns
+// { speed, duplex } with nulls when the text does not parse.
 function link_speed(text) {
 	let m = match(text ?? '', /^([0-9]+)([FH])?$/);
 	return m ? { speed: +m[1], duplex: m[2] == 'F' ? 'full' : m[2] == 'H' ? 'half' : null } : { speed: null, duplex: null };
@@ -48,7 +54,7 @@ function top_speed(modes) {
 	return best;
 }
 
-// "lan10" sorts after "lan2".
+// Comparator for interface names: the numeric suffix is compared as a number, so "lan10" sorts after "lan2".
 function natural_less(a, b) {
 	let pa = match(a, /^(.*[^0-9])?([0-9]*)$/), pb = match(b, /^(.*[^0-9])?([0-9]*)$/);
 	let sa = pa[1] ?? '', sb = pb[1] ?? '';
@@ -70,6 +76,7 @@ function stats_view(d) {
 
 // Learned and local MAC entries per bridge port number, from the kernel's binary forwarding table
 // (16 bytes per entry: MAC[6], port, is_local, ageing timer[4], high port byte, padding[3]).
+// The result is keyed by the port number as a string; the full number is port + (high byte << 8).
 function fdb_counts(bridge) {
 	let raw = fixture('brforward_' + bridge);
 	if (raw == null) {
@@ -92,6 +99,9 @@ function fdb_counts(bridge) {
 
 //#region Devices
 
+// JSON view of a netdev `d` (one netifd network.device status entry) with its link state, negotiated and
+// maximum speeds (Mbit/s), flow control and carrier-flap counters. Speed and duplex are only reported while
+// the carrier is up; sysfs fills in what netifd lacks.
 function device_view(name, d) {
 	let sp = link_speed(d.speed);
 	let carrier = d.carrier ?? sys(name, 'carrier') == '1';
@@ -122,7 +132,8 @@ function device_view(name, d) {
 	};
 }
 
-// Spanning-tree view of one bridge port.
+// Spanning-tree view of one bridge port; null when the device is not a bridge port. `bridge` is the bridge's
+// view, used to derive the port role.
 function brport_view(name, bridge) {
 	let base = `brport/`;
 	let state = sys(name, base + 'state');
@@ -144,6 +155,7 @@ function brport_view(name, bridge) {
 	};
 
 	if (bridge.stp) {
+		// Role is not exported by the kernel, so infer it from the state and the bridge-level root data.
 		bp.role = bp.state == 0 ? 'disabled'
 			: bridge.root_port == port_no ? 'root'
 			: bp.state == 4 ? 'alternate'
@@ -153,8 +165,11 @@ function brport_view(name, bridge) {
 	return bp;
 }
 
+// JSON view of a bridge: the device view plus STP/VLAN/multicast settings from /sys/class/net/<bridge>/bridge
+// and its member ports (with forwarding-table MAC counts), sorted ethernet first then by kind and name.
 function bridge_view(name, d, devices, conn) {
 	let b = 'bridge/';
+	// STP timers are kept in 1/100 s ticks by the kernel; converted to seconds.
 	let ticks = (file) => { let v = num(sys(name, b + file)); return v == null ? null : v / 100; };
 	let view = device_view(name, d);
 
@@ -182,6 +197,7 @@ function bridge_view(name, d, devices, conn) {
 			continue;
 		let md = devices[m] ?? {};
 		let mv = device_view(m, md);
+		// Member kind: wired port, wifi interface (has a phy80211 link), VLAN device or other.
 		let phy = sys(m, 'phy80211/name');
 		mv.kind = md.devtype == 'dsa' || md.devtype == 'ethernet' ? 'ethernet' : phy != null ? 'wifi' : md.devtype == 'vlan' ? 'vlan' : 'other';
 		if (phy != null) {
@@ -196,6 +212,7 @@ function bridge_view(name, d, devices, conn) {
 	}
 	view.members = sort(members, (a, c) => (a.kind == c.kind ? natural_less(a.name, c.name) : (a.kind == 'ethernet' ? -1 : c.kind == 'ethernet' ? 1 : natural_less(a.kind, c.kind))));
 
+	// Only a non-root bridge has a root port; match it to a member by port number.
 	let root_member = filter(members, (m) => m.brport?.port_no != null && m.brport.port_no == view.root_port)[0];
 	view.root_port_name = view.stp && !view.is_root ? root_member?.name : null;
 	view.macs = 0;
@@ -207,6 +224,7 @@ function bridge_view(name, d, devices, conn) {
 
 //#region Hardware and error diagnostics
 
+// Device-tree vendor prefix (the part of "vendor,model" before the comma) -> display name.
 const VENDORS = {
 	mediatek: 'MediaTek', realtek: 'Realtek', qca: 'Qualcomm Atheros', qcom: 'Qualcomm', marvell: 'Marvell',
 	brcm: 'Broadcom', broadcom: 'Broadcom', airoha: 'Airoha', microchip: 'Microchip', mscc: 'Microsemi',
@@ -214,7 +232,9 @@ const VENDORS = {
 };
 
 // Device-tree "compatible" strings are NUL-separated; "mediatek,mt7531" becomes "MediaTek MT7531".
+// Only the first (most specific) entry is used and a "-eth"/"-switch"/"-mac" suffix is dropped.
 function compat_label(text) {
+	// Non-printable bytes (the NUL separators) become spaces, so the first word is the first entry.
 	let first = filter(split(replace(text ?? '', /[^ -~]+/g, ' '), ' '), (s) => s != '')[0];
 	let m = match(first ?? '', /^([^,]+),(.+)$/);
 	if (!m)
@@ -222,6 +242,7 @@ function compat_label(text) {
 	return `${VENDORS[m[1]] ?? (uc(substr(m[1], 0, 1)) + substr(m[1], 1))} ${uc(replace(m[2], /-(eth|switch|mac)$/i, ''))}`;
 }
 
+// Last path component of a path or symlink target ("../../drivers/foo" -> "foo"); null when empty.
 function last_part(path) {
 	let m = match(trim(path ?? ''), /([^\/]+)$/);
 	return m ? m[1] : null;
@@ -229,7 +250,8 @@ function last_part(path) {
 
 //#region Device tree
 
-// Properties of the device tree under /proc/device-tree: text, big-endian 32-bit cells, existence.
+// Accessors for properties of the device tree under /proc/device-tree (paths are relative to it).
+// Printable text of a property (NUL separators become spaces), or null when absent or empty.
 function dt_text(path) {
 	let raw = sysfs_raw('/proc/device-tree' + path);
 	if (raw == null)
@@ -238,10 +260,12 @@ function dt_text(path) {
 	return text == '' ? null : text;
 }
 
+// True when the device-tree node or property exists.
 function dt_exists(path) {
 	return sysfs_raw('/proc/device-tree' + path) != null;
 }
 
+// A property holding one big-endian 32-bit cell (e.g. a phandle or speed), or null when absent or short.
 function dt_u32(path) {
 	let raw = sysfs_raw('/proc/device-tree' + path);
 	if (raw == null || length(raw) < 4)
@@ -288,7 +312,10 @@ function board_roles() {
 //#endregion
 
 // PHY chips on the MDIO buses with the netdev each one is attached to (static, so read once).
+// Each entry is { bus, address (PHY address as a number), id (null when 0), name (driver), attached (netdev) }.
 let mdio_cache = null;
+
+// Returns the cached list of MDIO PHYs, reading /sys/class/mdio_bus on first use.
 function mdio_phys() {
 	if (mdio_cache)
 		return mdio_cache;
@@ -297,6 +324,7 @@ function mdio_phys() {
 		if (!safe_ifname(bus))
 			continue;
 		for (let ent in split(run(`ls /sys/class/mdio_bus/${bus} 2>/dev/null`), '\n')) {
+			// PHY devices are named "<bus>:<address as two hex digits>".
 			let m = match(ent, /^[A-Za-z0-9_.-]+:([0-9a-f][0-9a-f])$/);
 			if (!m || !safe_ifname(ent))
 				continue;
@@ -316,8 +344,11 @@ function mdio_phys() {
 }
 
 // Chipset information of a port that does not change while the router runs: driver, switch or SoC MAC,
-// and the PHY. Cached per device.
+// and the PHY. Cached per device; null when ethtool reports no driver.
 let hardware_cache = {};
+
+// Gathers the hardware facts of netdev `name` (netifd entry `d`) from `ethtool -i`, `ethtool`, the
+// device-tree node named in the interface's uevent, and the MDIO PHY list.
 function hardware(name, d) {
 	if (hardware_cache[name])
 		return hardware_cache[name];
@@ -342,6 +373,7 @@ function hardware(name, d) {
 			hw.media = m[1];
 	}
 
+	// OF_FULLNAME in the uevent is the device-tree path of the node that backs this netdev.
 	let node = match(sys(name, 'uevent') ?? '', /OF_FULLNAME=([^\n]+)/);
 	if (node) {
 		let dt = (path) => compat_label(sysfs('/proc/device-tree' + path + '/compatible'));
@@ -372,8 +404,10 @@ function hardware(name, d) {
 	return hw;
 }
 
+// Kernel counters that grow with normal traffic and say nothing about errors; excluded from diagnostics.
 const NOISE = { rx_bytes: 1, tx_bytes: 1, rx_packets: 1, tx_packets: 1, multicast: 1, rx_compressed: 1, tx_compressed: 1 };
 
+// True when the kernel counters show errors or drops on a port, which triggers the diagnostics lookup.
 function has_problems(stats) {
 	for (let k in [ 'rx_errors', 'tx_errors', 'rx_crc_errors', 'rx_dropped', 'tx_dropped' ])
 		if (stats[k] > 0)
@@ -391,11 +425,13 @@ function diagnostics(name, stats) {
 
 	let driver = {};
 	for (let line in split(run(`ethtool -S ${name} 2>/dev/null`), '\n')) {
+		// `ethtool -S` lines look like "     rx_crc_errors: 3"; keep only counters whose name suggests a fault.
 		let m = match(line, /^[[:space:]]+([][A-Za-z0-9_.-]+): ([0-9]+)$/);
 		if (m && +m[2] > 0 && match(m[1], /err|drop|crc|fail|discard|collision|underrun|overrun|fifo|abort|miss|lost|timeout|invalid|bad/i))
 			driver[m[1]] = +m[2];
 	}
 
+	// Only the last 8 lines are kept.
 	let log = filter(split(run(`logread -e '${name}' 2>/dev/null`), '\n'), (l) => l != '');
 	return { counters, driver, log: slice(log, -8) };
 }
@@ -409,8 +445,6 @@ function tunlinks() {
 			out[name] = s.tunlink;
 	return out;
 }
-
-const as_list = (v) => v == null ? [] : (type(v) == 'array' ? v : split(trim(v), /[[:space:]]+/));
 
 // Firewall zones: which netifd interfaces each contains, its default policies, NAT, and the zones it may
 // forward to (the `forwarding` sections), so the interface table can say what a network is allowed to reach.
@@ -449,14 +483,20 @@ function dhcp_services() {
 	return out;
 }
 
+// Builds the flab.network status reply: Ethernet ports (switch ports, NICs and CPU conduits) with their
+// hardware, bridges with members and STP state, VLAN devices, DSA switch wiring and the per-interface
+// zone/DHCP/tunnel context.
 function collect() {
 	let conn = connect();
 	let devices = ubus_call(conn, 'network.device', 'status', {}) ?? {};
 
 	let ports = [], bridges = [], vlans = [];
+	// Bridge each port name belongs to.
 	let in_bridge = {};
+	// Names of the SoC MAC devices that DSA switch ports use as their CPU conduit.
 	let conduits = {};
 
+	// A first pass finds the conduits so the second can label each port's role regardless of sort order.
 	for (let name in sort(keys(devices))) {
 		let d = devices[name];
 		if (!safe_ifname(name) || !d.present)
@@ -493,6 +533,7 @@ function collect() {
 	const order = { switch: 0, nic: 1, conduit: 2 };
 	ports = sort(ports, (a, b) => order[a.role] != order[b.role] ? order[a.role] - order[b.role] : natural_less(a.name, b.name));
 
+	// Attach bridge membership, learned-MAC counts and VLAN children to each port and bridge.
 	for (let p in ports) {
 		let b = in_bridge[p.name];
 		let m = b ? filter(b.members, (x) => x.name == p.name)[0] : null;
@@ -510,11 +551,13 @@ function collect() {
 	for (let p in ports)
 		p.board = board.roles[p.name];
 
+	// Device-tree nodes of the conduit MACs, used to match the switch CPU ports' "ethernet" phandles.
 	let conduit_nodes = {};
 	for (let p in ports)
 		if (p.role == 'conduit' && p.hardware?.of_node)
 			conduit_nodes[p.name] = p.hardware.of_node;
 
+	// One entry per distinct switch chip, listing the ports that belong to it.
 	let switches = [];
 	let seen = {};
 	for (let p in ports) {
@@ -533,6 +576,7 @@ function collect() {
 	return { generated: time(), model: board.model, ports, bridges, vlans, switches, tunlinks: tunlinks(), zones: firewall_zones(), dhcp: dhcp_services() };
 }
 
+// rpcd registration: ubus object flab.network with the single method `status` (no arguments).
 return {
 	'flab.network': {
 		status: {

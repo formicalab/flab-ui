@@ -1,12 +1,21 @@
 // Checks the backend JSON produced for each scenario. Usage: node assert.mjs <dir with <scenario>.json files>
+// Scenarios (built by mkfx.mjs, parsed by flab.bgp on the router):
+//   base     - real captured BIRD output, unchanged (4 established peers, IPv4 only)
+//   down     - azure_xfrm1 cannot connect (state Active, its routes gone)
+//   dual     - IPv6 channels/routes added, one best IPv6 route missing from the kernel
+//   announce - per-peer announcement differences, one peer receiving nothing
 import fs from 'node:fs';
 import path from 'node:path';
 
 const dir = process.argv[2];
+// Loads the parsed flab.bgp status JSON of one scenario from the output directory.
 const load = n => JSON.parse(fs.readFileSync(path.join(dir, `${n}.json`), 'utf8'));
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
+// Returns the peer object with the given BGP protocol name from a scenario's status JSON.
 const find = (d, n) => d.peers.find(p => p.name === n);
+// Flattens the health findings into "[level] text" strings so checks can match level and wording together.
 const texts = d => d.findings.map(f => `[${f.level}] ${f.text}`);
 
 console.log('== base (real captured output) ==');

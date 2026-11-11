@@ -1,14 +1,28 @@
 // Checks the backend JSON produced for each IPsec scenario. Usage: node assert.mjs <dir with <scenario>.json and names.json>
+// Scenarios (built by mkfx.mjs from the captured router output, parsed by flab.ipsec on the router):
+//   base       - real captured state: four ESTABLISHED IKEv2 connections, one child SA each
+//   down       - one connection loses its IKE SA (configured but not established)
+//   rekey      - one connection shows two child SAs while a rekey overlaps
+//   multi      - two IKE SAs under one connection name (distinct keys per IKE SA)
+//   orphan     - SAs whose connection / child is missing from the loaded configuration
+//   ipv6       - global IPv6 addresses on an xfrm interface
+//   daemondown - charon not running (no stats output)
 import fs from 'node:fs';
 import path from 'node:path';
 
 const dir = process.argv[2];
+// Loads the parsed flab.ipsec status JSON of one scenario (or names.json) from the output directory.
 const load = n => JSON.parse(fs.readFileSync(path.join(dir, `${n}.json`), 'utf8'));
+// names = configured connection names (sorted); iface = the xfrm interface that mkfx adds IPv6 addresses to.
 const { names, iface } = load('names');
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
+// All connection entries of a scenario with the given connection name (several when it has multiple IKE SAs).
 const byName = (d, n) => d.connections.filter(c => c.name === n);
+// Texts of the rating warnings of one connection.
 const warnings = c => c.rating.warnings.map(w => w.text);
+// The connection whose first child SA is bound to the xfrm interface `iface`.
 const onIface = d => d.connections.find(c => c.children[0]?.sas[0]?.iface?.name === iface);
 
 console.log('== base (real captured output) ==');

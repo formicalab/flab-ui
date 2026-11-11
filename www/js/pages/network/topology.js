@@ -10,17 +10,22 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { card } from '../../core/ui.js';
-import { fmtSpeed, fmtLine, traffic } from './util.js';
+import { fmtLine } from '../../core/format.js';
+import { fmtSpeed, traffic } from './util.js';
 import { chipNote } from './chips.js';
 import { portTile } from './tile.js';
 
+// Grid row of each layer in the topology diagram, top to bottom (SoC, MACs, CPU links, switch chip,
+// switch ports, PHYs, link lines, jacks).
 const GRID_ROWS = { soc: 1, mac: 2, cpu: 3, chip: 4, swport: 5, phy: 6, link: 7, jack: 8 };
 
+// Places `node` in one grid row, spanning columns `from`..`to` (1-based, inclusive).
 const at = (node, row, from, to = from) => {
   node.style.gridRow = String(row);
   node.style.gridColumn = `${from} / ${to + 1}`;
   return node;
 };
+// Like `at`, but spanning rows `rowFrom`..`rowTo` too.
 const span = (node, rowFrom, rowTo, from, to = from) => {
   node.style.gridRow = `${rowFrom} / ${rowTo + 1}`;
   node.style.gridColumn = `${from} / ${to + 1}`;
@@ -31,6 +36,7 @@ const span = (node, rowFrom, rowTo, from, to = from) => {
 const vline = (on, caption) => h('div', { className: `vl ${on ? 'on' : ''}` }, caption ? h('span', { className: 'vl-cap' }, caption) : null);
 
 // The ports in jack order, each switch's ports contiguous, plus the conduits (SoC MACs) that feed a switch.
+// Ports without a board index sort after the indexed ones, in discovery order.
 function arrange(net) {
   const switches = net.switches ?? [];
   const fed = new Set(switches.flatMap(s => (s.cpu_ports ?? []).map(c => c.conduit).filter(Boolean)));
@@ -50,6 +56,7 @@ function arrange(net) {
   return { ordered, switches, switchOf };
 }
 
+// MAC box for port `p` (null draws an empty placeholder MAC); shows live speed and rate while the link is up.
 function macBox(p, note) {
   const t = p ? traffic(p.name) : null;
   return h('div', { className: `topo-box mac ${p?.carrier ? 'on' : ''}` },
@@ -58,6 +65,7 @@ function macBox(p, note) {
     p?.carrier ? h('div', { className: 'tb-live' }, `${fmtSpeed(p.speed)} · ↓ ${fmtLine(t.rxNow)} ↑ ${fmtLine(t.txNow)}`) : null);
 }
 
+// External PHY box for a port that has `hardware.phy`; the chip description comes from chips.js.
 function phyBox(p) {
   const phy = p.hardware?.phy;
   return h('div', { className: `topo-box phy ${p.carrier ? 'on' : ''}`, title: phy.id ? `PHY ID ${phy.id}` : '' },
@@ -65,6 +73,8 @@ function phyBox(p) {
     chipNote(phy.name) ? h('div', { className: 'tb-sub' }, chipNote(phy.name)) : null);
 }
 
+// The "Port topology" card: a CSS grid with one column per jack, built layer by layer. Each cell is placed
+// explicitly (at/span) so connectors line up across rows.
 export function topologyCard(net) {
   const { ordered, switches, switchOf } = arrange(net);
   const cols = ordered.length;

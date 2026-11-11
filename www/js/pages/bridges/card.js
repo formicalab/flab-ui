@@ -2,14 +2,15 @@
 // devices and a member table with live link state, STP role and learned MAC addresses.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, kv, section, sparkline } from '../../core/ui.js';
-import { fmtNum, fmtSpan } from '../../core/format.js';
-import { fmtLine, fmtSpeed, traffic, newFlaps, STP_ROLE, stpKind } from '../network/util.js';
+import { badge, kv, section, muted, mono } from '../../core/ui.js';
+import { fmtLine, fmtNum, fmtSpan } from '../../core/format.js';
+import { fmtSpeed, traffic, newFlaps, STP_ROLE, stpKind } from '../network/util.js';
 
-const muted = t => h('span', { className: 'muted' }, t);
-const mono = t => h('span', { className: 'mono' }, t);
+// A switch with the given labels, used for settings the bridge has on or off.
 const onOff = (on, yes = 'on', no = 'off') => badge(on ? yes : no, on ? 'success' : '');
 
+// Card title row: state dot (up and carrier), name, status badges (STP role, VLAN filtering, topology change)
+// and the bridge's L3 addresses.
 function header(b, addrs) {
   return h('div', { className: 'br-head' },
     h('span', { className: `dot ${b.up && b.carrier ? 'up' : 'down'}` }),
@@ -33,6 +34,7 @@ function stpDiagram(b) {
     me);
 }
 
+// Key/value list of the bridge's configuration and live traffic; the STP rows only appear when STP is on.
 function settings(b) {
   const t = traffic(b.name);
   return kv([
@@ -49,12 +51,14 @@ function settings(b) {
   ]);
 }
 
+// Type badge of a member: Wi-Fi members also show their SSID (or radio) and radio.
 function kindLabel(m) {
   if (m.kind === 'wifi') return h('span', {}, badge('Wi-Fi'), ' ', m.ssid ?? m.phy ?? '', m.ssid ? muted(` · ${m.phy}`) : null);
   if (m.kind === 'ethernet') return badge('Ethernet');
   return badge(m.kind);
 }
 
+// One member port: link, STP state/role/cost (brport), learned MACs, live rate and link flaps since open.
 function memberRow(m) {
   const t = traffic(m.name);
   const bp = m.brport;
@@ -70,6 +74,7 @@ function memberRow(m) {
     h('td', { className: 'num' }, newFlaps(m) ? badge(`+${newFlaps(m)} flaps`, 'warning') : null));
 }
 
+// The member-port table of one bridge.
 function members(b) {
   const cols = ['Port', 'Type', 'Link', 'STP state', 'STP role', 'Cost', 'MACs', 'Throughput', ''];
   return h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover' },

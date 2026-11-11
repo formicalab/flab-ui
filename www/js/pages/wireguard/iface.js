@@ -3,20 +3,23 @@
 // Also exports the findings (what looks wrong) and the rate recorder.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, kv } from '../../core/ui.js';
+import { badge, kv, muted, mono } from '../../core/ui.js';
 import { createTracker, latest } from '../../core/rates.js';
-import { fmtBytes, fmtSpan } from '../../core/format.js';
-import { fmtLine } from '../network/util.js';
+import { fmtBytes, fmtLine, fmtSpan } from '../../core/format.js';
 
+// Module-level so the rate history survives the redraw on every poll; a peer series is keyed by the
+// interface and the peer's public key.
 const tracker = createTracker();
-const muted = t => h('span', { className: 'muted' }, t);
-const mono = t => h('span', { className: 'mono' }, t);
 const peerKey = (i, p) => `${i.name}/${p.public_key}`;
+// Abbreviated public key ("abcdefgh…xyz12=") for display; the full key is in the tooltip.
 const shortKey = k => `${k.slice(0, 8)}…${k.slice(-5)}`;
 
-// An allowed IP that covers more than a single host: the peer is a whole network (a site), not one client.
-export const isNetwork = cidr => { const m = /\/(\d+)$/.exec(cidr); return m ? +m[1] < (cidr.includes(':') ? 128 : 32) : false; };
-export const roleOf = p => p.allowed_ips.some(a => /\/0$/.test(a)) ? 'gateway' : p.allowed_ips.some(isNetwork) ? 'site' : 'client';
+// An allowed IP that covers more than a single host (prefix shorter than /32 or /128): the peer is a whole
+// network (a site), not one client.
+const isNetwork = cidr => { const m = /\/(\d+)$/.exec(cidr); return m ? +m[1] < (cidr.includes(':') ? 128 : 32) : false; };
+// What a peer is, from its allowed IPs: a full-tunnel gateway (a /0), a site (a network) or a client (hosts only).
+const roleOf = p => p.allowed_ips.some(a => /\/0$/.test(a)) ? 'gateway' : p.allowed_ips.some(isNetwork) ? 'site' : 'client';
+// [badge text, tooltip] for each peer role from roleOf().
 const ROLE = { gateway: ['all traffic', 'The peer is allowed to carry every address: a full-tunnel gateway'], site: ['site', 'The peer is a whole network behind another router'], client: ['client', 'The peer is a single host'] };
 
 // Feeds one poll into the tracker and drops peers that disappeared.
@@ -29,8 +32,12 @@ export function recordWireguard(data) {
   tracker.keep(seen);
 }
 
+// Latest rate of a peer's counter ('rx' or 'tx', bytes/s), or null before two samples exist.
 export const rateNow = (i, p, dir) => latest(tracker.rates(peerKey(i, p), dir));
 
+// What looks wrong on one interface, as { level, text }: disabled or down (returned alone), no firewall
+// zone, peers not loaded / stale / never connected, and site peers whose routes are not installed.
+// Disabled peers are skipped.
 export function findings(i) {
   const out = [];
   if (!i.enabled) return [{ level: 'info', text: `WireGuard interface ${i.name} is disabled in the configuration.` }];
@@ -47,6 +54,8 @@ export function findings(i) {
   return out;
 }
 
+// Badge for a peer's state. WireGuard has no connection state: "connected" means a handshake happened
+// within the last 3 minutes (the backend derives `state` from the handshake age).
 const stateBadge = p => ({
   connected: badge('connected', 'success', 'A handshake happened in the last 3 minutes'),
   stale: badge('no recent handshake', 'warning', 'The last handshake is older than 3 minutes'),
@@ -54,6 +63,7 @@ const stateBadge = p => ({
   down: badge('not loaded', 'danger', 'Configured, but the kernel does not have this peer'),
 })[p.state];
 
+// Card header: state dot, name, state, firewall zone and total traffic of the interface.
 function header(i) {
   const state = !i.enabled ? ['disabled', ''] : i.up ? ['up', 'success'] : ['down', 'danger'];
   return h('div', { className: 'wg-head' },
@@ -64,6 +74,8 @@ function header(i) {
     h('span', { className: 'wg-traffic' }, i.rx_bytes != null ? `↓ ${fmtBytes(i.rx_bytes)}  ↑ ${fmtBytes(i.tx_bytes)}` : ''));
 }
 
+// Interface settings: addresses, listen port, public key (not secret; the private key never reaches the
+// browser), MTU and firewall mark when set.
 function settings(i) {
   return kv([
     ['Addresses', i.addresses.length ? h('div', {}, i.addresses.map(a => h('div', {}, mono(a)))) : muted('none')],
@@ -74,6 +86,8 @@ function settings(i) {
   ]);
 }
 
+// One peer row: identity and role, endpoint, allowed IPs (networks highlighted), handshake state, keepalive
+// and traffic. Disabled peers are dimmed; peers added with `wg set` are flagged as not in the configuration.
 function peerRow(i, p) {
   const [roleText, roleTitle] = ROLE[roleOf(p)];
   const rx = rateNow(i, p, 'rx'), tx = rateNow(i, p, 'tx');
@@ -91,6 +105,7 @@ function peerRow(i, p) {
     h('td', { className: 'num' }, h('div', {}, icon('arrow-down', 12), fmtBytes(p.rx_bytes ?? 0)), h('div', {}, icon('arrow-up', 12), fmtBytes(p.tx_bytes ?? 0))));
 }
 
+// Table of an interface's peers.
 function peersTable(i) {
   const cols = ['Peer', 'Endpoint', 'Allowed IPs', 'Handshake', 'Keepalive', 'Traffic now', 'Total'];
   return h('div', { className: 'grid-wrap' }, h('table', { className: 'table wg-table' },
@@ -98,6 +113,7 @@ function peersTable(i) {
     h('tbody', {}, i.peers.length ? i.peers.map(p => peerRow(i, p)) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No peers are configured on this interface.')))));
 }
 
+// The card for one interface: header, then settings next to the peers table.
 export function interfaceCard(i) {
   return h('div', { className: `card wg-card ${i.up ? '' : 'is-down'}` },
     header(i),

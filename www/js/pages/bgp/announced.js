@@ -3,14 +3,16 @@
 
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card, chip } from '../../core/ui.js';
+import { badge, card, chip, muted } from '../../core/ui.js';
 import { fmtNum } from '../../core/format.js';
 import { peerDot, peerTitle, cmpPrefix, isUp, peerLabels } from './util.js';
 
-const muted = t => h('span', { className: 'muted' }, t);
+// Matrix cell contents: a check mark when the prefix is announced to the peer, a dash otherwise.
 const yes = () => h('span', { className: 'cap-yes', title: 'Announced' }, icon('check-circle', 17));
 const no = () => h('span', { className: 'muted', title: 'Not announced' }, '–');
 
+// Table with one row per announced prefix and one column per peer; a prefix appears once even when
+// several peers receive it. Rows come from each peer's `exported` list (routes passing its export filter).
 function matrix(data) {
   const byPrefix = new Map();
   for (const p of data.peers) {
@@ -34,6 +36,7 @@ function matrix(data) {
       h('tr', {}, h('td', { colSpan: 2 + data.peers.length, className: 'muted' }, 'Nothing is announced to any peer')))));
 }
 
+// Export statistics shown per channel: [key in channel.stats.export_updates, column heading].
 const FILTER_COLS = [['received', 'Considered'], ['filtered', 'Blocked by filter'], ['rejected', 'Rejected'], ['accepted', 'Announced']];
 
 // BIRD's export statistics are cumulative since the session came up; one row per peer and channel.
@@ -50,6 +53,8 @@ function filterResults(data) {
     }))));
 }
 
+// Card combining the announcement matrix with the per-peer export filter results; the subtitle counts
+// distinct announced prefixes against the peers whose session is established.
 export function announcedCard(data) {
   const total = new Set(data.peers.flatMap(p => p.exported.map(e => e.prefix))).size;
   return card([icon('megaphone'), 'Announced routes', h('span', { className: 'sub' }, `${total} prefix${total === 1 ? '' : 'es'} to ${data.peers.filter(isUp).length} established peers`)],
@@ -57,6 +62,8 @@ export function announcedCard(data) {
     'h-100');
 }
 
+// Card listing the non-BGP routes in BIRD's table (`data.local`: direct, static, blackhole...), with the
+// device they point at and whether they are installed in the kernel table.
 export function localCard(data) {
   const rows = [...data.local].sort((a, b) => cmpPrefix(a.prefix, b.prefix)).map(r => h('tr', {},
     h('td', {}, h('span', { className: 'mono fw-semibold' }, r.prefix)),

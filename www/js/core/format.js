@@ -1,5 +1,6 @@
 // Number and duration formatting helpers.
 
+// Binary size ("1.5 MiB"); whole numbers for plain bytes, one decimal above.
 export const fmtBytes = n => {
   if (n == null) return '–';
   const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
@@ -27,6 +28,19 @@ export const fmtSpan = s => {
   return `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h`;
 };
 
+// Bytes per second as a line rate, the way network gear reports it ("12.3 Mbit/s").
+export const fmtLine = bytesPerSec => {
+  if (bytesPerSec == null) return '–';
+  const bits = bytesPerSec * 8;
+  if (bits >= 1e9) return `${(bits / 1e9).toFixed(2)} Gbit/s`;
+  if (bits >= 1e6) return `${(bits / 1e6).toFixed(1)} Mbit/s`;
+  if (bits >= 1e3) return `${(bits / 1e3).toFixed(0)} kbit/s`;
+  return `${Math.round(bits)} bit/s`;
+};
+
+// Rate value with one decimal, or none for whole numbers ("12", "12.5").
 export const fmtRate = v => v == null ? '–' : Number.isInteger(v) ? String(v) : v.toFixed(1);
+// Integer with locale thousands separators.
 export const fmtNum = n => n == null ? '–' : n.toLocaleString();
+// Dotted IPv4 string to a number for sorting; -1 (sorts first) when the address is missing.
 export const ipNum = ip => ip ? ip.split('.').reduce((a, b) => a * 256 + Number(b), 0) : -1;

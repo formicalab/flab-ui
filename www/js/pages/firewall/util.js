@@ -3,8 +3,11 @@
 import { createTracker, latest } from '../../core/rates.js';
 import { fmtNum } from '../../core/format.js';
 
+// Module-level so rate history survives the redraw on every poll. Series keys: rule/<kind>/<key>,
+// zone/<name>/from and zone/<name>/to (packets and bytes of the zone's reject/drop counters).
 const tracker = createTracker();
 
+// Stable key of a rule or port forward: the same one under which recordFirewall stores its counters.
 export const ruleKey = r => `rule/${r.kind ?? 'rule'}/${r.key}`;
 
 // Feeds one poll into the tracker and drops series of rules and zones that disappeared.
@@ -19,13 +22,16 @@ export function recordFirewall(fw) {
   tracker.keep(seen);
 }
 
+// Latest packets/s of a series, or null while it has fewer than two samples.
 export const packetsPerSec = key => latest(tracker.rates(key, 'packets'));
 
+// "3.2 pkt/s" (one decimal below 10); null when idle (< 0.05 pkt/s) or unknown, so callers can hide it.
 export const fmtPps = v => v == null || v < 0.05 ? null : `${v < 10 ? v.toFixed(1) : Math.round(v)} pkt/s`;
 
 // Zones that face the Internet: the ones that masquerade (NAT) outgoing traffic.
 export const wanZones = fw => fw.zones.filter(z => z.masq);
 
+// Upper-cases a list of protocol names.
 const upper = a => a.map(p => p.toUpperCase());
 
 // "UDP 500, 4500", "ICMP echo-request, echo-reply", "ESP", "TCP 3128 from 192.168.100.0/24".
@@ -46,6 +52,9 @@ export function describeMatch(r) {
 const isOpen = r => !r.src_ip.length && !r.dest_port.length && !r.icmp_type.length
   && (!r.proto.length || r.proto.includes('all') || r.proto.includes('tcp') || r.proto.includes('udp'));
 
+// What looks wrong in the firewall, as { level, text }: not loaded, an Internet-facing zone accepting input
+// or forwarding, rules open to the whole Internet, references to missing zones, empty or unzoned
+// interfaces, SYN-flood protection off, disabled rules, and conntrack above 80 % of its limit.
 export function findings(fw) {
   if (!fw.running) return [{ level: 'bad', text: 'The firewall is not loaded: nftables has no fw4 table, so nothing is being filtered.' }];
   const out = [];

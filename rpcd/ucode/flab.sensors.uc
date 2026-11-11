@@ -10,24 +10,30 @@
 import { lsdir, readfile } from 'fs';
 import { num } from 'flab.util';
 
+// sysfs directories scanned for temperatures.
 const THERMAL = '/sys/class/thermal';
 const HWMON = '/sys/class/hwmon';
 
+// Trimmed contents of a sysfs file, or null when it is missing.
 function read(path) {
 	let v = readfile(path);
 	return v == null ? null : trim(v);
 }
 
-// sysfs reports millidegrees Celsius.
+// sysfs reports millidegrees Celsius; returns degrees, or null when the file is missing or empty.
 function celsius(path) {
 	let v = read(path);
 	return (v == null || v == '') ? null : (+v) / 1000.0;
 }
 
+// Sorted names in `dir` that match the regex `re` (empty when the directory does not exist).
 function entries(dir, re) {
 	return sort(filter(lsdir(dir) ?? [], (name) => match(name, re) != null));
 }
 
+// Appends one sensor per readable thermal_zoneN to `sensors`, with its trip points and the critical
+// temperature among them. Each zone type is added to `seen` (dashes as underscores) so that
+// hwmon_sensors() can skip the hwmon device that mirrors the same zone.
 function thermal_zones(sensors, seen) {
 	for (let zone in entries(THERMAL, /^thermal_zone[0-9]+$/)) {
 		let dir = THERMAL + '/' + zone;
@@ -38,6 +44,7 @@ function thermal_zones(sensors, seen) {
 		let type = read(dir + '/type');
 		seen[replace(type ?? '', /-/g, '_')] = true;
 
+		// Trip points are numbered consecutively from 0; the first missing one ends the list.
 		let trips = [];
 		let i = 0;
 		while (true) {
@@ -57,6 +64,9 @@ function thermal_zones(sensors, seen) {
 	}
 }
 
+// Appends one sensor per tempN_input of every hwmon device to `sensors`, skipping devices already
+// reported as a thermal zone (matched by name). The driver comes from the device's uevent file and
+// `throttle` from the optional throttleN attribute.
 function hwmon_sensors(sensors, seen) {
 	for (let hw in entries(HWMON, /^hwmon[0-9]+$/)) {
 		let dir = HWMON + '/' + hw;
@@ -80,6 +90,8 @@ function hwmon_sensors(sensors, seen) {
 	}
 }
 
+// Builds the flab.sensors status reply: temperature sensors plus the thermal cooling devices
+// (type, current and maximum state).
 function collect() {
 	let sensors = [];
 	let seen = {};
@@ -95,6 +107,7 @@ function collect() {
 	return { generated: time(), sensors, cooling };
 }
 
+// rpcd registration: ubus object flab.sensors with the single method `status` (no arguments).
 return {
 	'flab.sensors': {
 		status: {

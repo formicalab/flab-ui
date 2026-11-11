@@ -10,6 +10,7 @@ export default {
   interval: 5000,
   load: () => ubus('service', 'list'),
 
+  // One row per service, sorted by name; PIDs of all instances are listed (a stopped instance has none).
   view(svc) {
     const entries = Object.entries(svc).sort().map(([name, s]) => {
       const inst = Object.values(s.instances || {});

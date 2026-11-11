@@ -1,14 +1,23 @@
 // ubus JSON-RPC transport over uhttpd's /ubus endpoint, plus session handling.
+//
+// Session state lives in sessionStorage, so it ends with the tab and is never written to disk. The ACLs
+// granted at login are cached next to the session id; `can()` answers "may this login call that method?"
+// without a round trip, which is how the UI will hide editing controls from a read-only login.
 
-const NULL_SID = '00000000000000000000000000000000';
+const NULL_SID = '00000000000000000000000000000000';   // the anonymous session rpcd gives to unauthenticated calls
 const SESSION_TIMEOUT_S = 900;
 
 let sid = sessionStorage.getItem('sid');
+let acls = JSON.parse(sessionStorage.getItem('acls') ?? '{}');
 
+// Raised when the session is gone (expired or destroyed); the shell answers by showing the sign-in screen.
 export class AuthError extends Error {}
 
+// Whether a session id is stored; says nothing about whether the router still accepts it.
 export const hasSession = () => Boolean(sid);
 
+// One JSON-RPC `call` to ubus. Returns the method's result object; throws on a transport error, a JSON-RPC
+// error (flagged `denied` for -32002, which is both "expired" and "not allowed") or a nonzero ubus status.
 async function rpc(obj, method, args = {}, token = sid || NULL_SID) {
   const res = await fetch('/ubus', {
     method: 'POST',
@@ -37,17 +46,37 @@ export async function ubus(obj, method, args) {
   }
 }
 
+// For data a page can do without (an optional plugin, an ACL that was not granted): resolves to null instead
+// of failing the page. An expired session is still raised, because the whole page needs a new sign-in then.
+export const optional = promise => promise.catch(e => {
+  if (e instanceof AuthError) throw e;
+  return null;
+});
+
+// Whether the signed-in login may call `obj.method`, from the ACLs rpcd returned at sign-in. "*" grants everything.
+export function can(obj, method) {
+  const methods = acls.ubus?.[obj] ?? [];
+  return methods.includes('*') || methods.includes(method);
+}
+
+// Signs in with the rpcd login, keeps the session id (and the granted ACLs) for this tab only.
 export async function login(username, password) {
   const r = await rpc('session', 'login', { username, password, timeout: SESSION_TIMEOUT_S }, NULL_SID);
   sid = r.ubus_rpc_session;
+  acls = r.acls ?? {};
   sessionStorage.setItem('sid', sid);
+  sessionStorage.setItem('acls', JSON.stringify(acls));
 }
 
+// Forgets the session locally (the router-side session simply times out).
 export function clearSession() {
   sid = null;
+  acls = {};
   sessionStorage.removeItem('sid');
+  sessionStorage.removeItem('acls');
 }
 
+// Destroys the session on the router, then forgets it locally.
 export async function logout() {
   try { await rpc('session', 'destroy'); } catch { /* session already gone */ }
   clearSession();

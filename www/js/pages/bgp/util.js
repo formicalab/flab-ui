@@ -2,14 +2,18 @@
 
 import { h } from '../../core/dom.js';
 
+// Number of distinct peer color classes (pc-0..pc-5 in css/bgp.css).
 const PALETTE_SIZE = 6;
 
 //#region peer colors
 // A peer keeps its color while it exists: slots are assigned on first sight (lowest least-used slot) and
 // are not reshuffled when other peers appear or disappear. More peers than colors reuse the least-used slot.
+// Module-level so colors survive the redraw on every poll: peer name -> palette slot. `synced` makes sure
+// each data object is processed once even though peerClass() is called many times per render.
 const slots = new Map();
 const synced = new WeakSet();
 
+// Updates `slots` for the peers in `data`: forgets vanished peers and gives new ones the least-used slot.
 function syncColors(data) {
   if (synced.has(data)) return;
   synced.add(data);
@@ -25,6 +29,7 @@ function syncColors(data) {
   }
 }
 
+// CSS class (pc-N), colored dot and display title for a peer; the title falls back to the protocol name.
 export const peerClass = (data, name) => { syncColors(data); return `pc-${slots.get(name) ?? 0}`; };
 export const peerDot = (data, name) => h('span', { className: `peer-dot ${peerClass(data, name)}` });
 export const peerTitle = p => p.description || p.name;
@@ -42,6 +47,8 @@ export function peerLabels(peers) {
 }
 //#endregion
 
+// Badge kind for a BGP FSM state: only Established is healthy; Idle/Down are failures, the rest
+// (Connect, Active, OpenSent, ...) are transitional.
 export const stateKind = s => s === 'Established' ? 'success' : /idle|down/i.test(s ?? '') ? 'danger' : 'warning';
 export const isUp = p => p.state === 'Established';
 
@@ -49,12 +56,14 @@ export const isUp = p => p.state === 'Established';
 export const isPrivateAs = n => (n >= 64512 && n <= 65534) || (n >= 4200000000 && n <= 4294967294);
 
 //#region prefix ordering (IPv4 before IPv6, then numerically)
+// BigInt value of a dotted-quad IPv4 address, or null when malformed.
 function parseV4(s) {
   const p = s.split('.').map(Number);
   if (p.length !== 4 || p.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return null;
   return BigInt(((p[0] * 256 + p[1]) * 256 + p[2]) * 256 + p[3]);
 }
 
+// BigInt value of an IPv6 address (with optional "::" compression; no embedded IPv4 form), or null.
 function parseV6(s) {
   const [head, tail] = s.split('::');
   const part = x => x ? x.split(':') : [];
@@ -69,7 +78,9 @@ function parseV6(s) {
   return groups.reduce((acc, g) => (acc << 16n) | BigInt(parseInt(g, 16)), 0n);
 }
 
-// BigInt sort key for "address/len" (len optional); works for both families.
+// BigInt sort key for "address/len" (len optional); works for both families. Layout: bit 140 = IPv6 (so
+// IPv4 sorts first), the address above the 8-bit length field (128-bit address << 8, so a shorter prefix
+// sorts before a longer one at the same address).
 export function prefixKey(prefix) {
   const [ip, len] = String(prefix ?? '').split('/');
   const v6 = ip.includes(':');
@@ -77,6 +88,7 @@ export function prefixKey(prefix) {
   return ((v6 ? 1n : 0n) << 140n) | (addr << 8n) | BigInt(Number(len) || 0);
 }
 
+// Comparator over prefixKey for Array.sort.
 export const cmpPrefix = (a, b) => {
   const x = prefixKey(a), y = prefixKey(b);
   return x < y ? -1 : x > y ? 1 : 0;

@@ -5,13 +5,16 @@
 // change or disappear are reflected without a reload.
 import { tile, tiles, healthBanner } from '../../core/ui.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
-import { fmtNum } from '../../core/format.js';
+import { fmtLine, fmtNum } from '../../core/format.js';
 import { portsPanel } from './ports.js';
 import { loadWired } from './shared.js';
-import { traffic, portFindings, fmtLine, errorsOf, dropsOf, newFlaps } from './util.js';
+import { traffic, portFindings, errorsOf, dropsOf, newFlaps } from './util.js';
 
+// Module-level so the Pause button state survives the redraw on every poll.
 const state = { paused: false };
 
+// KPI tiles. Throughput sums the external ports only: a conduit (SoC MAC feeding a switch) carries the
+// same frames as the switch ports and would be counted twice.
 function summary(net) {
   const external = net.ports.filter(p => p.role !== 'conduit');
   const up = external.filter(p => p.carrier).length;
@@ -45,6 +48,7 @@ export default {
     return { nodes: [pauseControl(state), refreshControl(reload)] };
   },
 
+  // Summary tiles, the findings banner, then the wiring diagram and port table (which redraw via `rerender`).
   view({ net }, rerender) {
     return [
       summary(net),

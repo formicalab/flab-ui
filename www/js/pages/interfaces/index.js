@@ -2,19 +2,20 @@
 // interface from the physical ports up (see layers.js and table.js). Everything shown is resolved from
 // the flab.network devices and netifd's interface dump on every poll.
 import { tile, tiles, healthBanner } from '../../core/ui.js';
-import { ubus } from '../../core/ubus.js';
+import { ubus, optional } from '../../core/ubus.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
 import { interfacesCard } from './table.js';
 import { buildLayers } from './layers.js';
 import { loadWired } from '../network/shared.js';
 
+// Module-level so the Pause button state survives the redraw on every poll.
 const state = { paused: false };
 
-// A missing plugin or ACL must not break the page: the wireless layer is simply left out.
-const optional = promise => promise.catch(() => null);
-
+// The layers model for the current poll; `radios` may be empty when the wireless layer is unavailable.
 const layersOf = (net, ifs, radios) => buildLayers(net, ifs, net.tunlinks ?? {}, radios);
 
+// KPI tiles over the logical interfaces (orphan wireless rows are not interfaces and are excluded).
+// "Tunnels" counts interfaces without a device of their own below them.
 function summary(net, ifs, radios) {
   const rows = layersOf(net, ifs, radios).filter(r => !r.orphan);
   const up = rows.filter(r => r.up).length;
@@ -51,6 +52,7 @@ export default {
   css: 'css/interfaces.css',
   isPaused: () => state.paused,
 
+  // The flab.radio call is optional: without it the page works with the wired layers only.
   load: async () => {
     const [wired, hw] = await Promise.all([loadWired(), optional(ubus('flab.radio', 'status'))]);
     return { ...wired, radios: hw?.radios ?? [] };
@@ -60,6 +62,7 @@ export default {
     return { nodes: [pauseControl(state), refreshControl(reload)] };
   },
 
+  // Summary tiles, the findings banner and the layers table.
   view({ net, ifs, radios }) {
     return [
       summary(net, ifs, radios),

@@ -11,10 +11,17 @@ import { record, series, latest } from './rates.js';
 import { connectionCard } from './connection.js';
 import { daemonCard, scoringCard } from './daemon.js';
 
+// View state that must survive the redraw on every poll: filter text, state filter (all/up/down),
+// compact mode and the paused flag.
 const state = { q: '', filter: 'all', compact: false, paused: false };
 
+// Text color class per security grade for the "weakest grade" tile.
 const TEXT_CLASS = { 'A+': 'text-success', A: 'text-success', B: 'text-info', C: 'text-warning', D: 'text-danger' };
 
+// Summary tiles over all connections. Live throughput sums the latest browser-side rates of every child SA;
+// total traffic sums each xfrm interface once (several SAs can share one interface) and so counts since the
+// interface came up; "next rekey" is the soonest IKE or child SA rekey; replay failures are summed from
+// the kernel's per-direction XFRM counters.
 function summary(data) {
   const conns = data.connections;
   const up = conns.filter(c => c.state === 'ESTABLISHED').length;
@@ -49,6 +56,7 @@ function summary(data) {
     tile('Replay failures', failures, failures ? 'investigate' : 'anti-replay healthy', failures ? 'text-danger' : 'text-success'));
 }
 
+// Page object registered in pages/index.js (contract documented there).
 export default {
   id: 'ipsec',
   label: 'IPsec VPN',
@@ -58,12 +66,14 @@ export default {
   css: 'css/ipsec.css',
   isPaused: () => state.paused,
 
+  // Fetches the status and feeds the counters to the rate tracker before anything is rendered.
   load: async () => {
     const data = await ubus('flab.ipsec', 'status');
     record(data);
     return data;
   },
 
+  // Command-bar controls, created once per visit: text filter, state filter, compact toggle, pause, refresh.
   controls({ rerender, reload }) {
     const filter = selectControl(state, 'filter', rerender, 'Connection state');
     filter.setOptions([['all', 'All connections'], ['up', 'Established'], ['down', 'Down']]);
@@ -73,8 +83,11 @@ export default {
     };
   },
 
+  // Connections matching the state filter and every search term (name, state, remote addresses, remote
+  // ID or child names) are shown; the scoring explanation sits above them, the daemon card below.
   view(data) {
     const q = state.q.toLowerCase();
+    // Connections matching the state filter and every search term.
     const shown = data.connections.filter(c => {
       if (state.filter === 'up' && c.state !== 'ESTABLISHED') return false;
       if (state.filter === 'down' && c.state === 'ESTABLISHED') return false;

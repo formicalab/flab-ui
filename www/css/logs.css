@@ -1,0 +1,26 @@
+/* Logs page styling (system and kernel log viewer). Loaded on demand by core/app.js when the page is first opened. */
+
+/* The explanation above the entries. */
+.log-legend { padding: .8rem 1rem .4rem; border-bottom: 1px solid var(--fl-stroke); }
+.log-legend p { margin: 0 0 .4rem; }
+
+/* The scrollable pane: as tall as the window allows, with the column headings pinned while scrolling. */
+.log-pane { max-height: calc(100vh - 24rem); min-height: 14rem; overflow: auto; }
+.log-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-family: Consolas, "Cascadia Mono", monospace; font-size: .8rem; }
+.log-table thead th { position: sticky; top: 0; z-index: 1; background: var(--fl-surface); padding: .4rem .6rem; text-align: left; font-family: inherit; font-weight: 600; border-bottom: 1px solid var(--fl-stroke); }
+.log-table td { padding: .18rem .6rem; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 50%, transparent); }
+.log-table th:nth-child(1) { width: 8.5rem; }
+.log-table th:nth-child(2) { width: 6.2rem; }
+.log-table th:nth-child(3) { width: 12rem; }
+.log-time { white-space: nowrap; color: var(--fl-muted); }
+.log-origin { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Severity tints: errors and warnings stand out, debug lines recede. */
+.lv-err td:first-child { box-shadow: inset 3px 0 var(--fl-bad-fg); }
+.lv-err { background: var(--fl-bad-bg); }
+.lv-warn td:first-child { box-shadow: inset 3px 0 var(--fl-warn-fg); }
+.lv-warn { background: color-mix(in srgb, var(--fl-warn-bg) 55%, transparent); }
+.lv-notice td:first-child { box-shadow: inset 3px 0 var(--fl-info-fg); }
+.lv-debug { color: var(--fl-muted); }
+.lv-none { color: var(--fl-muted); font-style: italic; }

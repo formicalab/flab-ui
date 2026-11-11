@@ -1,16 +1,22 @@
-// Shared helpers of the Network page: rate tracking, formatting and the live "what changed" findings.
+// Shared helpers of the three wired-network pages (Wired network, Bridges, Devices and Interfaces): rate
+// tracking, formatting and the live "what changed" findings.
 import { createTracker, latest } from '../../core/rates.js';
 
+// One tracker for all pages, fed by record() on every poll.
 const tracker = createTracker();
 
 // What the page has seen since it was opened, so changes (link flaps, new errors) can be called out.
 const baseline = new Map();
 
+// Cumulative byte counters of a device, the input of the rate tracker.
 const COUNTERS = d => ({ rx: d.stats?.rx_bytes, tx: d.stats?.tx_bytes });
 
+// Cumulative error and drop totals from the kernel counters (receive + transmit; CRC errors are added to
+// the errors total).
 export const errorsOf = d => (d.stats?.rx_errors ?? 0) + (d.stats?.tx_errors ?? 0) + (d.stats?.rx_crc_errors ?? 0);
 export const dropsOf = d => (d.stats?.rx_dropped ?? 0) + (d.stats?.tx_dropped ?? 0);
 
+// Every device whose counters are tracked: ports, bridges, bridge members and VLAN devices.
 export const devices = net => [...net.ports, ...net.bridges, ...net.bridges.flatMap(b => b.members), ...net.vlans];
 
 // Feeds one poll into the tracker and drops series of devices that disappeared.
@@ -25,6 +31,8 @@ export function record(net) {
   for (const name of baseline.keys()) if (!seen.has(name)) baseline.delete(name);
 }
 
+// Current and historical rate of a device's traffic: { rx, tx } series (bytes/s, oldest first) and the
+// latest value of each (rxNow, txNow; null until two samples exist).
 export function traffic(name) {
   const rx = tracker.rates(name, 'rx'), tx = tracker.rates(name, 'tx');
   return { rx, tx, rxNow: latest(rx), txNow: latest(tx) };
@@ -34,25 +42,18 @@ export function traffic(name) {
 export const newFlaps = d => Math.max(0, (d.carrier_changes ?? 0) - (baseline.get(d.name)?.flaps ?? d.carrier_changes ?? 0));
 export const newErrors = d => Math.max(0, errorsOf(d) - (baseline.get(d.name)?.errors ?? errorsOf(d)));
 
+// A link speed in Mbit/s as "100 Mbit/s" or "2.5 Gbit/s".
 export function fmtSpeed(mbit) {
   if (mbit == null) return '–';
   return mbit >= 1000 ? `${+(mbit / 1000).toFixed(1)} Gbit/s` : `${mbit} Mbit/s`;
 }
 
-// Bytes per second as a line rate, the way network gear reports it.
-export function fmtLine(bytesPerSec) {
-  if (bytesPerSec == null) return '–';
-  const bits = bytesPerSec * 8;
-  if (bits >= 1e9) return `${(bits / 1e9).toFixed(2)} Gbit/s`;
-  if (bits >= 1e6) return `${(bits / 1e6).toFixed(1)} Mbit/s`;
-  if (bits >= 1e3) return `${(bits / 1e3).toFixed(0)} kbit/s`;
-  return `${Math.round(bits)} bit/s`;
-}
-
+// Spanning-tree port roles and their labels.
 export const STP_ROLE = {
   root: 'Root port', designated: 'Designated', alternate: 'Alternate (blocked)', backup: 'Backup', disabled: 'Disabled',
 };
 
+// Badge kind for a spanning-tree port state ('' for unknown or disabled).
 export const stpKind = state => ({ forwarding: 'success', learning: 'info', listening: 'info', blocking: 'warning' })[state] ?? '';
 
 // Everything known about a port's hardware as [label, value] pairs (empty when nothing is known).
@@ -79,6 +80,8 @@ export function portFindings(net) {
   return out;
 }
 
+// Bridge problems: a bridge that is down, a topology change in progress, ports blocked or not yet forwarding
+// despite having link, and STP disabled while more than one member has link (a loop would go unnoticed).
 export function bridgeFindings(net) {
   const out = [];
   for (const b of net.bridges) {

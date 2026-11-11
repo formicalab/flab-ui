@@ -43,6 +43,7 @@ $here = $PSScriptRoot
 $plugin = (Resolve-Path (Join-Path $here '..\..\rpcd\ucode\flab.bgp.uc')).Path
 $work = Join-Path ([IO.Path]::GetTempPath()) 'flab-bgp-test'
 $remote = '/tmp/flab-bgp-test'
+# Scenario directories built by mkfx.mjs (base = unchanged capture); each is also the name of its output JSON.
 $scenarios = 'base', 'down', 'dual', 'announce'
 
 #region Helpers

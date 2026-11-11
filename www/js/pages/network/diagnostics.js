@@ -8,6 +8,8 @@ import { icon } from '../../core/icons.js';
 import { fmtNum } from '../../core/format.js';
 import { newErrors, errorsOf, dropsOf } from './util.js';
 
+// [label, explanation] per kernel net_device_stats counter that can appear in the backend's `counters`.
+// Counters not listed here are shown under their raw name without a hint.
 const KERNEL = {
   rx_errors: ['Receive errors', 'Frames the receiver rejected. This is the total; the specific causes below (if any) add up to part of it.'],
   rx_crc_errors: ['CRC errors', 'Frames with a bad checksum: usually a faulty cable or connector, interference, or a duplex/speed mismatch.'],
@@ -27,6 +29,8 @@ const KERNEL = {
   collisions: ['Collisions', 'Frames that collided (half-duplex links only).'],
 };
 
+// Driver (ethtool -S) counter names vary per driver, so they are explained by keyword; the first match wins,
+// which is why the specific patterns come before the generic /err|fail|bad|invalid/.
 const DRIVER = [
   [/checksum/i, 'The hardware checksum check flagged the frame as corrupt. Often a bad cable, connector or interference on the link, or a misbehaving peer.'],
   [/crc/i, 'Bad frame checksum: a faulty cable or connector.'],
@@ -36,8 +40,10 @@ const DRIVER = [
   [/err|fail|bad|invalid/i, 'A driver-reported error condition.'],
 ];
 
+// Explanation for a driver counter name, or '' when no keyword matches.
 const explainDriver = name => DRIVER.find(([re]) => re.test(name))?.[1] ?? '';
 
+// A titled table of [raw name, label, value, hint] rows, or null when there are none.
 function counterTable(title, entries) {
   if (!entries.length) return null;
   return h('div', { className: 'diag-block' }, h('h4', {}, title),
@@ -47,6 +53,8 @@ function counterTable(title, entries) {
       h('td', { className: 'muted small' }, hint))))));
 }
 
+// The breakdown block for port `p` (its backend `diagnostics`): counters largest first, and how many
+// errors are new since the page was opened.
 export function diagnosticsPanel(p) {
   const d = p.diagnostics;
   const kernel = Object.entries(d.counters ?? {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, KERNEL[k]?.[0] ?? k, v, KERNEL[k]?.[1] ?? '']);

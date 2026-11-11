@@ -17,9 +17,9 @@
 
 'use strict';
 
-import { run, uci_all, sysfs, num } from 'flab.util';
+import { run, uci_all, sysfs, num, as_list } from 'flab.util';
 
-const as_list = (v) => v == null ? [] : (type(v) == 'array' ? v : split(trim(v), /[[:space:]]+/));
+// Accumulator helper for reduce-style loops: adds the packet and byte counts of nft counter `c` to `acc`.
 const sum_counter = (acc, c) => {
 	acc.packets += c.packets ?? 0;
 	acc.bytes += c.bytes ?? 0;
@@ -27,6 +27,7 @@ const sum_counter = (acc, c) => {
 
 //#region nftables
 
+// The nft counter expression of a rule ({ packets, bytes }), or null when the rule has no counter.
 function counter_of(rule) {
 	for (let e in rule.expr ?? [])
 		if (e.counter)
@@ -49,7 +50,9 @@ function match_devices(rule) {
 	return out;
 }
 
-// What the kernel has loaded: null when nftables or the fw4 table is not there.
+// What the kernel has loaded, from `nft -j list ruleset`, restricted to firewall4's inet "fw4" table:
+// chain/rule counts, base-chain policies, per-comment and per-chain hit counters, the devices behind each
+// zone and the flowtable. Null when nftables or the fw4 table is not there.
 function nft_state() {
 	let doc = json(run('nft -j list ruleset 2>/dev/null') || 'null');
 	if (!doc?.nftables)
@@ -73,6 +76,8 @@ function nft_state() {
 			let c = counter_of(rule);
 			if (c) {
 				let comment = rule.comment;
+				// Only rules firewall4 generated carry the "!fw4: <name>" comment; their counters are
+				// summed per comment because one UCI section can expand to several nft rules.
 				if (comment && index(comment, '!fw4: ') == 0) {
 					st.hits[comment] ??= { packets: 0, bytes: 0 };
 					sum_counter(st.hits[comment], c);
@@ -106,12 +111,17 @@ function comment_key(s, index_of_type) {
 	return s['.anonymous'] ? `@${s['.type']}[${index_of_type}]` : s['.name'];
 }
 
+// Hit counters ({ packets, bytes }) of the nft rules generated for the section named `key`; null when
+// nftables is not loaded, the section is disabled or no rule has hit counters.
 function hits_of(nft, key, enabled) {
 	if (!nft || !enabled)
 		return null;
 	return nft.hits[`!fw4: ${key}`] ?? null;
 }
 
+// Traffic rejected or dropped for a zone: `dir` is "from" or "to", and firewall4 names the chains
+// reject_<dir>_<zone> / drop_<dir>_<zone>. Returns { action, packets, bytes } for the first chain that
+// exists, or null when the zone has neither.
 function blocked(nft, dir, zone) {
 	if (!nft)
 		return null;
@@ -123,6 +133,8 @@ function blocked(nft, dir, zone) {
 	return null;
 }
 
+// JSON view of a UCI zone section: policies (firewall4 defaults to REJECT), the zones it forwards to and
+// the kernel devices behind it. `all` is the whole firewall config (for forwardings).
 function zone_view(s, all, nft) {
 	let name = s.name;
 	let forwards = [];
@@ -145,6 +157,8 @@ function zone_view(s, all, nft) {
 	};
 }
 
+// JSON view of a traffic rule section; `key` is its nft comment name (see comment_key). `scheduled` is
+// true when the rule only applies at certain times (start/stop time or weekdays).
 function rule_view(s, key, nft) {
 	let enabled = s.enabled != '0';
 	return {
@@ -163,6 +177,8 @@ function rule_view(s, key, nft) {
 	};
 }
 
+// JSON view of a port forward (`redirect`, DNAT by default) or `nat` (SNAT by default) section. A nat
+// section's snat_ip/snat_port are reported in the dest_ip/dest_port fields; proto defaults to tcp and udp.
 function redirect_view(s, key, nft) {
 	let enabled = s.enabled != '0';
 	let snat = s['.type'] == 'nat';
@@ -190,11 +206,14 @@ function unzoned(all_zone_networks) {
 
 //#endregion
 
+// Builds the flab.firewall status reply from the UCI firewall config (in configuration order) joined with
+// the loaded nftables state.
 function collect() {
 	let all = uci_all('firewall');
 	let nft = nft_state();
 	let sections = sort(values(all), (a, b) => (a['.index'] ?? 0) - (b['.index'] ?? 0));
 
+	// Only the first defaults section counts.
 	let defaults = {};
 	for (let s in sections)
 		if (s['.type'] == 'defaults') {
@@ -208,6 +227,7 @@ function collect() {
 		}
 
 	let zones = [], rules = [], redirects = [], includes = [], ipsets = 0;
+	// counts[type] is the number of earlier sections of that type, the N in firewall4's "@rule[N]" names.
 	let counts = {};
 	for (let s in sections) {
 		let t = s['.type'];
@@ -246,6 +266,7 @@ function collect() {
 	};
 }
 
+// rpcd registration: ubus object flab.firewall with the single method `status` (no arguments).
 return {
 	'flab.firewall': {
 		status: {

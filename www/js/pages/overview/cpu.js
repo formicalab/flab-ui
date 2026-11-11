@@ -10,13 +10,18 @@ import { icon } from '../../core/icons.js';
 import { badge, card, sparkline } from '../../core/ui.js';
 import { fmtNum, fmtSpan } from '../../core/format.js';
 
+// Cpu-line fields of /proc/stat that make up the total, in the order the backend reports them.
 const FIELDS = ['user', 'nice', 'system', 'idle', 'iowait', 'irq', 'softirq', 'steal'];
+// History depth, and the largest uptime gap (seconds) between samples that still counts as continuous.
+// The Overview polls every 5 s, so a longer gap means polling was paused or the page was closed.
 const MAX_SAMPLES = 60;
 const GAP_SECONDS = 20;
 
+// Module-level so it survives the redraw on every poll: { uptime, cpus: { id: counters } } samples, oldest first.
 let history = [];
 
 //#region sampling
+// Stores one flab.system cpu reply as a sample, restarting the history after a gap or an uptime reset (reboot).
 export function record(data) {
   const last = history.at(-1);
   if (last && (data.uptime == null || data.uptime < last.uptime || data.uptime - last.uptime > GAP_SECONDS)) history = [];
@@ -24,6 +29,7 @@ export function record(data) {
   if (history.length > MAX_SAMPLES) history.shift();
 }
 
+// True once two samples exist, i.e. a utilization can be computed.
 export const hasDelta = () => history.length >= 2;
 
 // Percent of CPU time per category between two samples of one cpu line, or null when it cannot be computed.
@@ -47,6 +53,8 @@ function shares(a, b) {
   return { user, system, irq, iowait, steal, idle: pct('idle'), busy: user + system + irq + steal };
 }
 
+// Utilization of one cpu line ('cpu' = all cores, 'cpu0'…) over the last sample interval, or null until
+// two samples exist.
 export function current(id) {
   const n = history.length;
   return n >= 2 ? shares(history[n - 2].cpus[id], history[n - 1].cpus[id]) : null;
@@ -64,9 +72,12 @@ function series(id, pick) {
 //#endregion
 
 //#region presentation
+// Colour level for a busy percentage: good below 60 %, fair below 85 %, weak above.
 export const level = busy => busy < 60 ? 'good' : busy < 85 ? 'fair' : 'weak';
+// Text colour class per level.
 export const levelText = { good: 'text-success', fair: 'text-warning', weak: 'text-danger' };
 
+// Stacked-bar segments as [key in shares(), label, tooltip]; idle is the unfilled remainder and is not listed.
 const SEGMENTS = [
   ['user', 'User', 'Programs (including niced ones)'],
   ['system', 'System', 'Kernel work'],
@@ -75,9 +86,11 @@ const SEGMENTS = [
   ['steal', 'Steal', 'Time taken by a hypervisor'],
 ];
 
+// Horizontal bar with one segment per SEGMENTS entry, sized by its share of `s` (a shares() result).
 const stack = (s, cls = '') => h('div', { className: `cpu-stack ${cls}` },
   SEGMENTS.map(([k]) => h('i', { className: k, style: `width:${s[k].toFixed(2)}%` })));
 
+// Left column: overall busy percentage, stacked bar, legend (steal only when non-zero) and load/task chips.
 function totalColumn(total, data) {
   const lvl = level(total.busy);
   return h('div', { className: 'cpu-total' },
@@ -91,6 +104,7 @@ function totalColumn(total, data) {
       data.procs_blocked ? badge(`${data.procs_blocked} blocked`, 'warning', 'Tasks waiting for I/O') : null));
 }
 
+// Middle column: one mini stacked bar per core, with the breakdown in its tooltip.
 function coresColumn(data) {
   const cores = data.cpus.filter(c => c.id !== 'cpu');
   return h('div', { className: 'cpu-cores' }, cores.map(c => {
@@ -102,6 +116,7 @@ function coresColumn(data) {
   }));
 }
 
+// Right column: sparkline of total busy and interrupt share on a fixed 0-100 scale.
 function historyColumn() {
   const span = history.length >= 2 ? history.at(-1).uptime - history[0].uptime : 0;
   return h('div', { className: 'cpu-history' },
@@ -114,6 +129,7 @@ function historyColumn() {
       h('span', {}, h('i', { className: 'key busy' }), 'busy'), h('span', {}, h('i', { className: 'key irq' }), 'interrupts')));
 }
 
+// The CPU load card; shows a placeholder until the first utilization can be computed.
 export function cpuCard(data) {
   const total = current('cpu');
   const cores = data.cores;

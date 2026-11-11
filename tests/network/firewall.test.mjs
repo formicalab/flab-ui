@@ -3,16 +3,21 @@
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
+// Imports one module of the firewall page by file name.
 const page = f => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/firewall', f)).href);
 const { buildMatrix, ROUTER } = await page('model.js');
 const { findings, describeMatch } = await page('util.js');
 
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
-// A router like the lab one: lan reaches wan, vpn and wg; vpn and wg reach lan; wan is closed except for rules.
+// A router like the lab one: lan reaches wan and vpn; vpn reaches lan; wan is closed except for rules.
+// A zone as flab.firewall reports it; `forwards` lists the destination zones it may forward to.
 const zone = (name, input, output, forward, forwards = [], extra = {}) => ({ name, networks: [name], devices: [name], input, output, forward, forwards, masq: false, mtu_fix: false, enabled: true, blocked_from: null, blocked_to: null, ...extra });
+// A traffic rule with no match restrictions; `extra` adds protocol, ports, family and so on. An undefined src or dest means the router itself.
 const rule = (name, src, dest, target, extra = {}) => ({ name, key: name, src, dest, proto: [], src_ip: [], dest_ip: [], src_port: [], dest_port: [], icmp_type: [], family: 'any', target, enabled: true, hits: null, ...extra });
+// Builds a fresh baseline firewall state (a new object each call, so tests can mutate it freely).
 const base = () => ({
   running: true,
   defaults: { synflood_protect: true, flow_offloading: true, flow_offloading_hw: false },
@@ -34,6 +39,7 @@ const base = () => ({
 
 console.log('== matrix ==');
 const m = buildMatrix(base());
+// The matrix cell for traffic from `s` to `d` (zone names or ROUTER) in the baseline matrix.
 const cell = (s, d) => m.rows.find(r => r.src === s).cells[m.ends.indexOf(d)];
 check(m.ends.join() === `${ROUTER},lan,wan,vpn` && m.rows.length === 4, 'the router plus every zone, as source and destination');
 check(cell(ROUTER, ROUTER) === null, 'router to router is not a thing');
@@ -55,6 +61,7 @@ fw2.redirects.push({ name: 'Off', key: 'Off', kind: 'redirect', src: 'wan', dest
 fw2.rules.find(r => r.name === 'Allow-WG').enabled = false;
 fw2.rules.push(rule('Ghost', 'nowhere', 'lan', 'ACCEPT'), rule('Empty', undefined, undefined, 'ACCEPT'));
 const m2 = buildMatrix(fw2);
+// Same lookup as cell(), on the matrix with port forwards and odd rules.
 const c2 = (s, d) => m2.rows.find(r => r.src === s).cells[m2.ends.indexOf(d)];
 check(c2('wan', 'lan').accepts.includes('Web (port forward)') && c2('wan', 'vpn').accepts.join() === 'Allow-ICMPv6-Forward', 'an enabled port forward opens wan to its destination zone; a disabled one does not');
 check(!c2('wan', ROUTER).accepts.includes('Allow-WG'), 'a disabled rule is ignored');
@@ -71,6 +78,7 @@ check(describeMatch(rule('a', 'wan', undefined, 'ACCEPT', { proto: ['icmp'], icm
 check(describeMatch(rule('a', 'wan', undefined, 'ACCEPT')) === 'TCP/UDP', 'a rule without a protocol means TCP and UDP');
 
 console.log('== findings ==');
+// All finding texts of a firewall state, joined for regex matching.
 const texts = fw => findings(fw).map(f => f.text).join(' | ');
 check(findings(base()).length === 0, 'the sensible setup has no findings', texts(base()));
 check(findings({ ...base(), running: false })[0].level === 'bad' && /not loaded/.test(texts({ ...base(), running: false })), 'no fw4 table: the firewall is not loaded');

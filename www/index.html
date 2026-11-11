@@ -1,14 +1,19 @@
 <!doctype html>
+<!-- Single-page shell of the router admin UI: base styles load here, page stylesheets on demand (core/app.js),
+     and js/main.js applies the theme and starts the app (sign-in screen or shell) inside #app. -->
 <html lang="en" data-bs-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Router</title>
+  <!-- Empty icon: avoids a favicon.ico request to the router -->
   <link rel="icon" href="data:,">
+  <!-- Bootstrap 5.3 (vendored), then the Fluent theming layered on top of it -->
   <link rel="stylesheet" href="vendor/bootstrap.min.css">
   <link rel="stylesheet" href="css/base.css">
 </head>
 <body>
+  <!-- Mount point for the whole UI -->
   <div id="app"></div>
   <script type="module" src="js/main.js"></script>
 </body>

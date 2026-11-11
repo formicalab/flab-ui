@@ -5,10 +5,14 @@ import { icon } from '../../core/icons.js';
 import { card } from '../../core/ui.js';
 import { buildMatrix, ROUTER } from './model.js';
 
+// Label of a matrix end: the router pseudo-zone reads "Router itself".
 const label = end => end === ROUTER ? 'Router itself' : end;
 
+// Short wording per cell state; the cell uses the "partial" text as its sub-line.
 const STATE_TEXT = { open: 'allowed', partial: 'only by rule', closed: 'blocked' };
 
+// One matrix cell: the default policy (or the number of opening rules when only rules allow it), a note
+// about rules that close part of an open path, and a tooltip listing the rules; null renders a dash.
 function cell(c) {
   if (!c) return h('td', { className: 'fwm-na' }, '–');
   const detail = [
@@ -23,6 +27,7 @@ function cell(c) {
     sub ? h('div', { className: 'fwm-sub' }, sub) : null);
 }
 
+// The card: the matrix from buildMatrix (rows are sources, columns destinations) plus a color legend.
 export function matrixCard(fw) {
   const m = buildMatrix(fw);
   const table = h('table', { className: 'fwm' },

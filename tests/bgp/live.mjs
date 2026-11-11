@@ -10,15 +10,20 @@ const out = process.argv[2];
 const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/flab/';
 const password = process.env.FLAB_PASSWORD ?? 'flab';
 const shots = process.env.FLAB_SHOTS;
+// Loads one backend scenario (see mkfx.mjs / assert.mjs) as the object the page would receive from flab.bgp status.
 const scenario = n => JSON.parse(fs.readFileSync(path.join(out, `${n}.json`), 'utf8'));
+// Deep copy, so derived scenarios never mutate the baseline.
 const clone = o => JSON.parse(JSON.stringify(o));
 
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
 // Derived scenarios built from the captured baseline.
 const base = scenario('base');
+// Returns a copy of `d` without the named peer and the paths learned from it.
 const dropPeer = (d, name) => { const c = clone(d); c.peers = c.peers.filter(p => p.name !== name); c.paths = c.paths.filter(p => p.peer !== name); return c; };
+// Returns a copy of `d` with a new peer cloned from peer `from` (same channels), plus non-best copies of its paths.
 const addPeer = (d, name, from) => {
   const c = clone(d);
   const src = c.peers.find(p => p.name === from);
@@ -26,6 +31,7 @@ const addPeer = (d, name, from) => {
   for (const p of c.paths.filter(p => p.peer === from)) c.paths.push({ ...clone(p), peer: name, best: false });
   return c;
 };
+// Eight peers (the baseline's four plus four clones of azure_xfrm0): more peers than the six palette colors.
 const manyPeers = ['x1', 'x2', 'x3', 'x4'].reduce((d, n) => addPeer(d, n, 'azure_xfrm0'), base);
 
 let current = null;   // null = pass through to the real router
@@ -36,6 +42,7 @@ const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
+// Answers the page's flab.bgp status ubus call with the current scenario; everything else goes to the real router.
 await page.route('**/ubus', async route => {
   const req = route.request();
   let body = null;
@@ -46,10 +53,15 @@ await page.route('**/ubus', async route => {
   return route.continue();
 });
 
+// Maps each topology peer's name to its palette class (pc-N), to verify colors stay stable across updates.
 const colors = () => page.$$eval('.bgp-peer', els => Object.fromEntries(els.map(e => [e.querySelector('b').title, [...e.classList].find(c => c.startsWith('pc-'))])));
+// Text of the i-th summary tile's value.
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
+// Texts of the health-card findings.
 const findings = () => page.locator('.findings li').allInnerTexts();
+// Clicks Refresh and waits for the page to re-render.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
+// Switches the intercepted backend response to `data` (null = real router) and refreshes the page.
 const stage = async (label, data) => { console.log(`\n== ${label} ==`); current = data; await refresh(); };
 
 await page.goto(baseUrl);

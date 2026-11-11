@@ -2,16 +2,17 @@
 // live hit counters nftables keeps for it.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card } from '../../core/ui.js';
+import { badge, card, muted } from '../../core/ui.js';
 import { fmtBytes, fmtNum } from '../../core/format.js';
 import { describeMatch, packetsPerSec, fmtPps, ruleKey, wanZones } from './util.js';
 
-const muted = t => h('span', { className: 'muted' }, t);
-
+// Badge color per rule target: accepts are green, reject/drop amber, anything else (DNAT, MASQUERADE...) neutral.
 const ACTION = { ACCEPT: 'success', REJECT: 'warning', DROP: 'warning' };
 const actionBadge = t => badge(t.toLowerCase(), ACTION[t] ?? 'info');
 
+// Zone name as a chip: "*" reads "any", and a missing side is the router itself (or `fallback`).
 const zoneChip = (z, fallback) => h('span', { className: `fw-chip ${z ? '' : 'router'}` }, z === '*' ? 'any' : z ?? fallback);
+// "src › dest" flow of a rule; the fallbacks label a missing zone on either side.
 const fromTo = (a, b, fromFallback = 'router', toFallback = 'router') => h('div', { className: 'fw-flow' }, zoneChip(a, fromFallback), '›', zoneChip(b, toFallback));
 
 // Packets and bytes seen, and a live rate while something is flowing.
@@ -23,9 +24,11 @@ function hitsCell(r) {
     h('div', { className: 'muted small' }, fmtBytes(r.hits.bytes), pps ? ` · ${pps}` : ''));
 }
 
+// Rule name (or its key when unnamed) with "unnamed" and "time-restricted" notes.
 const nameCell = r => h('div', {}, h('strong', {}, r.name ?? r.key), r.name ? null : h('div', { className: 'muted small' }, 'unnamed'),
   r.scheduled ? h('div', { className: 'muted small' }, 'time-restricted') : null);
 
+// Row of the traffic-rules table: position, name, zones, protocol/port match, action and hits.
 function ruleRow(r, i) {
   return h('tr', { className: r.enabled ? '' : 'fw-off' },
     h('td', { className: 'num muted' }, i + 1),
@@ -36,6 +39,7 @@ function ruleRow(r, i) {
     h('td', {}, hitsCell(r)));
 }
 
+// Row of the port-forward table: "PROTO ports on address → target:port"; `kind` 'nat' marks a NAT (not DNAT) rule.
 function redirectRow(r, i) {
   const to = [].concat(r.dest_ip ?? []).join(', ');
   return h('tr', { className: r.enabled ? '' : 'fw-off' },
@@ -48,6 +52,7 @@ function redirectRow(r, i) {
     h('td', {}, hitsCell(r)));
 }
 
+// Shared table markup: header row from `cols`, the rows, or a single "empty" message row.
 const table = (cols, rows, empty) => h('div', { className: 'grid-wrap' }, h('table', { className: 'table fw-table' },
   h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
   h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, empty)))));
@@ -71,12 +76,15 @@ export function exposureCard(fw) {
   table(cols, rows, wan.length ? 'Nothing is open from the Internet.' : 'No zone masquerades traffic, so no zone is treated as facing the Internet.'));
 }
 
+// All traffic rules in configuration order (nftables evaluates them in this order); a rule with no
+// destination is about the router itself.
 export function rulesCard(fw) {
   const cols = ['#', 'Name', 'From › to', 'Match', 'Action', 'Hits'];
   return card([icon('list-ul'), h('span', {}, 'Traffic rules'), h('span', { className: 'sub' }, `${fw.rules.length} rules in configuration order · a rule with no destination is about the router itself`)],
     table(cols, fw.rules.map(ruleRow), 'No traffic rules are configured.'));
 }
 
+// Port forwards (DNAT) and other NAT rules (firewall `redirect` sections) with their hit counters.
 export function redirectsCard(fw) {
   const cols = ['#', 'Name', 'From › to', 'Forwards', 'Action', 'Hits'];
   return card([icon('arrow-left-right'), h('span', {}, 'Port forwards and NAT'), h('span', { className: 'sub' }, `${fw.redirects.length} configured`)],

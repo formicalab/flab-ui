@@ -22,13 +22,13 @@
 
 'use strict';
 
-import { run, uci_all, sysfs, safe_ifname, num } from 'flab.util';
+import { run, uci_all, sysfs, safe_ifname, num, as_list } from 'flab.util';
 
 // A WireGuard session is rekeyed every 120 s while traffic flows and is rejected after 180 s without a
 // handshake, so a peer whose last handshake is older than this is not currently connected.
 const SESSION_S = 180;
 
-const as_list = (v) => v == null ? [] : (type(v) == 'array' ? v : split(trim(v), /[[:space:]]+/));
+// True for a WireGuard key in its base64 text form (32 bytes -> 43 characters plus one "=").
 const is_key = (k) => match(k ?? '', /^[A-Za-z0-9+\/]{43}=$/) != null;
 
 // `wg show <if> <field>` lines as { public key: [ remaining tab-separated columns ] }.
@@ -42,6 +42,7 @@ function table(ifname, field) {
 	return out;
 }
 
+// Name of the first firewall zone that lists `ifname` among its networks, or null.
 function firewall_zone(ifname) {
 	for (let n, s in uci_all('firewall'))
 		if (s['.type'] == 'zone' && index(as_list(s.network), ifname) >= 0)
@@ -58,9 +59,14 @@ function configured_peers(all, ifname) {
 	return out;
 }
 
+// JSON view of one peer, merging the UCI section `conf` (may be null for a peer only the kernel knows) with
+// the live `wg show` tables. `now` is the current epoch time. state is down (kernel has not loaded the peer),
+// never (no handshake yet), connected (handshake within SESSION_S) or stale. handshake_age is in seconds.
 function peer_view(key, conf, live, now) {
+	// wg prints the handshake as epoch seconds, 0 for "never".
 	let hs = num(live.handshakes[key]?.[0]);
 	let age = hs ? (now > hs ? now - hs : 0) : null;
+	// wg prints "(none)" for fields that are unset.
 	let endpoint = live.endpoints[key]?.[0];
 	if (endpoint == '(none)')
 		endpoint = null;
@@ -87,6 +93,8 @@ function peer_view(key, conf, live, now) {
 	};
 }
 
+// JSON view of one interface: UCI settings overlaid with live kernel values when the interface is
+// `running`, followed by its peers. `all` is the UCI network config.
 function interface_view(all, ifname, running, now) {
 	let conf = all[ifname];
 	let view = {
@@ -101,6 +109,7 @@ function interface_view(all, ifname, running, now) {
 		addresses: as_list(conf?.addresses),
 	};
 
+	// Live peer data keyed by public key; `known` is the set of peers the kernel has loaded.
 	let live = { known: {}, endpoints: {}, allowed: {}, handshakes: {}, transfer: {}, keepalive: {} };
 	if (running && safe_ifname(ifname)) {
 		view.public_key = trim(run(`wg show ${ifname} public-key 2>/dev/null`)) || null;
@@ -130,6 +139,8 @@ function interface_view(all, ifname, running, now) {
 	return view;
 }
 
+// Builds the flab.wireguard status reply: every UCI wireguard interface plus any other interface listed by
+// `wg show interfaces`, restricted to names that are safe to use on a command line.
 function collect() {
 	let all = uci_all('network');
 	let now = time();
@@ -151,6 +162,7 @@ function collect() {
 	return { generated: now, interfaces: map(filter(names, safe_ifname), (n) => interface_view(all, n, running[n] == true, now)) };
 }
 
+// rpcd registration: ubus object flab.wireguard with the single method `status` (no arguments).
 return {
 	'flab.wireguard': {
 		status: {

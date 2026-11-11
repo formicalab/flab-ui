@@ -17,12 +17,23 @@ SSH destination of the router.
 
 .PARAMETER Password
 Password for the temporary 'flab' login. A random one is generated when omitted.
+
+.PARAMETER Admin
+Also creates the optional 'flab-admin' login, which holds the flab-admin ACL (rpcd/acl.d/flab-admin.json)
+on top of the read-only access of 'flab'. That ACL lists no writable config yet, so this login still
+cannot change anything; it prepares the configuration-change features. Without this switch, and after
+Cleanup, no admin login exists.
+
+.PARAMETER AdminPassword
+Password for the 'flab-admin' login. A random one is generated when omitted.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('Deploy', 'Cleanup')][string]$Action,
     [string]$Router = 'root@openwrt.lab.formicalab.casa',
-    [string]$Password = ([guid]::NewGuid().ToString('N').Substring(0, 16))
+    [string]$Password = ([guid]::NewGuid().ToString('N').Substring(0, 16)),
+    [switch]$Admin,
+    [string]$AdminPassword = ([guid]::NewGuid().ToString('N').Substring(0, 16))
 )
 
 Set-StrictMode -Version Latest
@@ -85,6 +96,7 @@ rm -f /usr/share/rpcd/acl.d/flab*.json
 rm -f /usr/share/rpcd/ucode/flab.*.uc
 rm -rf /usr/share/ucode/flab
 uci -q delete rpcd.flab_ui || true
+uci -q delete rpcd.flab_admin_ui || true
 uci commit rpcd
 /etc/init.d/rpcd restart
 '@
@@ -123,9 +135,32 @@ uci commit rpcd
 '@
         Invoke-Remote $install -StdIn $Password
 
+        # The optional admin login: it reads like 'flab' and also holds the flab-admin ACL. Same stdin handling.
+        if ($Admin) {
+            $installAdmin = @'
+set -e
+read -r pw
+pw=$(printf %s "$pw" | tr -d '\r')
+hash=$(printf %s "$pw" | openssl passwd -6 -stdin)
+uci set rpcd.flab_admin_ui=login
+uci set rpcd.flab_admin_ui.username=flab-admin
+uci set rpcd.flab_admin_ui.password="$hash"
+uci add_list rpcd.flab_admin_ui.read=flab
+uci add_list rpcd.flab_admin_ui.read=flab-admin
+uci add_list rpcd.flab_admin_ui.write=flab-admin
+uci commit rpcd
+/etc/init.d/rpcd restart
+'@
+            Invoke-Remote $installAdmin -StdIn $AdminPassword
+        }
+
         $hostName = $Router.Split('@')[-1]
         Write-Host "Deployed. Open https://$hostName/flab/"
         Write-Host "  user: flab"
         Write-Host "  password: $Password"
+        if ($Admin) {
+            Write-Host "  admin user: flab-admin (no writable config yet)"
+            Write-Host "  admin password: $AdminPassword"
+        }
     }
 }

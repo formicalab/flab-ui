@@ -14,12 +14,16 @@ import { readfile } from 'fs';
 // Order of the columns on a "cpu" line in /proc/stat (guest times are already part of user/nice).
 const FIELDS = ['user', 'nice', 'system', 'idle', 'iowait', 'irq', 'softirq', 'steal'];
 
+// Parses the text of /proc/stat into { cpus: [{ id, user, nice, ... }], ctxt, procs_running,
+// procs_blocked }. The "cpu" line is the all-core total; "cpuN" lines are the individual cores. Values are
+// cumulative jiffies (USER_HZ ticks), left unconverted; missing columns on old kernels count as 0.
 function parse_stat(text) {
 	let out = { cpus: [], ctxt: null, procs_running: null, procs_blocked: null };
 
 	for (let line in split(text ?? '', '\n')) {
 		let m = match(line, /^(cpu[0-9]*)[ ]+(.*)$/);
 		if (m) {
+			// Counters follow the id in the order given by FIELDS.
 			let tok = split(trim(m[2]), /[ ]+/);
 			let cpu = { id: m[1] };
 			for (let i = 0; i < length(FIELDS); i++)
@@ -35,6 +39,8 @@ function parse_stat(text) {
 	return out;
 }
 
+// Builds the flab.system cpu reply from /proc/stat, /proc/loadavg and /proc/uptime. `cores` counts the
+// per-core "cpuN" entries (the aggregate "cpu" entry is excluded); fields are null when a file is unreadable.
 function collect() {
 	let stat = parse_stat(readfile('/proc/stat'));
 
@@ -57,6 +63,7 @@ function collect() {
 	};
 }
 
+// rpcd registration: ubus object flab.system with the single method `cpu` (no arguments).
 return {
 	'flab.system': {
 		cpu: {

@@ -32,6 +32,7 @@ export function selectControl(state, key, onchange, title) {
 
 // Pause/resume toggle bound to state.paused.
 export function pauseControl(state) {
+  // The button re-labels itself in place, so no page redraw is needed.
   const btn = button('Pause', 'pause-fill', () => {
     state.paused = !state.paused;
     btn.replaceChildren(icon(state.paused ? 'play-fill' : 'pause-fill'), state.paused ? 'Resume' : 'Pause');
@@ -39,10 +40,12 @@ export function pauseControl(state) {
   return btn;
 }
 
+// Refresh button that calls `reload` (a fresh poll of the page).
 export const refreshControl = reload => button('Refresh', 'arrow-clockwise', reload, 'btn-brand');
 
 // Two-state toggle bound to state[key]; the label shows the mode a click switches to.
 export function toggleControl(state, key, [offLabel, onLabel], onchange) {
+  // The button re-labels itself in place, so no page redraw is needed beyond what onchange does.
   const btn = button(state[key] ? onLabel : offLabel, null, () => {
     state[key] = !state[key];
     btn.textContent = state[key] ? onLabel : offLabel;

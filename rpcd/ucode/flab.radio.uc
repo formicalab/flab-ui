@@ -19,19 +19,22 @@
 'use strict';
 
 import { connect } from 'ubus';
-import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label } from 'flab.util';
+import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label, iw_channel_info } from 'flab.util';
 
 //#region Helpers
 
+// UCI option as a string; list options are joined with spaces.
 function opt(section, key) {
 	let v = section[key];
 	return type(v) == 'array' ? join(' ', v) : v;
 }
 
+// True when the UCI option is exactly "1".
 function flag(section, key) {
 	return opt(section, key) == '1';
 }
 
+// Number of set bits in `mask` (used to count the antennas in an iw antenna bitmask).
 function popcount(mask) {
 	let n = 0;
 	for (let v = mask ?? 0; v > 0; v >>= 1)
@@ -39,6 +42,7 @@ function popcount(mask) {
 	return n;
 }
 
+// UCI sections of type `kind` in configuration order.
 function sections_of(all, kind) {
 	let list = [];
 	for (let name in keys(all))
@@ -70,7 +74,9 @@ function phy_for_path(paths, path) {
 	return matching[idx];
 }
 
-// Capabilities, antennas and the channel list (with DFS and disabled flags) of a phy.
+// Capabilities, antennas and the channel list (with DFS and disabled flags) of a phy, parsed from
+// `iw phy <phy> info`. Antenna counts come from the "Available Antennas" bitmasks. `standards` lists
+// the 802.11 generations the phy advertises.
 function phy_info(phy) {
 	let out = { channels: [], standards: [] };
 	let text = run('iw phy ' + phy + ' info 2>/dev/null');
@@ -82,6 +88,8 @@ function phy_info(phy) {
 		out.antennas = { tx: popcount(hex(m[1])), rx: popcount(hex(m[2])) };
 
 	for (let line in split(text, '\n')) {
+		// e.g. "* 5180 MHz [36] (23.0 dBm) (no IR)": f[1] MHz, f[3] channel, f[4] max power or
+		// "disabled", f[5] trailing flags (radar detection = DFS).
 		let f = match(line, /\* ([0-9]+)(\.[0-9]+)? MHz \[([0-9]+)\] \((disabled|[0-9.]+ dBm)\)(.*)$/);
 		if (!f)
 			continue;
@@ -95,6 +103,7 @@ function phy_info(phy) {
 		});
 	}
 
+	// Capability markers in the phy dump; each is only present when the phy supports that generation.
 	if (match(text, /HT20\/HT40/)) push(out.standards, '802.11n');
 	if (match(text, /VHT Capabilities/)) push(out.standards, '802.11ac');
 	if (match(text, /HE Iftypes/)) push(out.standards, '802.11ax');
@@ -102,26 +111,11 @@ function phy_info(phy) {
 	return out;
 }
 
-// Current channel, width, centre and tx power of an interface (iw dev <if> info).
-function iface_info(ifname) {
-	let out = {};
-	for (let line in split(run('iw dev ' + ifname + ' info 2>/dev/null'), '\n')) {
-		let m = match(line, /channel ([0-9]+) \(([0-9]+) MHz\), width: ([0-9]+) MHz(, center1: ([0-9]+) MHz)?/);
-		if (m) {
-			out.channel = +m[1];
-			out.freq = +m[2];
-			out.width = +m[3];
-			out.center = num(m[5]);
-		}
-		if ((m = match(line, /txpower ([0-9.]+) dBm/)))
-			out.txpower = +m[1];
-	}
-	return out;
-}
-
-// Cumulative airtime counters of the channel in use (milliseconds); the UI turns two samples into a
-// utilisation percentage, so this stays a plain counter dump.
+// Cumulative airtime counters of the channel in use (milliseconds) from `iw dev <if> survey dump`, or
+// null when no channel is marked "[in use]". The UI turns two samples into a utilisation percentage,
+// so this stays a plain counter dump.
 function survey(ifname) {
+	// `current` is true while inside the survey block of the channel in use.
 	let current = false, out = null;
 	for (let line in split(run('iw dev ' + ifname + ' survey dump 2>/dev/null'), '\n')) {
 		if (match(line, /^Survey data from/)) {
@@ -146,7 +140,8 @@ function survey(ifname) {
 	return out;
 }
 
-// Hardware name and supported modes from iwinfo's text output.
+// Hardware name and supported modes ("hwmodes", e.g. "ac/n") from `iwinfo <if> info`; keys are only set
+// when iwinfo reports them (an "unknown" hardware name is skipped).
 function hardware(ifname) {
 	let out = {};
 	for (let line in split(run('iwinfo ' + ifname + ' info 2>/dev/null'), '\n')) {
@@ -159,6 +154,7 @@ function hardware(ifname) {
 	return out;
 }
 
+// Regulatory domain from `iw reg get`: { country, dfs } (dfs is the DFS region such as "DFS-ETSI"), or null.
 function regdomain() {
 	let m = match(run('iw reg get 2>/dev/null'), /country ([A-Z0-9]+): (DFS-[A-Z]+|[A-Za-z-]+)/);
 	return m ? { country: m[1], dfs: m[2] } : null;
@@ -167,6 +163,9 @@ function regdomain() {
 
 //#region Interfaces
 
+// JSON view of one wifi-iface section `s`, joined with netifd's entry `wl_iface` (null when the interface
+// is not up) and hostapd's live status. Only whitelisted options are copied; the MAC filter list is reduced
+// to its entry count and no keys are included.
 function interface_view(conn, s, wl_iface) {
 	let ifname = wl_iface?.ifname;
 	let mode = s.mode ?? 'ap';
@@ -211,6 +210,8 @@ function interface_view(conn, s, wl_iface) {
 }
 //#endregion
 
+// Builds the flab.radio status reply: every wifi-device with its configuration, interfaces and, for radios
+// that are up, live channel, survey and hardware data.
 function collect() {
 	let conn = connect();
 	let all = uci_all('wireless');
@@ -262,7 +263,7 @@ function collect() {
 		// Live values come from the first interface that is actually up.
 		let live_if = filter(views, (v) => v.ifname != null)[0]?.ifname;
 		if (live_if && safe_ifname(live_if)) {
-			radio.live = iface_info(live_if);
+			radio.live = iw_channel_info(live_if);
 			radio.survey = survey(live_if);
 			radio.hardware = hardware(live_if);
 		}
@@ -272,6 +273,7 @@ function collect() {
 	return { generated: time(), regdomain: regdomain(), radios };
 }
 
+// rpcd registration: ubus object flab.radio with the single method `status` (no arguments).
 return {
 	'flab.radio': {
 		status: {

@@ -1,5 +1,6 @@
 // Human-readable names for strongSwan / IANA algorithm identifiers.
 
+// strongSwan DH/KE transform names -> IANA group numbers (RFC 3526 MODP, RFC 5903/8031 ECP and Curve*).
 const DH_GROUP = {
   MODP_768: 1, MODP_1024: 2, MODP_1536: 5, MODP_2048: 14, MODP_3072: 15, MODP_4096: 16, MODP_6144: 17, MODP_8192: 18,
   ECP_256: 19, ECP_384: 20, ECP_521: 21, ECP_224: 26, CURVE_25519: 31, CURVE_448: 32,
@@ -16,6 +17,7 @@ export function encName(alg, keysize) {
   return alg.replace(/_/g, '-');
 }
 
+// True for authenticated-encryption ciphers, which carry their own integrity (no separate integ algorithm).
 export const isAead = alg => /GCM|CCM|CHACHA20/.test(alg ?? '');
 
 // "PRF_HMAC_SHA2_384" -> "HMAC-SHA-384"; also used for integrity names such as "HMAC_SHA2_256_128".
@@ -33,6 +35,7 @@ export function keName(name) {
   return `${name.replace(/_/g, '-')}${group ? ` · group ${group}` : ''}`;
 }
 
+// Authentication class reported by strongSwan ("pre-shared key", "public key"...) as a plain label.
 export function authName(cls) {
   if (!cls) return '–';
   if (/pre-shared/i.test(cls)) return 'Pre-shared key';
@@ -40,7 +43,6 @@ export function authName(cls) {
   return cls;
 }
 
+// Badge kind for a connection's session or SA state (strongSwan state names).
 export const stateKind = s => s === 'ESTABLISHED' || s === 'INSTALLED' ? 'success'
   : s === 'DOWN' || s === 'DELETING' ? 'danger' : 'warning';
-
-export const GRADE_KIND = { 'A+': 'success', A: 'success', B: 'info', C: 'warning', D: 'danger' };

@@ -1,16 +1,20 @@
-// Client-side throughput history. strongSwan only reports counters, so rates are derived from
-// the difference between consecutive polls. Interface counters (xfrmN) are preferred because they
-// keep counting across child SA rekeys; SA byte counters are the fallback.
-// A poll gap (tunnel down, polling paused, tab in the background) would otherwise show up as one sample
-// averaged over the whole gap, so a series restarts after GAP_MS without a sample. Series of connections
-// that no longer exist are dropped on every poll.
+// IPsec throughput history. strongSwan only reports byte counters, so rates come from the shared rate
+// tracker (core/rates.js) fed once per poll. This module only decides which counters to use: the xfrmN
+// interface counters are preferred because they keep counting across child SA rekeys; the SA's own byte
+// counters are the fallback. The tracker restarts a series after a gap (tunnel down, polling paused, tab in
+// the background) and drops series of connections that are gone.
+import { createTracker } from '../../core/rates.js';
 
-const MAX_SAMPLES = 60;
+// A sample arriving more than this long after the previous one restarts the series (the tunnel was down or
+// the page not polling), so a stale counter delta is never turned into a rate. Exported for the tests.
 export const GAP_MS = 15000;
-const history = new Map();
+// Module-level so history survives the page redraw on every poll: up to 60 samples (5 minutes at 5 s).
+const tracker = createTracker({ maxSamples: 60, gapMs: GAP_MS });
 
+// One series per child SA of a connection.
 const keyOf = (conn, child) => `${conn.key}/${child.name}`;
 
+// The byte counters to follow for a child SA: its interface's, else the SA's own; null with no SA.
 function counters(child) {
   const sa = child.sas[0];
   if (!sa) return null;
@@ -18,36 +22,25 @@ function counters(child) {
   return { rx: sa.bytes_in, tx: sa.bytes_out };
 }
 
-// `t` (ms, monotonic) is injectable for tests.
+// Feeds one poll into the tracker. `t` (ms, monotonic) is injectable for tests.
 export function record(data, t = performance.now()) {
-  const present = new Set();
+  const present = [];
   for (const conn of data.connections) {
     for (const child of conn.children) {
       const key = keyOf(conn, child);
-      present.add(key);
+      present.push(key);
       const c = counters(child);
-      if (!c || c.rx == null) continue;
-      let list = history.get(key) ?? [];
-      if (list.length && t - list.at(-1).t > GAP_MS) list = [];
-      list.push({ t, ...c });
-      if (list.length > MAX_SAMPLES) list.shift();
-      history.set(key, list);
+      if (c && c.rx != null) tracker.record(key, c, t);
     }
   }
-  for (const key of history.keys()) if (!present.has(key)) history.delete(key);
+  tracker.keep(present);
 }
 
-// Returns { rx: number[], tx: number[] } in bytes/s (oldest first); a counter reset counts as zero.
+// { rx: number[], tx: number[] } in bytes/s, oldest first; a counter reset counts as zero.
 export function series(conn, child) {
-  const list = history.get(keyOf(conn, child)) ?? [];
-  const rx = [], tx = [];
-  for (let i = 1; i < list.length; i++) {
-    const dt = (list[i].t - list[i - 1].t) / 1000;
-    if (dt <= 0) continue;
-    rx.push(Math.max(0, (list[i].rx - list[i - 1].rx) / dt));
-    tx.push(Math.max(0, (list[i].tx - list[i - 1].tx) / dt));
-  }
-  return { rx, tx };
+  const key = keyOf(conn, child);
+  return { rx: tracker.rates(key, 'rx'), tx: tracker.rates(key, 'tx') };
 }
 
+// { rx, tx } with the most recent rate of a series (bytes/s); each is null while there is none yet.
 export const latest = s => ({ rx: s.rx.at(-1) ?? null, tx: s.tx.at(-1) ?? null });

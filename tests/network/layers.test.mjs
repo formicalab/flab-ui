@@ -1,4 +1,4 @@
-// Unit test for the network layer model (www/js/pages/network/layers.js): pure data, no router or browser.
+// Unit test for the network layer model (www/js/pages/interfaces/layers.js): pure data, no router or browser.
 // Usage: node layers.test.mjs
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -6,11 +6,14 @@ import path from 'node:path';
 const { buildLayers } = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/interfaces/layers.js')).href);
 
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
+// Comma-joined names of a list of layer nodes, for compact comparisons.
 const names = list => list.map(x => x.name).join();
 
 // A router like the lab one: switch ports in a bridge (plus Wi-Fi), a VLAN on the bridge, VLANs on the WAN
 // port carrying PPPoE, wan6 riding on the PPPoE session, a WireGuard tunnel and tunnels over wan.
+// A front-panel port; `index` is its position on the board (absent for a port without a board entry, e.g. eth0).
 const port = (name, carrier, index) => ({ name, carrier, board: { index } });
 const net = {
   ports: [port('lan1', true, 0), port('lan2', false, 1), port('eth1', true, 5), port('eth0', true)],
@@ -21,6 +24,7 @@ const net = {
     { name: 'eth1.1035', parent: 'eth1', vid: 1035, up: true, carrier: true },
   ],
 };
+// A netifd interface record as the plugin reports it: `device` is the L2 device, `l3` the device carrying addresses.
 const iface = (interfaceName, proto, device, l3, extra = {}) => ({ interface: interfaceName, proto, device, l3_device: l3, up: true, ...extra });
 const ifs = [
   iface('loopback', 'static', 'lo', 'lo'),
@@ -35,6 +39,7 @@ const ifs = [
   iface('ghost', 'static', 'nope0', 'nope0'),
 ];
 const rows = buildLayers(net, ifs, { xfrm0: 'wan' });
+// The layer row of the named interface.
 const row = n => rows.find(r => r.name === n);
 
 console.log('== layers ==');
@@ -65,6 +70,7 @@ const radios = [
 ];
 const wnet = { ...net, bridges: [{ ...net.bridges[0], members: [...net.bridges[0].members, { name: 'phy0-mesh0', kind: 'wifi', carrier: true }] }] };
 const wrows = buildLayers(wnet, [...ifs, iface('uplink', 'dhcp', 'phy2-sta0', 'phy2-sta0')], { xfrm0: 'wan' }, radios);
+// The layer row of the named interface in the wireless-aware model.
 const wrow = n => wrows.find(r => r.name === n);
 const ap = wrow('lan').roots.find(r => r.name === 'phy0-ap0');
 check(ap?.kind === 'wifi' && ap.radio === 'radio0' && ap.band === '2g' && ap.ssid === 'home' && ap.up === true, 'a bridged Wi-Fi interface knows its radio, band and SSID', JSON.stringify(ap));

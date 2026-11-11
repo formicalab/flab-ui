@@ -6,6 +6,7 @@ import path from 'node:path';
 const { createTracker, latest } = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/core/rates.js')).href);
 
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
 console.log('== rates ==');

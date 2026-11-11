@@ -6,6 +6,10 @@
 // Only sanitized client data is returned; Wi-Fi keys from `network.wireless status`
 // are never copied into the result.
 //
+// Sources (no LuCI component is used): ubus (network.wireless status, hostapd.<if> get_clients, dhcp
+// ipv4leases), `hostapd_cli all_sta`, `iw dev <if> station dump`, UCI wireless/network/dhcp, /proc/net/arp,
+// `ip -6 neigh`, /etc/ethers and /tmp/hosts.
+//
 // rpcd runs plugins in-process, so this must not call ubus objects that rpcd itself
 // serves (any rpcd plugin object): the call would block on rpcd's own event loop.
 
@@ -14,14 +18,16 @@
 import { cursor } from 'uci';
 import { connect } from 'ubus';
 import { readfile } from 'fs';
-import { run, safe_ifname, normalize_mac } from 'flab.util';
+import { run, safe_ifname, normalize_mac, security_label } from 'flab.util';
 
+// IEEE 802.11 AKM suite selectors (OUI-type as hostapd prints them) -> short authentication names.
 const AKM_NAMES = {
 	'00-0f-ac-1': '802.1X', '00-0f-ac-2': 'PSK', '00-0f-ac-3': 'FT-802.1X',
 	'00-0f-ac-4': 'FT-PSK', '00-0f-ac-5': 'WPA-SHA256', '00-0f-ac-6': 'PSK-SHA256',
 	'00-0f-ac-8': 'SAE', '00-0f-ac-9': 'FT-SAE', '00-0f-ac-11': 'Suite-B',
 	'00-0f-ac-12': 'Suite-B-192', '00-0f-ac-13': 'FT-802.1X-SHA384', '00-0f-ac-18': 'OWE',
 };
+// Pairwise cipher suite selectors -> short cipher names.
 const CIPHER_NAMES = {
 	'00-0f-ac-2': 'TKIP', '00-0f-ac-4': 'CCMP', '00-0f-ac-8': 'GCMP',
 	'00-0f-ac-9': 'GCMP-256', '00-0f-ac-10': 'CCMP-256',
@@ -31,6 +37,8 @@ const AKM_SECURITY = {
 	'00-0f-ac-8': 'WPA3 (SAE)', '00-0f-ac-9': 'WPA3 (FT-SAE)', '00-0f-ac-2': 'WPA2 (PSK)',
 	'00-0f-ac-6': 'WPA2 (PSK-256)', '00-0f-ac-4': 'WPA2 (FT-PSK)', '00-0f-ac-18': 'OWE',
 };
+// Security score components (see security_score): points per AKM name, pairwise cipher and SAE group
+// (IANA group number as a string). Higher is stronger; the weights match the CLI utility.
 const AKM_SCORES = {
 	'FT-SAE': 48, 'SAE': 48, 'Suite-B-192': 45, 'FT-802.1X-SHA384': 42, 'Suite-B': 40,
 	'802.1X': 40, 'FT-802.1X': 38, 'OWE': 35, 'PSK-SHA256': 32, 'FT-PSK': 30,
@@ -75,6 +83,9 @@ function iw_stations(ifname) {
 	return result;
 }
 
+// Normalises the various PMF (802.11w, protected management frames) indications to 1 (in use), 0 (not
+// in use) or null (unknown). Precedence: the [MFP] station flag, then hostapd's explicit value, then
+// inference from the AKM.
 function normalize_pmf(akm_code, raw, flags) {
 	if (flags && match(flags, /\[MFP\]/))
 		return 1;
@@ -90,6 +101,9 @@ function normalize_pmf(akm_code, raw, flags) {
 	return null;
 }
 
+// Raw security facts of one client: AKM and cipher selector codes, SAE group and PMF state. `hc` is the
+// ubus get_clients entry and `hs` the `hostapd_cli all_sta` entry; either may be undefined, and hostapd_cli
+// is preferred because get_clients does not carry these fields.
 function security_fields(hc, hs) {
 	let akm_code = hs?.AKMSuiteSelector ?? hc?.akm_suite_selector ?? hc?.AKMSuiteSelector;
 	let cipher_code = hs?.dot11RSNAStatsSelectedPairwiseCipher ?? hc?.pairwise_cipher;
@@ -103,6 +117,7 @@ function security_fields(hc, hs) {
 }
 
 // Same 0-100 scoring as the CLI utility; `partial` flags neutral defaults for missing fields.
+// The grade thresholds are A+ >= 95, A >= 85, B >= 70, C >= 50, else D. PMF counts 10 when on, 2 when off.
 function security_score(akm, cipher, sae_group, pmf) {
 	let partial = false;
 	let akm_score = AKM_SCORES[akm];
@@ -117,6 +132,7 @@ function security_score(akm, cipher, sae_group, pmf) {
 	}
 
 	let group_score = 8;
+	// Only SAE has a Diffie-Hellman group to rate; other AKMs get a flat 8.
 	if (match(akm, /SAE/)) {
 		group_score = SAE_GROUP_SCORES['' + sae_group];
 		if (group_score == null) {
@@ -136,21 +152,8 @@ function security_score(akm, cipher, sae_group, pmf) {
 	return { score, grade, partial };
 }
 
-function security_label(enc) {
-	enc ??= '';
-	if (enc == '' || enc == 'none') return 'Open/None';
-	if (match(enc, /psk2\+psk3|sae-mixed/)) return 'WPA2/WPA3 Mixed';
-	if (match(enc, /psk3|sae/)) return 'WPA3-Personal (SAE)';
-	if (match(enc, /psk2/)) return 'WPA2-PSK';
-	if (match(enc, /psk-mixed/)) return 'WPA/WPA2 Mixed';
-	if (match(enc, /psk/)) return 'WPA-PSK';
-	if (match(enc, /wpa3/)) return 'WPA3-Enterprise';
-	if (match(enc, /wpa2/)) return 'WPA2-Enterprise';
-	if (match(enc, /wpa/)) return 'WPA-Enterprise';
-	if (match(enc, /wep/)) return 'WEP (Legacy)';
-	return enc;
-}
-
+// Wi-Fi generation of a client: from hostapd's capability flags when present, else from the MCS wording
+// of the iw bitrate lines. A plain legacy rate is reported as 802.11a/g.
 function wifi_standard(hc, block) {
 	if (hc?.eht) return '802.11be';
 	if (hc?.he) return '802.11ax';
@@ -165,7 +168,7 @@ function wifi_standard(hc, block) {
 	return null;
 }
 
-// Bitrate in Mbit/s: hostapd reports 10 bit/s units, iw reports Mbit/s text.
+// Bitrate in Mbit/s for `dir` ("tx" or "rx"): hostapd reports 10 bit/s units, iw reports Mbit/s text.
 function bitrate(hc, block, dir) {
 	let raw = hc?.rate?.[dir];
 	if (raw != null && +raw > 0)
@@ -174,6 +177,8 @@ function bitrate(hc, block, dir) {
 	return m ? +m[1] : null;
 }
 
+// Channel width in MHz of a station, from the "NNMHz" token in its iw bitrate lines; a bitrate line
+// without one is a 20 MHz legacy rate. Null without iw data.
 function channel_width(block) {
 	if (!block)
 		return null;
@@ -183,6 +188,7 @@ function channel_width(block) {
 	return match(block, /bitrate/) ? 20 : null;
 }
 
+// Signal strength in dBm: hostapd's ubus value first, then all_sta, then iw's "signal:" line.
 function signal_dbm(hc, hs, block) {
 	if (hc?.signal != null) return +hc.signal;
 	if (hs?.signal != null) return +hs.signal;
@@ -190,11 +196,13 @@ function signal_dbm(hc, hs, block) {
 	return m ? +m[1] : null;
 }
 
+// Sort rank of an IPv6 address (higher sorts first via ipv6_by_mac): link-local 10, ULA (fc/fd) 20,
+// anything else (global) 30.
 function ipv6_rank(addr) {
 	return match(addr, /^fe80:/i) ? 10 : match(addr, /^(fc|fd)/i) ? 20 : 30;
 }
 
-// Netdevs behind wireless networks; ARP/neighbour rows on WAN, VPN or service links are ignored.
+// Netdevs behind wireless networks ({ device: true }); ARP/neighbour rows on WAN, VPN or service links are ignored.
 function wireless_devices(uci) {
 	let devices = {};
 	uci.foreach('wireless', 'wifi-iface', (s) => {
@@ -208,9 +216,12 @@ function wireless_devices(uci) {
 	return devices;
 }
 
+// IPv4 address per MAC from /proc/net/arp (resolved entries only, flag 0x2 = ATF_COM, restricted to the
+// wireless devices when known), overridden by the active DHCP lease.
 function ipv4_by_mac(devices, leases) {
 	let cache = {};
 	let arp = split(readfile('/proc/net/arp') ?? '', '\n');
+	// Row 0 is the column header; columns: IP, HW type, flags, MAC, mask, device.
 	for (let i = 1; i < length(arp); i++) {
 		let p = split(arp[i], /\s+/);
 		if (length(p) >= 6 && (+p[2] & 0x2) && p[3] != '00:00:00:00:00:00' &&
@@ -224,10 +235,13 @@ function ipv4_by_mac(devices, leases) {
 	return cache;
 }
 
+// IPv6 addresses per MAC from `ip -6 neigh show` as { mac: [address, ...] }, skipping failed/incomplete
+// entries and non-wireless devices, with global addresses ordered before ULA and link-local ones.
 function ipv6_by_mac(devices) {
 	let cache = {};
 	for (let line in split(run('ip -6 neigh show 2>/dev/null'), '\n')) {
 		let p = split(line, /\s+/);
+		// Lines look like "<addr> dev <if> lladdr <mac> <STATE>"; locate the keyword positions.
 		let dev = index(p, 'dev'), ll = index(p, 'lladdr');
 		if (dev < 0 || ll < 0 || ll + 1 >= length(p) || dev + 1 >= length(p))
 			continue;
@@ -248,6 +262,7 @@ function ipv6_by_mac(devices) {
 	return cache;
 }
 
+// Active DHCPv4 leases as { normalized mac: lease }, from the dhcp ubus object (served by odhcpd, not rpcd).
 function lease_map(ubus) {
 	let map = {};
 	let res = ubus.call('dhcp', 'ipv4leases') ?? {};
@@ -261,6 +276,8 @@ function lease_map(ubus) {
 	return map;
 }
 
+// Display name per MAC, in order of precedence: static dhcp host entries, DHCP lease hostnames, then
+// /etc/ethers ("<mac> <name>" lines).
 function name_by_mac(uci, leases) {
 	let names = {};
 	uci.load('dhcp');
@@ -281,6 +298,10 @@ function name_by_mac(uci, leases) {
 	return names;
 }
 
+// Assembles the JSON object of one client from the three data sources (`hc` ubus get_clients entry, `hs`
+// hostapd_cli all_sta entry, `block` iw station text; any may be undefined) and the address/name maps
+// in `net`. On a mixed WPA2/WPA3 interface the client's own AKM decides the security label. The rating is
+// only computed when both AKM and cipher are known; hostname has any domain suffix stripped.
 function build_client(mac, base_security, hc, hs, block, net) {
 	let sec = security_fields(hc, hs);
 	let akm = sec.akm_code ? (AKM_NAMES[sec.akm_code] ?? sec.akm_code) : null;
@@ -323,6 +344,7 @@ function build_client(mac, base_security, hc, hs, block, net) {
 	return client;
 }
 
+// Hostname per IP address from the dnsmasq/odhcpd hosts files in /tmp/hosts (first entry wins).
 function ip_hosts() {
 	let map = {};
 	for (let f in split(run('ls /tmp/hosts 2>/dev/null'), '\n')) {
@@ -337,6 +359,8 @@ function ip_hosts() {
 	return map;
 }
 
+// Builds the flab.wifi clients reply: for every enabled radio and interface, the union of the clients seen
+// by hostapd (ubus and all_sta) and iw, keyed by MAC.
 function collect() {
 	let uci = cursor();
 	let ubus = connect();
@@ -373,6 +397,7 @@ function collect() {
 			if (s.device != name || s.disabled == '1')
 				return;
 
+			// Match the netifd interface by section, or by SSID as a fallback; the UCI ifname is the last resort.
 			let ifname = null;
 			for (let i in wl[name]?.interfaces ?? []) {
 				if (i.section == s['.name'] || (i.config?.ssid == s.ssid && i.ifname)) {
@@ -396,6 +421,7 @@ function collect() {
 				let hs_all = hostapd_all_sta(ifname);
 				let iw_all = iw_stations(ifname);
 
+				// Union of the MACs known to any of the three sources.
 				let macs = {};
 				for (let m in hc_all) macs[lc(m)] = true;
 				for (let m in hs_all) macs[m] = true;
@@ -414,6 +440,7 @@ function collect() {
 	return { total, radios };
 }
 
+// rpcd registration: ubus object flab.wifi with the single method `clients` (no arguments).
 return {
 	'flab.wifi': {
 		clients: {

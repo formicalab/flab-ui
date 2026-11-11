@@ -7,6 +7,7 @@
 // - keep() drops series whose key disappeared, so removed devices do not accumulate.
 
 export function createTracker({ maxSamples = 60, gapMs = 15000 } = {}) {
+  // One tracked series: `list` holds { t (ms), c: counters } samples, oldest first, capped at maxSamples.
   const history = new Map();
 
   // Pairs of consecutive samples as { dt (s), d: { name: delta | null } }.
@@ -39,6 +40,7 @@ export function createTracker({ maxSamples = 60, gapMs = 15000 } = {}) {
       history.set(key, list);
     },
 
+    // Forgets every series whose key is not in `keys`.
     keep(keys) {
       const wanted = new Set(keys);
       for (const key of history.keys()) if (!wanted.has(key)) history.delete(key);
@@ -52,4 +54,5 @@ export function createTracker({ maxSamples = 60, gapMs = 15000 } = {}) {
   };
 }
 
+// Most recent value of a rates/ratios list, or null while it is empty.
 export const latest = list => list.at(-1) ?? null;

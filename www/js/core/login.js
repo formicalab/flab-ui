@@ -42,6 +42,8 @@ const svgBox = (cls, markup) => {
 // An input with an icon in front, as one control.
 const field = (iconName, input, ...after) => h('div', { className: 'login-field' }, icon(iconName, 18), input, ...after);
 
+// The sign-in screen: builds the hero and the form, signs in on submit and calls `onSuccess`; a failed attempt
+// shows the screen again with `message` (also used for "Session expired").
 export function showLogin(onSuccess, message) {
   const user = h('input', { className: 'form-control', name: 'username', value: 'flab', autocomplete: 'username', placeholder: 'User name' });
   const pass = h('input', { className: 'form-control', name: 'password', type: 'password', autocomplete: 'current-password', autofocus: true, placeholder: 'Password' });

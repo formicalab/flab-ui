@@ -20,6 +20,7 @@ import { query, events, reply } from 'flab.vici';
 
 //#region Algorithm strength tables (fraction of the maximum score, 0..1)
 
+// Key-exchange strength by strongSwan name (DH/ECDH group, curve or ML-KEM). Anything not listed gets 0.4.
 const KE = {
 	ECP_521: 1, ECP_384: 0.95, ECP_256: 0.8, ECP_224: 0.5, ECP_192: 0.3,
 	CURVE_448: 1, CURVE_25519: 0.9,
@@ -28,6 +29,7 @@ const KE = {
 	ML_KEM_512: 0.9, ML_KEM_768: 1, ML_KEM_1024: 1,
 };
 
+// Colour band for a 0..1 strength: good from 0.85, fair from 0.55, otherwise weak.
 function level(fraction) {
 	return fraction >= 0.85 ? 'good' : fraction >= 0.55 ? 'fair' : 'weak';
 }
@@ -40,8 +42,11 @@ function split_alg(name) {
 	return { alg: name, keysize: null };
 }
 
+// Strength 0..1 of an encryption algorithm name (strongSwan spelling, e.g. AES_CBC, AES_GCM_16) and key
+// size. AEAD modes score highest; a truncated 8/12-byte ICV costs 0.15; broken ciphers score 0.
 function rate_enc(alg, keysize) {
 	alg = uc(alg ?? '');
+	// Unknown key size is assumed to be 128 bits.
 	let ks = keysize ?? 128;
 	if (alg == '' || match(alg, /NULL/))
 		return 0;
@@ -58,7 +63,8 @@ function rate_enc(alg, keysize) {
 	return 0.4;
 }
 
-// Applies to PRFs and integrity algorithms alike.
+// Strength 0..1 of a PRF or integrity algorithm name; null when none is set (AEAD ciphers have no separate
+// integrity algorithm). Applies to PRFs and integrity algorithms alike.
 function rate_hash(name) {
 	name = uc(name ?? '');
 	if (name == '' || name == 'NONE')
@@ -71,6 +77,8 @@ function rate_hash(name) {
 	return 0.4;
 }
 
+// Strength 0..1 of a key-exchange method via the KE table; a "KEn_" prefix (additional exchanges in
+// RFC 9370 style names) is ignored and "none" scores 0 (no PFS).
 function rate_ke(name) {
 	name = replace(uc(name ?? ''), /^KE[0-9]_/, '');
 	if (name == '' || name == 'NONE')
@@ -78,6 +86,7 @@ function rate_ke(name) {
 	return KE[name] ?? 0.4;
 }
 
+// Strength 0..1 of an authentication class as VICI reports it ("public key", "EAP...", "pre-shared key").
 function rate_auth(cls) {
 	cls = lc(cls ?? '');
 	if (match(cls, /public key/)) return 1;
@@ -89,6 +98,8 @@ function rate_auth(cls) {
 
 //#region Assessment
 
+// One line of the score breakdown: `max` points scaled by `fraction` (clamped to 0..1), with its colour
+// level, the displayed `value` and an optional explanatory `note`.
 function part(key, label, max, fraction, value, note) {
 	fraction = fraction < 0 ? 0 : fraction > 1 ? 1 : fraction;
 	return {
@@ -123,6 +134,8 @@ function weak_offered(proposals) {
 }
 
 // Score one connection from its negotiated (or, when down, configured) parameters.
+// Points: IKE encryption 20, PRF/integrity 10, key exchange 20, authentication 10, ESP encryption 20,
+// PFS 15 and rekeying/liveness 5 (total 100); returns { score, grade, parts, warnings }.
 function assess(v) {
 	let parts = [];
 	let warnings = [];
@@ -130,13 +143,14 @@ function assess(v) {
 	let enc = rate_enc(v.ike.encr, v.ike.keysize);
 	push(parts, part('ike_enc', 'IKE encryption', 20, enc, v.ike.encr));
 
+	// The PRF and integrity algorithm are rated together by the weaker of the two.
 	let prf = rate_hash(v.ike.prf) ?? 0.4;
 	let integ = rate_hash(v.ike.integ);
 	push(parts, part('ike_prf', 'IKE PRF / integrity', 10, integ != null && integ < prf ? integ : prf, v.ike.prf));
 
 	push(parts, part('ike_ke', 'IKE key exchange', 20, rate_ke(v.ike.ke), v.ike.ke));
 
-	// An SA whose connection is no longer loaded has no policy to rate: authentication and lifetimes are
+	// An SA whose connection is not in the loaded configuration has no policy to rate: authentication and lifetimes are
 	// unknown rather than weak, so they get a neutral score and no pre-shared-key advice.
 	let auth = v.orphan ? 0.5 : rate_auth(v.auth);
 	push(parts, part('ike_auth', 'Authentication', 10, auth, v.auth ?? (v.orphan ? 'unknown' : null),
@@ -154,6 +168,8 @@ function assess(v) {
 	if (pfs == 0)
 		push(warnings, { level: 'warn', text: 'Perfect forward secrecy is not enabled for the child SA.' });
 
+	// Hygiene points (max 5): DPD on 2, child SA lifetime <= 8 h or a byte limit 2, IKE SA lifetime <= 24 h
+	// or reauthentication 1. Lifetimes are in seconds.
 	let hygiene = 0;
 	let notes = [];
 	if (v.orphan) {
@@ -203,6 +219,7 @@ function assess(v) {
 
 //#region Data collection
 
+// Values of a VICI section (an object whose keys are indexes or names) in key order; [] when absent.
 function sorted_values(section) {
 	let out = [];
 	for (let k in sort(keys(section ?? {})))
@@ -210,6 +227,8 @@ function sorted_values(section) {
 	return out;
 }
 
+// Authentication rounds of a connection as [{ auth, id, eap_id, certs, cacerts, groups }], read from the
+// "local-N" or "remote-N" sections (`prefix` is "local" or "remote") in key order.
 function auth_rounds(conf, prefix) {
 	let out = [];
 	let re = regexp('^' + prefix + '-[0-9]+$');
@@ -225,7 +244,9 @@ function auth_rounds(conf, prefix) {
 	return out;
 }
 
-// Kernel SAs keyed by SPI. Only whitelisted, non-secret fields are extracted.
+// Kernel SAs keyed by SPI (lower-case hex without 0x), parsed from `ip -s xfrm state`. Only whitelisted,
+// non-secret fields are extracted; key bytes on the "enc"/"auth" lines are matched but never stored.
+// Each SA starts at its "src ... dst ..." line and the following indented lines add to it.
 function xfrm_states() {
 	let states = {};
 	let cur = null;
@@ -311,7 +332,8 @@ function add_addresses(info) {
 	}
 }
 
-// xfrmN interfaces keyed by their numeric if_id.
+// xfrmN interfaces keyed by their numeric if_id. Fixture mode (FLAB_FIXTURES) reads a saved ifaces.json
+// instead of querying UCI and netifd.
 function xfrm_interfaces(ubus) {
 	let out = {};
 	let saved = fixture('ifaces.json');
@@ -324,7 +346,11 @@ function xfrm_interfaces(ubus) {
 	return out;
 }
 
+// JSON view of one child SA from VICI (`sa`), joined with the kernel SAs by SPI (`kernel`) and the xfrm
+// interface selected by its inbound if_id (`ifaces`). Byte/packet counters come from the daemon;
+// install_time, rekey_time and life_time are seconds.
 function child_sa_view(sa, kernel, ifaces) {
+	// if-id-in is a hex string; the xfrm interfaces are keyed by its numeric value.
 	let if_id = sa['if-id-in'] ? hex(sa['if-id-in']) : null;
 	let kin = kernel[lc(sa['spi-in'] ?? '')];
 	let kout = kernel[lc(sa['spi-out'] ?? '')];
@@ -350,7 +376,7 @@ function child_sa_view(sa, kernel, ifaces) {
 }
 
 // `sa` is one IKE SA (null when the connection is down). `conf` is null for an SA whose connection is
-// no longer loaded (orphan). `multi` is set when the connection has several IKE SAs at once.
+// not in the loaded configuration (orphan). `multi` is set when the connection has several IKE SAs at once.
 function build_connection(name, conf, sa, kernel, ifaces, multi) {
 	let orphan = conf == null;
 	conf ??= {};
@@ -370,6 +396,7 @@ function build_connection(name, conf, sa, kernel, ifaces, multi) {
 			push(child_names, n);
 	}
 
+	// Per-child "first configured" values feed the fallbacks below for tunnels that have no SA.
 	let children = [];
 	let first_esp = null;
 	let child_conf_first = null;
@@ -383,7 +410,8 @@ function build_connection(name, conf, sa, kernel, ifaces, multi) {
 			if (sa['child-sas'][k].name == cname)
 				push(sas, child_sa_view(sa['child-sas'][k], kernel, ifaces));
 		}
-		// Newest SA first: during a rekey overlap the older SA is about to be deleted.
+		// Newest SA first (install_time is an age in seconds, so ascending order): during a rekey overlap
+		// the older SA is about to be deleted.
 		sas = sort(sas, (a, b) => (a.install_time ?? 0) - (b.install_time ?? 0));
 
 		if (!child_orphan) {
@@ -464,9 +492,12 @@ function build_connection(name, conf, sa, kernel, ifaces, multi) {
 	};
 }
 
+// Builds the flab.ipsec status reply: daemon statistics plus one entry per IKE SA (or per configured
+// connection that has none), each with children, kernel state and a security rating.
 function collect() {
 	let ubus = connect();
 	let stats = reply('stats');
+	// A missing stats reply means charon/swanctl is not reachable.
 	let daemon = { running: stats != null };
 
 	if (stats) {
@@ -484,7 +515,7 @@ function collect() {
 		daemon.plugins = stats.plugins ?? [];
 	}
 
-	// Every configured connection, plus any with live SAs whose configuration was removed (orphans).
+	// Every configured connection, plus any with live SAs that are absent from the configuration (orphans).
 	let conns = stats ? query('list-conns') : {};
 	let sas = {};
 	for (let e in (stats ? events('list-sas') : [])) {
@@ -506,7 +537,8 @@ function collect() {
 			push(connections, build_connection(name, conns[name], null, kernel, ifaces, false));
 			continue;
 		}
-		// Oldest IKE SA first so entries keep their order when a new one appears.
+		// `established` is the IKE SA's age in seconds, so a descending sort puts the oldest first and entries
+		// keep their order when a new one appears.
 		list = sort(list, (a, b) => (num(b.established) ?? 0) - (num(a.established) ?? 0));
 		for (let sa in list)
 			push(connections, build_connection(name, conns[name], sa, kernel, ifaces, length(list) > 1));
@@ -516,6 +548,7 @@ function collect() {
 }
 //#endregion
 
+// rpcd registration: ubus object flab.ipsec with the single method `status` (no arguments).
 return {
 	'flab.ipsec': {
 		status: {

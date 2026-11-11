@@ -7,12 +7,17 @@ const rates = await import(pathToFileURL(path.resolve(import.meta.dirname, '../.
 const { record, series, latest, GAP_MS } = rates;
 
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
 const child = { name: 'c' };
+// A child SA whose xfrm interface reports the given cumulative rx/tx byte counters.
 const sa = (rx, tx) => ({ iface: { rx_bytes: rx, tx_bytes: tx } });
+// A connection with one child; rx == null models a tunnel that is down (child listed, no SA, no counters).
 const conn = (key, rx, tx) => ({ key, name: 'vpn', children: [{ name: 'c', sas: rx == null ? [] : [sa(rx, tx)] }] });
+// Feeds one status poll made at time `t` (ms) into the history.
 const poll = (t, ...conns) => record({ connections: conns }, t);
+// The recorded receive-rate series (bytes/s) of the child of connection `c`.
 const rx = c => series(c, child).rx;
 
 console.log('== throughput history ==');

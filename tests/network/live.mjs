@@ -1,8 +1,9 @@
-// Live-update test for the Network and Wi-Fi pages. A real browser opens the deployed UI; the
-// flab.network and flab.radio status calls are intercepted and answered with the scenario JSON produced by
-// the backend run, so both pages can be driven through link loss, STP changes, new bridges, radios going
-// down, DFS, channel changes and new SSIDs WITHOUT touching the router. Everything else (login, the
-// netifd interface dump) goes to the real router.
+// Live-update test for the network-related pages (Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh,
+// WireGuard, Firewall and Logs). A real browser opens the deployed UI; the status calls of the flab.network,
+// flab.radio, flab.mesh, flab.wireguard, flab.firewall and flab.logs plugins are intercepted and answered with
+// the scenario JSON produced by the backend run, so every page can be driven through link loss, STP changes,
+// new bridges, radios going down, DFS, a stale VPN peer, a stopped firewall, secret-looking log lines and so on
+// WITHOUT touching the router. Everything else (login, the netifd interface dump) goes to the real router.
 // Usage: node live.mjs <dir with scenario JSON>   (env: FLAB_URL, FLAB_PASSWORD, FLAB_SHOTS)
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
@@ -12,12 +13,14 @@ const out = process.argv[2];
 const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/flab/';
 const password = process.env.FLAB_PASSWORD ?? 'flab';
 const shots = process.env.FLAB_SHOTS;
+// Reads <scenario>.flab.<plugin>.json from the backend run.
 const scenario = (n, plugin) => JSON.parse(fs.readFileSync(path.join(out, `${n}.flab.${plugin}.json`), 'utf8'));
 
 let failed = 0;
+// Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
-const mock = { network: null, radio: null, mesh: null, wireguard: null, firewall: null };   // null = pass through to the real router
+const mock = { network: null, radio: null, mesh: null, wireguard: null, firewall: null, logs: null };   // null = pass through to the real router
 let tick = null;                                // optional per-poll mutation, used to simulate traffic and airtime
 const browser = await chromium.launch({ channel: 'msedge' });
 const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, colorScheme: 'light' });
@@ -26,7 +29,9 @@ const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
-const PLUGINS = { 'flab.network': 'network', 'flab.radio': 'radio', 'flab.mesh': 'mesh', 'flab.wireguard': 'wireguard', 'flab.firewall': 'firewall' };
+// ubus object name -> the key of `mock` that may answer it.
+const PLUGINS = { 'flab.network': 'network', 'flab.radio': 'radio', 'flab.mesh': 'mesh', 'flab.wireguard': 'wireguard', 'flab.firewall': 'firewall', 'flab.logs': 'logs' };
+// Answers a plugin call with the staged scenario (after applying `tick`), lets every other call through.
 await page.route('**/ubus', async route => {
   let body = null;
   try { body = route.request().postDataJSON(); } catch { /* not JSON */ }
@@ -38,11 +43,15 @@ await page.route('**/ubus', async route => {
   return route.continue();
 });
 
+// Text of the i-th summary tile value.
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
 // Whether the first element matching `a` comes before the first matching `b` in the document.
 const before = (a, b) => page.evaluate(([x, y]) => { const A = document.querySelector(x), B = document.querySelector(y); return !!A && !!B && !!(A.compareDocumentPosition(B) & Node.DOCUMENT_POSITION_FOLLOWING); }, [a, b]);
+// All visible text of every element matching a selector, joined by newlines.
 const text = sel => page.locator(sel).allInnerTexts().then(t => t.join('\n'));
+// Clicks Refresh and gives the page a moment to redraw.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
+// Switches one plugin's mock to a scenario (null = back to the live router), refreshes and takes a screenshot.
 const stage = async (label, plugin, name) => {
   console.log(`\n== ${label} ==`);
   mock[plugin] = name ? scenario(name, plugin) : null;
@@ -50,13 +59,14 @@ const stage = async (label, plugin, name) => {
   await refresh();
   if (shots) await page.screenshot({ path: path.join(shots, `${plugin}-${label.replace(/\W+/g, '-')}.png`), fullPage: true });
 };
+// CSS classes of a port tile on the Wired network page.
 const portClass = async name => (await page.locator(`.port:has(.pname:text-is("${name}"))`).first().getAttribute('class')) ?? '';
 
 await page.goto(baseUrl);
 await page.fill('input[name=password]', password);
 await page.click('button[type=submit]');
 await page.waitForSelector('.tile');
-
+check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wired network', 'Bridges', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'Devices and Interfaces', 'BGP', 'Services', 'Logs'].join(' | '), 'navigation order: network layers, Firewall, Devices and Interfaces recap, BGP, Services, Logs last', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
 //#region Wired network page
 await page.click('a[href="#network"]');
 await page.waitForSelector('.port');
@@ -311,6 +321,68 @@ check(await page.locator('.fw-pps').count() >= 1 && /pkt\/s/.test(await text('.f
 check(await page.locator('.fw-table .dot.up').count() >= 1, 'rules with traffic show an activity dot');
 check(/pkt\/s/.test(await tile(3)) || /pkt\/s/.test(await text('.tile')), 'the summary tile shows the rate');
 await stage('back to the live router', 'firewall', null);
+//#endregion
+
+//#region Logs page
+await page.click('a[href="#logs"]');
+await page.waitForSelector('.log-table');
+console.log('\n== logs: live router (pass-through) ==');
+mock.logs = null;
+await refresh();
+const logRows = () => page.locator('.log-table tbody tr');
+const atBottom = () => page.evaluate(() => { const p = document.querySelector('.log-pane'); return p.scrollHeight - p.scrollTop - p.clientHeight < 30; });
+const choose = (title, value) => page.selectOption(`select[title="${title}"]`, value);
+const SOURCE = 'Which log to read', LEVEL = 'Hide entries below this severity', PROGRAM = 'Show one source only', LINES = 'How many of the newest lines to load';
+check(await logRows().count() >= 20, 'system log entries from the live router', String(await logRows().count()));
+check(await before('.log-legend', '.log-pane') && /System log \(logread\)/.test(await text('.log-legend')) && /redacted/.test(await text('.log-legend')), 'the legend sits above the entries and mentions redaction');
+check(/^\d+ \/ \d+$/.test(await tile(0)) && /Errors/.test(await text('.tile')) && /Newest entry/.test(await text('.tile')), 'summary tiles', await tile(0));
+check(await atBottom(), 'the newest entries are in view: the pane opens scrolled to the bottom');
+
+await page.evaluate(() => { document.querySelector('.log-pane').scrollTop = 0; });
+await page.waitForTimeout(200);
+await refresh();
+check(!(await atBottom()), 'after scrolling up the view stays where it is on refresh');
+await page.click('button:has-text("Newest")');
+await page.waitForTimeout(300);
+check(await atBottom(), 'Newest jumps back to the newest entry and resumes following');
+
+await choose(LINES, '200');
+await page.waitForTimeout(900);
+check(await logRows().count() <= 200, 'asking for 200 lines loads at most 200', String(await logRows().count()));
+await choose(LINES, '500');
+
+await choose(SOURCE, 'kernel');
+await page.waitForTimeout(900);
+check(/Kernel log \(dmesg\)/.test(await text('.log-legend')) && (await page.locator('.log-origin').allInnerTexts()).every(t => t.trim() === 'kernel') && await logRows().count() > 10, 'the kernel log: every entry comes from the kernel');
+await choose(SOURCE, 'system');
+await page.waitForTimeout(900);
+
+console.log('\n== logs: filtering and states ==');
+await stage('the captured system log', 'logs', 'base');
+const total = await logRows().count();
+await choose(LEVEL, 'err');
+check(await logRows().count() < total && await page.locator('.log-table tbody tr:not(.lv-err)').count() === 0, 'the level filter keeps only errors', `${await logRows().count()} of ${total}`);
+await choose(LEVEL, 'all');
+await page.fill('.search input', 'dropbear');
+check(await logRows().count() > 0 && (await page.locator('.log-origin').allInnerTexts()).every(t => /dropbear/.test(t)) && /^\d+ \/ \d+$/.test(await tile(0)) && (await text('.tile')).includes('matching the filter'), 'the text filter narrows the entries and says so', await tile(0));
+await page.fill('.search input', 'zzz-no-such-text');
+check(await logRows().count() === 0 && /No entries match the filter/.test(await text('main')), 'a filter that matches nothing says so');
+await page.fill('.search input', '');
+await choose(PROGRAM, 'dropbear');
+check(await logRows().count() > 0 && (await page.locator('.log-origin').allInnerTexts()).every(t => /^dropbear/.test(t)), 'the source filter shows one program');
+await choose(PROGRAM, 'all');
+const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Download")')]);
+check(dl.suggestedFilename() === 'system-log.txt', 'Download saves the entries as a text file', dl.suggestedFilename());
+
+await stage('a secret and odd lines', 'logs', 'l-odd');
+const odd = await text('.log-table');
+check(!odd.includes('CANARY') && /password=<redacted>/.test(odd), 'a redacted secret is shown as <redacted>, never the value');
+check(await page.locator('.log-table tr.lv-none').count() >= 1 && /kept whole/.test(await text('.log-table tr.lv-none')), 'a line without a header is shown whole, dimmed');
+check(await page.locator('.log-table tr.lv-err').count() >= 1 && await page.locator('.log-table tr.lv-err .fl-badge.danger').count() >= 1, 'errors are tinted and carry a red level badge');
+
+await stage('an empty log', 'logs', 'l-empty');
+check(await page.locator('.log-table').count() === 0 && /The log is empty/.test(await text('main')), 'an empty log has an empty state');
+await stage('back to the live router', 'logs', null);
 //#endregion
 
 //#region Wi-Fi page

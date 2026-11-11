@@ -11,10 +11,14 @@ import { zonesCard } from './zones.js';
 import { exposureCard, rulesCard, redirectsCard } from './rules.js';
 import { findings, recordFirewall, packetsPerSec, fmtPps, wanZones } from './util.js';
 
+// Nothing but the paused flag has to survive the redraw on every poll.
 const state = { paused: false };
 
+// Flow-offloading mode from the firewall defaults: software flowtable, or hardware when it is also enabled.
 const offloadLabel = fw => !fw.defaults.flow_offloading ? 'Off' : fw.defaults.flow_offloading_hw ? 'Hardware' : 'Software';
 
+// Summary tiles. "Turned away from outside" sums the packets that the reject/drop chains of Internet-facing
+// zones (those with NAT) refused from the zone; conntrack turns amber above 80 % of the table limit.
 function summary(fw) {
   const rules = fw.rules, on = rules.filter(r => r.enabled);
   const wan = wanZones(fw);
@@ -30,6 +34,7 @@ function summary(fw) {
     tile('Flow offloading', offloadLabel(fw), fw.flowtable ? `${fw.flowtable.devices.length} devices` : 'no flowtable loaded', fw.defaults.flow_offloading ? 'text-success' : ''));
 }
 
+// Page object registered in pages/index.js (contract documented there).
 export default {
   id: 'firewall',
   label: 'Firewall',
@@ -39,6 +44,7 @@ export default {
   css: 'css/firewall.css',
   isPaused: () => state.paused,
 
+  // Counters are fed to the rate tracker before rendering so hit rates are live.
   load: async () => {
     const fw = await ubus('flab.firewall', 'status');
     recordFirewall(fw);
@@ -49,6 +55,7 @@ export default {
     return { nodes: [pauseControl(state), refreshControl(reload)] };
   },
 
+  // When there is no firewall configuration at all, only the findings and an explanation are shown.
   view(fw) {
     if (!fw.zones.length && !fw.running) return [healthBanner(findings(fw), ''), emptyState('No firewall configuration was found.')];
     return [

@@ -10,8 +10,10 @@ import { badge, card } from '../../core/ui.js';
 import { fmtNum } from '../../core/format.js';
 import { peerClass, peerTitle, isUp, stateKind, isPrivateAs, cmpPrefix } from './util.js';
 
+// SVG namespace for the connector elements, and the cap on announced prefixes listed in the router node.
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAX_ANNOUNCE_CHIPS = 6;
+// Sum of a per-channel route counter (`imported` or `exported`) over all channels of a peer.
 const sumRoutes = (p, key) => p.channels.reduce((n, c) => n + (c.routes?.[key] ?? 0), 0);
 
 // One animated connector per peer. `toPeer` selects the curve direction.
@@ -37,6 +39,8 @@ function announcedPrefixes(data) {
   return [...seen.values()].sort((a, b) => cmpPrefix(a.prefix, b.prefix));
 }
 
+// Left node: this router with its local AS number(s), BIRD version, router ID, a sample of announced
+// prefixes (full list in a tooltip) and the number of prefixes learned.
 function routerNode(data) {
   const localAs = [...new Set(data.peers.map(p => p.local_as).filter(v => v != null))];
   const announced = announcedPrefixes(data);
@@ -56,6 +60,7 @@ function routerNode(data) {
     h('div', { className: 'muted small mt-1' }, `Learns ${fmtNum(learned)} prefixes`));
 }
 
+// Middle node for one peer: neighbor address, interface, imported/exported route counts and session state.
 function peerNode(data, p) {
   const cls = peerClass(data, p.name);
   const up = isUp(p);
@@ -70,6 +75,7 @@ function peerNode(data, p) {
     badge(p.state, stateKind(p.state))));
 }
 
+// Right node for a remote AS: how many of its peers are up and how many prefixes were learned from them.
 function asNode(asn, peers, data) {
   const prefixes = new Set(data.paths.filter(r => peers.some(p => p.name === r.peer)).map(r => r.prefix)).size;
   const upCount = peers.filter(isUp).length;
@@ -81,6 +87,8 @@ function asNode(asn, peers, data) {
     h('div', { className: 'muted small' }, `${fmtNum(prefixes)} prefixes`));
 }
 
+// The diagram card. Peers are grouped by neighbor AS; the router-to-peers connector spans all peers at
+// once, while each AS block draws its own peers-to-AS connector.
 export function topologyCard(data) {
   if (!data.peers.length) return card([icon('diagram-2'), 'BGP topology'], h('div', { className: 'card-body muted' }, 'No BGP sessions are configured.'));
 

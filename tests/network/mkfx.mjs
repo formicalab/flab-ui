@@ -1,8 +1,8 @@
-// Builds the fixture directories for the Network and Wi-Fi radio scenarios from the output captured on the
-// router. Usage: node mkfx.mjs <work dir containing fx-real/>
+// Builds the fixture directories for the network-related scenarios (ports, bridges, Wi-Fi radios, mesh,
+// WireGuard, firewall and logs) from the output captured on the router. Usage: node mkfx.mjs <work dir containing fx-real/>
 // Writes <work>/<scenario>/ with one file per command, ubus call, UCI config and kernel file that
-// flab.network, flab.radio and flab.mesh read (see FLAB_FIXTURES in rpcd/lib/flab/util.uc), plus <work>/expect.json
-// with the facts the assertions compare against.
+// flab.network, flab.radio, flab.mesh, flab.wireguard, flab.firewall and flab.logs read (see FLAB_FIXTURES in
+// rpcd/lib/flab/util.uc), plus <work>/expect.json with the facts the assertions compare against.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -57,6 +57,10 @@ const fwZones = Object.values(uciFw).filter(s => s['.type'] === 'zone');
 const fwWan = fwZones.find(z => z.masq === '1')?.name;
 if (!fwWan) throw new Error('the router has no masquerading (WAN) firewall zone to test with');
 const fwRuleCount = Object.values(uciFw).filter(s => s['.type'] === 'rule').length;
+// Logs: `logread -l 500` and `dmesg -r` are saved under these names (see FLAB_RECORD in rpcd/lib/flab/util.uc).
+const sysLog = 'logread_l_500.txt';
+const kernLog = 'dmesg_r.txt';
+
 // Adds a counting rule with an fw4 comment to a chain of the captured ruleset.
 function nftAdd(fx, chain, comment, packets, bytes) {
   const doc = JSON.parse(fx.raw[nftFile]);
@@ -78,8 +82,11 @@ const ifaces = Object.keys(files).map(p => p.match(/^\/sys\/class\/net\/([^/]+)\
 const LEARNED = { lan1: 3, lan2: 1, 'phy0-ap0': 11, 'phy0-mesh0': 1, 'phy1-ap0': 5 };
 const LOCAL = 2;
 
+// The binary `brforward` file of one bridge: for each member port, LEARNED[port] remote entries plus LOCAL
+// local ones (the bridge's own addresses), as the kernel would list them.
 function brforward(fx, bridge) {
   const entries = [];
+  // Appends n entries on `port`; `local` marks the bridge's own MAC addresses.
   const add = (port, local, n) => {
     for (let k = 0; k < n; k++) {
       const e = Buffer.alloc(16);
@@ -98,6 +105,8 @@ function brforward(fx, bridge) {
 //#endregion
 
 //#region Scenarios
+// A fresh copy of the captured state that a scenario edits: command output (raw), kernel files, netifd devices,
+// the wireless UCI and the learned-MAC counts. The connected WireGuard peer's handshake is pinned to "now".
 const baseFx = () => {
   const fx = { raw: clone(raw), files: clone(files), devices: clone(devices), uci: clone(uci), learned: clone(LEARNED) };
   wgNormalize(fx);
@@ -287,6 +296,18 @@ const scenarios = {
     return fx;
   },
   'f-conntrack': fx => { fx.files['/proc/sys/net/netfilter/nf_conntrack_count'] = '60000\n'; return fx; },
+
+  // ── Logs ──
+  // A secret in a daemon line and in a kernel line, an unparsable line, an unknown severity, a kernel line of
+  // another facility and one without a priority prefix.
+  'l-odd': fx => {
+    fx.raw[sysLog] += `Wed Nov 11 12:00:00 2026 daemon.err pppd[99]: auth failed password=${CANARY} user=x\n`
+      + 'this line has no syslog header and is kept whole\n'
+      + 'Wed Nov 11 12:00:01 2026 daemon.bogus odd[1]: unknown severity\n';
+    fx.raw[kernLog] += `<3>[ 9999999.000000] driver key: ${CANARY}\n<30>[ 9999999.500000] daemon-ish kernel line\nraw line without a prefix\n`;
+    return fx;
+  },
+  'l-empty': fx => { fx.raw[sysLog] = ''; fx.raw[kernLog] = ''; return fx; },
 };
 //#endregion
 

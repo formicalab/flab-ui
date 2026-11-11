@@ -4,18 +4,19 @@
 
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, chip, kv, section, lifebar, meter, sparkline } from '../../core/ui.js';
+import { badge, chip, kv, section, lifebar, meter, sparkline, muted, mono, GRADE_KIND } from '../../core/ui.js';
 import { fmtBytes, fmtBps, fmtSpan, fmtNum } from '../../core/format.js';
-import { encName, hashName, keName, authName, isAead, stateKind, GRADE_KIND } from './names.js';
+import { encName, hashName, keName, authName, isAead, stateKind } from './names.js';
 import { series, latest } from './rates.js';
 
-const muted = t => h('span', { className: 'muted' }, t);
-const mono = t => h('span', { className: 'mono' }, t);
+// Helpers over the backend's security rating: the scored part with a given key (ike_enc, esp_pfs, ...),
+// its level (good/fair/weak/...) used as a chip color, and a "0xhex (decimal)" number format.
 const partOf = (conn, key) => conn.rating.parts.find(p => p.key === key);
 const lvl = (conn, key) => partOf(conn, key)?.level ?? '';
 const hex = n => n == null ? '–' : `0x${n.toString(16)} (${n})`;
 
 //#region header and flow diagram
+// Card header: state dot, name, IKE version, state and warnings (NAT, orphan) and the security grade.
 function header(conn) {
   const up = conn.state === 'ESTABLISHED';
   const r = conn.rating;
@@ -32,6 +33,7 @@ function header(conn) {
       h('b', {}, r.grade), h('small', {}, ` ${r.score}/100`)));
 }
 
+// One end of the flow diagram: icon, title, "host:port" and the IKE identity when known.
 function node(iconName, title, addr, id) {
   return h('div', { className: 'vpn-node' }, icon(iconName, 28),
     h('div', { className: 'node-title' }, title),
@@ -39,6 +41,9 @@ function node(iconName, title, addr, id) {
     id ? h('div', { className: 'muted small' }, `ID ${id}`) : null);
 }
 
+// This router <-> remote gateway diagram with the negotiated ESP cipher and PFS group on the link. Without
+// a live IKE SA the endpoints come from the configuration (500 is the default IKE port); without an
+// installed child SA the cipher shown is the one the rating took from the configuration.
 function flow(conn) {
   const ike = conn.ike, cfg = conn.config;
   const sa = conn.children.find(c => c.sas.length)?.sas[0];
@@ -61,6 +66,7 @@ function flow(conn) {
 //#endregion
 
 //#region IKE SA
+// IKE SA section: the negotiated parameters when the SA exists, else the configured proposals and settings.
 function ikeBlock(conn) {
   const ike = conn.ike, cfg = conn.config;
   const authClass = (cfg.remote_auth[0] ?? cfg.local_auth[0])?.auth;
@@ -101,6 +107,8 @@ function ikeBlock(conn) {
 //#endregion
 
 //#region child SA (tunnel)
+// Child SA (tunnel) section: selectors, negotiated ESP cipher, kernel XFRM state (replay window, NAT-T
+// encapsulation, offload) and lifetimes; a configured child without an installed SA shows only its settings.
 function childBlock(conn, child) {
   const title = `Tunnel · ${child.name}${child.orphan ? ' (not in configuration)' : ''}`;
   const sa = child.sas[0];
@@ -147,6 +155,8 @@ function childBlock(conn, child) {
 //#endregion
 
 //#region traffic
+// Throughput and xfrm interface section for a child SA: live rates and sparkline from the browser-side
+// tracker (rates.js), interface counters, and the SA's own byte/packet totals.
 function trafficBlock(conn, child) {
   const sa = child.sas[0];
   if (!sa) return section('Traffic & interface', muted('No traffic: tunnel is down.'));
@@ -180,6 +190,7 @@ function trafficBlock(conn, child) {
 //#endregion
 
 //#region score breakdown
+// Per-part score meters (the backend's rating.parts) and the list of weaker algorithms offered by the config.
 function scoreBlock(conn) {
   const r = conn.rating;
   return h('div', { className: 'vpn-score' },
@@ -193,6 +204,7 @@ function scoreBlock(conn) {
 }
 //#endregion
 
+// The connection card; `compact` shows only the header, flow diagram and score (no IKE/tunnel/traffic columns).
 export function connectionCard(conn, { compact = false } = {}) {
   const cols = compact ? null : h('div', { className: 'vpn-cols' },
     [ikeBlock(conn), ...conn.children.flatMap(c => [childBlock(conn, c), trafficBlock(conn, c)])]);

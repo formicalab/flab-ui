@@ -1,9 +1,11 @@
-/* Wi-Fi page styling (radio cards). Loaded on demand by core/app.js when the page is first opened. */
+/* Wi-Fi page styling (one card per radio). Loaded on demand by core/app.js when the page is first opened. */
 
+/* Table and card-header helpers; these repeat the identical rules in base.css */
 .card-header svg { color: var(--fl-brand); }
 .table .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .table td svg { margin-right: .3rem; vertical-align: -1px; color: var(--fl-muted); }
 
+/* Radio card grid and card; the accent bar turns red when the radio is down */
 .rd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 980px), 1fr)); gap: 1.25rem; }
 .rd-card { position: relative; overflow: hidden; }
 .rd-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--fl-ok-fg), var(--fl-brand)); }
@@ -20,13 +22,14 @@
 .rd-stat .value { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .rd-stat .sub { font-size: .75rem; color: var(--fl-muted); }
 
+/* Radio findings (warn / bad / info) under the key figures */
 .rd-find { list-style: none; margin: 0; padding: 0 1.25rem .8rem; display: grid; gap: .35rem; }
 .rd-find li { display: flex; align-items: center; gap: .55rem; }
 .rd-find .warn { color: var(--fl-warn-fg); }
 .rd-find .bad { color: var(--fl-bad-fg); }
 .rd-find .info { color: var(--fl-info-fg); }
 
-/* ── Configuration, utilisation, channels ── */
+/* ── Configuration, utilisation, channels: two detail columns, airtime meter and the channel strip ── */
 .rd-cols { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr); gap: 1.75rem; padding: 1.1rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
 .rd-card h3 { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--fl-muted); margin: 0 0 .6rem; }
 .rd-air { display: grid; gap: .45rem; margin-bottom: 1.2rem; }
@@ -35,6 +38,7 @@
 .rd-air .spark { width: 100%; height: 40px; }
 .rd-air .spark-empty { width: 100% !important; }
 
+/* Channel strip: one box per channel (.span = in the channel width, .cur = current, .dfs, .off = disabled) */
 .rd-chan { display: grid; gap: .5rem; }
 .chans { display: flex; flex-wrap: wrap; gap: .3rem; }
 .chn { min-width: 2.1rem; padding: .15rem .35rem; text-align: center; font-size: .78rem; font-variant-numeric: tabular-nums; border-radius: 6px; border: 1px solid var(--fl-stroke); background: var(--fl-surface-hover); color: var(--fl-muted); }
@@ -43,8 +47,9 @@
 .chn.dfs { border-color: var(--fl-warn-fg); }
 .chn.off { text-decoration: line-through; opacity: .45; }
 
-/* ── Interfaces ── */
+/* ── Interfaces: the SSIDs/stations of the radio and their feature chips ── */
 .rd-ifaces { padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
 .rd-feat { display: flex; flex-wrap: wrap; gap: .25rem; max-width: 24rem; }
 
+/* Narrow screens: single-column detail columns */
 @media (max-width: 991.98px) { .rd-cols { grid-template-columns: 1fr; } .rd-hw { margin-left: 0; } }

@@ -4,19 +4,14 @@
 // plugin and temperatures from flab.sensors; both are optional here so that a missing plugin or ACL only
 // hides its own section.
 import { h } from '../../core/dom.js';
-import { ubus, AuthError } from '../../core/ubus.js';
+import { ubus, optional } from '../../core/ubus.js';
 import { card, tile, tiles, table } from '../../core/ui.js';
 import { fmtBytes, fmtDur } from '../../core/format.js';
 import { temperatureCard, sensorLabel, sensorLevel, hottest, fmtTemp } from './temperatures.js';
 import { cpuCard, record, hasDelta, current, level, levelText } from './cpu.js';
 
+// Text colour classes for the good/fair/weak levels.
 const TEXT = { good: 'text-success', fair: 'text-warning', weak: 'text-danger' };
-
-// Optional data sources: a missing plugin or ACL must not break the rest of the page.
-const optional = promise => promise.catch(e => {
-  if (e instanceof AuthError) throw e;
-  return null;
-});
 
 export default {
   id: 'overview',
@@ -25,6 +20,7 @@ export default {
   interval: 5000,
   css: 'css/overview.css',
 
+  // One round of calls. The flab.* calls are optional so the standard system data still renders without them.
   load: async () => {
     const [board, info, sensors, firstCpu] = await Promise.all([
       ubus('system', 'board'), ubus('system', 'info'), optional(ubus('flab.sensors', 'status')), optional(ubus('flab.system', 'cpu'))]);
@@ -43,12 +39,15 @@ export default {
     return { board, info, sensors, cpu };
   },
 
+  // Tiles, CPU card, temperature card and the system/memory cards. Memory "used" excludes buffers and cache,
+  // like `free`; the standard system info reports load averages as fixed-point integers scaled by 65536.
   view({ board: b, info, sensors, cpu: cpuData }) {
     const mem = info.memory;
     const used = mem.total - mem.free - mem.buffered - mem.cached;
     const pct = Math.round(used / mem.total * 100);
 
     const list = sensors?.sensors ?? [];
+    // The CPU thermal zone, shown as its own tile.
     const cpu = list.find(s => s.kind === 'zone' && /cpu/.test(s.name));
     const hot = hottest(list);
     const usage = cpuData ? current('cpu') : null;

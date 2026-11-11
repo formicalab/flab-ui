@@ -4,12 +4,13 @@
 import { tile, tiles, emptyState, healthBanner } from '../../core/ui.js';
 import { ubus } from '../../core/ubus.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
-import { fmtSpan } from '../../core/format.js';
-import { fmtLine } from '../network/util.js';
+import { fmtLine, fmtSpan } from '../../core/format.js';
 import { interfaceCard, findings, recordWireguard, rateNow } from './iface.js';
 
+// Only the paused flag; the page has no filters, so nothing else needs to survive the redraw on every poll.
 const state = { paused: false };
 
+// Summary tiles over the enabled peers of all interfaces; traffic is the sum of the live rx and tx rates.
 function summary(list) {
   const peers = list.flatMap(i => i.peers.filter(p => p.enabled).map(p => ({ i, p })));
   const connected = peers.filter(({ p }) => p.state === 'connected');
@@ -22,6 +23,7 @@ function summary(list) {
     tile('Traffic now', fmtLine(sum('rx') + sum('tx')), `↓ ${fmtLine(sum('rx'))}  ↑ ${fmtLine(sum('tx'))}`));
 }
 
+// Page object registered in pages/index.js (contract documented there).
 export default {
   id: 'wireguard',
   label: 'WireGuard',
@@ -31,6 +33,7 @@ export default {
   css: 'css/wireguard.css',
   isPaused: () => state.paused,
 
+  // Peer counters are fed to the rate tracker before rendering.
   load: async () => {
     const data = await ubus('flab.wireguard', 'status');
     recordWireguard(data);

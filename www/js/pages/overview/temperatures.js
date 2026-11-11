@@ -8,6 +8,9 @@ import { badge, card } from '../../core/ui.js';
 const WARM = 75;
 const HOT = 90;
 
+// Friendly { title, sub } for a sensor. The name patterns are the ones this router's hwmon/thermal drivers
+// report (MediaTek Wi-Fi radios, the SoC thermal zone, MDIO Ethernet PHYs); other sensors fall back to
+// their own label or name.
 export function sensorLabel(s) {
   const name = s.name ?? '';
   let m = name.match(/^mt79\d+_phy(\d+)$/);
@@ -18,6 +21,8 @@ export function sensorLabel(s) {
   return { title: s.label || name || s.id, sub: s.driver ?? s.kind };
 }
 
+// 'weak' (hot) at 90 °C, at the sensor's throttle limit or within 5 °C of its critical limit; 'fair' (warm)
+// from 75 °C; otherwise 'good'.
 export function sensorLevel(s) {
   if (s.temp >= HOT) return 'weak';
   if (s.throttle != null && s.temp >= s.throttle) return 'weak';
@@ -25,11 +30,17 @@ export function sensorLevel(s) {
   return s.temp >= WARM ? 'fair' : 'good';
 }
 
+// Word for a temperature level.
 export const levelText = lvl => ({ good: 'Normal', fair: 'Warm', weak: 'Hot' }[lvl]);
-export const levelBadge = lvl => ({ good: 'success', fair: 'warning', weak: 'danger' }[lvl]);
+// Badge kind for a temperature level (good/fair/weak).
+const levelBadge = lvl => ({ good: 'success', fair: 'warning', weak: 'danger' }[lvl]);
+// The sensor with the highest temperature, or null for an empty list.
 export const hottest = sensors => sensors.reduce((a, s) => (!a || s.temp > a.temp ? s : a), null);
+// Temperature in °C with one decimal.
 export const fmtTemp = t => `${t.toFixed(1)} °C`;
 
+// Horizontal bar scaled to the critical limit (else max, else 125 °C) with tick marks for the throttle,
+// max and critical limits. A mark at or past the scale end is omitted; max is skipped when it equals critical.
 function gauge(s, lvl) {
   const limit = s.crit ?? s.max ?? 125;
   const pct = v => Math.min(100, Math.max(0, v / limit * 100));
@@ -42,6 +53,7 @@ function gauge(s, lvl) {
     ...marks.filter(([, v]) => v < limit).map(([label, v, cls]) => h('i', { className: `mark ${cls}`, style: `left:${pct(v)}%`, title: `${label} ${v} °C` }))));
 }
 
+// The limits a sensor reports as one line, e.g. "throttle 80 °C · critical 110 °C".
 function limitsText(s) {
   const parts = [];
   if (s.throttle != null) parts.push(`throttle ${s.throttle} °C`);
@@ -50,6 +62,7 @@ function limitsText(s) {
   return parts.join(' · ') || 'no limits reported';
 }
 
+// One sensor tile: name, level badge, temperature, gauge and limits.
 function sensorTile(s) {
   const lvl = sensorLevel(s);
   const label = sensorLabel(s);
@@ -61,6 +74,8 @@ function sensorTile(s) {
     h('div', { className: 'muted small' }, limitsText(s)));
 }
 
+// The temperature card from a flab.sensors status reply: the sensor grid plus a footer with throttling
+// state (a cooling device with cur > 0 is active), the CPU zone's trip points and the cooling devices.
 export function temperatureCard(data) {
   const zoneTrips = data.sensors.find(s => s.kind === 'zone' && s.trips?.length);
   const throttled = data.cooling.filter(c => c.cur > 0);

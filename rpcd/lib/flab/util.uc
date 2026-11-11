@@ -15,8 +15,10 @@ import { cursor } from 'uci';
 // With FLAB_RECORD=<dir> set (also never inside rpcd) every real call additionally saves its result under
 // the same names, so a fixture set is captured by simply running the plugin once on the router. Keys and
 // passwords found in recorded ubus/UCI data are blanked before they are written.
+// Fixture directory (replay mode) and record directory (capture mode); both unset in production.
 const FIXTURES = getenv('FLAB_FIXTURES');
 const RECORD = getenv('FLAB_RECORD');
+// Turns a command or "object method" string into the file-name stem used by fixtures.
 const slug = (s) => replace(s, /[^A-Za-z0-9]+/g, '_');
 
 // Saves data as <FLAB_RECORD>/<name>; does nothing unless recording.
@@ -25,6 +27,8 @@ export function record_file(name, data) {
 		writefile(`${RECORD}/${name}`, data);
 }
 
+// Deep copy of recorded ubus/UCI data with key and password-like values (PSKs, passphrases, private keys,
+// 802.11r key-holder secrets) replaced by 'REDACTED'. Matching is on the option name, case-insensitive.
 function scrub(v) {
 	if (type(v) == 'array')
 		return map(v, scrub);
@@ -43,6 +47,7 @@ export function fixture(name) {
 
 // Run a shell command and return its stdout ('' on failure). Callers must pass only trusted strings.
 export function run(cmd) {
+	// Replay mode: the command is never executed, only looked up by name.
 	if (FIXTURES)
 		return fixture(slug(replace(cmd, / 2>\/dev\/null$/, '')) + '.txt');
 
@@ -83,13 +88,15 @@ export function uci_all(config) {
 	return all;
 }
 
+// Lazily loaded files.json map (path -> contents), used for both replay and recording.
+let saved_files = null;
+// Device-tree properties hold binary values, so they are stored hex-encoded.
+const is_binary = (path) => index(path, '/proc/device-tree/') == 0;
+
 // Contents of a small kernel pseudo-file such as /sys/class/net/<if>/carrier, exactly as read (device-tree
 // properties are binary), or null when it is missing or unreadable (a down link refuses to report its
 // speed, for instance). Binary files are recorded hex-encoded ("hex:...") because JSON cannot carry
 // arbitrary bytes; the fixture reader decodes them again.
-let saved_files = null;
-const is_binary = (path) => index(path, '/proc/device-tree/') == 0;
-
 export function sysfs_raw(path) {
 	if (FIXTURES) {
 		saved_files ??= json(fixture('files.json') || '{}');
@@ -106,7 +113,7 @@ export function sysfs_raw(path) {
 	return s;
 }
 
-// The same, trimmed.
+// Like sysfs_raw(), but with surrounding whitespace (the trailing newline) removed.
 export function sysfs(path) {
 	let s = sysfs_raw(path);
 	return s == null ? null : trim(s);
@@ -122,6 +129,7 @@ export function normalize_mac(raw) {
 	let hex = lc(replace(raw, /[^0-9a-fA-F]/g, ''));
 	if (length(hex) != 12)
 		return null;
+	// Split the 12 hex digits into six pairs; slice() drops the full-match element.
 	return join(':', slice(match(hex, /(..)(..)(..)(..)(..)(..)/), 1));
 }
 
@@ -130,7 +138,34 @@ export function num(v) {
 	return (v == null || v == '') ? null : +v;
 }
 
-// Human label for a UCI wireless `encryption` value.
+// A UCI option as a list: UCI stores multi-value options as arrays but a single value as a plain string
+// ("a b c" is also accepted); null becomes an empty list.
+export function as_list(v) {
+	return v == null ? [] : (type(v) == 'array' ? v : split(trim(v), /[[:space:]]+/));
+}
+
+// Channel, frequency, width, centre frequency and TX power of a wireless interface, from `iw dev <if> info`.
+// Only the keys iw reports are set. The interface name must already have passed safe_ifname().
+export function iw_channel_info(ifname) {
+	let out = {};
+	for (let line in split(run(`iw dev ${ifname} info 2>/dev/null`), '\n')) {
+		// e.g. "channel 36 (5180 MHz), width: 80 MHz, center1: 5210 MHz"; center1 is absent for 20 MHz.
+		let m = match(line, /channel ([0-9]+) \(([0-9]+) MHz\), width: ([0-9]+) MHz(, center1: ([0-9]+) MHz)?/);
+		if (m) {
+			out.channel = +m[1];
+			out.freq = +m[2];
+			out.width = +m[3];
+			out.center = num(m[5]);
+		}
+		if ((m = match(line, /txpower ([0-9.]+) dBm/)))
+			out.txpower = +m[1];
+	}
+	return out;
+}
+
+// Human label for a UCI wireless `encryption` value. Order matters: the more specific patterns
+// (psk2+psk3, psk-mixed) are tested before the substrings they contain (psk2, psk). An unrecognised
+// value is returned unchanged.
 export function security_label(enc) {
 	enc ??= '';
 	if (enc == '' || enc == 'none') return 'Open/None';

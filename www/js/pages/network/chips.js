@@ -9,4 +9,5 @@ const CHIPS = [
   [/AQR\d+/, 'Multi-gigabit Ethernet PHY'],
 ];
 
+// Description for a chip name as reported by the router, or '' when it is unknown or missing.
 export const chipNote = name => (name ? CHIPS.find(([re]) => re.test(name.toUpperCase()))?.[1] ?? '' : '');

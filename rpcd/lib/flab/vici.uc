@@ -10,6 +10,7 @@
 
 import { run } from 'flab.util';
 
+// True when `o` (a character code from ord()) can be part of a VICI key: [0-9A-Za-z_.-].
 function is_key_char(o) {
 	return (o >= 48 && o <= 57) || (o >= 65 && o <= 90) || (o >= 97 && o <= 122) || o == 95 || o == 46 || o == 45;
 }
@@ -26,6 +27,8 @@ function starts_token(s, pos) {
 }
 
 // Parse the "{...}" body that follows the first "{" of a raw VICI line into nested objects.
+// Returns null when the line has no "{". Character codes used below: 32 space, 61 "=", 91 "[", 93 "]",
+// 123 "{", 125 "}".
 function parse_body(line) {
 	let n = length(line);
 	let i = index(line, '{');
@@ -33,6 +36,8 @@ function parse_body(line) {
 		return null;
 	i++;
 
+	// Parses "key=value", "key=[list]" and "key {...}" entries until the closing "}" of the current
+	// section; `i` is shared with the caller so nested sections advance the same cursor.
 	function section() {
 		let obj = {};
 		while (i < n) {
@@ -46,6 +51,7 @@ function parse_body(line) {
 			if (i == start) { i++; continue; }
 			let key = substr(line, start, i - start);
 
+			// "key {" is written with a space before the brace; "key{" and "key=" have none.
 			if (ord(line, i) == 32 && ord(line, i + 1) == 123)
 				i++;
 			o = ord(line, i);
@@ -56,6 +62,7 @@ function parse_body(line) {
 			}
 			else if (o == 61) {
 				i++;
+				// "[a b c]" is a list value; an empty "[]" gives an empty array.
 				if (ord(line, i) == 91) {
 					i++;
 					let vs = i;
@@ -66,6 +73,7 @@ function parse_body(line) {
 					obj[key] = (text == '') ? [] : split(text, ' ');
 				}
 				else {
+					// Scalar: runs to the closing "}" or to the space before the next "key=" / "key {".
 					let vs = i;
 					while (i < n) {
 						let c = ord(line, i);

@@ -9,4 +9,5 @@ export const h = (tag, attrs = {}, ...kids) => {
   return el;
 };
 
+// Looks an element up by id (the #app mount point).
 export const byId = id => document.getElementById(id);

@@ -4,14 +4,15 @@
 // dump, so a new bridge, VLAN or tunnel shows up as a new chain without any page change.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card } from '../../core/ui.js';
+import { badge, card, muted } from '../../core/ui.js';
 import { fmtDur } from '../../core/format.js';
 import { buildLayers } from './layers.js';
 import { addressesOf } from '../network/shared.js';
 
+// An address line in the Addressing column (smaller than the inline `mono` helper).
 const mono = t => h('div', { className: 'mono small' }, t);
-const muted = t => h('span', { className: 'muted' }, t);
 
+// Default route's next hop (0.0.0.0/0 or ::/0), shown as the gateway.
 const gatewayOf = i => (i.route ?? []).find(r => r.mask === 0 && (r.target === '0.0.0.0' || r.target === '::'))?.nexthop;
 
 // A node of a chain: status dot, name and what kind of thing it is. Wireless nodes carry their radio, so the
@@ -28,12 +29,14 @@ function node(n, sub) {
   return wireless ? h('a', { href: n.kind === 'mesh' ? '#mesh' : '#wifi', className: 'cn-link' }, chip) : chip;
 }
 
+// Arrow between two chips of a device chain.
 const sepNode = () => h('span', { className: 'cn-sep' }, '›');
 
 // Rows that sit on the very same ports and radios (lan and lan100 on one bridge) show them once: the first row
 // lists them, later rows say "same ports as <first>". Single-port rows stay explicit, they are short already.
 const signature = row => row.roots.map(r => r.name).sort().join(',');
 
+// First column: the ports and radios under the row, the "same ports as" shortcut, or the interface it runs over.
 function physicalCell(row, firstBySignature) {
   if (row.roots.length) {
     const first = row.roots.length > 1 ? firstBySignature.get(signature(row)) : null;
@@ -56,6 +59,7 @@ function carries(row) {
   return last.kind === 'bridge' ? 'the bridge\'s untagged frames' : null;
 }
 
+// Devices column: the chain of bridge/VLAN devices bottom-up, with a note on which frames the layer carries.
 function devicesCell(row) {
   if (!row.devices.length) return muted(carries(row) ?? '–');
   const out = [];
@@ -66,6 +70,7 @@ function devicesCell(row) {
   return [h('div', { className: 'cn-group' }, out), carries(row) ? h('div', { className: 'muted small cn-carries' }, carries(row)) : null];
 }
 
+// Interface column: name and protocol; orphan wireless rows say why they have no interface.
 function interfaceCell(row) {
   if (row.orphan) return muted(row.roots[0].kind === 'radio' ? 'radio with no interface configured' : 'not attached to a network interface');
   return h('div', {},
@@ -73,16 +78,19 @@ function interfaceCell(row) {
     row.over && row.roots.length ? h('div', { className: 'muted small' }, 'on the protocol device of ', h('b', {}, row.over)) : null);
 }
 
+// Protocol device column (pppoe-wan, wg0, ...); a device owned by another interface is labelled "(shared)".
 function protoCell(row) {
   const d = row.protoDevice;
   if (!d) return muted('–');
   return h('div', {}, node({ name: d.name, kind: 'protocol', up: row.up }, ''), d.label ? h('div', { className: 'muted small' }, d.shared ? `${d.label} (shared)` : d.label) : null);
 }
 
+// A default route, i.e. a /0 route to the IPv4 or IPv6 unspecified address.
 const isDefault = r => r.mask === 0 && (r.target === '0.0.0.0' || r.target === '::');
 // A route whose next hop is the unspecified address is reached directly on the interface.
 const onLink = hop => !hop || hop === '0.0.0.0' || hop === '::';
 
+// Addressing column: addresses, gateway, DNS, non-default routes and IPv6 prefixes (assigned and received).
 function addressingCell(r) {
   if (!r.iface) return muted('–');
   const i = r.iface;
@@ -117,11 +125,14 @@ function zoneCell(r, net) {
   ];
 }
 
+// State column: up, pending (netifd is still bringing it up) or down, with the uptime while up.
 function stateCell(r) {
   if (!r.iface) return badge(r.up ? 'up' : 'down', r.up ? 'success' : '');
   return [badge(r.up ? 'up' : r.iface.pending ? 'pending' : 'down', r.up ? 'success' : r.iface.pending ? 'warning' : 'danger'), r.up ? h('div', { className: 'muted small' }, fmtDur(r.iface.uptime)) : null];
 }
 
+// The "Network layers" card: legend plus one table row per layers.js row. `first` maps a ports signature to
+// the first row that lists those ports, so later rows can refer to it.
 export function interfacesCard(ifs, net, tunlinks, radios) {
   const layers = buildLayers(net, ifs, tunlinks, radios);
   const first = new Map();

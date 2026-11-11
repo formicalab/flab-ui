@@ -7,6 +7,7 @@ import path from 'node:path';
 
 const work = process.argv[2];
 const real = path.join(work, 'fx-real');
+// Reads one captured file with LF line endings.
 const read = f => fs.readFileSync(path.join(real, f), 'utf8').replace(/\r/g, '');
 
 // A recognisable fake key replaces the redacted one so the assertions can prove it never leaves the plugin.
@@ -21,7 +22,9 @@ const files = {
   'ip_s_xfrm_state.txt': read('ip_s_xfrm_state.txt').replace(/^(\s+(?:aead|enc|auth-trunc|auth) \S+) 0x00/gm, `$1 0x${CANARY}`),
 };
 
+// Non-empty lines of a text.
 const lines = t => t.split('\n').filter(Boolean);
+// Connection names (sorted), taken from the `list-conn` events of the captured swanctl output.
 const names = lines(files['swanctl_list_conns_raw.txt']).filter(l => l.startsWith('list-conn event {')).map(l => l.match(/^list-conn event \{(\S+) /)[1]).sort();
 if (names.length < 4) throw new Error(`expected at least 4 connections on the router, found ${names.length}`);
 
@@ -48,8 +51,11 @@ files['ifaces.json'] = JSON.stringify(ifaces);
 //#endregion
 
 //#region Scenarios
+// The `<kind> event {<name> ...}` line of one connection in raw swanctl output (kind = list-conn or list-sa).
 const eventLine = (text, name, kind) => lines(text).find(l => l.startsWith(`${kind} event {${name} `));
+// Raw swanctl output without the events of one connection.
 const dropEvent = (text, name, kind) => lines(text).filter(l => !l.startsWith(`${kind} event {${name} `)).join('\n') + '\n';
+// Raw swanctl output with the events of one connection rewritten by `fn`.
 const replaceEvent = (text, name, kind, fn) => lines(text).map(l => (l.startsWith(`${kind} event {${name} `) ? fn(l) : l)).join('\n') + '\n';
 
 // A copy of the child SA block with fresh SPIs, a new id and a young install time, as seen while a rekey overlaps.
@@ -66,6 +72,7 @@ const secondIkeSa = line => line
   .replace(/(\S+)-\d+ \{name=(\S+) uniqueid=\d+/, '$1-901 {name=$2 uniqueid=901')
   .replace(/spi-in=\w+/, 'spi-in=cccc3333').replace(/spi-out=\w+/, 'spi-out=dddd4444');
 
+// Scenario builders: each maps the baseline file set to the files of one scenario (see assert.mjs for what each proves).
 const scenarios = {
   base: f => f,
   down: f => ({ ...f, 'swanctl_list_sas_raw.txt': dropEvent(f['swanctl_list_sas_raw.txt'], names[1], 'list-sa') }),
