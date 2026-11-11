@@ -3,13 +3,38 @@
 
 'use strict';
 
-import { popen, readfile } from 'fs';
+import { popen, readfile, writefile } from 'fs';
+import { cursor } from 'uci';
 
 // Test seam: with FLAB_FIXTURES=<dir> set (never the case inside rpcd) run() returns saved command
 // output instead of executing anything. The file is named after the command with every run of
 // non-alphanumerics turned into "_" and a trailing "2>/dev/null" dropped, e.g.
 // "swanctl --list-sas --raw 2>/dev/null" -> swanctl_list_sas_raw.txt
+// The helpers below follow the same idea for ubus calls (<object>_<method>.json), UCI
+// (uci_<config>.json) and kernel pseudo-files (files.json: path -> contents).
+// With FLAB_RECORD=<dir> set (also never inside rpcd) every real call additionally saves its result under
+// the same names, so a fixture set is captured by simply running the plugin once on the router. Keys and
+// passwords found in recorded ubus/UCI data are blanked before they are written.
 const FIXTURES = getenv('FLAB_FIXTURES');
+const RECORD = getenv('FLAB_RECORD');
+const slug = (s) => replace(s, /[^A-Za-z0-9]+/g, '_');
+
+// Saves data as <FLAB_RECORD>/<name>; does nothing unless recording.
+export function record_file(name, data) {
+	if (RECORD && data != null)
+		writefile(`${RECORD}/${name}`, data);
+}
+
+function scrub(v) {
+	if (type(v) == 'array')
+		return map(v, scrub);
+	if (type(v) != 'object')
+		return v;
+	let out = {};
+	for (let k, x in v)
+		out[k] = match(k, /^(key|r0kh|r1kh|[a-z_]*(psk|password|passphrase|secret)[a-z_]*)$/i) ? 'REDACTED' : scrub(x);
+	return out;
+}
 
 // Contents of <FLAB_FIXTURES>/<name>, or null when the seam is inactive.
 export function fixture(name) {
@@ -19,14 +44,62 @@ export function fixture(name) {
 // Run a shell command and return its stdout ('' on failure). Callers must pass only trusted strings.
 export function run(cmd) {
 	if (FIXTURES)
-		return fixture(replace(replace(cmd, / 2>\/dev\/null$/, ''), /[^A-Za-z0-9]+/g, '_') + '.txt');
+		return fixture(slug(replace(cmd, / 2>\/dev\/null$/, '')) + '.txt');
 
 	let p = popen(cmd, 'r');
 	if (!p)
 		return '';
 	let out = p.read('all') ?? '';
 	p.close();
+	if (RECORD)
+		record_file(slug(replace(cmd, / 2>\/dev\/null$/, '')) + '.txt', out);
 	return out;
+}
+
+// Call a ubus object served by another daemon (netifd, hostapd, ...); null on failure. rpcd runs
+// plugins in-process, so never use this for objects rpcd serves itself.
+export function ubus_call(conn, object, method, args) {
+	if (FIXTURES) {
+		let raw = fixture(slug(`${object} ${method}`) + '.json');
+		return raw ? json(raw) : null;
+	}
+	let res = conn.call(object, method, args);
+	if (RECORD)
+		record_file(slug(`${object} ${method}`) + '.json', res != null ? sprintf('%J', scrub(res)) : '');
+	return res;
+}
+
+// Every section of a UCI config as { name: { '.type': ..., option: value } }.
+export function uci_all(config) {
+	if (FIXTURES) {
+		let raw = fixture(`uci_${config}.json`);
+		return raw ? json(raw).values : {};
+	}
+	let c = cursor();
+	c.load(config);
+	let all = c.get_all(config) ?? {};
+	if (RECORD)
+		record_file(`uci_${config}.json`, sprintf('%J', { values: scrub(all) }));
+	return all;
+}
+
+// Trimmed contents of a small kernel pseudo-file such as /sys/class/net/<if>/carrier, or null when it
+// is missing or unreadable (a down link refuses to report its speed, for instance).
+let saved_files = null;
+export function sysfs(path) {
+	if (FIXTURES) {
+		saved_files ??= json(fixture('files.json') || '{}');
+		return saved_files[path];
+	}
+	let s = readfile(path);
+	s = s == null ? null : trim(s);
+	if (RECORD && s != null) {
+		// Several plugins record into one folder, so merge with what an earlier run saved.
+		saved_files ??= json(readfile(`${RECORD}/files.json`) ?? '{}');
+		saved_files[path] = s;
+		writefile(`${RECORD}/files.json`, sprintf('%J', saved_files));
+	}
+	return s;
 }
 
 // Interface names reach shell command lines, so restrict them to a safe alphabet.

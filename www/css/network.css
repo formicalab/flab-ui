@@ -1,0 +1,82 @@
+/* Network page styling (ports and bridges). Loaded on demand by core/app.js when the page is first opened. */
+
+.card-header svg { color: var(--fl-brand); }
+.table .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table td svg { margin-right: .3rem; vertical-align: -1px; color: var(--fl-muted); }
+.table .dot { display: inline-block; }
+.net-health { display: flex; align-items: center; gap: .6rem; padding: .7rem 1rem; border-radius: 10px; border: 1px solid var(--fl-stroke); background: var(--fl-surface); }
+.net-health.ok { color: var(--fl-ok-fg); background: var(--fl-ok-bg); border-color: transparent; }
+.net-health.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); border-color: transparent; }
+.net-health.bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); border-color: transparent; }
+.net-health.info { background: var(--fl-info-bg); color: var(--fl-info-fg); border-color: transparent; }
+.net-health ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.net-health li { display: flex; align-items: center; gap: .55rem; }
+.net-health svg { flex: none; }
+
+/* ── Front panel ── */
+.port-groups { display: flex; flex-wrap: wrap; gap: 1.4rem 2.5rem; align-items: flex-start; }
+.port-group { flex: 0 1 auto; }
+.port-group .gtitle { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--fl-muted); margin-bottom: .6rem; }
+.port-group .gtitle small { font-weight: 400; }
+.port-row { display: flex; flex-wrap: wrap; gap: 1rem; }
+.port { position: relative; display: grid; gap: .3rem; justify-items: center; text-align: center; width: 176px; padding: .85rem .7rem .75rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: var(--fl-surface-hover); transition: border-color .25s, background .25s; }
+.port .jack { display: grid; place-items: center; width: 52px; height: 40px; border-radius: 8px; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
+.port .pname { font-weight: 600; }
+.port .pspeed { font-size: .95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.port .prate { display: flex; gap: .8rem; font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--fl-muted); }
+.port .prate svg { margin-right: .15rem; vertical-align: -1px; }
+.port .spark { width: 100%; height: 26px; }
+.port .spark-empty { font-size: .7rem; }
+.port .ptags { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: center; min-height: 1.4rem; }
+.port.up { border-color: color-mix(in srgb, var(--fl-ok-fg) 55%, var(--fl-stroke)); background: color-mix(in srgb, var(--fl-ok-bg) 40%, var(--fl-surface)); }
+.port.up .jack { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
+.port.warn { border-color: var(--fl-warn-fg); background: color-mix(in srgb, var(--fl-warn-bg) 45%, var(--fl-surface)); }
+.port.warn .jack { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
+.port.down { opacity: .72; }
+.port.down .pspeed { color: var(--fl-muted); font-weight: 400; }
+
+.port-table td { vertical-align: top; }
+.port-table th, .port-table td { padding-left: .6rem; padding-right: .6rem; }
+.dot.idle { background: var(--fl-muted); opacity: .55; }
+.hw-lines { font-size: .75rem; line-height: 1.35; max-width: 15rem; }
+.neg { max-width: 13rem; }
+.port .phw { font-size: .7rem; line-height: 1.25; color: var(--fl-muted); min-height: 1.75rem; }
+
+/* ── Error breakdown ── */
+.diag-btn { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }
+.diag-btn svg { margin-right: .3rem; }
+.port-table tr.diag-row > td { padding: 0; background: color-mix(in srgb, var(--fl-surface-hover) 60%, transparent); }
+.diag { display: grid; gap: .9rem; padding: 1rem 1.25rem 1.25rem; white-space: normal; }
+.diag-head { display: flex; align-items: center; gap: .6rem; }
+.diag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem 2rem; }
+.diag-block h4 { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--fl-muted); margin: 0 0 .4rem; }
+.diag-table { margin: 0; background: transparent; }
+.diag-table td { border-color: var(--fl-stroke); vertical-align: top; }
+.diag-table td:nth-child(2) { white-space: nowrap; font-weight: 600; }
+.diag-log { margin: 0; padding: .6rem .8rem; max-height: 12rem; overflow: auto; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface); white-space: pre-wrap; }
+
+/* ── Bridges ── */
+.br-card { position: relative; overflow: hidden; }
+.br-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--fl-ok-fg), var(--fl-brand)); }
+.br-card.is-down::before { background: var(--fl-bad-fg); }
+.br-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: 1.2rem 1.25rem .5rem; }
+.br-head .name { font-size: 1.2rem; font-weight: 600; }
+.br-head svg { color: var(--fl-brand); }
+.br-addrs { margin-left: auto; display: flex; flex-wrap: wrap; gap: .5rem; }
+.br-stp { display: grid; grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 2fr) minmax(11rem, 1fr); gap: 1rem; align-items: center; padding: .5rem 1.25rem 1.1rem; }
+.br-stp.root { grid-template-columns: minmax(11rem, 22rem) 1fr; }
+.br-stp.off { grid-template-columns: 1fr; }
+.br-node { display: grid; gap: .15rem; justify-items: center; text-align: center; padding: .8rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: var(--fl-surface-hover); }
+.br-node svg { color: var(--fl-brand); }
+.br-node.me { border-color: var(--fl-brand); }
+.br-node .node-title { font-weight: 600; }
+.br-link { display: grid; gap: .5rem; text-align: center; }
+.br-link .line { height: 3px; border-radius: 2px; background: repeating-linear-gradient(90deg, var(--fl-brand) 0 12px, transparent 12px 20px); background-size: 20px 3px; animation: br-flow 1s linear infinite; }
+.br-cols { display: grid; grid-template-columns: minmax(300px, 1fr) 2.2fr; gap: 1.75rem; padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
+
+@keyframes br-flow { to { background-position: 20px 0; } }
+
+@media (max-width: 991.98px) {
+  .br-stp, .br-cols { grid-template-columns: 1fr; }
+  .br-addrs { margin-left: 0; }
+}

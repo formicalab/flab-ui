@@ -18,10 +18,10 @@
 //   css       stylesheet loaded the first time the page opens
 
 import overview from './overview/index.js';
-import wifi from './wifi.js';
+import wifi from './wifi/index.js';
 import ipsec from './ipsec/index.js';
 import bgp from './bgp/index.js';
-import network from './network.js';
+import network from './network/index.js';
 import services from './services.js';
 
 export const pages = [overview, wifi, ipsec, bgp, network, services];

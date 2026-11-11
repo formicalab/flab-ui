@@ -1,0 +1,11 @@
+{
+  "flab": {
+    "description": "flab-ui Network page (ports and bridges)",
+    "read": {
+      "ubus": {
+        "flab.network": ["status"]
+      }
+    },
+    "write": {}
+  }
+}

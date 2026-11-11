@@ -1,0 +1,169 @@
+// Builds the fixture directories for the Network and Wi-Fi radio scenarios from the output captured on the
+// router. Usage: node mkfx.mjs <work dir containing fx-real/>
+// Writes <work>/<scenario>/ with one file per command, ubus call, UCI config and kernel file that
+// flab.network and flab.radio read (see FLAB_FIXTURES in rpcd/lib/flab/util.uc), plus <work>/expect.json
+// with the facts the assertions compare against.
+import fs from 'node:fs';
+import path from 'node:path';
+
+const work = process.argv[2];
+const real = path.join(work, 'fx-real');
+const text = f => fs.readFileSync(path.join(real, f), 'utf8').replace(/\r/g, '');
+const clone = o => JSON.parse(JSON.stringify(o));
+
+// Planted in every wifi-iface so the assertions can prove no secret is ever forwarded.
+const CANARY = 'CANARYSECRET';
+
+//#region Parse the capture
+// The capture is what the plugins recorded themselves (FLAB_RECORD): <command>.txt, <object>_<method>.json,
+// uci_<config>.json, files.json (path -> contents). Keys and passwords were blanked while recording.
+const raw = {};
+for (const f of fs.readdirSync(real)) if (!['files.json', 'uci_wireless.json'].includes(f) && !f.startsWith('brforward_')) raw[f] = text(f);
+
+const files = JSON.parse(text('files.json'));
+const uci = JSON.parse(text('uci_wireless.json')).values;
+for (const s of Object.values(uci)) if (s['.type'] === 'wifi-iface') { s.key = CANARY; s.r0kh = [CANARY]; s.r1kh = [CANARY]; }
+const devices = JSON.parse(raw['network_device_status.json']);
+const bridgeNames = Object.keys(devices).filter(n => devices[n].devtype === 'bridge');
+if (!bridgeNames.length) throw new Error('no bridge captured');
+const ifaces = Object.keys(files).map(p => p.match(/^\/sys\/class\/net\/([^/]+)\/phy80211\/name$/)?.[1]).filter(Boolean).sort();
+//#endregion
+
+//#region Synthetic bridge forwarding table
+// The kernel table is binary, so it is generated: 16 bytes per entry (MAC, port, is_local, ageing, port high byte).
+const LEARNED = { lan1: 3, lan2: 1, 'phy0-ap0': 11, 'phy0-mesh0': 1, 'phy1-ap0': 5 };
+const LOCAL = 2;
+
+function brforward(fx, bridge) {
+  const entries = [];
+  const add = (port, local, n) => {
+    for (let k = 0; k < n; k++) {
+      const e = Buffer.alloc(16);
+      e[0] = 0x02; e[5] = entries.length + 1;
+      e[6] = port & 0xff; e[7] = local ? 1 : 0; e[12] = port >> 8;
+      entries.push(e);
+    }
+  };
+  for (const m of fx.devices[bridge]?.['bridge-members'] ?? []) {
+    const port = parseInt(fx.files[`/sys/class/net/${m}/brport/port_no`] ?? '0', 16);
+    add(port, false, fx.learned[m] ?? 0);
+    add(port, true, LOCAL);
+  }
+  return Buffer.concat(entries);
+}
+//#endregion
+
+//#region Scenarios
+const baseFx = () => ({ raw: clone(raw), files: clone(files), devices: clone(devices), uci: clone(uci), learned: clone(LEARNED) });
+const member = 'phy1-ap0';
+const bridge = bridgeNames[0];
+const sys = (dev, f) => `/sys/class/net/${dev}/${f}`;
+const radioIf = (fx, radio) => Object.values(fx.uci).find(s => s['.type'] === 'wifi-iface' && s.device === radio);
+const wireless = fx => JSON.parse(fx.raw['network_wireless_status.json']);
+const setWireless = (fx, w) => { fx.raw['network_wireless_status.json'] = JSON.stringify(w); };
+
+const scenarios = {
+  base: fx => fx,
+
+  // ── Network ──
+  'n-linkdown': fx => {
+    fx.devices.lan1.carrier = false; delete fx.devices.lan1.speed;
+    fx.devices.lan1['link-partner-advertising'] = [];
+    fx.files[sys('lan1', 'carrier')] = '0'; fx.files[sys('lan1', 'operstate')] = 'down';
+    fx.files[sys('lan1', 'brport/state')] = '0';
+    return fx;
+  },
+  'n-downshift': fx => { fx.devices.lan2.speed = '100F'; return fx; },
+  'n-root': fx => {
+    fx.files[sys(bridge, 'bridge/root_id')] = fx.files[sys(bridge, 'bridge/bridge_id')];
+    fx.files[sys(bridge, 'bridge/root_port')] = '0';
+    for (const m of fx.devices[bridge]['bridge-members']) fx.files[sys(m, 'brport/designated_bridge')] = fx.files[sys(bridge, 'bridge/bridge_id')];
+    return fx;
+  },
+  'n-blocked': fx => {
+    fx.files[sys(member, 'brport/state')] = '4';
+    fx.files[sys(bridge, 'bridge/topology_change')] = '1';
+    return fx;
+  },
+  'n-nostp': fx => { fx.files[sys(bridge, 'bridge/stp_state')] = '0'; return fx; },
+  'n-vlanfilter': fx => { fx.files[sys(bridge, 'bridge/vlan_filtering')] = '1'; fx.files[sys(bridge, 'bridge/default_pvid')] = '1'; return fx; },
+  // lan5 moves into a second bridge, which must be discovered without any hard-coded name.
+  'n-newbridge': fx => {
+    const second = 'br-guest';
+    fx.devices[second] = clone(fx.devices[bridge]);
+    fx.devices[second]['bridge-members'] = ['lan5'];
+    fx.devices[bridge]['bridge-members'] = fx.devices[bridge]['bridge-members'].filter(m => m !== 'lan5');
+    for (const [p, v] of Object.entries(fx.files)) if (p.startsWith(sys(bridge, 'bridge/'))) fx.files[p.replace(`/${bridge}/`, `/${second}/`)] = v;
+    fx.files[sys(second, 'bridge/bridge_id')] = '7000.9483c4a215c9';
+    fx.files[sys(second, 'bridge/root_id')] = '7000.9483c4a215c9';
+    fx.files[sys(second, 'bridge/root_port')] = '0';
+    return fx;
+  },
+  // A port number above 255 exercises the high byte of the forwarding-table entry.
+  'n-highport': fx => { fx.files[sys('lan5', 'brport/port_no')] = '0x102'; fx.learned.lan5 = 4; return fx; },
+  'n-nodevices': fx => { fx.devices = {}; return fx; },
+  // lan2 starts logging CRC errors: kernel counter, driver counter and two log lines.
+  'n-errors': fx => {
+    fx.devices.lan2.statistics.rx_crc_errors = 5; fx.devices.lan2.statistics.rx_errors = 5;
+    fx.raw['ethtool_S_lan2.txt'] = 'NIC statistics:\n     tx_packets: 100\n     rx_crc_errors: 5\n     rx_pp_alloc_slow: 9\n';
+    fx.raw['logread_e_lan2_.txt'] = 'Wed Nov 11 09:00:01 2026 kern.info kernel: [1] mtk_soc_eth: lan2: Link is Down\nWed Nov 11 09:00:05 2026 kern.info kernel: [2] mtk_soc_eth: lan2: Link is Up - 1Gbps/Full\n';
+    return fx;
+  },
+
+  // ── Wi-Fi radios ──
+  'r-down': fx => {
+    const w = wireless(fx);
+    w.radio1 = { up: false, pending: false, retry_setup_failed: false, disabled: false, autostart: true, interfaces: [] };
+    setWireless(fx, w);
+    return fx;
+  },
+  'r-dfs': fx => { const k = 'hostapd_phy1_ap0_get_status.json'; fx.raw[k] = JSON.stringify({ ...JSON.parse(fx.raw[k]), status: 'DFS' }); return fx; },
+  'r-channel': fx => {
+    fx.raw['iw_dev_phy0_ap0_info.txt'] = fx.raw['iw_dev_phy0_ap0_info.txt'].replace(/channel 6 \(2437 MHz\), width: 40 MHz, center1: 2447 MHz/, 'channel 11 (2462 MHz), width: 20 MHz');
+    fx.raw['iw_dev_phy0_ap0_survey_dump.txt'] = fx.raw['iw_dev_phy0_ap0_survey_dump.txt']
+      .replace(/(frequency:\s+2437 MHz) \[in use\]/, '$1').replace(/(frequency:\s+2462 MHz)/, '$1 [in use]');
+    return fx;
+  },
+  'r-disabled': fx => {
+    fx.uci.radio1.disabled = '1';
+    const w = wireless(fx);
+    w.radio1 = { up: false, pending: false, retry_setup_failed: false, disabled: true, autostart: true, interfaces: [] };
+    setWireless(fx, w);
+    return fx;
+  },
+  'r-newssid': fx => {
+    fx.uci.guest_2g = { '.type': 'wifi-iface', '.name': 'guest_2g', '.index': 99, device: 'radio0', mode: 'ap', ssid: 'guest', network: 'guest', encryption: 'none', key: CANARY };
+    return fx;
+  },
+};
+//#endregion
+
+//#region Write
+function writeScenario(name, build) {
+  const fx = build(baseFx());
+  const dir = path.join(work, name);
+  fs.mkdirSync(dir, { recursive: true });
+  const put = (file, data) => fs.writeFileSync(path.join(dir, file), data);
+  for (const [file, data] of Object.entries(fx.raw)) put(file, data);
+  put('files.json', JSON.stringify(fx.files));
+  put('network_device_status.json', JSON.stringify(fx.devices));
+  put('uci_wireless.json', JSON.stringify({ values: fx.uci }));
+  for (const b of Object.keys(fx.devices).filter(n => fx.devices[n].devtype === 'bridge')) put(`brforward_${b}`, brforward(fx, b));
+}
+
+for (const [name, build] of Object.entries(scenarios)) writeScenario(name, build);
+fs.writeFileSync(path.join(work, 'scenarios.json'), JSON.stringify(Object.keys(scenarios)));
+
+const wl = wireless(baseFx());
+fs.writeFileSync(path.join(work, 'expect.json'), JSON.stringify({
+  bridge,
+  members: baseFx().devices[bridge]['bridge-members'],
+  learned: LEARNED, local: LOCAL,
+  ports: Object.keys(devices).filter(n => ['dsa', 'ethernet'].includes(devices[n].devtype)),
+  radios: Object.keys(wl),
+  maclist: Object.values(uci).flatMap(s => s.maclist ?? []),
+  canary: CANARY,
+  phyIfaces: ifaces,
+}));
+console.log(`built ${Object.keys(scenarios).join(', ')}`);
+//#endregion

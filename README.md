@@ -35,7 +35,7 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
    v
 rpcd ---- built-in objects:  session, system, network.interface, service
    |
-   '----- ucode plugins:    flab.wifi, flab.ipsec, flab.bgp, flab.sensors, flab.system   (this repo)
+   '----- ucode plugins:    flab.wifi, flab.radio, flab.network, flab.ipsec, flab.bgp, flab.sensors, flab.system   (this repo)
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici
@@ -59,13 +59,13 @@ Design principles:
 ```
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
-  tests/bgp/, tests/ipsec/   Test suites for the BGP and IPsec pages (run.ps1, see "Testing")
+  tests/bgp/, tests/ipsec/, tests/network/   Test suites for the BGP, IPsec and Network + Wi-Fi radio pages (run.ps1, see "Testing")
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
     css/
       base.css               Fluent tokens, app shell, shared component styles
-      <page>.css             Page-specific styles, loaded on first visit (overview, ipsec, bgp)
+      <page>.css             Page-specific styles, loaded on first visit (overview, wifi, ipsec, bgp, network)
     js/
       main.js                Entry point: theme + start the app
       core/                  Framework-level modules shared by all pages
@@ -76,15 +76,16 @@ flab-ui/
         ui.js                Components: card, tile(s), table, badge, chip, kv, lifebar, meter, sparkline
         controls.js          Command-bar controls: search, select, pause, toggle, refresh
         format.js            Bytes, rates, durations, numbers
+        rates.js             Rate tracker: turns cumulative counters into rates/ratios between polls
         icons.js             Inlined Bootstrap Icons path data, icon(name)
         theme.js             Follows the OS light/dark preference
       pages/
         index.js             Page registry and the page contract (read this first)
         overview/            index.js + cpu.js + temperatures.js
-        wifi.js              Wi-Fi clients
+        wifi/                index.js (page + clients table), radios.js (radio cards)
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         bgp/                 index.js, topology.js, peer.js, routes.js, announced.js, system.js, util.js
-        network.js           Interfaces
+        network/             index.js, ports.js, bridges.js, interfaces.js, diagnostics.js, util.js
         services.js          procd services
   rpcd/
     ucode/flab.<page>.uc     rpcd plugins  -> /usr/share/rpcd/ucode/
@@ -183,6 +184,8 @@ return {
 | Plugin | ubus object | Method | Sources |
 |---|---|---|---|
 | `flab.wifi.uc` | `flab.wifi` | `clients` | uci wireless/network/dhcp, ubus `network.wireless`, `dhcp`, `hostapd.<if>`; `hostapd_cli all_sta`, `iw station dump`, `/proc/net/arp`, `ip -6 neigh` |
+| `flab.radio.uc` | `flab.radio` | `status` | uci wireless, ubus `network.wireless`, `hostapd.<if>`; `iw dev/phy info`, `iw survey dump`, `iwinfo`, `iw reg get`; sysfs counters |
+| `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware); `logread` (error log lines) |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
@@ -190,10 +193,15 @@ return {
 
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
-- **`flab.util`**: `run(cmd)`, `fixture(name)`, `safe_ifname()`, `normalize_mac()`, `num()`. `run()` and
-  `fixture()` are also the test seam: with `FLAB_FIXTURES=<dir>` set (rpcd never does) `run()` returns
-  `<dir>/<command>.txt` instead of executing the command; the file name is the command with every run of
-  non-alphanumerics turned into `_` and a trailing `2>/dev/null` dropped.
+- **`flab.util`**: `run(cmd)`, `ubus_call(conn, object, method, args)`, `uci_all(config)`, `sysfs(path)`,
+  `fixture(name)`, `safe_ifname()`, `normalize_mac()`, `num()`. They are also the test seam: with
+  `FLAB_FIXTURES=<dir>` set (rpcd never does) `run()` returns `<dir>/<command>.txt` instead of executing the
+  command (file name = the command with every run of non-alphanumerics turned into `_` and a trailing
+  `2>/dev/null` dropped), `ubus_call()` reads `<object>_<method>.json`, `uci_all()` reads
+  `uci_<config>.json` and `sysfs()` looks the path up in `files.json`. A plugin written with these helpers
+  is testable without any plugin-specific hook. With `FLAB_RECORD=<dir>` set the same helpers save what
+  they read under those names (keys and passwords blanked), so a fixture set is captured by running the
+  plugin once; `tests/network/run.ps1` does exactly that.
 - **`flab.vici`**: parses `swanctl --list-sas|--list-conns|--stats --raw` output into nested objects.
   The raw format is `name {key=value list=[a b] section {...}}`; values may contain spaces
   (`class=pre-shared key`), so a value ends where the next `key=` or `key {` begins. `events()` returns
@@ -327,10 +335,27 @@ throttle/critical limit. Also shows CPU trip points, throttling state and coolin
 only; no fan is reported).
 
 ### Wi-Fi
-Port of `utilities/list_connected_devices.uc`: clients per radio and SSID with MAC, IPv4/IPv6, hostname,
-signal, Wi-Fi standard, bandwidth, TX/RX bitrate, security label, AKM/SAE group/cipher/PMF details and
-the 0-100 security score (same AKM, cipher, SAE group and PMF scoring as the CLI tool). Filter, radio
-selector, sortable columns, pause, legend. Output was cross-checked against the CLI tool.
+Two sections, both refreshed every 5 s.
+
+**Radios** (`flab.radio`, `pages/wifi/radios.js`): one card per radio from UCI `wifi-device`, discovered
+at run time. Header with band, phy, state, standards and hardware; key figures (running channel,
+frequency, width, centre, TX power, noise floor, antennas, clients); the configuration next to what is
+actually running (channel, mode, TX power with the regulatory limit of that channel, country vs active
+regulatory domain, cell density, beacon interval, options); channel utilisation (busy, RX and TX airtime
+as a percentage and chart, derived in the browser from the driver's cumulative survey counters); the
+channels allowed by the regulatory domain with the running channel and its width span highlighted and
+DFS (radar) channels marked; and a table of the SSIDs / mesh interfaces (BSSID, networks, security,
+clients, live and total traffic, 802.11r/k/v, WPS, OCV, hidden, isolation, MAC filter policy with entry
+count, BSS status). Findings appear when something is off: radio down, setup failing, running channel
+different from the configured one, high noise, busy channel, DFS availability check in progress, open
+network, country mismatch. Only whitelisted options are copied: keys, passwords, FT key material and MAC
+lists never leave the router.
+
+**Clients**: port of `utilities/list_connected_devices.uc`: clients per radio and SSID with MAC,
+IPv4/IPv6, hostname, signal, Wi-Fi standard, bandwidth, TX/RX bitrate, security label, AKM/SAE
+group/cipher/PMF details and the 0-100 security score (same AKM, cipher, SAE group and PMF scoring as the
+CLI tool). Filter, radio selector, sortable columns, pause, legend. Output was cross-checked against the
+CLI tool.
 
 ### IPsec VPN
 One card per strongSwan connection: header with state and security grade, a router-to-gateway flow
@@ -406,7 +431,48 @@ Facts worth remembering:
   announcement.
 
 ### Network
-`network.interface dump`: state, protocol, device, addresses, uptime per interface.
+Refreshed every 3 s. Ports and bridges come first, the logical interfaces last. Nothing is hard-coded
+to this router: the backend (`flab.network`) classifies whatever netifd reports (`devtype` dsa/ethernet =
+port, bridge, vlan), so another board or a new bridge shows up on the next poll.
+
+- **Summary tiles and health banner**: ports linked, live throughput of the external ports, bridges,
+  spanning-tree position, learned MACs, errors and drops. The banner lists what needs attention:
+  downshifted link (negotiated speed below what both ends support), link flaps and new errors since the
+  page was opened, a blocked (alternate) STP port, a topology change, a down bridge, STP off with several
+  linked ports.
+- **Physical ports** (`ports.js`): a front-panel view (one tile per port, green/amber/grey by link state,
+  chipset, speed, live rate, chart, bridge and STP role, VLAN devices) grouped into switch ports, adapters
+  and the internal CPU link, plus a table with the hardware, link, speed and duplex, negotiation (auto/forced,
+  max speed, partner speed, pause), live and total traffic, errors and drops, link-change counter, STP state
+  and role, learned MACs and VLAN devices. A missing link is shown in neutral grey, not red: an unplugged
+  port is normal.
+- **Hardware** (when known): the PHY chip (driver name, ID, MDIO address and bus), the switch chip (from the
+  device tree of the DSA switch node), the SoC Ethernet MAC, the kernel driver and bus, and the medium.
+  The backend reads it once per port (`ethtool -i`, `ethtool`, `/sys/class/mdio_bus`, device-tree
+  `compatible`) and caches it. A DSA port's PHY is the one at its `PHYAD` that is not attached to another
+  netdev, which keeps `lan3` on the switch's internal PHY instead of the SoC-bus PHY with the same address.
+- **Error breakdown**: a port with errors or drops gets a Details button that opens a panel under it (it
+  stays open across refreshes): the non-zero kernel counters with an explanation of each, the driver's own
+  error counters (`ethtool -S`, error-like names only, e.g. `rx_checksum_errors`), recent system-log lines
+  that mention the port, and whether anything is new since the page was opened. The backend only computes
+  this for ports that have errors or drops. On the lab router `eth1` shows 42 RX checksum errors: the
+  hardware flagged corrupt frames on the WAN link, a cable/connector/peer symptom.
+- **Bridges** (`bridges.js`): spanning-tree position (this bridge is the root, or the root bridge ID, the
+  root port and path cost), bridge ID, priority, timers, ageing, learned MACs, VLAN filtering and default
+  PVID, IGMP snooping, VLAN devices, addresses of the logical interfaces on it, and a member table with
+  type (Ethernet or Wi-Fi with SSID), link, STP state and role, port cost, MACs learned per port and live
+  throughput.
+- **Logical interfaces** (`interfaces.js`): from `network.interface dump`: state, protocol, device,
+  addresses, gateway, DNS, uptime.
+
+Facts worth remembering:
+- Learned MACs per port come from the kernel's binary forwarding table (`/sys/class/net/<bridge>/brforward`,
+  16 bytes per entry; the port number is the low byte at offset 6 plus the high byte at offset 12). The
+  `bridge` utility is not installed on the router.
+- The CPU link (`eth0`) is the DSA conduit: every switch port's traffic also crosses it, so it is excluded
+  from the throughput tile.
+- On the lab router the bridge is not the STP root: the root bridge is reached through the mesh port
+  (`phy0-mesh0`), which therefore has the Root role.
 
 ### Services
 `service list` (procd): running vs idle/one-shot services with PIDs.
@@ -466,6 +532,32 @@ pwsh -File flab-ui\tests\ipsec\run.ps1 -Browser   # plus the live-update test in
    simulated traffic, checking tiles, cards, badges, IPv6 rows, the stopped-daemon state and console errors.
 
 It cleans up `/tmp/flab-ipsec-test` and its local temp folder.
+
+### Network and Wi-Fi radio tests
+
+`tests/network/run.ps1` covers the `flab.network` and `flab.radio` plugins and both pages, again without
+changing anything on the router:
+
+```powershell
+pwsh -File flab-ui\tests\network\run.ps1            # unit test + backend scenarios
+pwsh -File flab-ui\tests\network\run.ps1 -Browser   # plus the live-update test in Edge (needs the UI deployed)
+```
+
+1. `rates.test.mjs`: unit test of `core/rates.js` (rates, ratios, counter resets, gaps, capping, pruning).
+2. Capture what the plugins read: each plugin is run once on the router with `FLAB_RECORD` set, so it saves
+   its own inputs (`ubus call` results, UCI, sysfs files, command output). Keys and passwords are blanked
+   while recording, and `mkfx.mjs` plants a canary in every `wifi-iface` so the assertions prove it is never
+   forwarded.
+3. `mkfx.mjs` builds scenarios: `n-linkdown`, `n-downshift`, `n-root`, `n-blocked`, `n-nostp`,
+   `n-vlanfilter`, `n-newbridge` (a second bridge takes over a port), `n-highport` (port number above 255),
+   `n-nodevices`, `r-down`, `r-dfs`, `r-channel`, `r-disabled`, `r-newssid`. The bridge forwarding table is
+   binary, so it is generated; everything else is the captured state with targeted edits.
+4. The repository's plugins and `rpcd/lib/flab/*` run on the router with `FLAB_FIXTURES` and `ucode -L`
+   (`harness.uc` runs the plugin named in `FLAB_PLUGIN`); `assert.mjs` checks the JSON.
+5. `live.mjs` (`-Browser`) intercepts both status calls and drives the pages through every scenario, then
+   simulates traffic and airtime counters to check live rates and the utilisation percentage.
+
+It cleans up `/tmp/flab-net-test` and its local temp folder.
 
 ## Gotchas learned the hard way
 

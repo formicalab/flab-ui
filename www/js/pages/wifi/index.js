@@ -1,12 +1,14 @@
-// Wi-Fi page: connected clients per radio and SSID, from the flab.wifi plugin, which ports
-// utilities/list_connected_devices.uc. The table columns mirror that tool (MAC, addresses, hostname,
-// signal, standard, bandwidth, bitrate, security, AKM/cipher/PMF details, 0-100 score).
+// Wi-Fi page: radios (state, configuration, SSIDs; radios.js) followed by connected clients per radio and
+// SSID, from the flab.wifi plugin, which ports utilities/list_connected_devices.uc. The table columns
+// mirror that tool (MAC, addresses, hostname, signal, standard, bandwidth, bitrate, security,
+// AKM/cipher/PMF details, 0-100 score).
 // Filter text, sort order, selected radio and the paused flag live in `state` so they survive refreshes.
-import { h } from '../core/dom.js';
-import { ubus } from '../core/ubus.js';
-import { badge, card, tile, tiles } from '../core/ui.js';
-import { searchControl, selectControl, pauseControl, refreshControl } from '../core/controls.js';
-import { fmtRate, ipNum } from '../core/format.js';
+import { h } from '../../core/dom.js';
+import { ubus } from '../../core/ubus.js';
+import { badge, card, tile, tiles } from '../../core/ui.js';
+import { searchControl, selectControl, pauseControl, refreshControl } from '../../core/controls.js';
+import { fmtRate, ipNum } from '../../core/format.js';
+import { radiosSection, recordRadios } from './radios.js';
 
 const SIGNAL_KIND = s => s == null ? '' : s >= -50 ? 'success' : s >= -70 ? 'warning' : 'danger';
 const GRADE_KIND = { 'A+': 'success', A: 'success', B: 'info', C: 'warning', D: 'danger' };
@@ -89,13 +91,22 @@ const LEGEND = [
     '* means unavailable fields used neutral defaults']],
 ];
 
+// A missing plugin or ACL must not break the clients list.
+const optional = promise => promise.catch(() => null);
+
 export default {
   id: 'wifi',
   label: 'Wi-Fi',
-  title: 'Wi-Fi clients',
+  title: 'Wi-Fi · radios and clients',
   icon: 'wifi',
-  interval: 10000,
-  load: () => ubus('flab.wifi', 'clients'),
+  interval: 5000,
+  css: 'css/wifi.css',
+
+  load: async () => {
+    const [clients, hw] = await Promise.all([ubus('flab.wifi', 'clients'), optional(ubus('flab.radio', 'status'))]);
+    recordRadios(hw);
+    return { ...clients, hw };
+  },
   isPaused: () => state.paused,
 
   controls({ rerender, reload }) {
@@ -140,6 +151,6 @@ export default {
       h('div', { className: 'row mt-2' }, LEGEND.map(([title, items]) => h('div', { className: 'col-md-4' },
         h('div', { className: 'fw-semibold' }, title), h('ul', {}, items.map(t => h('li', {}, t)))))));
 
-    return [summary, ...groups, legend];
+    return [summary, ...radiosSection(data.hw), ...groups, legend];
   },
 };
