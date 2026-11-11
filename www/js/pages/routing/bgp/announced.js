@@ -1,10 +1,10 @@
 // What this router announces: a prefix x peer matrix, the export-filter results per peer, and the
 // locally originated / connected routes.
 
-import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
-import { badge, card, chip, muted } from '../../core/ui.js';
-import { fmtNum } from '../../core/format.js';
+import { h } from '../../../core/dom.js';
+import { icon } from '../../../core/icons.js';
+import { badge, card, chip, muted } from '../../../core/ui.js';
+import { fmtNum } from '../../../core/format.js';
 import { peerDot, peerTitle, cmpPrefix, isUp, peerLabels } from './util.js';
 
 // Matrix cell contents: a check mark when the prefix is announced to the peer, a dash otherwise.

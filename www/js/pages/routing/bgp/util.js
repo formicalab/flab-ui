@@ -1,6 +1,6 @@
-// Helpers shared by the BGP page modules.
+// Helpers shared by the BGP tab modules.
 
-import { h } from '../../core/dom.js';
+import { h } from '../../../core/dom.js';
 
 // Number of distinct peer color classes (pc-0..pc-5 in css/bgp.css).
 const PALETTE_SIZE = 6;

@@ -4,10 +4,10 @@
 // the same height and the cells must touch (padding, not gaps); then a peer's vertical center is
 // exactly (index + 0.5) / count of the column height.
 
-import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
-import { badge, card } from '../../core/ui.js';
-import { fmtNum } from '../../core/format.js';
+import { h } from '../../../core/dom.js';
+import { icon } from '../../../core/icons.js';
+import { badge, card } from '../../../core/ui.js';
+import { fmtNum } from '../../../core/format.js';
 import { peerClass, peerTitle, isUp, stateKind, isPrivateAs, cmpPrefix } from './util.js';
 
 // SVG namespace for the connector elements, and the cap on announced prefixes listed in the router node.

@@ -70,7 +70,7 @@ await page.addInitScript(([id, granted]) => {
 }, [sid, acls]);
 await page.goto(baseUrl);
 await page.waitForSelector('.tile');
-check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wired network', 'Bridges', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'Devices and Interfaces', 'BGP', 'Services', 'Logs', 'System settings'].join(' | '), 'navigation order: network layers, Firewall, DHCP, Devices and Interfaces recap, BGP, Services, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
+check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wired network', 'Bridges', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'Devices and Interfaces', 'Routing', 'Services', 'Logs', 'System settings'].join(' | '), 'navigation order: network layers, Firewall, DHCP, Devices and Interfaces recap, Routing, Services, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
 //#region Wired network page
 await page.click('a[href="#network"]');
 await page.waitForSelector('.port');

@@ -1,0 +1,22 @@
+/* Services page styling. Loaded on demand by core/app.js when the page is first opened. */
+
+/* The explanation of the states, above the table. */
+.svc-legend { margin: 0; padding: .7rem 1rem .5rem; border-bottom: 1px solid var(--fl-stroke); }
+
+/* Start, Stop and Restart sit side by side and wrap on a narrow window. */
+.svc-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.svc-busy { display: inline-flex; align-items: center; gap: .45rem; color: var(--fl-muted); }
+
+/* Status notes above the tiles: the confirmation of a risky action, the outcome of a call, and hints. */
+.svc-note { display: flex; align-items: flex-start; flex-wrap: wrap; gap: .75rem; padding: .7rem .9rem; margin-bottom: 1rem; border-radius: 6px; font-size: .9rem; }
+.svc-note > svg { flex: none; margin-top: .15rem; }
+.svc-note-body { flex: 1 1 20rem; min-width: 0; }
+.svc-note-body p { margin: .2rem 0 0; }
+.svc-note-actions { display: flex; gap: .4rem; flex: none; }
+.svc-note.ok { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
+.svc-note.info { background: var(--fl-info-bg); color: var(--fl-info-fg); }
+.svc-note.bad, .svc-note.danger { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
+.svc-note.warning { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
+
+/* The output of a failed init script. */
+.svc-output { margin: .4rem 0 0; padding: .5rem .7rem; max-height: 12rem; overflow: auto; border-radius: 4px; background: color-mix(in srgb, var(--fl-surface) 70%, transparent); color: var(--fl-text); font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -1,8 +1,8 @@
 // "Learned routes" table: every BGP path in the table, grouped by prefix, with best/ECMP/backup status.
 
-import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
-import { badge, card, muted } from '../../core/ui.js';
+import { h } from '../../../core/dom.js';
+import { icon } from '../../../core/icons.js';
+import { badge, card, muted } from '../../../core/ui.js';
 import { peerDot, peerClass, asPath, communityText, prefixKey, cmpPrefix, firstAddress } from './util.js';
 
 // Best + installed -> Best (and ECMP when several next hops are installed); installed only -> ECMP; else Backup.

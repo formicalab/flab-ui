@@ -1,9 +1,9 @@
 // Health findings, BIRD protocol list, daemon details and memory use.
 
-import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
-import { badge, card, kv, chip, meter, muted } from '../../core/ui.js';
-import { fmtBytes, fmtNum, fmtSpan } from '../../core/format.js';
+import { h } from '../../../core/dom.js';
+import { icon } from '../../../core/icons.js';
+import { badge, card, kv, chip, meter, muted } from '../../../core/ui.js';
+import { fmtBytes, fmtNum, fmtSpan } from '../../../core/format.js';
 import { peerDot } from './util.js';
 
 // Icon per finding level (the levels produced by flab.bgp.uc: good, info, warn, bad).

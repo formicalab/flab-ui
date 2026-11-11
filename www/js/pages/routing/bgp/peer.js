@@ -1,9 +1,9 @@
 // One card per BGP peer: session, negotiated capabilities (both directions) and one routing block per channel.
 
-import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
-import { badge, chip, kv, section, meter, muted, mono } from '../../core/ui.js';
-import { fmtNum, fmtBytes } from '../../core/format.js';
+import { h } from '../../../core/dom.js';
+import { icon } from '../../../core/icons.js';
+import { badge, chip, kv, section, meter, muted, mono } from '../../../core/ui.js';
+import { fmtNum, fmtBytes } from '../../../core/format.js';
 import { peerClass, peerTitle, isUp, stateKind, isPrivateAs } from './util.js';
 
 // Tooltip text for each capability name BIRD reports, with the defining RFC.

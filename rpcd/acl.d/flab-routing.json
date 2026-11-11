@@ -1,0 +1,11 @@
+{
+  "flab": {
+    "description": "flab-ui Routing page: kernel routes, policy rules and the next-hop lookup (read only); the BGP part uses flab-bgp.json",
+    "read": {
+      "ubus": {
+        "flab.routing": ["status", "lookup"]
+      }
+    },
+    "write": {}
+  }
+}

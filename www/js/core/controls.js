@@ -43,6 +43,29 @@ export function pauseControl(state) {
 // Refresh button that calls `reload` (a fresh poll of the page).
 export const refreshControl = reload => button('Refresh', 'arrow-clockwise', reload, 'btn-brand');
 
+// A strip of tab buttons bound to state[key]; options are [value, label] pairs. A click selects the tab and calls
+// onchange(value). Returns { node, setOptions(options) } so a page can offer only the tabs that make sense
+// (the selection falls back to the first tab when its own disappears; the node is empty below two tabs).
+export function tabsControl(state, key, onchange) {
+  const node = h('div', { className: 'seg', role: 'tablist' });
+  let options = [];
+  const draw = () => {
+    node.hidden = options.length < 2;
+    node.replaceChildren(...options.map(([value, label]) => h('button', {
+      type: 'button', role: 'tab', className: `seg-tab ${state[key] === value ? 'active' : ''}`, ariaSelected: String(state[key] === value),
+      onclick: () => { if (state[key] === value) return; state[key] = value; draw(); onchange(value); },
+    }, label)));
+  };
+  return {
+    node,
+    setOptions(next) {
+      options = next;
+      if (!options.some(([value]) => value === state[key])) state[key] = options[0][0];
+      draw();
+    },
+  };
+}
+
 // Two-state toggle bound to state[key]; the label shows the mode a click switches to.
 export function toggleControl(state, key, [offLabel, onLabel], onchange) {
   // The button re-labels itself in place, so no page redraw is needed beyond what onchange does.

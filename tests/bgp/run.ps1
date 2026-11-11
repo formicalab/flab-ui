@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-Tests the BGP page against captured and synthetic BIRD states without touching the router's BGP sessions.
+Tests the BGP tab of the Routing page against captured and synthetic BIRD states without touching the router's BGP sessions.
 
 .DESCRIPTION
 1. Captures the real birdc/ip output the flab.bgp plugin parses (read-only commands).

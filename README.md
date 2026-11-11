@@ -11,8 +11,8 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins.
 
 It is deployed to tmpfs for testing and removed again with one command; nothing is installed permanently. Like
 LuCI, it signs in with the router's own `root` login and creates no login of its own. Every page only reads the
-router except System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`) and the channel of each radio on the Wi-Fi page (`/etc/config/wireless`); how changes are made safely is described in
-[Configuration changes](#configuration-changes).
+router except System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`), the channel of each radio on the Wi-Fi page (`/etc/config/wireless`) and the Services page, which starts, stops and restarts services; how configuration changes are made safely is described in
+[Configuration changes](#configuration-changes) and how services are controlled under [Services](#services-route-services).
 
 ## Contents
 
@@ -41,7 +41,7 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
 rpcd ---- built-in objects:  session, system, network.interface, service, uci (configuration changes)
    |
    '----- ucode plugins (this repo): flab.wifi, flab.radio, flab.mesh, flab.wireguard, flab.firewall,
-                |                    flab.network, flab.ipsec, flab.bgp, flab.sensors, flab.system, flab.logs
+                |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.sensors, flab.system, flab.logs, flab.services
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici
@@ -71,7 +71,7 @@ Design principles:
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
-  tests/                     bgp/, dhcp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), settings/, wifi/,
+  tests/                     bgp/, dhcp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), routing/, services/, settings/, wifi/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -112,8 +112,11 @@ flab-ui/
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js
         dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js
         interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
-        bgp/                 index.js, topology.js, peer.js, routes.js, announced.js, system.js, util.js
-        services.js          procd services
+        routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
+                             lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
+          bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js
+        services.js          Re-exports services/index.js (keeps the registry's import path)
+        services/            Services: index.js (page), model.js (pure: rows, actions, confirmations, outcomes)
         logs/                index.js, entries.js (pure helpers)
         settings/            System settings: index.js, schema.js (the options), model.js (pure: validation, change plan), zones.js (generated)
   rpcd/
@@ -209,7 +212,10 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   instead of breaking the page. `cpu.js` keeps the sample history and builds the CPU card;
   `temperatures.js` builds the temperature cards. A sensor that gives no reading (a Qualcomm Wi-Fi radio that is
   down) is not reported by the plugin and is ignored by the page.
-- **BGP**: `index.js` owns the page state and composes the sections; `topology.js`, `peer.js`, `routes.js`,
+- **Routing**: `index.js` owns the page state, the two tabs and the command bar (the tab strip, the filters of each
+  tab) and loads only the open tab; `model.js` holds the pure parts (address and prefix math, the table overview,
+  findings, filtering and sorting, what a lookup answer means, who added a rule); `lookup.js` and `tables.js` build the
+  Routes tab cards. The BGP tab is `bgp/`: `tab.js` composes the sections; `topology.js`, `peer.js`, `routes.js`,
   `announced.js` and `system.js` each export card builders that take the backend data; `util.js` holds the
   per-peer color helpers, AS-path chips and prefix sort key.
 - **Pure models**: `firewall/model.js` (zone matrix), `interfaces/layers.js` (network layers),
@@ -240,9 +246,11 @@ return {
 | `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles and port order); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines) |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
+| `flab.routing.uc` | `flab.routing` | `status`, `lookup` (`dst`, `src`, `iif`) | `ip -4/-6 route show table all`, `ip -4/-6 rule show`, `/etc/iproute2/rt_tables`, `command -v birdc`, `pidof charon`, uci network (only the `rule` and `rule6` sections, and only their section name, family, priority and lookup table); `lookup` runs `ip route get` and `ip route get ... fibmatch` for a validated address, optional source address and interface name |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
 | `flab.system.uc` | `flab.system` | `cpu` | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime` |
 | `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
+| `flab.services.uc` | `flab.services` | `list`; `control` (`name`, `action`) | `/etc/init.d` (executable files) and `/etc/rc.d` (`S<NN><name>` = starts at boot) for `list`; `control` runs `/etc/init.d/<name> start\|stop\|restart` after strict validation (see [Services](#services-route-services)); its ACL fragment grants `list` under `read` and `control` under `write` |
 
 The System settings page needs no plugin: it reads `/etc/config/system` through rpcd's own `uci` object, whose
 calls (on the `system` config only) are granted by `rpcd/acl.d/flab-settings.json`; the DHCP page likewise uses
@@ -305,6 +313,10 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 - **Known exposure.** The page lists and edits the options of `/etc/config/system` for anyone who can sign in as
   root; there is no per-option restriction and none is needed. Plugins run inside rpcd with its privileges, which
   is why they whitelist the fields they return.
+- **Controlling services.** `flab.services control` is the one call that runs a program on request. It never
+  takes a command: it accepts only a plain file name that is in `/etc/init.d` and one of `start`, `stop`, `restart`,
+  refuses the boot-sequence scripts, and the page asks for confirmation before a stop or restart that can lock the
+  user out (see [Services](#services-route-services)). The ACL grants no generic `file exec`.
 - **Transport.** uhttpd redirects HTTP to HTTPS and serves with the router certificate. The session token
   travels in the request body, not a cookie, so cross-site requests cannot ride on it.
 - **Tests never need the root password.** The browser tests create a temporary rpcd session over ssh and grant
@@ -437,9 +449,9 @@ unit test.
 ## Pages
 
 Navigation order: Overview · Wired network · Bridges · Wi-Fi · Mesh · IPsec VPN · WireGuard · Firewall · DHCP ·
-Devices and Interfaces · BGP · Services · Logs, then Settings at the bottom, next to Sign out. The network
+Devices and Interfaces · Routing · Services · Logs, then Settings at the bottom, next to Sign out. The network
 pages run from the physical layer up; Devices and Interfaces recaps how they fit together, followed by routing
-(BGP), the procd services and the logs.
+(the kernel's routes and BGP), the procd services and the logs.
 
 ### Overview (default)
 KPI tiles (uptime, CPU usage, load, memory, CPU temperature, hottest sensor), a CPU load card, a
@@ -686,7 +698,59 @@ last; a device the router does not describe is kept as an unknown device, never 
   is unspecified) and the IPv6 prefixes assigned to it or received on it.
 - **Tiles**: interfaces up, bridges, VLAN devices, protocol devices, tunnels, radios up, wireless interfaces.
 
-### BGP (route `#bgp`)
+### Routing (route `#routing`)
+The kernel's routing state and, when the router has BIRD, BGP, in two tabs on one page (the tab strip sits in the
+command bar and shows only when `birdc` is installed, which `flab.routing status` reports as `bird`). Only the open
+tab is polled (every 5 s), and each tab has its own filters in the command bar.
+
+#### Routes tab
+Reads `flab.routing status` (and `network.interface dump` for the logical interface names such as `wan` next to
+`pppoe-wan`). Top to bottom:
+- **Tiles:** the IPv4 and IPv6 default routes (interface as the value, next hop underneath, "+ N more" when several
+  exist), routes in the main table by family, the routing tables, policy rules (and how many were added beyond the
+  kernel's own) and multipath routes.
+- **Banner:** a missing IPv4 default route (warning), a missing IPv6 one (note), a default route that drops
+  everything, routes with a next hop that is `dead` or `linkdown`, a truncated list, or `ip` not available.
+- **Next hop lookup:** a destination, an optional source address and an optional arrival interface (policy rules can
+  depend on both) go in; the kernel's answer comes out: the next hop, the interface, the source address it would
+  use, the matched route (`ip route get ... fibmatch`), its routing table with a "Show this table" button, and the
+  rules that consult that table ("Chosen by"). The answer says what the packet meets: forwarded, a local, broadcast,
+  multicast or anycast address, dropped by a blackhole, unreachable or prohibit route (the kernel only reports these
+  as an error code, so the page names the covering route itself), no route, or only a source-specific route ("fill
+  in From"). An ECMP route lists all its next hops and says the kernel picked one per flow. The raw `ip` output is
+  one click away. The lookup is part of the poll: once a query is set every refresh asks the kernel again, so the
+  answer follows route changes (a failover shows up by itself), and the matched route is highlighted in the list.
+  Polling pauses while a form field has focus; the form's text lives in the page state.
+- **Policy rules:** the section starts with a short header, "How the kernel picks a route": rules are checked from
+  the lowest priority number to the highest, a priority is not a table number, a table without a matching route
+  sends the lookup on to the next rule, and the cases that end it (blackhole, unreachable and prohibit routes or
+  rules; `throw` and `suppress_prefixlength` continue). Below it, every rule of both families in the order the
+  kernel applies them (priority, family, what it
+  matches, what it does) and an "Added by" column. The kernel does not record the author of a rule, so the page
+  infers it and says so in the tooltip: the three kernel rules (0, 32766, 32767), a rule configured in
+  `/etc/config/network` (same family and priority, a `config rule` or `rule6` section; netifd installs it),
+  strongSwan's default (priority 220, table 220, every packet; the tooltip notes when charon is not running, so
+  the rule may be a leftover), and netifd's IPv6 reject rule for a delegated prefix (priority 4200000000 with an
+  `iif`). Anything else is flagged "unknown".
+- **Routing tables:** every table that holds a route or is named by a rule or in `rt_tables` (name, number, what it
+  is for, the rules that consult it, route counts per family). A click selects the table in the route list.
+- **Routes:** the routes of the selected table (default: main) for the selected family, filtered by text (any
+  destination, next hop, device, logical interface, protocol, ...), sortable by destination, type, next hop,
+  interface, protocol, metric and table. A route shows its type (blackhole, unreachable, prohibit, throw, local,
+  broadcast, ...), every next hop with its weight and interface, protocol, metric, preferred source address, table
+  and details (scope, expiry, `pref`, MTU, `onlink`, `linkdown`, `dead`). Routes with a dead or link-down next hop
+  are tinted. A long list draws its first 400 rows with a "Show all" button.
+
+`flab.routing` parses the text of `ip` (iproute2; every router here has `ip-full` or `ip-tiny`): routes keep
+their table, type, prefix (normalized to `address/length`, `default` becomes the zero prefix), source prefix,
+protocol, scope, metric, preferred source, expiry, MTU, flags and next hops (the `nexthop` lines of a multipath
+route, `via inet6`, `mtu lock`); rules keep their selectors in order and the action (lookup, goto or a drop type).
+At most 4000 routes per family are returned (`truncated`). `lookup` accepts only an IPv4 or IPv6 address, an optional
+source address and an interface name, and refuses anything else before a command is built, so nothing but those
+three strings can reach the shell. The plugin is read-only, and the ACL fragment `rpcd/acl.d/flab-routing.json`
+grants only `status` and `lookup`.
+
+#### BGP tab
 Status of BIRD 3 (`flab.bgp`). Sections, top to bottom:
 - **Tiles:** sessions established, prefixes learned (and paths), prefixes announced, multipath (ECMP) share,
   kernel sync, BIRD version/uptime.
@@ -695,7 +759,7 @@ Status of BIRD 3 (`flab.bgp`). Sections, top to bottom:
   SVG connectors (animated while a session is Established). Each peer keeps one color (`pc-0..5`) across every
   table on the page; colors are assigned on first sight and never reshuffled when other peers come and go
   (more than 6 peers reuse the least-used color). The connector math needs equal-height, touching peer cells
-  (see the comment in `bgp/topology.js`).
+  (see the comment in `routing/bgp/topology.js`).
 - **Health** (findings from the backend) and **active next hops per peer** (how many prefixes use each peer as
   an installed next hop).
 - **One card per peer:** session (state, neighbor/local AS, session type, interface, hold/keepalive/send-hold
@@ -731,7 +795,41 @@ Notes:
   announcement.
 
 ### Services (route `#services`)
-`service list` (procd): running vs idle/one-shot services with PIDs.
+Refreshed every 5 s. Lists the router's services and starts, stops and restarts them. Two sources are merged by
+name: the init scripts in `/etc/init.d` (`flab.services list`: whether each starts at boot and in which position,
+from the `S<NN><name>` links of `/etc/rc.d`), which is why a service that is stopped but installed still appears, and
+the daemons procd reports (`service list`: state and PIDs). procd's own `service` object cannot start or stop
+anything, so the init scripts do the work, as they do for `/etc/init.d/<name> restart` in a shell.
+
+- **State**: `running` (procd reports every instance running), `idle` (procd knows the service, nothing runs) or
+  `no instance` (procd does not list it: stopped, a one-shot service such as `firewall` or `network`, or not managed
+  by procd). The legend above the table says so. A procd service without an init script is listed without buttons.
+- **Buttons**: Start (disabled while the service runs), Stop and Restart on every init script. The boot-sequence
+  scripts (`boot`, `done`, `umount`) have none. While a call runs every button is disabled and the row says
+  "Restarting…"; afterwards the outcome is shown above the tiles (green when the script exited 0, red with the
+  script's own output when it failed, until dismissed) and the list is refreshed. A login that may not call
+  `flab.services control` (`can()`) sees no buttons and a note; without the plugin the page is the read-only procd list.
+- **Confirmation** (`model.js`, `riskOf`): stopping or restarting `rpcd`, `uhttpd`, `network`, `dropbear`,
+  `firewall`, `wpad`, `dnsmasq`, `odhcpd` or `log` first shows what will happen, in plain words, with Confirm and
+  Cancel; nothing is sent before Confirm. The notes that can lock the user out are red (restarting `rpcd` signs
+  everyone out, including the user; stopping `uhttpd` or `rpcd` cannot be undone from the page; stopping `network`
+  or `wpad` can cut the connection), the others yellow. Starting never asks.
+- **Session loss**: `rpcd` keeps the sessions in memory, so after it restarts the next request is refused and the
+  shell returns to the sign-in screen with "Session expired"; the outcome note says beforehand that the session ends.
+- **Backend** (`flab.services`): `control` accepts a name that is, as a whole, a plain file name (letter or digit
+  first, then letters, digits, `_`, `.` and `-`, at most 64 characters) **and** is in the list of executable files
+  of `/etc/init.d`, an action that is exactly `start`, `stop` or `restart`, and refuses the boot-sequence scripts.
+  Only that validated name and action reach the shell command line; nothing else is interpolated. A refused call
+  returns `ok: false` and an `error`, and runs nothing. `reload` is not offered because whether a script supports
+  it is not known without running it. The reply is `{ name, action, ok, code, detached, output, error }`; `output`
+  is the script's output, at most 4096 bytes.
+- **Waiting and background**: a call waits for the script (`timeout 45`, shorter than uhttpd's limit) with its
+  output going to a file, so a daemon that keeps the output open cannot hold the call up. `stop` and `restart`
+  of `rpcd`, `uhttpd` and `network`, which carry the reply or the connection, instead run in the background two
+  seconds later and return `detached: true` at once; their result cannot be reported, so the page says the action
+  was requested and refreshes a few seconds later.
+- **ACL**: `rpcd/acl.d/flab-services.json` grants `flab.services` `list` (read) and `control` (write) and nothing
+  generic such as `file exec`; the `service list` call comes from `flab-base.json`.
 
 ### Logs (route `#logs`)
 Refreshed every 5 s, from `flab.logs`. The last entries of the **system log** (`logread`, logd's ring buffer
@@ -842,7 +940,7 @@ the ACL fragment `rpcd/acl.d/flab-settings.json`.
 
 ## Testing
 
-Six suites, driven by `run.ps1` scripts that never change the router's configuration. The BGP, IPsec and
+The suites below are driven by `run.ps1` scripts that never change the router's configuration or touch a service. The BGP, IPsec, Routing and
 network suites share one mechanism (the "Common mechanism" below): the repository's plugins run **on the router**
 against saved fixtures (`FLAB_FIXTURES`, with `ucode -L` so the uploaded libraries win over the deployed ones), and
 an optional browser pass opens the deployed UI in Edge through `playwright-core` (installed into a temporary
@@ -851,19 +949,21 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 
 | Suite | Command | Covers |
 |---|---|---|
-| BGP | `pwsh -File flab-ui\tests\bgp\run.ps1 [-Browser]` | `flab.bgp` parser and findings, BGP page |
+| BGP | `pwsh -File flab-ui\tests\bgp\run.ps1 [-Browser]` | `flab.bgp` parser and findings, the BGP tab of the Routing page |
+| Routing | `pwsh -File flab-ui\tests\routing\run.ps1 [-Browser]` | The Routing model (addresses, tables, findings, filters, lookup meaning, rule origins); `flab.routing` against a captured and a synthetic router (every route and rule syntax, every lookup answer, refused input); the Routes tab against mocked replies |
 | IPsec | `pwsh -File flab-ui\tests\ipsec\run.ps1 [-Browser]` | `flab.ipsec`, IPsec page, throughput history |
 | Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
 | Settings | `pwsh -File flab-ui\tests\settings\run.ps1 [-Browser]` | System settings model, option table and zone table; the whole editing flow against a mock router |
 | DHCP | `pwsh -File flab-ui\tests\dhcp\run.ps1 [-Browser]` | DHCP model (address helpers, reading config and leases, validation, change plan); the page against the router's own data, then the whole editing flow against a mock router |
 | Wi-Fi | `pwsh -File flab-ui\tests\wifi\run.ps1 [-Browser]` | Wi-Fi channel model (blocks of channels, errors and warnings, change plan); the radio cards and pickers against the router's own data, then the whole channel-change flow against a mock router |
+| Services | `pwsh -File flab-ui\tests\services\run.ps1 [-Browser]` | Services model; `flab.services` against fixtures (nothing is executed) and a read-only `list` on the router; the page against the router's own services, then the whole start, stop and restart flow against a mock |
 
 `-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
-password is needed. Every suite removes its local temp folder when it finishes, and the BGP, IPsec and network
+password is needed. Every suite removes its local temp folder when it finishes, and the BGP, IPsec, Routing and network
 suites also remove their `/tmp/flab-*-test` folder on the router.
 
-### Common mechanism (BGP, IPsec and network suites)
+### Common mechanism (BGP, IPsec, Routing and network suites)
 
 1. **Capture**: each plugin is run once on the router with `FLAB_RECORD` set, so it saves its own inputs
    (`ubus call` results, UCI, sysfs files, command output) under the fixture names. Keys and passwords
@@ -881,7 +981,19 @@ suites also remove their `/tmp/flab-*-test` folder on the router.
 channels, IPv6 ECMP routes with link-local next hops, one best route missing from the kernel, an IPv6
 announcement), `announce` (different announcements per peer, a non-static origin, a peer that receives
 nothing). The plugin reads `FLAB_BGP_FIXTURES` instead of running `birdc`/`ip` when it is set (rpcd never sets
-it). The browser pass adds peer removed, peer added and eight peers.
+it). The browser pass adds peer removed, peer added and eight peers; it opens the BGP tab of the Routing page.
+
+### Routing scenarios
+`real` (what the router under test reports, checked for invariants only), `rich` (synthetic and deterministic: every
+route and rule syntax the parser handles, an `/etc/config/network` with rules and a planted key that must never
+appear in the output, a running charon) and `noip` (the tool printed nothing). The fourteen lookup cases cover a
+forwarded packet, ECMP, local and broadcast addresses, a blackhole, an unreachable and a missing route, a lookup with a
+source and an arrival interface for IPv4 and IPv6, an answer from a named table, mixed address families, and three
+refused inputs (shell metacharacters in the destination, the source and the interface name; they have no fixture, so
+a command that ran would show up as an error). Unlike the BGP plugin, `flab.routing` uses the shared fixture seam
+(`FLAB_FIXTURES`, file names derived from the command line). The browser pass answers `flab.routing`, `flab.bgp` and the
+interface dump from the scenario output and drives the Routes tab, the lookup (including the failover and the polling
+pause), the table and rule cards, the BGP tab and the cases without BIRD, without `ip` and with a long route list.
 
 ### IPsec scenarios
 Captures `swanctl --list-conns|--list-sas|--stats|--version --raw`, `ip -s xfrm state` (key material is
@@ -943,6 +1055,29 @@ previews (fitting and not fitting, 2.4 and 5 GHz, keyboard focus), choosing, und
 warnings, a page that does not poll over a pending choice, a successful save (only the channels written, only the
 radios' own sections read), a change the router does not keep, a radio that does not come back (rolled back),
 leftovers from an earlier attempt, a login without write access, the dark theme and an expired session.
+
+### Services suite
+Never starts, stops or restarts a service: every control call is either answered by a fixture or by a mock.
+- **Unit tests** (`model.test.mjs`, no router): merging the init scripts with procd's list (states, services
+  without a script, a missing plugin), the filter, the summary, the buttons a row offers, the confirmation table
+  (which services ask, the level, that `rpcd` says the session ends) and the outcome texts.
+- **Backend** (`mkfx.mjs`, `harness.uc`, `assert.mjs`; the calls and the expected command lines are in `cases.mjs`):
+  `flab.services.uc` runs on the router with `FLAB_FIXTURES`, so it executes nothing: for each call it finds, in
+  a fixture file named after the command line it builds, what that command would have printed. Scenarios `ok`
+  (exit 0), `fail` (exit 1 with output), `timeout` (exit 124) and `noresult` (no exit code). The test checks the
+  listing (sorted, boot state and position, junk names dropped, protected scripts), the waited calls, the calls
+  that must run in the background, and 25 refused requests (protected scripts, an unknown service, names such as
+  `../../bin/sh`, `dropbear; reboot`, `-h`, a name with a line break or longer than 64 characters, wrongly typed
+  or missing arguments, actions `reload`, `restart; reboot`, `RESTART`): each has a fixture that would report
+  success if its command were run, so a refused call that ran anyway shows up as `ok`. The harness refuses any
+  call but `list` when no fixtures are set. `list` is also run once for real (it only reads) and compared with the
+  router's `/etc/init.d` and `/etc/rc.d`.
+- **Browser** (`live.mjs`): the page first lists the router's own services with any `control` call blocked and
+  failing the test, then a mock of `service` and `flab.services` drives the buttons, the confirmation (warning and
+  danger levels, Cancel sends nothing), buttons disabled while a call runs, success, a failing script with its
+  output, an error from the router, stop and start without a question, a background restart, a login without
+  permission, a missing plugin, the dark theme, a session that ends during a call, and `rpcd` restarted from the
+  page (back to the sign-in screen).
 
 ## Implementation notes
 

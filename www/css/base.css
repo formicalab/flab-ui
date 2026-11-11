@@ -95,6 +95,13 @@ body { background: var(--fl-bg-grad) fixed; min-height: 100vh; }
 .search { position: relative; }
 .search svg { position: absolute; left: .6rem; top: 50%; transform: translateY(-50%); color: var(--fl-muted); pointer-events: none; }
 .search input { padding-left: 2rem; }
+/* Tab strip in the command bar: one segmented control, the active tab filled */
+.seg { display: inline-flex; border: 1px solid var(--fl-stroke); border-radius: 6px; overflow: hidden; background: var(--fl-surface); }
+.seg[hidden] { display: none; }
+.seg-tab { border: 0; background: transparent; color: var(--fl-text); padding: .25rem .9rem; font-size: .875rem; }
+.seg-tab + .seg-tab { border-left: 1px solid var(--fl-stroke); }
+.seg-tab:hover { background: var(--fl-surface-hover); }
+.seg-tab.active { background: var(--fl-brand); color: #fff; }
 /* Page body: vertical stack of the page's cards */
 main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
 

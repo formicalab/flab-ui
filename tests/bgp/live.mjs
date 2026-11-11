@@ -1,4 +1,4 @@
-// Live-update test for the BGP page. A real browser opens the deployed UI; the flab.bgp status call is
+// Live-update test for the BGP tab of the Routing page. A real browser opens the deployed UI; the flab.bgp status call is
 // intercepted and answered with the scenario JSON produced by the backend run, so the page can be driven
 // through "peer down", IPv6, changed announcements and peer add/remove WITHOUT touching the router's BGP.
 // Usage: node live.mjs <dir with scenario JSON>   (env: FLAB_SID, FLAB_URL, FLAB_SHOTS)
@@ -72,7 +72,8 @@ await page.addInitScript(([id, granted]) => {
 }, [sid, acls]);
 await page.goto(baseUrl);
 await page.waitForSelector('.tile');
-await page.click('a[href="#bgp"]');
+await page.click('a[href="#routing"]');
+await page.click('.seg-tab:has-text("BGP")');
 await page.waitForSelector('.bgp-card');
 
 console.log('== live router (pass-through) ==');
