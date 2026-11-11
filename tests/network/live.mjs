@@ -146,6 +146,10 @@ check(await page.locator('.br-card tbody tr').count() >= 3, 'member ports listed
 await stage('this bridge becomes STP root', 'network', 'n-root');
 check(await page.locator('.br-stp.root').count() === 1 && /spanning-tree root/.test(await text('.br-stp.root')), 'bridge card says it is the root');
 check(await tile(1) === 'Root', 'spanning-tree tile reads Root', await tile(1));
+await stage('mesh peers from the capture', 'mesh', 'base');
+check(await page.locator('.br-stp.root .br-peer').count() >= 1 && /^([0-9a-f]{2}:){5}[0-9a-f]{2}/.test(await text('.br-stp.root .br-peer')) && /via phy\d+-mesh\d+/.test(await text('.br-stp.root .br-peer')) && /ESTAB/.test(await text('.br-stp.root .br-peer')), 'the root bridge lists the mesh peers that reach the network through it', await text('.br-stp.root'));
+check(/Mesh/.test(await text('.br-card tbody')) && /\d+ peers?/.test(await text('.br-card tbody')), 'a mesh member port is labeled Mesh with its number of peers', await text('.br-card tbody'));
+await stage('back to the live router', 'mesh', null);
 
 await stage('blocked port and topology change', 'network', 'n-blocked');
 check(/blocked by spanning tree/.test(await text('.net-health')), 'health banner reports the blocked port', await text('.net-health'));

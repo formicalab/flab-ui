@@ -96,6 +96,7 @@ try {
     Invoke-Native 'node' @((Join-Path $here 'firewall.test.mjs'))
     Invoke-Native 'node' @((Join-Path $here 'logs.test.mjs'))
     Invoke-Native 'node' @((Join-Path $here 'uci.test.mjs'))
+Invoke-Native 'node' @((Join-Path $here 'sensors.test.mjs'))
     #endregion
 
     #region Capture the real baseline

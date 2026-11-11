@@ -3,9 +3,10 @@
 // throughput. Bridges come from the flab.network status, so a new or removed bridge shows up on the next
 // poll; netifd's interface dump only supplies the L3 addresses shown on each bridge.
 import { tile, tiles, emptyState, healthBanner } from '../../core/ui.js';
+import { ubus, optional } from '../../core/ubus.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
 import { fmtNum } from '../../core/format.js';
-import { bridgeCard } from './card.js';
+import { bridgeCard, meshByIface } from './card.js';
 import { loadWired, addressesByDevice } from '../network/shared.js';
 import { bridgeFindings } from '../network/util.js';
 
@@ -35,19 +36,24 @@ export default {
   css: 'css/bridges.css',
   isPaused: () => state.paused,
 
-  load: loadWired,
+  // The wired data plus the mesh interfaces (optional: without the plugin, mesh ports are shown as plain Wi-Fi).
+  load: async () => {
+    const [wired, mesh] = await Promise.all([loadWired(), optional(ubus('flab.mesh', 'status'))]);
+    return { ...wired, mesh };
+  },
 
   controls({ reload }) {
     return { nodes: [pauseControl(state), refreshControl(reload)] };
   },
 
   // Summary tiles, the findings banner and one card per bridge.
-  view({ net, ifs }) {
+  view({ net, ifs, mesh }) {
     const addrs = addressesByDevice(ifs);
+    const byIface = meshByIface(mesh);
     return [
       summary(net),
       healthBanner(bridgeFindings(net), 'All bridges look healthy.'),
-      ...(net.bridges.length ? net.bridges.map(b => bridgeCard(b, addrs.get(b.name) ?? [])) : [emptyState('No bridges are configured.')]),
+      ...(net.bridges.length ? net.bridges.map(b => bridgeCard(b, addrs.get(b.name) ?? [], byIface)) : [emptyState('No bridges are configured.')]),
     ];
   },
 };

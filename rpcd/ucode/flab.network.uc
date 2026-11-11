@@ -287,7 +287,7 @@ function switch_cpu_ports(node, conduits) {
 			continue;
 		let cpu = { port: +m[1], mode: dt_text(path + '/phy-mode'), speed: dt_u32(path + '/fixed-link/speed') };
 		for (let c, mac_node in conduits)
-			if (dt_u32(mac_node + '/phandle') == handle)
+			if (mac_node != '' && dt_u32(mac_node + '/phandle') == handle)
 				cpu.conduit = c;
 		push(out, cpu);
 	}
@@ -362,6 +362,10 @@ function hardware(name, d) {
 			hw.bus = m[1];
 	}
 	if (!hw.driver)
+		// ethtool is not installed on every router (small repeaters leave it out): the driver link of the
+		// device then names the driver.
+		hw.driver = last_part(run(`readlink /sys/class/net/${name}/device/driver 2>/dev/null`)) || null;
+	if (!hw.driver)
 		return null;
 
 	let phyad = null;
@@ -373,8 +377,11 @@ function hardware(name, d) {
 			hw.media = m[1];
 	}
 
-	// OF_FULLNAME in the uevent is the device-tree path of the node that backs this netdev.
+	// OF_FULLNAME in the uevent is the device-tree path of the node that backs this netdev. Some drivers (the
+	// IPQ4019 Ethernet MAC) leave it off the netdev; its parent device then names the node.
 	let node = match(sys(name, 'uevent') ?? '', /OF_FULLNAME=([^\n]+)/);
+	if (!node && d.devtype != 'dsa')
+		node = match(sys(name, 'device/uevent') ?? '', /OF_FULLNAME=([^\n]+)/);
 	if (node) {
 		let dt = (path) => compat_label(sysfs('/proc/device-tree' + path + '/compatible'));
 		hw.of_node = node[1];
@@ -551,11 +558,12 @@ function collect() {
 	for (let p in ports)
 		p.board = board.roles[p.name];
 
-	// Device-tree nodes of the conduit MACs, used to match the switch CPU ports' "ethernet" phandles.
+	// Device-tree nodes of the conduit MACs, used to match the switch CPU ports' "ethernet" phandles. A conduit
+	// whose node is unknown is still listed (with an empty node), so a single CPU port can be matched to it.
 	let conduit_nodes = {};
 	for (let p in ports)
-		if (p.role == 'conduit' && p.hardware?.of_node)
-			conduit_nodes[p.name] = p.hardware.of_node;
+		if (p.role == 'conduit')
+			conduit_nodes[p.name] = p.hardware?.of_node ?? '';
 
 	// One entry per distinct switch chip, listing the ports that belong to it.
 	let switches = [];

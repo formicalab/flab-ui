@@ -7,7 +7,7 @@ import { h } from '../../core/dom.js';
 import { ubus, optional } from '../../core/ubus.js';
 import { card, tile, tiles, table } from '../../core/ui.js';
 import { fmtBytes, fmtDur } from '../../core/format.js';
-import { temperatureCard, sensorLabel, sensorLevel, hottest, fmtTemp } from './temperatures.js';
+import { temperatureCard, sensorLabel, sensorLevel, hottest, fmtTemp, readable } from './temperatures.js';
 import { cpuCard, record, hasDelta, current, level, levelText } from './cpu.js';
 
 // Text color classes for the good/fair/weak levels.
@@ -46,7 +46,7 @@ export default {
     const used = mem.total - mem.free - mem.buffered - mem.cached;
     const pct = Math.round(used / mem.total * 100);
 
-    const list = sensors?.sensors ?? [];
+    const list = readable(sensors?.sensors);
     // The CPU thermal zone, shown as its own tile.
     const cpu = list.find(s => s.kind === 'zone' && /cpu/.test(s.name));
     const hot = hottest(list);

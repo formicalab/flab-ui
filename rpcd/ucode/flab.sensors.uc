@@ -77,11 +77,15 @@ function hwmon_sensors(sensors, seen) {
 		let driver = match(readfile(dir + '/device/uevent') ?? '', /DRIVER=([^\n]+)/);
 		for (let file in entries(dir, /^temp[0-9]+_input$/)) {
 			let n = match(file, /^temp([0-9]+)_input$/)[1];
+			let temp = celsius(`${dir}/${file}`);
+			// A sensor that gives no reading (a radio that is down, for example) is of no use to the UI.
+			if (temp == null)
+				continue;
 			push(sensors, {
 				id: `${hw}/temp${n}`, kind: 'hwmon', name,
 				driver: driver ? driver[1] : null,
 				label: read(`${dir}/temp${n}_label`),
-				temp: celsius(`${dir}/${file}`),
+				temp,
 				max: celsius(`${dir}/temp${n}_max`),
 				crit: celsius(`${dir}/temp${n}_crit`),
 				throttle: num(read(`${dir}/throttle${n}`)),

@@ -77,6 +77,13 @@ check(other.model === 'Other Router' && other.switches[0].ports.length === 4, 'm
 check(['lan4', 'lan3', 'lan2', 'lan1'].every((n, i) => port(other, n).board.index === i) && port(other, 'eth1').board.index === 4, 'jack order follows the board file', JSON.stringify(other.ports.map(p => [p.name, p.board?.index])));
 check(other.ports.every(p => p.hardware.external_phy !== true), 'no external PHY without phy-handle');
 
+console.log('== network: a router without ethtool (small repeater) ==');
+const bare = net('n-noethtool');
+check(bare.ports.every(p => p.role === 'switch' || p.role === 'nic' || p.role === 'conduit') && bare.ports.filter(p => p.role === 'switch').every(p => p.hardware?.driver === 'test-switch' && /MT7531/.test(p.hardware.switch ?? '')), 'the driver comes from the device link and the switch is still found', JSON.stringify(bare.ports.map(p => [p.name, p.role, p.hardware?.driver])));
+const bareConduit = bare.ports.find(p => p.role === 'conduit');
+check(bareConduit.hardware?.driver === 'test-mac' && bareConduit.hardware.of_node === conduit.hardware.of_node, 'the SoC MAC finds its device-tree node through its parent device', JSON.stringify(bareConduit.hardware));
+check(bare.switches.length === 1 && bare.switches[0].cpu_ports[0]?.conduit === 'eth0', 'the switch still reaches its conduit', JSON.stringify(bare.switches));
+
 console.log('== network: a router without a switch ==');
 const nodsa = net('n-nodsa');
 check(nodsa.switches.length === 0 && same(nodsa.ports.map(p => p.name), ['eth0', 'eth1']) && nodsa.ports.every(p => p.role === 'nic'), 'plain MACs, no switch', JSON.stringify([nodsa.switches, nodsa.ports.map(p => [p.name, p.role])]));
@@ -156,7 +163,7 @@ const filtered = rb.radios.flatMap(r => r.interfaces).find(i => i.macfilter);
 check(!expect.maclist.length || (filtered && filtered.macfilter.entries === expect.maclist.length && !('maclist' in filtered)), 'MAC filter: only the number of entries', JSON.stringify(filtered?.macfilter));
 
 console.log('== radio: secrets ==');
-const radioScenarios = ['base', 'r-down', 'r-dfs', 'r-channel', 'r-disabled', 'r-newssid'];
+const radioScenarios = ['base', 'r-down', 'r-dfs', 'r-channel', 'r-disabled', 'r-newssid', 'r-pci'];
 for (const n of radioScenarios) {
   const text = JSON.stringify(rad(n));
   check(!text.includes(expect.canary) && !/"(key|sae_password|r0kh|r1kh|maclist)"/.test(text) && !expect.maclist.some(m => text.includes(m)), `${n}: no key, FT key material or MAC list in the output`);
@@ -185,6 +192,11 @@ console.log('== radio: a new SSID appears in the configuration ==');
 const ns = radio(rad('r-newssid'), 'radio0');
 const guest = ns.interfaces.find(i => i.ssid === 'guest');
 check(ns.interfaces.length === 3 && guest && guest.up === false && guest.security === 'Open/None' && guest.networks.join() === 'guest', 'new SSID listed as not running, open, on its network', JSON.stringify(guest));
+
+console.log('== radio: a PCIe radio whose UCI path has no platform/ prefix ==');
+const pci = radio(rad('r-pci'), 'radio1');
+check(pci.phy === 'phy1' && pci.channels.length > 0 && pci.antennas && pci.live === undefined, 'the phy is found although the UCI path lacks the platform/ prefix of the sysfs path', JSON.stringify([pci.phy, pci.channels?.length]));
+check(radio(rad('r-pci'), 'radio0').phy === 'phy0', 'the other radio is unaffected');
 
 console.log('== mesh: base (real captured state) ==');
 const mb = mesh('base');

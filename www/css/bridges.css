@@ -11,6 +11,8 @@
 /* STP diagram: this bridge, the animated link and the root bridge; collapses when this bridge is the root or STP is off */
 .br-stp { display: grid; grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 2fr) minmax(11rem, 1fr); gap: 1rem; align-items: center; padding: .5rem 1.25rem 1.1rem; }
 .br-stp.root { grid-template-columns: minmax(11rem, 22rem) 1fr; }
+.br-stp.root.tree { grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 2fr) minmax(11rem, 1fr); }
+.br-stp .br-note { grid-column: 1 / -1; }
 .br-stp.off { grid-template-columns: 1fr; }
 .br-node { display: grid; gap: .15rem; justify-items: center; text-align: center; padding: .8rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: var(--fl-surface-hover); }
 .br-node svg { color: var(--fl-brand); }
@@ -18,6 +20,11 @@
 .br-node .node-title { font-weight: 600; }
 .br-link { display: grid; gap: .5rem; text-align: center; }
 .br-link .line { height: 3px; border-radius: 2px; background: repeating-linear-gradient(90deg, var(--fl-brand) 0 12px, transparent 12px 20px); background-size: 20px 3px; animation: br-flow 1s linear infinite; }
+/* Mesh peers shown with the diagram: one small box per peer */
+.br-peers { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .6rem; }
+.br-peers.center { justify-content: center; }
+.br-peer { display: flex; align-items: center; gap: .55rem; padding: .45rem .75rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
+.br-peer svg { color: var(--fl-brand); }
 /* Detail columns below the diagram (settings and member ports) */
 .br-cols { display: grid; grid-template-columns: minmax(300px, 1fr) 2.2fr; gap: 1.75rem; padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
 

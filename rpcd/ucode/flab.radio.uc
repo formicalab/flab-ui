@@ -66,11 +66,16 @@ function phy_paths() {
 	return out;
 }
 
-// UCI "path" of a radio may carry a "+N" suffix when one device hosts several phys (N-th phy by name).
+// UCI "path" of a radio may carry a "+N" suffix when one device hosts several phys (N-th phy by name). It is
+// the sysfs device path relative to /sys/devices/platform for a platform device ("soc/18000000.wifi", though
+// OpenWrt also writes "platform/soc/18000000.wifi") and relative to /sys/devices for others ("pci0000:00/..."), while
+// phy_paths() keeps the path relative to /sys/devices: so the "platform/" prefix is ignored on both sides. A PCIe
+// radio behind a platform controller is "soc/40000000.pcie/pci0000:00/..." in UCI.
 function phy_for_path(paths, path) {
 	let m = match(path ?? '', /^(.*)\+([0-9]+)$/);
-	let base = m ? m[1] : path, idx = m ? +m[2] : 0;
-	let matching = filter(sort(keys(paths)), (phy) => paths[phy] == base || (paths[phy] != null && index(paths[phy], base + '/') == 0));
+	let base = replace(m ? m[1] : path ?? '', /^platform\//, ''), idx = m ? +m[2] : 0;
+	let bare = (p) => replace(p ?? '', /^platform\//, '');
+	let matching = filter(sort(keys(paths)), (phy) => paths[phy] != null && (bare(paths[phy]) == base || index(bare(paths[phy]), base + '/') == 0));
 	return matching[idx];
 }
 

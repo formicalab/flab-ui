@@ -190,6 +190,18 @@ const scenarios = {
     fx.devices[bridge]['bridge-members'] = fx.devices[bridge]['bridge-members'].filter(m => !/^lan\d$/.test(m));
     return fx;
   },
+  // A small router like the AVM FRITZ!Repeater 3000: no ethtool installed, so the driver comes from the device's
+  // driver link, and the SoC MAC (the switch's CPU conduit) has no device-tree node on its netdev, only on its parent.
+  'n-noethtool': fx => {
+    for (const k of Object.keys(fx.raw)) if (k.startsWith('ethtool_') && !k.startsWith('ethtool_S_')) delete fx.raw[k];
+    for (const [n, d] of Object.entries(fx.devices)) if (d.devtype === 'dsa' || /^eth\d$/.test(n)) fx.raw[`readlink_sys_class_net_${n}_device_driver.txt`] = `../../../bus/platform/drivers/test-${d.devtype === 'dsa' ? 'switch' : 'mac'}\n`;
+    const uevent = sys('eth0', 'uevent');
+    const node = fx.files[uevent]?.match(/OF_FULLNAME=[^\n]+/)?.[0];
+    if (!node) throw new Error('eth0 has no device-tree node in the capture');
+    fx.files[uevent] = fx.files[uevent].replace(/OF_FULLNAME=[^\n]+\n?/, '');
+    fx.files[sys('eth0', 'device/uevent')] = `${node}\n`;
+    return fx;
+  },
   // lan2 starts logging CRC errors: kernel counter, driver counter and two log lines.
   'n-errors': fx => {
     fx.devices.lan2.statistics.rx_crc_errors = 5; fx.devices.lan2.statistics.rx_errors = 5;
@@ -221,6 +233,18 @@ const scenarios = {
   },
   'r-newssid': fx => {
     fx.uci.guest_2g = { '.type': 'wifi-iface', '.name': 'guest_2g', '.index': 99, device: 'radio0', mode: 'ap', ssid: 'guest', network: 'guest', encryption: 'none', key: CANARY };
+    return fx;
+  },
+  // A radio on a PCIe card, whose UCI path has no `platform/` prefix while the phy's device path in sysfs does
+  // (like the AVM FRITZ!Repeater 3000): the radio is down, so the phy can only be found from the path.
+  'r-pci': fx => {
+    const link = Object.keys(fx.raw).find(k => /readlink.*ieee80211.*phy1.*device/.test(k));
+    if (!link) throw new Error('no readlink fixture for phy1');
+    fx.raw[link] = '/sys/devices/platform/soc/40000000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0\n';
+    fx.uci.radio1.path = 'soc/40000000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0';
+    const w = wireless(fx);
+    w.radio1 = { up: false, pending: false, retry_setup_failed: false, disabled: false, autostart: true, interfaces: [] };
+    setWireless(fx, w);
     return fx;
   },
 

@@ -207,7 +207,8 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   `conn.key`; `daemon.js` shows daemon state and the score model.
 - **Overview**: the sensors and CPU calls are optional, so a missing plugin or ACL hides that section
   instead of breaking the page. `cpu.js` keeps the sample history and builds the CPU card;
-  `temperatures.js` builds the temperature cards.
+  `temperatures.js` builds the temperature cards. A sensor that gives no reading (a Qualcomm Wi-Fi radio that is
+  down) is not reported by the plugin and is ignored by the page.
 - **BGP**: `index.js` owns the page state and composes the sections; `topology.js`, `peer.js`, `routes.js`,
   `announced.js` and `system.js` each export card builders that take the backend data; `util.js` holds the
   per-peer color helpers, AS-path chips and prefix sort key.
@@ -483,7 +484,12 @@ address helpers the three network pages share.
 - **Hardware** (when known): the PHY chip (driver name, ID, MDIO address and bus), the switch chip (from the
   device tree of the DSA switch node), the SoC Ethernet MAC, the kernel driver and bus, and the medium. The
   backend reads it once per port (`ethtool -i`, `ethtool`, `/sys/class/mdio_bus`, device-tree `compatible`)
-  and caches it. A DSA port's PHY is the one at its `PHYAD` that is not attached to another netdev, which
+  and caches it. `ethtool` is optional: without it (small repeaters leave it out) the driver comes from the
+  device's `driver` link in sysfs and the switch is still found from the device tree. A SoC MAC whose netdev has
+  no device-tree node (the IPQ4019 Ethernet MAC) takes it from its parent device, so a switch's CPU port is still
+  matched to its conduit and the diagram draws that MAC as the link into the switch, not as a port with a jack
+  (an `ethN` is only internal when a DSA switch lists it as its conduit). A DSA port's PHY is the one at its
+  `PHYAD` that is not attached to another netdev, which
   keeps a switch port on the switch's internal PHY instead of the SoC-bus PHY with the same address.
 - **Error breakdown**: a port with errors or drops gets a Details button that opens a panel under it (it
   stays open across refreshes): the non-zero kernel counters with an explanation of each, the driver's own
@@ -492,13 +498,20 @@ address helpers the three network pages share.
   errors or drops.
 
 ### Bridges (route `#bridges`)
-Same data as the Wired network page (one `flab.network` call), one card per bridge (`card.js`). Tiles:
+Same data as the Wired network page (one `flab.network` call, plus an optional `flab.mesh` call for the mesh peers),
+one card per bridge (`card.js`). Tiles:
 bridges, spanning-tree position, learned MACs. The health banner lists a blocked (alternate) STP port, a
 topology change, a down bridge, STP off with several linked ports. Each card shows the spanning-tree position
 (this bridge is the root, or the root bridge ID, the root port and path cost), bridge ID, priority, timers,
 aging, learned MACs, VLAN filtering and default PVID, IGMP snooping, VLAN devices, addresses of the logical
-interfaces on it, and a member table with type (Ethernet or Wi-Fi with SSID), link, STP state and role, port
-cost, MACs learned per port and live throughput.
+interfaces on it, and a member table with type (Ethernet, Wi-Fi with SSID, or Mesh with its mesh ID and number
+of peers), link, STP state and role, port cost, MACs learned per port and live throughput.
+
+The spanning-tree diagram has the same shape on both sides of a mesh link: a bridge that is not the root draws
+the root bridge (its ID), the link (root port, path cost) with the mesh peer on it, and itself; the root draws
+itself, the link (port, path cost) with the mesh peers that reach it, and "downstream bridge, reached over the
+mesh". The root cannot show the downstream bridge's ID because only that bridge knows it (the kernel reports the
+root ID and root port on a non-root bridge only). Without a mesh the root keeps the one-line explanation.
 
 Learned MACs per port come from the kernel's binary forwarding table (`/sys/class/net/<bridge>/brforward`, 16
 bytes per entry; the port number is the low byte at offset 6 plus the high byte at offset 12), because the

@@ -8,18 +8,22 @@ import { badge, card } from '../../core/ui.js';
 const WARM = 75;
 const HOT = 90;
 
-// Friendly { title, sub } for a sensor. The name patterns are the ones this router's hwmon/thermal drivers
-// report (MediaTek Wi-Fi radios, the SoC thermal zone, MDIO Ethernet PHYs); other sensors fall back to
-// their own label or name.
+// Friendly { title, sub } for a sensor. The name patterns are the ones the hwmon/thermal drivers of the routers
+// tested so far report (MediaTek and Qualcomm Wi-Fi radios, the SoC thermal zone, MDIO Ethernet PHYs); other
+// sensors fall back to their own label or name.
 export function sensorLabel(s) {
   const name = s.name ?? '';
   let m = name.match(/^mt79\d+_phy(\d+)$/);
   if (m) return { title: `Wi-Fi radio phy${m[1]}`, sub: 'MediaTek MT7915 radio' };
+  if (/^ath\d+k_hwmon$/.test(name)) return { title: 'Wi-Fi radio (Qualcomm)', sub: [s.driver, s.id?.split('/')[0]].filter(Boolean).join(' · ') };
   if (/^cpu[-_]thermal$/.test(name)) return { title: 'CPU (SoC)', sub: 'Cortex-A53 cluster thermal zone' };
   m = name.match(/^mdio_bus:(\w+)$/);
   if (m) return { title: `Ethernet PHY ${m[1]}`, sub: s.driver ? s.driver.replace(/\s*PHY$/, '') : 'MDIO PHY' };
   return { title: s.label || name || s.id, sub: s.driver ?? s.kind };
 }
+
+// The sensors that report a temperature (a sensor without a reading has nothing to show).
+export const readable = sensors => (sensors ?? []).filter(s => s.temp != null);
 
 // 'weak' (hot) at 90 °C, at the sensor's throttle limit or within 5 °C of its critical limit; 'fair' (warm)
 // from 75 °C; otherwise 'good'.
@@ -34,10 +38,10 @@ export function sensorLevel(s) {
 export const levelText = lvl => ({ good: 'Normal', fair: 'Warm', weak: 'Hot' }[lvl]);
 // Badge kind for a temperature level (good/fair/weak).
 const levelBadge = lvl => ({ good: 'success', fair: 'warning', weak: 'danger' }[lvl]);
-// The sensor with the highest temperature, or null for an empty list.
-export const hottest = sensors => sensors.reduce((a, s) => (!a || s.temp > a.temp ? s : a), null);
-// Temperature in °C with one decimal.
-export const fmtTemp = t => `${t.toFixed(1)} °C`;
+// The sensor with the highest temperature, or null when none reports one.
+export const hottest = sensors => readable(sensors).reduce((a, s) => (!a || s.temp > a.temp ? s : a), null);
+// Temperature in °C with one decimal, "–" without a reading.
+export const fmtTemp = t => t == null ? '–' : `${t.toFixed(1)} °C`;
 
 // Horizontal bar scaled to the critical limit (else max, else 125 °C) with tick marks for the throttle,
 // max and critical limits. A mark at or past the scale end is omitted; max is skipped when it equals critical.
@@ -88,5 +92,5 @@ export function temperatureCard(data) {
     data.cooling.length ? h('span', {}, `Cooling devices: ${data.cooling.map(c => `${c.type} (${c.cur}/${c.max})`).join(', ')} · passive only, no fan reported`) : null);
 
   return card([icon('activity'), 'Temperatures'],
-    h('div', { className: 'card-body' }, h('div', { className: 'sensor-grid' }, data.sensors.map(sensorTile)), footer));
+    h('div', { className: 'card-body' }, h('div', { className: 'sensor-grid' }, readable(data.sensors).map(sensorTile)), footer));
 }
