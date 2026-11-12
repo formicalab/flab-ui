@@ -222,6 +222,10 @@ check(!/clear text to a public resolver/.test(b) && !/SERVFAIL/.test(b), 'the de
 const heads = await headers();
 check(['Configuration', 'Zones', 'Activity'].every((t, i) => heads[i]?.startsWith(t)) && heads.length === 3 && await page.locator('.dns-try').count() === 0, 'three cards in order: Configuration, Zones, Activity; no Forwarding, Upstream from the WAN or Try it card', heads.join(' | '));
 check(Math.abs((await cardOf('Activity').boundingBox()).width - (await cardOf('Zones').boundingBox()).width) < 2, 'Activity is as wide as Zones');
+{
+  const state = cardOf('Configuration').locator('.card-header .fl-badge');
+  check(await state.count() === 1 && (await text(state)) === 'Unbound running' && /\bsuccess\b/.test(await state.getAttribute('class')) && /answers on port 53/.test(await state.getAttribute('title')) && /\/etc\/config\/unbound/.test(await text(cardOf('Configuration').locator('.card-header .sub'))), 'the header of the Configuration card says in green that Unbound is running (like the daemon card of the DHCP page), with the file and the sockets beside it', await text(cardOf('Configuration').locator('.card-header')));
+}
 check(await cardOf('Activity').locator('details.dns-fold').evaluate(d => !d.open) && !(await cardOf('Activity').locator('table').first().isVisible()) && (await cardOf('Activity').locator('.dns-chevron').evaluate(c => getComputedStyle(c).transform)) === 'none' && /since the resolver started/.test(await text(cardOf('Activity').locator('.card-header'))), 'the Activity card is folded when the page opens: only its header shows (with the age of the counters), the chevron pointing right');
 await cardOf('Activity').locator('summary').click();
 await page.waitForTimeout(400);
@@ -337,7 +341,13 @@ check(/These are the settings of Unbound in \/etc\/config\/unbound/.test(confTex
 const ctl = label => conf().locator('.set-field').filter({ has: page.locator('label.form-label', { hasText: new RegExp(`^${label}$`) }) });
 const chk = label => conf().locator('.set-check').filter({ hasText: new RegExp(`^${label}`) });
 const picked = label => ctl(label).locator('select option:checked').innerText();
-check(await picked('Rebind protection') === 'Block private addresses (RFC 1918 and 4193)' && await picked('Remote control') === 'Local host, unencrypted' && await picked('Local domain type') === 'Transparent: may forward or recurse' && await picked('DHCP server linked') === 'odhcpd' && await picked('IP protocols') === 'Built-in setting', 'options with a fixed set of values are drop-downs showing the one in force', [await picked('Rebind protection'), await picked('Remote control'), await picked('Local domain type')].join(' | '));
+check(await picked('Rebind protection') === '1: Block private addresses (RFC 1918 and 4193)' && await picked('Remote control') === '1: Local host, unencrypted' && await picked('Local domain type') === 'Transparent: may forward or recurse' && await picked('DHCP server linked') === 'odhcpd' && await picked('IP protocols') === 'Built-in setting', 'options with a fixed set of values are drop-downs showing the one in force, with its number when the file holds a number', [await picked('Rebind protection'), await picked('Remote control'), await picked('Local domain type')].join(' | '));
+{
+  const numberedTexts = async label => (await ctl(label).locator('select option').allInnerTexts()).map(t => t.trim());
+  const rb = await numberedTexts('Rebind protection');
+  const vb = await numberedTexts('Log verbosity');
+  check(/^Default \(1: /.test(rb[0]) && rb.slice(1).every((t, i) => t.startsWith(`${i}: `)) && rb.length === 5 && vb.slice(1).every((t, i) => t.startsWith(`${i}: `)) && vb.length === 7 && (await numberedTexts('Remote control')).slice(1).every((t, i) => t.startsWith(`${i}: `)), 'every choice that is a number in the file shows it first ("0: Off", "1: …"), the default entry too; the others (IP protocols, local domain type) show words only', `${rb.join(' | ')} // ${vb.join(' | ')}`);
+}
 check((await ctl('IP protocols').locator('select option').allInnerTexts()).join('|') === 'Default (Both IPv4 and IPv6)|IPv4 only|IPv6 only (for testing)|IPv4 upstream, IPv4 and IPv6 locally|Both, IPv6 first|Both IPv4 and IPv6|Built-in setting' && await conf().locator('select:not([disabled])').count() === await conf().locator('select.form-select').count() && await conf().locator('select.form-select').count() >= 8, 'a drop-down lists every choice (and the default) and can be changed', String(await conf().locator('select.form-select').count()));
 const numberOf = async label => ctl(label).locator('input').evaluate(i => ({ type: i.type, value: i.value, min: i.min, max: i.max, disabled: i.disabled, ph: i.placeholder }));
 const rl = await numberOf('Rate limit \\(queries per second\\)'), thr = await numberOf('Threads'), lp = await numberOf('Listen port'), ttl = await numberOf('Minimum TTL \\(s\\)');
@@ -354,6 +364,13 @@ const secSec = (await texts(conf().locator('.dns-area').nth(1).locator('.dns-sec
 check(j(secTitles) === '["service and monitoring","listening on","listening and interfaces"]' && j(secSec) === '["access and abuse","rebind protection","privacy","dnssec","rebind exceptions from the files"]' && await conf().locator('.dns-area').first().locator('.set-field, .set-check').count() === 14 && await conf().locator('.dns-area').first().locator('.dns-sec', { hasText: 'Remote control' }).count() === 1 && await conf().locator('.dns-area').nth(1).locator('.dns-sec', { hasText: 'DNSSEC validation' }).count() === 1, 'General holds the monitoring options, where the resolver listens and the listening and interface options; Security and privacy the access, rebind, privacy and DNSSEC ones', `${secTitles} // ${secSec}`);
 const optX = await conf().locator('.dns-area').first().locator('.set-fields').first().locator('> *').evaluateAll(n => [...new Set(n.map(x => Math.round(x.getBoundingClientRect().x)))]);
 check(optX.length >= 3, 'on a wide screen the options of a section flow in several columns', optX.join());
+{
+  const g = conf().locator('.set-group');
+  const edns = ctl('EDNS buffer \\(bytes\\)');
+  const gb = await g.boundingBox();
+  const eb = await edns.boundingBox();
+  check(await g.count() === 1 && same(await texts(g.locator('.set-check, label.form-label')), ['DNS64 Builds IPv6 addresses for names that only have IPv4 ones, for networks with no IPv4 (RFC 6052).', 'DNS64 prefix']) && Math.abs(gb.y - eb.y) < 3 && gb.x > eb.x, 'DNS64 and its prefix share one cell, in the same row as the options before it (not alone on a row of its own)', `${gb.y} ${eb.y}`);
+}
 const priv = conf().locator('.dns-priv-sec');
 check(await priv.count() === 1 && /14 domains may resolve to private addresses although rebind protection is on: 1 generated by UCI for the local names and 13 listed in \/etc\/unbound\/unbound_srv\.conf\. There is no UCI option for this list/.test(await text(priv)) && await priv.locator('details.dns-priv').evaluate(d => !d.open), 'Security and privacy says how many domains are exempt from rebind protection, where they come from, that there is no UCI option for them, and keeps the list folded', await text(priv));
 await priv.locator('summary').click();
@@ -386,7 +403,7 @@ b = await banner();
 x = await tile('DNSSEC');
 check(x.value === 'Off' && /text-warning/.test(x.cls), 'DNSSEC off: the tile is amber');
 check(/DNSSEC validation is off/.test(b) && /Rebind protection is off/.test(b) && /clear text to a public resolver \(2a06:98c1:54::1c:8e39, 2606:4700:4700::1111, 1\.1\.1\.1, …\)/.test(b), 'DNSSEC off, rebind protection off and a clear-text default forwarder are reported', b);
-check(await picked('Rebind protection') === 'Off' && (await text(zc)).includes('clear text'), 'the configuration and the zones show it too');
+check(await picked('Rebind protection') === '0: Off' && (await text(zc)).includes('clear text'), 'the configuration and the zones show it too');
 r = clone(ub); r.truncated.forwards = true; r.stats.bogus = 0; r.stats.ratelimited = 0; r.forwards = r.forwards.slice(0, 20);
 await show(r);
 check(/only the first 500 are shown/.test(await banner()) && /\(cut\)/.test(await text(zc.locator('.card-header'))), 'a cut list is said');
@@ -450,6 +467,7 @@ rows = await zoneTexts();
 check(rows.length === 19 && rows.filter(r => r.includes('10.0.2.4')).length === 16 && rows.some(r => r.includes('lab.formicalab.casa') && r.includes('192.168.1.1')), 'zones: two default entries, sixteen entries to one server and one to another, each its own row', rows.join(' | '));
 const dfwd = cardOf('Zones');
 check(/Each entry of the server list of dnsmasq in \/etc\/config\/dhcp is a zone: 19 here, for 19 domains/.test(await text(dfwd.locator('.dns-fwd-bar'))) && rows.every(r => r.includes('UCI')) && !(await text(dfwd)).includes('unbound_ext.conf') && await dfwd.locator('button.dns-act-btn').count() === 38 && await dfwd.locator('button.dns-act-btn:not([disabled])').count() === 38 && await dfwd.locator('.fl-badge', { hasText: 'UCI' }).first().getAttribute('title') === 'A server entry of the dnsmasq section in /etc/config/dhcp.' && /Server entry/.test(await text(dfwd.locator('thead'))), 'dnsmasq: every server entry is a zone of UCI with an Edit and a Remove button; nothing mentions the extension file', rows.join(' | '));
+check(await text(cardOf('Configuration').locator('.card-header .fl-badge')) === 'dnsmasq running' && /\bsuccess\b/.test(await cardOf('Configuration').locator('.card-header .fl-badge').getAttribute('class')) && /\/etc\/config\/dhcp/.test(await text(cardOf('Configuration').locator('.card-header .sub'))), 'with dnsmasq as the resolver the header says in green that dnsmasq is running');
 const dlegend = dfwd.locator('.dns-labels');
 check(same(await texts(dlegend.locator('dt')), ['clear text', 'TLS', 'answered locally, never forwarded', 'uses the default servers', 'disabled', 'new']) && /cannot encrypt/.test(await text(dlegend)) && /\/domain\/#/.test(await text(dlegend)), 'dnsmasq: the legend explains its own labels (a clear-text entry cannot be encrypted by dnsmasq; local-only and default servers)', await text(dlegend));
 check(/cannot encrypt/.test(await zoneRows().filter({ hasText: '1.1.1.1' }).locator('.fl-badge', { hasText: 'clear text' }).getAttribute('title')), 'and so does the clear-text badge of a dnsmasq server');
@@ -496,6 +514,7 @@ x = await tile('Resolver');
 check(x.value === 'Stopped' && /text-danger/.test(x.cls) && /Unbound is installed but not running/.test(x.sub), 'a stopped resolver', `${x.value} | ${x.sub}`);
 check((await bannerClass()).includes('bad') && /Unbound and dnsmasq are installed but not running/.test(await banner()), 'the banner is critical and names both', await banner());
 check(/No resolver is listening/.test(await text(cardOf('Configuration'))) && (await tile('Queries')).value === '–' && /not running/.test(await text(cardOf('Configuration').locator('.card-header'))), 'no sockets, no counters, the configuration marked "not running"');
+check(await text(cardOf('Configuration').locator('.card-header .fl-badge')) === 'Unbound not running' && /\bdanger\b/.test(await cardOf('Configuration').locator('.card-header .fl-badge').getAttribute('class')), 'and the badge in its header is red: "Unbound not running"');
 check((await cardOf('Zones').count()) === 1 && /These are the settings of Unbound/.test(await text(cardOf('Configuration'))), 'the configured zones and options are still shown');
 await shot('stopped');
 await show(load('none'));
@@ -539,7 +558,7 @@ check(/Saved: the router applied the change and it was confirmed/.test(saved) &&
 const setCall = uciMock.log.find(c => c.method === 'set');
 check(setCall.args.config === 'unbound' && setCall.args.section === 'ub_main' && setValues(setCall) === '{"domain":"lan.example","extended_stats":"1","rate_limit":"500","rebind_protection":"2"}', 'only the changed options are written, to the unbound section, a boolean as 1', JSON.stringify(setCall.args));
 check(j(uciMock.log.find(c => c.method === 'apply').args) === '{"rollback":true,"timeout":30}', 'the change is applied with a 30 second rollback countdown');
-check(await chk('Extended statistics').locator('input').isChecked() && await rateIn().inputValue() === '500' && await picked('Rebind protection') === 'Also this router\'s own global /64' && await ctl('Local domain').locator('input').inputValue() === 'lan.example' && await rbar().locator('.set-bar-summary:has-text("No unsaved changes")').count() === 1, 'afterwards the page shows what the router now has, and there is nothing unsaved');
+check(await chk('Extended statistics').locator('input').isChecked() && await rateIn().inputValue() === '500' && await picked('Rebind protection') === '2: Also this router\'s own global /64' && await ctl('Local domain').locator('input').inputValue() === 'lan.example' && await rbar().locator('.set-bar-summary:has-text("No unsaved changes")').count() === 1, 'afterwards the page shows what the router now has, and there is nothing unsaved');
 
 // Emptying an option deletes it; a risky change is warned about before saving.
 await openAll();

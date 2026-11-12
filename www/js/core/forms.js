@@ -59,7 +59,11 @@ export function fieldRow(f, io) {
     // A value the router has that the documentation does not list is kept selectable, so it is not silently replaced.
     // `f.labels` ({ value: words }) gives a value a description; without it the value itself is shown.
     const current = io.get();
-    const labelOf = v => f.labels?.[v] ?? v;
+    // `numbered` shows the value before its words ("1: Block private addresses"), for levels that are numbers in the file.
+    const labelOf = v => {
+      const words = f.labels?.[v] ?? v;
+      return f.numbered && words !== v ? `${v}: ${words}` : words;
+    };
     const options = [['', f.default != null ? `Default (${labelOf(f.default)})` : 'Default'], ...f.options.map(o => [o, labelOf(o)])];
     if (current && !f.options.includes(current)) options.push([current, current]);
     input = h('select', { className: 'form-select form-select-sm', disabled: io.disabled, onchange: e => change(e.target.value) }, options.map(([v, label]) => h('option', { value: v }, label)));

@@ -1154,16 +1154,22 @@ pauses while a text box has the focus. Top to bottom:
   clause of Unbound's generated configuration; a zone that is not found there is "unknown" and never accused.
 - **Configuration** (full width, on top): every option the page knows, in collapsible areas with the same chevron as the folding
   cards of the DHCP page (right when folded, down when open; every area starts folded, and one the user opens stays open across
-  the redraws). The header says the engine, the config file and how many addresses and ports it listens on.
+  the redraws). The header has a badge that says whether the engine runs, in green "Unbound running" (or "dnsmasq running", whichever
+  the page describes) and in red "… not running", like the daemon card of the DHCP page, then the config file and how many
+  addresses and ports it listens on.
   **General** comes first: the service and its monitoring first (enabled, remote control, statistics, log verbosity; for dnsmasq query
   logging), then *Listening on*: one chip per address and port with its protocols (from `netstat -lntup`, only the resolvers'
   sockets; Unbound's loopback control port 8953 and dnsmasq's DHCP socket are left out), where `0.0.0.0` and `[::]` are marked
   "all addresses" and the engine is named when both run; then listening and interfaces (port, LAN and WAN interfaces, IP protocols,
-  EDNS size, DNS64; for dnsmasq the port, interfaces and upstream servers). Without a resolver the card is only *Listening on*.
+  EDNS size, DNS64 with its prefix in the same cell, so the prefix is not left alone on a row; for dnsmasq the port, interfaces and upstream servers). Without a resolver the card is only *Listening on*.
   **Security and privacy** is second: who may ask and the rate limit, rebind protection, query privacy and DNSSEC.
   For Unbound it also shows, read only and folded, the domains exempt from rebind protection (`private-domain:`): the ones UCI
   generates for the local names (the local domain and the router's host name) and those listed in `/etc/unbound/unbound_srv.conf` (on the main router the Azure
-  private-endpoint names). There is no UCI option for that list, so it is changed in the file; the plugin reports it as
+  private-endpoint names). There is no UCI option for that list, so it is changed in the file: the generator
+  (`/usr/lib/unbound/unbound.sh`, identical in OpenWrt's packages master) only writes `private-domain:` for the `domain` option, the
+  router's own host name and, with `dhcp_link 'dnsmasq'`, the domains it takes from dnsmasq, and the only lists it reads from the
+  `unbound` section are `domain_insecure`, `iface_lan` and `iface_wan`; the README's table of `config unbound` has no such option
+  either. The plugin reports the list as
   `private_domains` (`name`, `source` `uci` or `file`).
   The rest follow, folded: Local names and DHCP and Performance and cache (dnsmasq: Local names, Cache, DHCP). Each header gives
   the number of options and, for General and Security and privacy, a line about how they are set (port, interfaces, remote
@@ -1172,7 +1178,10 @@ pauses while a text box has the focus. Top to bottom:
   of `core/fields.js`, and drawn with the same controls as the System settings and DHCP pages (`core/forms.js`):
   a checkbox for a yes/no option, a drop-down for a fixed set of values (rebind protection,
   remote control, local domain type, DHCP server linked, IP protocols, recursion, resource profile, log verbosity, the
-  router-name levels; the values and defaults are from the OpenWrt Unbound package's README and the dnsmasq manual), a number
+  router-name levels; the values and defaults are from the OpenWrt Unbound package's README and the dnsmasq manual; a choice that is a
+  number in the file (rebind protection, remote control, the names added to the DNS, log verbosity) shows the number before its
+  words, "1: Block private addresses (RFC 1918 and 4193)", as the README's tables do: the opt-in `numbered` of a field in
+  `core/fields.js`), a number
   input with its range for a number, a text box for a name and a list for several values. An option that is not set shows its
   default (a placeholder, or "Default (…)" in a drop-down, or the default state of a checkbox).
   **Changing the options**: every described option of a single value can be edited when the login may write (`uci set`); lists

@@ -4,8 +4,9 @@
 //
 // A page describes its options as a table of fields (see pages/settings/schema.js for the full format):
 //   { key, type: string | text | bool | int | enum | list, label, hint?, default?, check?, min?, max?, options?, labels?,
-//     number?, items? }
-// (`items` is the fixed set of values a list may hold, `labels` gives each value of an enum a description and `number`
+//     number?, numbered?, items? }
+// (`items` is the fixed set of values a list may hold, `labels` gives each value of an enum a description, `numbered` shows the
+// value before it in the drop-down ("1: Block private addresses"; the DNS page uses it for levels that are numbers in the file) and `number`
 // makes an int a number input) and these functions read a field's value from a UCI section, normalize and compare values,
 // describe them for the review list, and validate them. A value in a form is a string ('' = not set), a boolean (a
 // checkbox, with the OpenWrt default when the option is absent) or an array of strings (a list).

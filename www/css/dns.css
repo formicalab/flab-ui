@@ -88,3 +88,5 @@ td.dns-src > * { margin-right: .35rem; }
 /* A very light line under every option, and the cells stretch to the height of their row, so the lines run unbroken across it. */
 .dns-area .set-fields { align-items: stretch; row-gap: 0; column-gap: 2rem; }
 .dns-area .set-fields > * { padding: .7rem 0; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 55%, transparent); }
+/* Related options (DNS64 and its prefix) share one cell of the grid. */
+.dns-area .set-group { display: grid; gap: .8rem; align-content: start; }

@@ -89,9 +89,9 @@ export const UNBOUND_FIELDS = [
     hint: 'The port Unbound answers queries on; 53 is the standard one.' },
   { key: 'rebind_localhost', type: 'bool', default: false, label: 'Block answers to localhost',
     hint: 'Drops answers that point to 127.0.0.0/8 or ::1, which could be used to attack services on the router itself.' },
-  { key: 'dns64', type: 'bool', default: false, label: 'DNS64',
+  { key: 'dns64', type: 'bool', default: false, label: 'DNS64', group: 'dns64',
     hint: 'Builds IPv6 addresses for names that only have IPv4 ones, for networks with no IPv4 (RFC 6052).' },
-  { key: 'dns64_prefix', type: 'string', default: '64:ff9b::/96', label: 'DNS64 prefix',
+  { key: 'dns64_prefix', type: 'string', default: '64:ff9b::/96', label: 'DNS64 prefix', group: 'dns64',
     hint: 'The IPv6 prefix DNS64 puts IPv4 addresses in; 64:ff9b::/96 is the well-known one.' },
   { key: 'domain_type', type: 'enum', default: 'static', label: 'Local domain type',
     options: ['static', 'refuse', 'deny', 'transparent'],
@@ -258,3 +258,9 @@ export const DNSMASQ_FIELDS = [
   { key: 'rapidcommit', type: 'bool', default: false, label: 'DHCP rapid commit',
     hint: 'Lets a DHCPv4 client that asks for it get an address in two messages instead of four.' },
 ];
+
+// A choice that is a number in the file (a level 0 to 5: rebind protection, remote control, log verbosity, the names added to the
+// DNS) shows the number before its words in the drop-down, as the tables of the OpenWrt Unbound README do.
+for (const f of [...UNBOUND_FIELDS, ...DNSMASQ_FIELDS]) {
+  if (f.type === 'enum' && f.options.every(o => /^\d+$/.test(o))) f.numbered = true;
+}
