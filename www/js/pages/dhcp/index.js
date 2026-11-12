@@ -1,8 +1,9 @@
 // DHCP page (route #dhcp): odhcpd, the router's DHCPv6 and router-advertisement server, and its DHCPv4 server when it
 // is the main one (otherwise dnsmasq serves DHCPv4 and the page shows dnsmasq's leases). It shows the leases
 // handed out right now, the reservations (static leases) and the IPv6 prefixes announced, and edits the config
-// behind them: the reservations, every option of each interface pool and of the daemon (the option tables are in
-// schema.js, taken from the odhcpd documentation; validation, the change list and the UCI operations in model.js).
+// behind them: the reservations, the network boot entries, every option of each interface pool (pools can be added and
+// removed) and of the daemon, and the server DUID (the option tables are in
+// schema.js, taken from the odhcpd source; validation, the change list and the UCI operations in model.js).
 //
 // It reads through rpcd's `uci` and `file` objects (dnsmasq's lease file) and the daemons' own `dhcp` ubus object,
 // so no plugin is needed, and writes
@@ -17,14 +18,19 @@ import { note } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
 import { uci } from '../../core/uci.js';
 import { announcedCard, leases4Card, leases6Card } from './leases.js';
-import { daemonCard, poolCard } from './pools.js';
+import { addPoolBar, daemonCard, poolCard } from './pools.js';
+import { bootCard } from './boot6.js';
 import { reservationsCard, reserveFrom } from './reservations.js';
-import { CONFIG, changesOf, checkApplied, dhcpv4Server, dnsmasqLeaseFile, draftFrom, hostNorm, isDirty, plan, problems, readDhcp } from './model.js';
+import { CONFIG, changesOf, checkApplied, dhcpv4Server, dnsmasqLeaseFile, draftFrom, hostNorm, isDirty, plan, poolList, problems, readDhcp } from './model.js';
+import { GLOBAL_CONFIG, GLOBAL_SECTION } from './schema.js';
 
-// The draft, the review banner, saving and discarding, shared with the other editing pages (core/editpage.js).
+// The draft, the review banner, saving and discarding, shared with the other editing pages (core/editpage.js). The
+// page writes two configs: the pools and reservations in dhcp, the server DUID in network. Only that one section of
+// the network config is ever read (the rest holds secrets), so the check after a save reads just what it needs.
 const editor = createEditor({
-  config: CONFIG,
+  config: [CONFIG, GLOBAL_CONFIG],
   readBack: cfg => readDhcp(cfg),
+  readAfter: async () => readDhcp(await uci.get(CONFIG), null, null, null, null, null, {}, await optional(uci.get(GLOBAL_CONFIG, GLOBAL_SECTION))),
   model: { draftFrom, changesOf, isDirty, problems, plan },
   verify: (base, draft, after) => checkApplied(after, draft),
 });
@@ -38,15 +44,16 @@ const filter = { q: '', iface: 'all' };
 // replies are optional: a stopped odhcpd has no `dhcp` object, and the page still shows and edits the config.
 // dnsmasq's lease file is read only when dnsmasq is the DHCPv4 server.
 async function load() {
-  const [cfg, v4, v6, ra, dump, svc, dnsSvc] = await Promise.all([
+  const [cfg, v4, v6, ra, dump, svc, dnsSvc, net] = await Promise.all([
     uci.get(CONFIG),
     optional(ubus('dhcp', 'ipv4leases')), optional(ubus('dhcp', 'ipv6leases')), optional(ubus('dhcp', 'ipv6ra')),
     optional(ubus('network.interface', 'dump')), optional(ubus('service', 'list', { name: 'odhcpd' })),
     optional(ubus('service', 'list', { name: 'dnsmasq' })),
+    optional(uci.get(GLOBAL_CONFIG, GLOBAL_SECTION)),
   ]);
   const dns = { svc: dnsSvc, leases: null, now: Date.now() / 1000 };
   if (dhcpv4Server(cfg, dnsSvc) === 'dnsmasq') dns.leases = (await optional(ubus('file', 'read', { path: dnsmasqLeaseFile(cfg) })))?.data ?? null;
-  return editor.withStaged(readDhcp(cfg, v4, v6, ra, dump, svc, dns));
+  return editor.withStaged(readDhcp(cfg, v4, v6, ra, dump, svc, dns, net));
 }
 
 //#region Pieces of the page
@@ -110,8 +117,9 @@ export default {
     // the reservations. Both editable groups are `.dhcp-form`, so neither is polled over while focused.
     const settings = h('div', { className: 'dhcp-form' },
       daemonCard(ctx),
-      ...data.pools.map(p => poolCard(ctx, p)));
-    const reservations = h('div', { className: 'dhcp-form' }, reservationsCard(ctx));
+      ...poolList(data, state.draft).map(p => poolCard(ctx, p)),
+      addPoolBar(ctx));
+    const reservations = h('div', { className: 'dhcp-form' }, reservationsCard(ctx), bootCard(ctx));
     const reserve = l => { reserveFrom(state.draft, l); state.message = null; editor.redraw(); };
     const page = [
       summary(data),

@@ -62,7 +62,7 @@ export function reservationsCard(ctx) {
         'A reservation gives a client a fixed IPv4 address (matched by its MAC address) and/or a fixed IPv6 host ID (matched by its DUID), and a name. One with only a name and a MAC keeps the address dynamic. Several MAC addresses or DUIDs go in the same box, separated by spaces. The address "ignore" makes odhcpd ignore that client; "pool default" is the lease time of the interface.',
         'Dynamic leases above have a Reserve button that adds the client here. Changes are applied with the review banner at the top.']),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-sm align-middle dhcp-hosts' },
-        h('thead', {}, h('tr', {}, ...HOST_FIELDS.map(f => h('th', {}, f.label)), h('th', {}, 'Lease now'), h('th', {}))),
+        h('thead', {}, h('tr', {}, ...HOST_FIELDS.map(f => h('th', { title: f.hint }, f.label)), h('th', {}, 'Lease now'), h('th', {}))),
         h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: HOST_FIELDS.length + 2, className: 'muted' }, 'No reservations.'))))),
       h('div', { className: 'card-body' }, add)));
 }

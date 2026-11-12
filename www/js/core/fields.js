@@ -99,6 +99,8 @@ export const CHECKS = {
   hostid: v => (v === 'ignore' || /^[0-9A-Fa-f]{1,16}$/.test(v) ? null : 'must be up to 16 hexadecimal digits, or "ignore"'),
   duration: v => (v === 'infinite' || /^\d+[smhdw]?$/.test(v) ? null : 'must be a time such as 12h, 30m, 3600 or infinite'),
   uri: v => (/^https?:\/\/\S+$/.test(v) ? null : 'must be an http or https address'),
+  url: v => (/^[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+$/.test(v) ? null : 'must be an address such as tftp://[fd11::1]/pxe.efi'),
+  dnr: v => (/^\d{1,5}\s+[A-Za-z0-9.-]+(\s+\S+)*$/.test(v) && +v.split(/\s+/)[0] <= 65535 ? null : 'must be "priority domain-name [addresses] [parameters]", for example 1 dns.example.com 192.0.2.1 alpn=h2'),
   path: v => (/^\/\S+$/.test(v) ? null : 'must be an absolute path without spaces'),
   seed: v => (v === '0' || /^\/\S+$/.test(v) ? null : 'must be 0 or an absolute path without spaces'),
   ifname: v => (/^[A-Za-z0-9_.-]+$/.test(v) ? null : 'must be a network interface name (letters, digits, _ . -)'),

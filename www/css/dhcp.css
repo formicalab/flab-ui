@@ -40,9 +40,24 @@
 .dhcp-new > td { background: var(--fl-info-bg); }
 .dhcp-removed > td { background: var(--fl-bad-bg); opacity: .8; }
 .dhcp-removed input { text-decoration: line-through; }
+.dhcp-boot td, .dhcp-boot th { padding: .3rem .4rem; white-space: normal; }
+.dhcp-boot th { white-space: nowrap; }
+.dhcp-boot input { width: 100%; }
+.dhcp-boot td:nth-child(1) { width: 60%; }
+.dhcp-boot td:nth-child(2) { width: 14rem; }
+.dhcp-pool-actions { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.dhcp-removed-pool > :not(.dhcp-pool-actions) { opacity: .55; }
+.dhcp-new-pool { border-color: var(--fl-info, var(--fl-stroke)); }
+.dhcp-addpool { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0; }
+.dhcp-addpool select { width: auto; min-width: 9rem; }
+.dhcp-extra { border-top: 1px dashed var(--fl-stroke); padding-top: .6rem; margin-top: .2rem; }
+.dhcp-extra p { margin: 0 0 .4rem; }
+.dhcp-extra .kv { margin: 0; }
 
 /* The editable cards (daemon and pools, or the reservations): one card each, full width. */
 .dhcp-form { display: flex; flex-direction: column; gap: 1.25rem; }
+.dhcp-form .set-fields { align-items: stretch; row-gap: 0; column-gap: 2rem; }
+.dhcp-form .set-fields > * { padding: .7rem 0; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 55%, transparent); }
 .dhcp-groups { display: flex; flex-direction: column; gap: .6rem; }
 .dhcp-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
 .dhcp-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }

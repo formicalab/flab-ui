@@ -4,10 +4,12 @@
 // read-only login and about leftovers. The page keeps what is specific to it: its schema, its model, its controls.
 //
 // createEditor(spec) returns the editor; spec is
-//   config      the uci config being edited, or a function that returns it (null: nothing to edit)
+//   config      the uci config being edited, a list of them (a page that also writes a section of another config), or a
+//               function that returns either (null: nothing to edit)
 //   readBack    (cfg) => data       reads a fresh `uci get` reply into the page's data shape, for the check after a save
 //   readAfter   optional async () => data    reads the data for that check some other way (a page that must not
-//               load the whole config, for example because it holds secrets, reads just the sections it edits)
+//               load the whole config, for example because it holds secrets, reads just the sections it edits; a page
+//               with several configs must give it, since readBack only sees the first)
 //   model       { draftFrom(data), changesOf(base, draft), isDirty(base, draft), problems(base, draft), plan(base, draft) }
 //   verify      (base, draft, after) => void    throws when the data read back does not hold what was saved
 //   afterSave   optional (base, draft) => boolean    true when the page took over the refresh (otherwise it reloads)
@@ -20,9 +22,10 @@ import { applyChange, uci } from './uci.js';
 // Creates the editor for one page; see the description of `spec` above.
 export function createEditor(spec) {
   const { model } = spec;
-  // The config being edited: a name, or a function for a page whose config depends on what it found (the DNS page edits
-  // /etc/config/unbound or /etc/config/dhcp, whichever resolver the router uses); null means there is nothing to edit.
-  const configName = () => (typeof spec.config === 'function' ? spec.config() : spec.config);
+  // The configs being edited, as a list: `spec.config` is a name, a list, or a function for a page whose config depends on
+  // what it found (the DNS page edits /etc/config/unbound or /etc/config/dhcp, whichever resolver the router uses);
+  // null means there is nothing to edit.
+  const configNames = () => [].concat((typeof spec.config === 'function' ? spec.config() : spec.config) ?? []);
   // What the form holds (`draft`) and the data it was made from (`base`), kept here so they survive the redraw on
   // every poll. `message` is the outcome of the last save or discard ({ kind: ok | bad | info, text }).
   const state = { base: null, draft: null, busy: false, message: null };
@@ -50,7 +53,7 @@ export function createEditor(spec) {
   // Throws away the changes staged in this session (they would be applied together with this page's).
   async function discardStaged() {
     try {
-      await uci.revert(configName());
+      for (const config of configNames()) await uci.revert(config);
       state.message = { kind: 'ok', text: 'The staged changes were discarded.' };
     } catch (e) {
       state.message = { kind: 'bad', text: e.message };
@@ -69,14 +72,14 @@ export function createEditor(spec) {
   // confirm. Any failure leaves the router on its previous config and the edits in the form.
   async function save() {
     const { base, draft } = state;
-    const config = configName();
+    const configs = configNames();
     state.busy = true;
     state.message = { kind: 'info', text: 'Applying the change…' };
     redraw();
     try {
-      await applyChange(uci, [config],
+      await applyChange(uci, configs,
         ed => stageOps(ed, model.plan(base, draft)),
-        async () => spec.verify(base, draft, spec.readAfter ? await spec.readAfter() : spec.readBack(await uci.get(config))));
+        async () => spec.verify(base, draft, spec.readAfter ? await spec.readAfter() : spec.readBack(await uci.get(configs[0]))));
       state.message = { kind: 'ok', text: 'Saved: the router applied the change and it was confirmed.' };
       state.draft = null;
     } catch (e) {
@@ -117,8 +120,9 @@ export function createEditor(spec) {
 
     // Adds how many changes are already staged in this session to the loaded data (applying would commit those too).
     async withStaged(data) {
-      const config = configName();
-      data.staged = config && can('uci', 'set') ? (await optional(uci.pending(config))) ?? 0 : 0;
+      const configs = configNames();
+      data.staged = configs.length && can('uci', 'set')
+        ? (await Promise.all(configs.map(c => optional(uci.pending(c))))).reduce((n, v) => n + (v ?? 0), 0) : 0;
       return data;
     },
 

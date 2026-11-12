@@ -273,7 +273,8 @@ return {
 
 The System settings page needs no plugin: it reads `/etc/config/system` through rpcd's own `uci` object, whose
 calls (on the `system` config only) are granted by `rpcd/acl.d/flab-settings.json`; the DHCP page likewise uses
-`rpcd/acl.d/flab-dhcp.json` (ubus `dhcp` methods, `uci` read and write on `dhcp`, and reading `/tmp/*.leases` through
+`rpcd/acl.d/flab-dhcp.json` (ubus `dhcp` methods, `uci` read and write on `dhcp` and `network` (the page reads and
+writes only the `globals` section of the latter, for the server DUID), and reading `/tmp/*.leases` through
 rpcd's `file` object for dnsmasq's lease file).
 
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
@@ -1097,13 +1098,23 @@ advertised prefixes, the leases and last the reservations.
   be read is reported instead of being shown as no leases.
 - **Tiles**: whether odhcpd runs (and who serves DHCPv4), DHCPv4 leases (reserved and dynamic), DHCPv6 leases,
   reservations (how many hold a lease now).
-- **Daemon** (`config odhcpd`): main DHCPv4 server switch, legacy mode, log level, lease file, trigger script,
-  hosts directory, and so on. Like the pools it is folded to its header (main switch and log level) until opened.
+- **Daemon** (`config odhcpd`): main DHCPv4 server switch, log level, lease file, trigger script, hosts directory,
+  and so on, and the **server DUID** (`dhcp_default_duid`), which odhcpd reads from the `globals` section of
+  `/etc/config/network` (the only part of that config the page reads, because the rest holds secrets; the ACL
+  fragment grants the `network` config for it). Like the pools it is folded to its header (main switch and log level) until opened.
 - **Pools** (`config dhcp`, one card per interface, folded to its header until opened, groups collapsible): Services (DHCPv4, DHCPv6, RA, NDP),
-  DHCPv4 pool and options, DHCPv6, Router advertisements, Neighbor discovery proxy and Other, about 50 options
-  from the odhcpd documentation. The header shows the subnet and the address range the pool resolves to
-  (start and limit are offsets in the interface's subnet). A folded card or closed group that holds an error
-  opens by itself, so an error is never hidden.
+  DHCPv4 pool and options, DHCPv6, Router advertisements, Neighbor discovery proxy and Other (including the
+  encrypted DNS servers `dnr`, the network device `ifname` and its alias `networkid`): every option odhcpd reads,
+  taken from its option tables (`src/config.c`) and its README, and nothing it no longer reads. The header shows the subnet and the
+  address range the pool resolves to (start and limit are offsets in the interface's subnet). A folded card or
+  closed group that holds an error opens by itself, so an error is never hidden.
+  - **Add pool** (below the pools) offers the interfaces that have none and creates a `config dhcp` section named after
+    the interface (with `option interface`), as a server for DHCPv4, DHCPv6 and RA with every other option at its default; only options that differ from the default are written.
+    **Remove pool** marks a pool for removal (greyed out, with Undo, and a warning that DHCP and RA stop on that
+    interface); one added in the form and not yet saved is simply dropped.
+  - **Other options** a section holds that no table describes (options of other programs that read the same file,
+    such as `dhcp_option` or `force`, and `dhcpv6_raw`) are listed read only at the bottom of the card, so
+    nothing in the file is hidden.
 - **Leases**: the IPv6 prefixes advertised to clients in router advertisements (a stale one is flagged), DHCPv4 (address, MAC, hostname,
   reserved or dynamic, time left) with a *Reserve* button on every dynamic lease that adds a reservation to the
   form, and DHCPv6 (DUID, addresses, delegated prefixes). The command bar filters all three by text and by
@@ -1112,17 +1123,21 @@ advertised prefixes, the leases and last the reservations.
   host ID and lease time, and whether the client holds a lease now. A reservation with only a name and a MAC
   keeps the address dynamic. Rows can be added, removed (shown struck through, with Undo) and edited. New
   sections get their names from uci, so a saved reservation is recognized by its content.
+- **Network boot (PXE)** (`config boot6`): one editable row each with the boot file address (`tftp://[fd11::1]/pxe.efi`)
+  and the optional architecture code (7 is EFI x64; an entry without one is the default). Added, removed and
+  verified like the reservations. Two entries for the same architecture warn.
 - **Validation**: field checks come from `core/fields.js`; on top of them an address or MAC reserved twice
   (both rows are marked), the router's own address and a pool that starts beyond its subnet are errors. Warnings
   (they do not block Save): an address outside every served subnet, a pool longer than its subnet, DHCPv4 on an
-  interface with no IPv4 address, odhcpd no longer the main DHCPv4 server, advertisement intervals out of
+  interface with no IPv4 address, odhcpd no longer the main DHCPv4 server, a removed pool, advertisement intervals out of
   proportion, the RA flag `none` combined with others, and `managed-config` with DHCPv6 disabled. Every
-  reservation needs a MAC or a DUID. A value already invalid in the router's file is reported the same way and
+  reservation needs a MAC or a DUID and every boot entry an address. A value already invalid in the router's file is reported the same way and
   blocks Save until fixed.
-- **Not offered**: adding or removing pools (they follow the interfaces), the pool's `interface`, `ifname`,
-  `networkid` and `dnr`, and `boot6`.
+- **Not offered**: the pool's `interface` (it binds the pool to its interface and is shown in the header).
 - Saving uses the same flow and review banner as System settings (see
-  [Configuration changes](#configuration-changes)); a pool or daemon change reloads odhcpd, which does not drop
+  [Configuration changes](#configuration-changes)); a change that includes the DUID stages both configs in one
+  apply and the check after the save reads both back, so a change the router did not keep in either is rolled
+  back. A pool or daemon change reloads odhcpd, which does not drop
   existing leases. A daemon that is not running is reported, and the configuration stays editable.
 
 ### DNS (route `#dns`)
@@ -1195,7 +1210,7 @@ pauses while a text box has the focus. Top to bottom:
   and the edits stay in the form. Only what changed is written, to the `unbound` section of `/etc/config/unbound` or the dnsmasq
   section of `/etc/config/dhcp` (`flab.dns` reports it as `config_section`): a boolean as `1` or `0`, an emptied option is deleted.
   The model for all of this is `dns/edit.js` (pure and unit-tested); `core/editpage.js` takes the config name as a function
-  because it depends on the engine. A login without the `uci` write methods sees the settings read only, with a note. Changes
+  because it depends on the engine (a page that writes sections of two configs, like the DHCP page, gives a list and a `readAfter`). A login without the `uci` write methods sees the settings read only, with a note. Changes
   already staged in the session are reported and can be discarded first. Without a resolver the card is only *Listening on*.
 - **Zones**: a card that is folded when the page opens (click its header; the chevron points right when folded and down when
   open, and the choice survives the redraws). It shows what UCI holds, as UCI holds it: a zone is one **block**, not one domain.
@@ -1508,14 +1523,17 @@ earlier attempt, a login without write access, the dark theme and an expired ses
 router's configuration out of reach, so the suite never writes to it.
 
 ### DHCP suite
-Same shape as the Settings suite, with no backend part. `model.test.mjs` covers the option tables, the address
+Same shape as the Settings suite, with no backend part. `model.test.mjs` covers the option tables (checked against
+odhcpd's own option table: every option edited, none that odhcpd no longer reads), the address
 and range helpers, reading `uci get dhcp` with the lease replies (leases mapped from device to interface),
-validation, the change plan (reservations added, removed and edited, pool and daemon options) and the read-back
+validation, the change plan (reservations added, removed and edited, pool and daemon options, pools added and
+removed, network boot entries, the server DUID in the network config) and the read-back
 check; `network/uci.test.mjs` covers `applyChange`. The browser pass (`live.mjs`) first shows the router's own
-leases, reservations and pools with every uci write blocked, then switches to a stateful mock of `uci`, the
-`dhcp` object, the interface dump and `service list` and drives filtering, reservation edits (duplicates, the
-router's own address, bad MACs, Reserve from a lease, Add, Remove and Undo), pool and daemon edits, a successful
-save, a change the router does not keep, a late confirmation, a stopped odhcpd, dnsmasq serving DHCPv4 (leases read
+leases, reservations and pools with every uci write blocked, then switches to a stateful mock of `uci` (two configs),
+the `dhcp` object, the interface dump and `service list` and drives filtering, reservation edits (duplicates, the
+router's own address, bad MACs, Reserve from a lease, Add, Remove and Undo), pool and daemon edits, adding and
+removing pools, network boot entries, the server DUID, options without a control, a successful
+save across both configs, a change the router does not keep (also in the network config), a late confirmation, a stopped odhcpd, dnsmasq serving DHCPv4 (leases read
 from its lease file, an unreadable file), a login without write access,
 the dark theme and an expired session.
 

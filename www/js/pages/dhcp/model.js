@@ -4,18 +4,23 @@
 // normalizing, validating) is in core/fields.js.
 //
 // Data shape (readDhcp):
-//   { daemon: { section, values }, daemonRunning,
-//     pools:  [{ section, iface, values, info }],       one per dhcp section; `info` is the interface (or null)
+//   { daemon: { section, values, extra }, daemonRunning,
+//     globals: { section, values },                     the globals section of /etc/config/network (the server DUID)
+//     pools:  [{ section, iface, values, info, extra }], one per dhcp section; `info` is the interface (or null)
 //     hosts:  [{ section, values }],                    the reservations
-//     interfaces: [{ name, device, v4: { address, mask } | null }],
+//     boot6:  [{ section, values }],                    the network boot (PXE) addresses
+//     interfaces: [{ name, device, v4: { address, mask } | null }], sectionNames: every section name of the dhcp config,
 //     leases4: [...], leases6: [...], ra: [...],
 //     server: 'odhcpd' | 'dnsmasq' | 'other' (who serves DHCPv4), leasesUnreadable (dnsmasq's lease file could not be read) }
+//   `extra` lists the options of a section that the option tables do not describe, as [{ key, value }], shown read only.
 // Draft shape (what the forms edit; values are strings, booleans and arrays as in core/fields.js):
-//   { daemon: { <option>: value }, pools: { <section>: { <option>: value } },
-//     hosts: [{ key, section | null, removed, values: { name, ip, mac, duid, hostid, leasetime } }], next }
-//   A new reservation has section null. mac and duid are edited as one text separated by spaces.
+//   { daemon: { <option>: value }, globals: { <option>: value }, pools: { <section>: { <option>: value } },
+//     added: [{ section, iface }] (pools to create), removed: { <section>: true } (pools to delete),
+//     hosts: [{ key, section | null, removed, values: { name, ip, mac, duid, hostid, leasetime } }],
+//     boot6: [{ key, section | null, removed, values: { url, arch } }], next, nextBoot }
+//   A new reservation or boot entry has section null. mac and duid are edited as one text separated by spaces.
 import { MAC, asList, differs, errorsOf, flag, hasBlankRows, normalize, sectionsOf, show, uciBool, valueOf } from '../../core/fields.js';
-import { CONFIG, DAEMON_FIELDS, HOST_FIELDS, POOL_FIELDS } from './schema.js';
+import { BOOT6_FIELDS, CONFIG, DAEMON_FIELDS, GLOBAL_CONFIG, GLOBAL_FIELDS, GLOBAL_SECTION, HOST_FIELDS, POOL_FIELDS } from './schema.js';
 
 export { CONFIG };
 
@@ -97,13 +102,23 @@ function dnsmasqLeases(text, now, interfaces, hosts) {
   });
 }
 
+// The options of a section that the option tables do not describe, as [{ key, value }] for the read-only list: options
+// of other daemons that share /etc/config/dhcp, or ones odhcpd documents only loosely. `skip` names options that are
+// shown elsewhere.
+function extraOf(fields, values, skip = []) {
+  return Object.entries(values)
+    .filter(([key]) => !fields.some(f => f.key === key) && !skip.includes(key))
+    .map(([key, v]) => ({ key, value: Array.isArray(v) ? v.join(', ') : String(v) }));
+}
+
 // The settings, leases and announcements from the replies of `uci get dhcp` (all sections), the `dhcp` object's
 // ipv4leases, ipv6leases and ipv6ra, `network.interface dump` and `service list odhcpd`. The ubus replies are
 // optional: without them the lists are empty and `daemonRunning` is null.
 // `dns` describes dnsmasq: { svc: the reply of `service list dnsmasq`, leases: the text of its lease file (null when
 // unreadable), now }. When dnsmasq serves DHCPv4 (dhcpv4Server), its leases replace the odhcpd ones, which are
 // then empty because odhcpd only does DHCPv6 and router advertisements.
-export function readDhcp(cfg, v4, v6, ra, dump, svc, dns = {}) {
+// `network` is the reply of `uci get network globals` (the one section of that config the page reads), or null.
+export function readDhcp(cfg, v4, v6, ra, dump, svc, dns = {}, network = null) {
   const interfaces = (dump?.interface ?? []).map(i => ({
     name: i.interface, device: i.l3_device ?? i.device ?? null, up: Boolean(i.up),
     v4: i['ipv4-address']?.[0] ? { address: i['ipv4-address'][0].address, mask: i['ipv4-address'][0].mask } : null,
@@ -129,14 +144,18 @@ export function readDhcp(cfg, v4, v6, ra, dump, svc, dns = {}) {
   }));
 
   const instances = Object.values(svc?.odhcpd?.instances ?? {});
+  const daemon = sectionsOf(cfg, 'odhcpd')[0] ?? { section: null, values: {} };
   return {
-    daemon: sectionsOf(cfg, 'odhcpd')[0] ?? { section: null, values: {} },
+    daemon: { ...daemon, extra: extraOf(DAEMON_FIELDS, daemon.values) },
     daemonRunning: svc ? instances.some(i => i.running) : null,
+    globals: sectionsOf({ [GLOBAL_SECTION]: network ?? {} }, GLOBAL_SECTION)[0] ?? { section: null, values: {} },
     pools: sectionsOf(cfg, 'dhcp').map(s => {
       const iface = s.values.interface ?? s.section;
-      return { section: s.section, iface, values: s.values, info: interfaces.find(i => i.name === iface) ?? null };
+      return { section: s.section, iface, values: s.values, info: interfaces.find(i => i.name === iface) ?? null, extra: extraOf(POOL_FIELDS, s.values, ['interface']) };
     }),
     hosts,
+    boot6: sectionsOf(cfg, 'boot6'),
+    sectionNames: Object.keys(cfg ?? {}),
     server, leasesUnreadable: server === 'dnsmasq' && dns.leases == null,
     interfaces, leases4, leases6, ra: announced,
   };
@@ -155,18 +174,74 @@ const hostValues = raw => ({
   hostid: String(raw.hostid ?? ''), leasetime: String(raw.leasetime ?? ''),
 });
 
+// A boot entry's options as the table edits them.
+const bootValues = raw => ({ url: String(raw.url ?? ''), arch: String(raw.arch ?? '') });
+
 // The form's starting values: the router's current values.
 export const draftFrom = data => ({
   daemon: valuesOf(DAEMON_FIELDS, data.daemon.values),
+  globals: valuesOf(GLOBAL_FIELDS, data.globals.values),
   pools: Object.fromEntries(data.pools.map(p => [p.section, valuesOf(POOL_FIELDS, p.values)])),
+  added: [],
+  removed: {},
   hosts: data.hosts.map((h, i) => ({ key: `h${i}`, section: h.section, removed: false, values: hostValues(h.values) })),
+  boot6: data.boot6.map((b, i) => ({ key: `b${i}`, section: b.section, removed: false, values: bootValues(b.values) })),
   next: data.hosts.length,
+  nextBoot: data.boot6.length,
 });
+
+// The pools the form shows, in order: the router's, then the ones added in the form. Each has `isNew` and `removed`;
+// a new pool has no options on the router yet, so its `values` are empty and its `info` is found by interface name.
+export function poolList(data, draft) {
+  return [
+    ...data.pools.map(p => ({ ...p, isNew: false, removed: Boolean(draft.removed[p.section]) })),
+    ...draft.added.map(a => ({ section: a.section, iface: a.iface, values: {}, extra: [], info: data.interfaces.find(i => i.name === a.iface) ?? null, isNew: true, removed: false })),
+  ];
+}
+
+// The interfaces that can still get a pool: the router's logical interfaces without one, except loopback.
+export function freeInterfaces(data, draft) {
+  const used = new Set(poolList(data, draft).map(p => p.iface));
+  return data.interfaces.map(i => i.name).filter(n => n !== 'loopback' && !used.has(n));
+}
+
+// Adds a pool for an interface to the draft and returns its section name. The pool starts as odhcpd's usual home
+// network: DHCPv4, DHCPv6 and router advertisements as server, every other option at its default. The section is named
+// after the interface unless that name is taken.
+export function addPool(data, draft, iface) {
+  const taken = new Set([...data.sectionNames, ...draft.added.map(a => a.section)]);
+  const base = iface.replace(/\W/g, '_');
+  let section = base;
+  for (let n = 2; taken.has(section); n++) section = `${base}_pool${n > 2 ? n : ''}`;
+  draft.added.push({ section, iface });
+  draft.pools[section] = { ...valuesOf(POOL_FIELDS, {}), dhcpv4: 'server', dhcpv6: 'server', ra: 'server' };
+  return section;
+}
+
+// Marks a pool for removal, or drops it when it was only added in the form.
+export function removePool(draft, section) {
+  const i = draft.added.findIndex(a => a.section === section);
+  if (i < 0) { draft.removed[section] = true; return; }
+  draft.added.splice(i, 1);
+  delete draft.pools[section];
+}
+
+// Takes a pool back from removal.
+export function restorePool(draft, section) {
+  delete draft.removed[section];
+}
 
 // A new, empty reservation row (added to the draft by the page).
 export function newHost(draft) {
   const row = { key: `h${draft.next++}`, section: null, removed: false, values: hostValues({}) };
   draft.hosts.push(row);
+  return row;
+}
+
+// A new, empty network boot row.
+export function newBoot(draft) {
+  const row = { key: `b${draft.nextBoot++}`, section: null, removed: false, values: bootValues({}) };
+  draft.boot6.push(row);
   return row;
 }
 
@@ -187,6 +262,20 @@ const hostTitle = v => v.name.trim() || v.ip.trim() || tokens(v.mac)[0] || 'unna
 // A reservation in one line for the review list.
 const hostLine = v => [v.name.trim(), v.ip.trim(), tokens(v.mac).join(' '), tokens(v.duid).join(' '), v.hostid.trim() && `id ${v.hostid.trim()}`, v.leasetime.trim() && `lease ${v.leasetime.trim()}`].filter(Boolean).join(' · ') || 'empty';
 
+// Whether a new boot row is still empty.
+const isBlankBoot = row => row.section == null && BOOT6_FIELDS.every(f => row.values[f.key].trim() === '');
+
+// What to call a boot entry in messages, and its one-line form for the review list.
+const bootTitle = v => v.url.trim() || 'entry without an address';
+const bootLine = v => [v.url.trim(), v.arch.trim() && `architecture ${v.arch.trim()}`].filter(Boolean).join(' · ') || 'empty';
+
+// A new pool in one line for the review list: the options that differ from the defaults.
+function poolLine(values) {
+  const parts = POOL_FIELDS.filter(f => differs(f, normalize(f, valueOf(f, undefined)), normalize(f, values[f.key])))
+    .map(f => `${f.label} ${show(f, normalize(f, values[f.key]))}`);
+  return parts.join(', ') || 'default options';
+}
+
 // The differences between the router's values and the draft for the review list: [{ key, label, from, to }].
 export function changesOf(data, draft) {
   const out = [];
@@ -198,7 +287,12 @@ export function changesOf(data, draft) {
     }
   };
   diffFields(DAEMON_FIELDS, data.daemon.values, draft.daemon, 'daemon', 'odhcpd');
-  for (const p of data.pools) diffFields(POOL_FIELDS, p.values, draft.pools[p.section], `pool:${p.section}`, p.iface);
+  diffFields(GLOBAL_FIELDS, data.globals.values, draft.globals, 'globals', 'odhcpd');
+  for (const p of poolList(data, draft)) {
+    if (p.isNew) out.push({ key: `pool:${p.section}`, label: `New pool ${p.iface}`, from: 'none', to: poolLine(draft.pools[p.section]) });
+    else if (p.removed) out.push({ key: `pool:${p.section}`, label: `Remove pool ${p.iface}`, from: poolLine(Object.fromEntries(POOL_FIELDS.map(f => [f.key, valueOf(f, p.values[f.key])]))), to: 'removed' });
+    else diffFields(POOL_FIELDS, p.values, draft.pools[p.section], `pool:${p.section}`, p.iface);
+  }
 
   const baseHosts = new Map(data.hosts.map(h => [h.section, h.values]));
   for (const row of draft.hosts) {
@@ -217,14 +311,33 @@ export function changesOf(data, draft) {
       if (a[f.key] !== b[f.key]) out.push({ key: `host:${row.key}:${f.key}`, label: `Reservation ${hostTitle(base)}: ${f.label}`, from: a[f.key] || 'not set', to: b[f.key] || 'not set' });
     }
   }
+
+  const baseBoot = new Map(data.boot6.map(b => [b.section, b.values]));
+  for (const row of draft.boot6) {
+    if (isBlankBoot(row)) continue;
+    if (row.section == null) {
+      if (!row.removed) out.push({ key: `boot6:${row.key}`, label: `New network boot entry ${bootTitle(row.values)}`, from: 'none', to: bootLine(row.values) });
+      continue;
+    }
+    const base = bootValues(baseBoot.get(row.section) ?? {});
+    if (row.removed) {
+      out.push({ key: `boot6:${row.key}`, label: `Remove network boot entry ${bootTitle(base)}`, from: bootLine(base), to: 'removed' });
+      continue;
+    }
+    for (const f of BOOT6_FIELDS) {
+      const a = base[f.key].trim(), b = row.values[f.key].trim();
+      if (a !== b) out.push({ key: `boot6:${row.key}:${f.key}`, label: `Network boot ${bootTitle(base)}: ${f.label}`, from: a || 'not set', to: b || 'not set' });
+    }
+  }
   return out;
 }
 
-// Whether the draft differs from the router in any way, including blank list rows and empty new reservations.
+// Whether the draft differs from the router in any way, including blank list rows and empty new rows.
 export const isDirty = (data, draft) => changesOf(data, draft).length > 0
   || DAEMON_FIELDS.some(f => hasBlankRows(f, draft.daemon[f.key]))
   || Object.values(draft.pools).some(p => POOL_FIELDS.some(f => hasBlankRows(f, p[f.key])))
-  || draft.hosts.some(r => r.section == null && !r.removed);
+  || draft.hosts.some(r => r.section == null && !r.removed)
+  || draft.boot6.some(r => r.section == null && !r.removed);
 
 //#endregion
 
@@ -238,18 +351,24 @@ export function poolValue(draft, section, key) {
 }
 
 // What stops the forms from being saved (`errors`: { key, index?, text }) and what only deserves a warning.
-// Keys name the control: `daemon:<option>`, `pool:<section>:<option>` and `host:<row>:<option>`; `index` is the
-// row of a list.
+// Keys name the control: `daemon:<option>`, `globals:<option>`, `pool:<section>:<option>`, `host:<row>:<option>` and
+// `boot6:<row>:<option>`; `index` is the row of a list.
 export function problems(data, draft) {
   const errors = [];
   const warnings = [];
 
   for (const f of DAEMON_FIELDS) for (const e of errorsOf(f, draft.daemon[f.key], `odhcpd: ${f.label}`)) errors.push({ key: `daemon:${f.key}`, ...e });
+  for (const f of GLOBAL_FIELDS) for (const e of errorsOf(f, draft.globals[f.key], `odhcpd: ${f.label}`)) errors.push({ key: `globals:${f.key}`, ...e });
   const maindhcpField = DAEMON_FIELDS.find(f => f.key === 'maindhcp');
   if (!draft.daemon.maindhcp && valueOf(maindhcpField, data.daemon.values.maindhcp)) warnings.push('odhcpd is no longer the main DHCPv4 server: DHCPv4 stops unless another DHCP server (such as dnsmasq) is installed and serving.');
 
-  for (const p of data.pools) {
+  const pools = poolList(data, draft);
+  for (const p of pools) {
     const label = p.iface;
+    if (p.removed) {
+      warnings.push(`Pool ${label} is removed: DHCP and router advertisements stop on that interface.`);
+      continue;
+    }
     for (const f of POOL_FIELDS) for (const e of errorsOf(f, draft.pools[p.section][f.key], `${label}: ${f.label}`)) errors.push({ key: `pool:${p.section}:${f.key}`, ...e });
     const val = key => poolValue(draft, p.section, key);
 
@@ -270,7 +389,7 @@ export function problems(data, draft) {
   // Reservations: every field, an identity, an address, and no repeats.
   const active = draft.hosts.filter(r => !r.removed && !isBlank(r));
   const ips = new Map(), macs = new Map();
-  const served = data.pools.filter(p => poolValue(draft, p.section, 'dhcpv4') === 'server' && p.info?.v4);
+  const served = pools.filter(p => !p.removed && poolValue(draft, p.section, 'dhcpv4') === 'server' && p.info?.v4);
   const routers = new Set(data.interfaces.filter(i => i.v4).map(i => i.v4.address));
   for (const row of active) {
     const v = row.values;
@@ -294,6 +413,18 @@ export function problems(data, draft) {
       if (macs.has(m) && macs.get(m) !== row) errors.push({ key: `host:${row.key}:mac`, also: `host:${macs.get(m).key}:mac`, text: `${title}: ${m} is also used by ${hostTitle(macs.get(m).values)}.` });
       else macs.set(m, row);
     }
+  }
+
+  // Network boot entries: an address each, a valid architecture code, and no two for the same architecture.
+  const archs = new Map();
+  for (const row of draft.boot6.filter(r => !r.removed && !isBlankBoot(r))) {
+    const v = row.values;
+    const title = `Network boot ${bootTitle(v)}`;
+    if (!v.url.trim()) errors.push({ key: `boot6:${row.key}:url`, text: `${title} needs an address.` });
+    for (const f of BOOT6_FIELDS) for (const e of errorsOf(f, v[f.key], `${title}: ${f.label}`)) errors.push({ key: `boot6:${row.key}:${f.key}`, text: e.text });
+    const arch = v.arch.trim() === '' ? 'every client' : `architecture ${+v.arch}`;
+    if (archs.has(arch)) warnings.push(`${title}: another network boot entry already serves ${arch}, so odhcpd uses only one of them.`);
+    else archs.set(arch, row);
   }
   return { errors, warnings };
 }
@@ -320,17 +451,30 @@ export function plan(data, draft) {
     }
     return { set, del };
   };
-  const emit = (section, { set, del }, raw) => {
-    if (Object.keys(set).length) ops.push({ op: 'set', config: CONFIG, section, values: set });
+  const emit = (config, section, { set, del }, raw) => {
+    if (Object.keys(set).length) ops.push({ op: 'set', config, section, values: set });
     const existing = del.filter(o => raw[o] !== undefined);
-    if (existing.length) ops.push({ op: 'delete', config: CONFIG, section, options: existing });
+    if (existing.length) ops.push({ op: 'delete', config, section, options: existing });
   };
 
   const daemon = sectionChange(DAEMON_FIELDS, data.daemon.values, draft.daemon);
   if (!data.daemon.section) {
     if (Object.keys(daemon.set).length) ops.push({ op: 'add', config: CONFIG, type: 'odhcpd', name: 'odhcpd', values: daemon.set });
-  } else emit(data.daemon.section, daemon, data.daemon.values);
-  for (const p of data.pools) emit(p.section, sectionChange(POOL_FIELDS, p.values, draft.pools[p.section]), p.values);
+  } else emit(CONFIG, data.daemon.section, daemon, data.daemon.values);
+
+  // The server DUID is in the network config, in a section that normally exists already.
+  const globals = sectionChange(GLOBAL_FIELDS, data.globals.values, draft.globals);
+  if (!data.globals.section) {
+    if (Object.keys(globals.set).length) ops.push({ op: 'add', config: GLOBAL_CONFIG, type: GLOBAL_SECTION, name: GLOBAL_SECTION, values: globals.set });
+  } else emit(GLOBAL_CONFIG, data.globals.section, globals, data.globals.values);
+
+  // Pools: a removed one is deleted, a new one added under the section name chosen for it (with its interface), a
+  // changed one set.
+  for (const p of poolList(data, draft)) {
+    if (p.removed) ops.push({ op: 'delete', config: CONFIG, section: p.section });
+    else if (p.isNew) ops.push({ op: 'add', config: CONFIG, type: 'dhcp', name: p.section, values: { interface: p.iface, ...sectionChange(POOL_FIELDS, {}, draft.pools[p.section]).set } });
+    else emit(CONFIG, p.section, sectionChange(POOL_FIELDS, p.values, draft.pools[p.section]), p.values);
+  }
 
   // Reservations: a removed one is deleted, a new one added, a changed one set. mac and duid become a list when
   // there are several; MACs are written in capitals, as the router's own entries are.
@@ -362,7 +506,28 @@ export function plan(data, draft) {
       if (w[f.key] === '') del.push(f.key);
       else set[f.key] = w[f.key];
     }
-    emit(row.section, { set, del }, rawBase);
+    emit(CONFIG, row.section, { set, del }, rawBase);
+  }
+
+  // Network boot entries: a removed one is deleted, a new one added, a changed one set.
+  const baseBoot = new Map(data.boot6.map(b => [b.section, b.values]));
+  for (const row of draft.boot6) {
+    if (isBlankBoot(row)) continue;
+    const w = { url: row.values.url.trim(), arch: row.values.arch.trim() };
+    if (row.section == null) {
+      if (!row.removed) ops.push({ op: 'add', config: CONFIG, type: 'boot6', values: Object.fromEntries(Object.entries(w).filter(([, x]) => x !== '')) });
+      continue;
+    }
+    if (row.removed) { ops.push({ op: 'delete', config: CONFIG, section: row.section }); continue; }
+    const rawBase = baseBoot.get(row.section) ?? {};
+    const base = bootValues(rawBase);
+    const set = {}, del = [];
+    for (const f of BOOT6_FIELDS) {
+      if (base[f.key].trim() === w[f.key]) continue;
+      if (w[f.key] === '') del.push(f.key);
+      else set[f.key] = w[f.key];
+    }
+    emit(CONFIG, row.section, { set, del }, rawBase);
   }
   return ops;
 }
@@ -370,20 +535,35 @@ export function plan(data, draft) {
 // A reservation as a comparable text, ignoring its section name.
 const hostSignature = v => HOST_FIELDS.map(f => hostNorm(v)[f.key]).join('|');
 
+// A network boot entry as a comparable text, ignoring its section name.
+const bootSignature = v => BOOT6_FIELDS.map(f => v[f.key].trim()).join('|');
+
 // Throws unless the settings `after` (read back once the change is applied) hold what the draft asked for: every
-// option of the daemon and the pools, and the set of reservations (new ones get a section name from uci, so they
-// are compared by content).
+// option of the daemon, the server DUID and the pools (a new pool by the section name chosen for it, a removed one
+// gone), and the sets of reservations and boot entries (new ones get a section name from uci, so they are compared
+// by content).
 export function checkApplied(after, draft) {
   const left = [];
   const compare = (fields, raw, values, label) => {
     for (const f of fields) if (differs(f, normalize(f, valueOf(f, raw[f.key])), normalize(f, values[f.key]))) left.push(`${label}: ${f.label}`);
   };
   compare(DAEMON_FIELDS, after.daemon.values, draft.daemon, 'odhcpd');
-  for (const p of after.pools) if (draft.pools[p.section]) compare(POOL_FIELDS, p.values, draft.pools[p.section], p.iface);
+  compare(GLOBAL_FIELDS, after.globals.values, draft.globals, 'odhcpd');
+  const have = new Map(after.pools.map(p => [p.section, p]));
+  for (const [section, values] of Object.entries(draft.pools)) {
+    const found = have.get(section);
+    const iface = found?.iface ?? draft.added.find(a => a.section === section)?.iface ?? section;
+    if (draft.removed[section]) { if (found) left.push(`Pool ${iface}`); continue; }
+    if (!found) left.push(`Pool ${iface}`);
+    else compare(POOL_FIELDS, found.values, values, iface);
+  }
 
-  const want = draft.hosts.filter(r => !r.removed && !isBlank(r)).map(r => hostSignature(r.values)).sort();
-  const have = after.hosts.map(h => hostSignature(hostValues(h.values))).sort();
-  if (want.join('\n') !== have.join('\n')) left.push('Reservations');
+  const wantHosts = draft.hosts.filter(r => !r.removed && !isBlank(r)).map(r => hostSignature(r.values)).sort();
+  const haveHosts = after.hosts.map(h => hostSignature(hostValues(h.values))).sort();
+  if (wantHosts.join('\n') !== haveHosts.join('\n')) left.push('Reservations');
+  const wantBoot = draft.boot6.filter(r => !r.removed && !isBlankBoot(r)).map(r => bootSignature(r.values)).sort();
+  const haveBoot = after.boot6.map(b => bootSignature(bootValues(b.values))).sort();
+  if (wantBoot.join('\n') !== haveBoot.join('\n')) left.push('Network boot entries');
   if (left.length) throw new Error(`${left.slice(0, 4).join(', ')}${left.length > 4 ? ` and ${left.length - 4} more` : ''} ${left.length > 1 ? 'were' : 'was'} not saved`);
 }
 

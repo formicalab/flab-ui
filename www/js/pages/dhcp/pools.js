@@ -4,10 +4,10 @@
 // stays readable.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card, muted } from '../../core/ui.js';
+import { badge, button, card, muted } from '../../core/ui.js';
 import { fieldRow, legend } from '../../core/forms.js';
-import { DAEMON_FIELDS, POOL_FIELDS, POOL_GROUPS } from './schema.js';
-import { poolRange, poolValue } from './model.js';
+import { DAEMON_FIELDS, GLOBAL_FIELDS, POOL_FIELDS, POOL_GROUPS } from './schema.js';
+import { addPool, freeInterfaces, poolRange, poolValue, removePool, restorePool } from './model.js';
 
 // Which option groups are expanded, kept across redraws: id `<section>:<group>` to open or closed.
 const opened = new Map();
@@ -36,17 +36,27 @@ function foldable(el, key) {
   return el;
 }
 
-// Connects the control of one field to the draft, under the control name `id` (also used to mark errors).
-function controlFor(ctx, f, id, values) {
+// Connects the control of one field to the draft, under the control name `id` (also used to mark errors). `off` greys
+// it out (a pool that is going to be removed).
+function controlFor(ctx, f, id, values, off = false) {
   return fieldRow(f, {
     id,
     get: () => values[f.key],
     set: v => { values[f.key] = v; },
-    disabled: !ctx.canEdit,
+    disabled: !ctx.canEdit || off,
     touched: ctx.touched,
     redraw: ctx.redraw,
     register: (el, index) => { if (index == null) ctx.inputs[id] = el; else (ctx.inputs[id] ??= [])[index] = el; },
   });
+}
+
+// The options of a section that the option tables do not describe, read only: options of other programs that read the same
+// file, and ones odhcpd reads without documenting them. `file` names where to change them.
+function extraOptions(extra, file) {
+  if (!extra.length) return null;
+  return h('div', { className: 'dhcp-extra' },
+    h('p', { className: 'muted small' }, `Other options in this section of ${file}. This page has no control for them; change them in the file.`),
+    h('dl', { className: 'kv' }, extra.flatMap(e => [h('dt', { className: 'mono' }, e.key), h('dd', { className: 'mono' }, e.value)])));
 }
 
 // The one-line description of a pool in its header: subnet, then each service with its mode.
@@ -65,24 +75,50 @@ function describe(ctx, pool) {
 }
 
 // The card of one pool. Clicking its header folds the whole card down to that header (which already summarizes
-// the pool), and the choice survives redraws.
+// the pool), and the choice survives redraws. A pool can be removed (until saved it can be restored) and its options
+// the page does not describe are listed read only.
 export function poolCard(ctx, pool) {
+  const off = pool.removed;
   const groups = POOL_GROUPS.map(g => {
     const id = `${pool.section}:${g.id}`;
-    const fields = POOL_FIELDS.filter(f => f.group === g.id).map(f => controlFor(ctx, f, `pool:${pool.section}:${f.key}`, ctx.draft.pools[pool.section]));
+    const fields = POOL_FIELDS.filter(f => f.group === g.id).map(f => controlFor(ctx, f, `pool:${pool.section}:${f.key}`, ctx.draft.pools[pool.section], off));
     return h('details', { className: 'dhcp-group', open: opened.get(id) ?? Boolean(g.open), ontoggle: e => opened.set(id, e.target.open) },
       h('summary', {}, g.title),
       h('div', { className: 'dhcp-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, fields)));
   });
+  const actions = off
+    ? h('div', { className: 'dhcp-pool-actions' }, muted(`Pool ${pool.iface} is removed when you save.`), button('Undo', 'arrow-clockwise', () => { restorePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); }))
+    : h('div', { className: 'dhcp-pool-actions' },
+      muted(pool.isNew ? 'Not saved yet.' : `The dhcp section "${pool.section}".`),
+      h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !ctx.canEdit, title: `Stop serving ${pool.iface} and delete this pool`, onclick: () => { removePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); } }, icon('trash'), pool.isNew ? 'Discard pool' : 'Remove pool'));
+  const state = pool.isNew ? badge('new', 'info', 'not saved yet') : off ? badge('to be removed', 'danger') : null;
   const el = card(
-    [h('span', { className: 'dhcp-chevron' }), icon('signpost-split'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, h('span', { className: 'sub' }, describe(ctx, pool))],
-    h('div', { className: 'card-body dhcp-groups' }, groups));
+    [h('span', { className: 'dhcp-chevron' }), icon('signpost-split'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, state, h('span', { className: 'sub' }, describe(ctx, pool))],
+    h('div', { className: `card-body dhcp-groups${off ? ' dhcp-removed-pool' : ''}` }, actions, groups, extraOptions(pool.extra, '/etc/config/dhcp')),
+    pool.isNew ? 'dhcp-new-pool' : '');
   return foldable(el, pool.section);
 }
 
-// The card of the odhcpd daemon: its options and whether it runs. Foldable; the header sums up the main switches.
+// Makes the card of a pool start unfolded (a pool that was just added: its options are what the user wants to see).
+export const unfold = section => unfolded.add(section);
+
+// The row below the pools for adding one: the interfaces that have none, and Add pool.
+export function addPoolBar(ctx) {
+  const free = freeInterfaces(ctx.data, ctx.draft);
+  if (!free.length) return h('p', { className: 'muted small dhcp-addpool' }, 'Every interface already has a pool.');
+  const pick = h('select', { className: 'form-select form-select-sm', title: 'The interface to serve', disabled: !ctx.canEdit }, free.map(n => h('option', { value: n }, n)));
+  const add = button('Add pool', 'plus-lg', () => { unfold(addPool(ctx.data, ctx.draft, pick.value)); ctx.touched(); ctx.redraw(); });
+  add.disabled = !ctx.canEdit;
+  return h('div', { className: 'dhcp-addpool' }, pick, add, h('span', { className: 'muted small' }, 'Starts as a server for DHCPv4, DHCPv6 and router advertisements; the options are then edited like the other pools.'));
+}
+
+// The card of the odhcpd daemon: its options, the server DUID (kept in the network config) and whether it runs.
+// Foldable; the header sums up the main switches.
 export function daemonCard(ctx) {
-  const fields = DAEMON_FIELDS.map(f => controlFor(ctx, f, `daemon:${f.key}`, ctx.draft.daemon));
+  const fields = [
+    ...DAEMON_FIELDS.map(f => controlFor(ctx, f, `daemon:${f.key}`, ctx.draft.daemon)),
+    ...GLOBAL_FIELDS.map(f => controlFor(ctx, f, `globals:${f.key}`, ctx.draft.globals)),
+  ];
   const running = ctx.data.daemonRunning;
   const d = ctx.draft.daemon;
   const el = card(
@@ -90,7 +126,8 @@ export function daemonCard(ctx) {
       running == null ? muted('state not available') : badge(running ? 'running' : 'not running', running ? 'success' : 'danger'),
       h('span', { className: 'sub' }, `${d.maindhcp ? 'main DHCPv4 server' : 'not the main DHCPv4 server'} · log level ${d.loglevel === '' ? `${DAEMON_FIELDS.find(f => f.key === 'loglevel').default} (default)` : d.loglevel}`)],
     h('div', {},
-      legend(['The daemon that serves DHCPv4, DHCPv6 and router advertisements. These are the odhcpd section of /etc/config/dhcp; the interface pools below are its dhcp sections.']),
-      h('div', { className: 'card-body set-fields' }, fields)));
+      legend(['The daemon that serves DHCPv4, DHCPv6 and router advertisements. These are the odhcpd section of /etc/config/dhcp, and the server DUID of /etc/config/network; the interface pools below are the dhcp sections.']),
+      h('div', { className: 'card-body set-fields' }, fields),
+      h('div', { className: 'card-body' }, extraOptions(ctx.data.daemon.extra, '/etc/config/dhcp'))));
   return foldable(el, 'daemon');
 }

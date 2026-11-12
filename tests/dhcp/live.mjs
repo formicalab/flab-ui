@@ -24,17 +24,21 @@ const section = (name, type, values) => ({ '.anonymous': false, '.type': type, '
 // The dhcp config like the real router's: the daemon, two pools, and four reservations (one with only a name and a MAC).
 const baseCfg = () => ({
   odhcpd: section('odhcpd', 'odhcpd', { maindhcp: '1', leasefile: '/tmp/odhcpd.leases', loglevel: '6' }),
-  lan: section('lan', 'dhcp', { interface: 'lan', start: '128', limit: '120', leasetime: '8h', dhcpv4: 'server', dhcpv6: 'server', ra: 'server', ra_slaac: '0', ra_flags: ['managed-config', 'other-config'], dns: '192.168.1.1', domain: 'lab.example.com' }),
+  lan: section('lan', 'dhcp', { interface: 'lan', start: '128', limit: '120', leasetime: '8h', dhcpv4: 'server', dhcpv6: 'server', ra: 'server', ra_slaac: '0', ra_flags: ['managed-config', 'other-config'], dns: '192.168.1.1', domain: 'lab.example.com', dhcp_option: ['3,192.168.1.254'], force: '1' }),
   lan100: section('lan100', 'dhcp', { interface: 'lan100', start: '128', limit: '120', dhcpv4: 'server', ra: 'server' }),
   cfg1: section('cfg1', 'host', { mac: '88:AE:DD:66:16:05', ip: '192.168.1.2', name: 'flabn01' }),
   cfg2: section('cfg2', 'host', { mac: '38:A6:CE:49:BF:D6', name: 'SkyQ-L2-Mesh' }),
   cfg3: section('cfg3', 'host', { mac: ['02:F0:F4:50:6B:7D', '02:F0:F4:50:6B:7E'], ip: '192.168.1.3', name: 'homeassistant', leasetime: '1h' }),
   cfg4: section('cfg4', 'host', { duid: '000100011ee0f1ed4cbad7bba6ae', hostid: '11', name: 'soundbar' }),
+  boot1: section('boot1', 'boot6', { url: 'tftp://[fd11::1]/pxe.efi', arch: '07' }),
 });
+// The globals section of the network config (the only part of it the page reads), with a second option the page ignores.
+const baseNet = () => ({ globals: section('globals', 'globals', { ula_prefix: 'fd00::/48', dhcp_default_duid: '0004b324b3332b47450aaa442f1f235bff2b' }) });
 const DUMP = { interface: [
   { interface: 'lan', up: true, l3_device: 'br-lan', device: 'br-lan', 'ipv4-address': [{ address: '192.168.1.1', mask: 24 }] },
   { interface: 'lan100', up: true, l3_device: 'br-lan.100', 'ipv4-address': [{ address: '192.168.100.1', mask: 24 }] },
   { interface: 'wan', up: true, l3_device: 'eth1', 'ipv4-address': [{ address: '203.0.113.7', mask: 29 }] },
+  { interface: 'guest', up: true, l3_device: 'br-guest', 'ipv4-address': [{ address: '192.168.50.1', mask: 24 }] },
 ] };
 const LEASES4 = { device: { 'br-lan': { leases: [
   { mac: '88aedd661605', hostname: 'flabn01', flags: ['bound', 'static'], address: '192.168.1.2', valid: 19688 },
@@ -50,45 +54,63 @@ const LEASES6 = { device: { 'br-lan': { leases: [
 const RA = { interfaces: { 'br-lan': [{ prefix: '2a01:827::1', length: 60, stale: false }, { prefix: 'fd92::1', length: 60, stale: true }] } };
 
 const WRITES = ['set', 'add', 'delete', 'apply', 'confirm', 'rollback', 'revert', 'commit', 'order', 'rename'];
-const mock = { on: false, cfg: baseCfg(), staged: [], restage: [], snapshot: null, calls: [], dropWrites: false, confirmFails: false, expired: false, noDaemon: false, dnsmasq: false, leaseFile: null, unsafe: [] };
+const mock = { on: false, cfg: baseCfg(), net: baseNet(), staged: [], restage: [], snapshot: null, calls: [], dropWrites: false, confirmFails: false, expired: false, noDaemon: false, dnsmasq: false, leaseFile: null, unsafe: [] };
 let nextId = 1;
+
+// The staged edits are [op, section, option or type, value, config]; an edit without a config belongs to dhcp.
+const configOf = c => c[4] ?? 'dhcp';
+// The mock's copy of a config: dhcp is the whole config, network only the globals section.
+const target = config => (config === 'network' ? mock.net : mock.cfg);
 
 // Applies the staged edits to the mock's config, the way rpcd's uci apply does.
 function commit() {
-  for (const [op, section, option, value] of mock.staged) {
-    if (op === 'set') mock.cfg[section][option] = value;
-    else if (op === 'delete') (option ? delete mock.cfg[section][option] : delete mock.cfg[section]);
-    else if (op === 'add') mock.cfg[section] = section_(section, option, value);
+  for (const c of mock.staged) {
+    const [op, section, option, value] = c;
+    const cfg = target(configOf(c));
+    if (op === 'set') cfg[section][option] = value;
+    else if (op === 'delete') (option ? delete cfg[section][option] : delete cfg[section]);
+    else if (op === 'add') cfg[section] = section_(section, option, value);
   }
 }
 const section_ = (name, type, values) => section(name, type, values);
+// What a rollback or a failed confirmation puts back.
+const restore = () => { mock.cfg = mock.snapshot.cfg; mock.net = mock.snapshot.net; mock.staged = mock.restage; mock.snapshot = null; };
 
 // One uci method of the mock: [ubus status, data].
 function uci(method, args) {
-  if (method === 'get') return [0, { values: clone(mock.cfg) }];
-  if (method === 'changes') return [0, { changes: mock.staged.map(c => c.slice(0, 4)) }];
-  if (method === 'set') { for (const [k, v] of Object.entries(args.values)) mock.staged.push(['set', args.section, k, v]); return [0, {}]; }
+  if (method === 'get') {
+    if (args.config === 'network') return args.section ? (mock.net[args.section] ? [0, { values: clone(mock.net[args.section]) }] : [4]) : [0, { values: clone(mock.net) }];
+    return [0, { values: clone(mock.cfg) }];
+  }
+  if (method === 'changes') {
+    // rpcd answers a bare list for one named config and a table keyed by config otherwise.
+    if (args.config) return [0, { changes: mock.staged.filter(c => configOf(c) === args.config).map(c => c.slice(0, 4)) }];
+    const keyed = {};
+    for (const c of mock.staged) (keyed[configOf(c)] ??= []).push(c.slice(0, 4));
+    return [0, { changes: keyed }];
+  }
+  if (method === 'set') { for (const [k, v] of Object.entries(args.values)) mock.staged.push(['set', args.section, k, v, args.config]); return [0, {}]; }
   if (method === 'add') {
     const name = args.name ?? `cfg${100 + nextId++}`;
-    mock.staged.push(['add', name, args.type, args.values ?? {}]);
+    mock.staged.push(['add', name, args.type, args.values ?? {}, args.config]);
     return [0, { section: name }];
   }
-  if (method === 'delete') { for (const o of args.options ?? [undefined]) mock.staged.push(['delete', args.section, o]); return [0, {}]; }
-  if (method === 'revert') { mock.staged = []; return [0, {}]; }
+  if (method === 'delete') { for (const o of args.options ?? [undefined]) mock.staged.push(['delete', args.section, o, undefined, args.config]); return [0, {}]; }
+  if (method === 'revert') { mock.staged = mock.staged.filter(c => configOf(c) !== args.config); return [0, {}]; }
   if (method === 'apply') {
-    mock.snapshot = clone(mock.cfg);
+    mock.snapshot = { cfg: clone(mock.cfg), net: clone(mock.net) };
     mock.restage = mock.staged;
     if (!mock.dropWrites) commit();
     mock.staged = [];
     return [0, {}];
   }
   if (method === 'confirm') {
-    if (mock.confirmFails) { mock.cfg = mock.snapshot; mock.staged = mock.restage; return [1]; }
+    if (mock.confirmFails) { restore(); return [1]; }
     mock.snapshot = null;
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) { mock.cfg = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null; }
+    if (mock.snapshot) restore();
     return [0, {}];
   }
   return [0, {}];
@@ -156,6 +178,7 @@ const group = (iface, title) => poolCard(iface).locator('details').filter({ has:
 const field = (scope, label) => scope.locator('.set-field, .set-check').filter({ hasText: label }).first();
 const notes = () => page.locator('.set-notes .set-note').allInnerTexts().then(t => t.join(' | '));
 const bar = () => page.locator('.set-bar');
+const errorCount = () => page.locator('.set-notes .set-note.bad').count();
 const saveBtn = () => page.locator('button:has-text("Save and apply")');
 const changes = () => page.locator('.set-changes').evaluate(e => e.textContent);
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `dhcp-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
@@ -205,6 +228,8 @@ check(await hostInput(hostRow('homeassistant'), 'MAC address(es)').inputValue() 
 check(await poolCard('lan').locator('.sub').innerText().then(t => /192\.168\.1\.1\/24 · DHCPv4 192\.168\.1\.128 – 192\.168\.1\.247 \(120\) · DHCPv6 server · RA server/.test(t)), 'a pool\'s header says its subnet, range and services', await poolCard('lan').locator('.sub').innerText());
 check(await group('lan', 'Services').getAttribute('open') !== null && await group('lan', 'Router advertisements').getAttribute('open') === null, 'the services and DHCPv4 groups are open, the others collapsed');
 check(await bar().isHidden(), 'the banner is hidden while nothing is edited');
+check(await cardOf('Network boot').locator('tbody tr').count() === 1 && await cardOf('Network boot').locator('input[title="Boot file address"]').inputValue() === 'tftp://[fd11::1]/pxe.efi' && await cardOf('Network boot').locator('input[title="Architecture code"]').inputValue() === '07', 'the network boot entry is shown with its address and architecture');
+check(/dhcp_option/.test(await poolCard('lan').locator('.dhcp-extra').textContent()) && /3,192\.168\.1\.254/.test(await poolCard('lan').locator('.dhcp-extra').textContent()) && /force/.test(await poolCard('lan').locator('.dhcp-extra').textContent()) && await poolCard('lan100').locator('.dhcp-extra').count() === 0, 'options this page has no control for are listed read only in their pool, and only where there are some');
 check((await page.locator('main .card-header').allInnerTexts()).map(t => t.trim().split(/\s+/).slice(0, 2).join(' ')).join(' | ').startsWith('odhcpd daemon | Pool lan | Pool lan100 | IPv6 prefixes | DHCPv4 leases | DHCPv6 leases | Reservations'), 'the settings come first (daemon, pools, announced prefixes), then the leases, then the reservations');
 await shot('mock-base');
 
@@ -324,7 +349,7 @@ await saveBtn().click();
 const done = await outcome();
 check(/^Saved/.test(done), 'a successful save says so', done);
 KEYS = { flabn01: 'h0', renamed: 'h0', 'SkyQ-Mesh': 'h1', soundbar: 'h2', printer: 'h3' };
-check(/^uci\.changes( uci\.(set|add|delete))+ uci\.apply uci\.get uci\.confirm/.test(mock.calls.join(' ')), 'checked for leftovers, staged, applied, read back, confirmed', mock.calls.join(' '));
+check(/^uci\.changes uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+ uci\.confirm/.test(mock.calls.join(' ')), 'checked both configs for leftovers, staged, applied, read back, confirmed', mock.calls.join(' '));
 const cfg = mock.cfg;
 check(cfg.cfg1.ip === '192.168.1.20' && cfg.cfg1.mac === '88:AE:DD:66:16:05' && cfg.cfg2.name === 'SkyQ-Mesh' && !cfg.cfg3, 'changed reservations were written, a removed one is gone, untouched options kept', JSON.stringify([cfg.cfg1, cfg.cfg2, cfg.cfg3]));
 const added = Object.values(cfg).filter(s => s['.type'] === 'host' && ['printer', 'laptop'].includes(s.name));
@@ -355,6 +380,76 @@ check(/2 change\(s\) are already staged/.test(await page.locator('main').innerTe
 await page.click('button:has-text("Discard them")');
 await page.waitForTimeout(700);
 check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), 'Discard them clears the session\'s staging area');
+//#endregion
+
+//#region Pools, network boot entries and the server DUID
+console.log('\n== adding and removing pools ==');
+mock.cfg.spare = section('spare', 'dhcp', { interface: 'wan', dhcpv4: 'disabled', dhcpv6: 'disabled', ra: 'disabled' });
+await refresh();
+check(await poolCard('wan').count() === 1 && /DHCPv4 disabled/.test(await poolCard('wan').locator('.sub').innerText()), 'a pool the router has for another interface is shown');
+check(JSON.stringify(await page.locator('.dhcp-addpool select option').allInnerTexts()) === '["guest"]', 'only interfaces without a pool are offered for a new one', JSON.stringify(await page.locator('.dhcp-addpool select option').allInnerTexts()));
+await page.locator('.dhcp-addpool button:has-text("Add pool")').click();
+const guest = poolCard('guest');
+check(await guest.count() === 1 && await guest.locator('.dhcp-groups').isVisible() && /\bnew\b/i.test(await guest.locator('.card-header').innerText()) && await guest.locator('.sub').innerText().then(t => /192\.168\.50\.1\/24 · DHCPv4 192\.168\.50\.100 – 192\.168\.50\.249 \(150\) · DHCPv6 server · RA server/.test(t)), 'Add pool opens a new pool for the interface, as a server for DHCPv4, DHCPv6 and RA', await guest.locator('.sub').innerText());
+check(/Every interface already has a pool/.test(await page.locator('.dhcp-addpool').innerText()) && await page.locator('.dhcp-addpool select').count() === 0, 'once every interface has a pool there is nothing left to add');
+await field(group('guest', 'DHCPv4 pool and options'), 'Pool start').locator('input').fill('50');
+await field(group('guest', 'DHCPv4 pool and options'), 'Pool start').locator('input').fill('300');
+check(/guest: the pool starts beyond the end of the subnet 192\.168\.50\.1\/24/.test(await notes()) && await saveBtn().isDisabled(), 'a new pool is checked against its interface\'s subnet');
+await field(group('guest', 'DHCPv4 pool and options'), 'Pool start').locator('input').fill('50');
+check(await errorCount() === 0, 'and is fine once the start is inside it');
+
+await foldHeader('wan').click();
+await poolCard('wan').locator('button:has-text("Remove pool")').click();
+check(/to be removed/.test(await poolCard('wan').locator('.card-header').innerText()) && await poolCard('wan').locator('select').first().isDisabled() && /Pool wan is removed/.test(await bar().innerText()), 'Remove pool marks an existing pool (greyed out, with a warning) until it is saved');
+await poolCard('wan').locator('button:has-text("Undo")').click();
+check(!/to be removed/.test(await poolCard('wan').locator('.card-header').innerText()) && await poolCard('wan').locator('select').first().isEnabled(), 'Undo brings it back');
+await poolCard('wan').locator('button:has-text("Remove pool")').click();
+
+console.log('\n== the server DUID, network boot entries and the options without a control ==');
+const duidInput = field(daemonCard, 'Server DUID').locator('input');
+check(await duidInput.inputValue() === '0004b324b3332b47450aaa442f1f235bff2b', 'the server DUID of the network config is in the daemon card');
+await duidInput.fill('xyz');
+check(/Server DUID must be hexadecimal/.test(await notes()) && await duidInput.evaluate(e => e.classList.contains('is-invalid')) && await saveBtn().isDisabled(), 'a DUID that is not hexadecimal is refused');
+await duidInput.fill('0004aabbccdd');
+const boot = cardOf('Network boot');
+await boot.locator('button:has-text("Add entry")').click();
+check(await page.evaluate(() => document.activeElement?.title === 'Boot file address') && await errorCount() === 0, 'Add entry appends a row and focuses its address; an empty row is not complained about');
+await boot.locator('#dhcp-boot-b1 input[title="Boot file address"]').fill('pxe.efi');
+check(/must be an address such as tftp/.test(await notes()), 'a boot address needs a scheme');
+await boot.locator('#dhcp-boot-b1 input[title="Boot file address"]').fill('tftp://[fd11::1]/arm.efi');
+await boot.locator('#dhcp-boot-b1 input[title="Architecture code"]').fill('7');
+check(/already serves architecture 7/.test(await bar().innerText()) && await saveBtn().isEnabled(), 'a second entry for the same architecture ("07" and "7") only warns');
+await boot.locator('#dhcp-boot-b1 input[title="Architecture code"]').fill('efi');
+check(/Architecture code must be a whole number/.test(await notes()), 'the architecture code is a number');
+await boot.locator('#dhcp-boot-b1 input[title="Architecture code"]').fill('11');
+await page.click('.set-bar button:has-text("Details")');
+const review = await changes();
+check(/New pool guest/.test(review) && /Remove pool wan/.test(review) && /odhcpd: Server DUID/.test(review) && /New network boot entry tftp:\/\/\[fd11::1\]\/arm\.efi/.test(review), 'the review lists the new pool, the removed pool, the DUID and the boot entry', review);
+await page.click('.set-bar button:has-text("Hide details")');
+await shot('mock-new-pool');
+
+mock.calls = [];
+await saveBtn().click();
+const doneP = await outcome();
+check(/^Saved/.test(doneP), 'a change across both configs is saved', doneP);
+check(/^uci\.changes uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+ uci\.confirm/.test(mock.calls.join(' ')), 'both configs were checked for leftovers, staged, applied, read back and confirmed', mock.calls.join(' '));
+check(mock.cfg.guest?.['.type'] === 'dhcp' && mock.cfg.guest.interface === 'guest' && mock.cfg.guest.dhcpv4 === 'server' && mock.cfg.guest.start === '50' && mock.cfg.guest.limit === undefined && !mock.cfg.spare, 'the new pool was added as a dhcp section named after the interface, with only the options that differ from the defaults, and the removed one is gone', JSON.stringify(mock.cfg.guest));
+check(mock.net.globals.dhcp_default_duid === '0004aabbccdd' && mock.net.globals.ula_prefix === 'fd00::/48', 'the DUID was written to the network config and its other options were left alone', JSON.stringify(mock.net));
+const boots = Object.values(mock.cfg).filter(s => s['.type'] === 'boot6');
+check(boots.length === 2 && boots.some(s => s.url === 'tftp://[fd11::1]/arm.efi' && s.arch === '11') && boots.some(s => s.arch === '07'), 'the new boot entry was added next to the old one', JSON.stringify(boots));
+check(await poolCard('guest').count() === 1 && !/\bnew\b/i.test(await poolCard('guest').locator('.card-header').innerText()) && await poolCard('wan').count() === 0 && await boot.locator('tbody tr').count() === 2, 'the page shows the saved state: guest is a normal pool, wan is gone, two boot entries');
+
+console.log('\n== a DUID the router does not keep ==');
+mock.dropWrites = true;
+await field(daemonCard, 'Server DUID').locator('input').fill('0004ffff');
+mock.calls = [];
+await saveBtn().click();
+const lostDuid = await outcome();
+check(/rolled back/.test(lostDuid) && /Server DUID was not saved/.test(lostDuid) && mock.net.globals.dhcp_default_duid === '0004aabbccdd' && mock.staged.length === 0, 'a network change that does not read back is rolled back and named', lostDuid);
+mock.dropWrites = false;
+await page.click('button:has-text("Discard edits")');
+await page.waitForTimeout(600);
+check(await field(daemonCard, 'Server DUID').locator('input').inputValue() === '0004aabbccdd', 'Discard edits returns to the saved DUID');
 //#endregion
 
 //#region A stopped odhcpd, a login that may not write, theme, expiry
@@ -389,6 +484,8 @@ check(await tile(1) === '4' && !/dnsmasq/.test(await tileSub(0)), 'with odhcpd a
 console.log('\n== a login that may not write ==');
 const ro = await open({ ubus: { system: ['board', 'info'], service: ['list'], 'network.interface': ['dump'], dhcp: ['ipv4leases', 'ipv6leases', 'ipv6ra'], uci: ['get', 'changes'] } });
 check(/not allowed to change the configuration/.test(await ro.locator('main').innerText()) && await ro.locator('.dhcp-hosts input').first().isDisabled() && await ro.locator('button:has-text("Add reservation")').isDisabled() && await ro.locator('button:has-text("Reserve")').count() === 0, 'the controls are disabled, there is no Reserve button, and the page says why');
+check(await ro.locator('.dhcp-addpool select').count() === 0 || await ro.locator('.dhcp-addpool select').isDisabled(), 'and so is Add pool');
+check(await ro.locator('button:has-text("Remove pool")').first().isDisabled() && await ro.locator('button:has-text("Add entry")').isDisabled(), 'and so are Remove pool and the network boot controls');
 await ro.close();
 
 console.log('\n== theme ==');

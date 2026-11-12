@@ -6,7 +6,7 @@ import path from 'node:path';
 
 const page = f => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/dhcp', f)).href);
 const m = await page('model.js');
-const { CONFIG, DAEMON_FIELDS, POOL_FIELDS, POOL_GROUPS, HOST_FIELDS } = await page('schema.js');
+const { CONFIG, GLOBAL_CONFIG, DAEMON_FIELDS, GLOBAL_FIELDS, POOL_FIELDS, POOL_GROUPS, HOST_FIELDS, BOOT6_FIELDS } = await page('schema.js');
 const { CHECKS } = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/core/fields.js')).href);
 
 let failed = 0;
@@ -47,17 +47,21 @@ const draftOf = (d, edit) => { const dr = m.draftFrom(d); edit?.(dr); return dr;
 const host = (dr, section) => dr.hosts.find(r => r.section === section);
 
 console.log('== the schema ==');
-const all = [...DAEMON_FIELDS, ...POOL_FIELDS, ...HOST_FIELDS];
+const all = [...DAEMON_FIELDS, ...GLOBAL_FIELDS, ...POOL_FIELDS, ...HOST_FIELDS, ...BOOT6_FIELDS];
 check(new Set(DAEMON_FIELDS.map(f => f.key)).size === DAEMON_FIELDS.length && new Set(POOL_FIELDS.map(f => f.key)).size === POOL_FIELDS.length, 'every option appears once per section type');
 check(all.every(f => ['string', 'text', 'bool', 'int', 'enum', 'list'].includes(f.type) && f.label) && POOL_FIELDS.every(f => POOL_GROUPS.some(g => g.id === f.group)), 'every field has a known type, a label and (for pools) a group');
 check(all.filter(f => f.check).every(f => CHECKS[f.check]) && all.filter(f => f.type === 'enum').every(f => f.options.includes(f.default)) && all.filter(f => f.type === 'bool').every(f => typeof f.default === 'boolean'), 'checks exist, enums list their default, switches have a boolean default');
-const documentedPool = ['interface', 'ifname', 'networkid', 'ignore', 'master', 'ra', 'dhcpv6', 'dhcpv4', 'ndp', 'dynamicdhcp', 'dhcpv4_forcereconf', 'dhcpv6_assignall', 'dhcpv6_hostidlength', 'dhcpv6_na', 'dhcpv6_pd', 'dhcpv6_pd_preferred', 'dhcpv6_pd_min_len', 'dhcpv6_relay_servers', 'router', 'dns', 'dnr', 'dns_service', 'domain', 'leasetime', 'start', 'limit', 'max_preferred_lifetime', 'max_valid_lifetime', 'ra_default', 'ra_flags', 'ra_slaac', 'ra_advrouter', 'ra_offlink', 'ra_preference', 'ra_maxinterval', 'ra_mininterval', 'ra_lifetime', 'ra_reachabletime', 'ra_retranstime', 'ra_hoplimit', 'ra_mtu', 'ra_dns', 'ra_pref64', 'ndproxy_routing', 'ndproxy_slave', 'ndp_from_link_local', 'ndproxy_static', 'prefix_filter', 'ntp', 'upstream', 'captive_portal_uri', 'ipv6_only_preferred', 'ra_useleasetime'];
-// interface, ifname and networkid identify the pool (changing them would re-bind it), dnr takes a structured value.
-const notEdited = ['interface', 'ifname', 'networkid', 'dnr'];
-const missing = documentedPool.filter(k => !notEdited.includes(k) && !POOL_FIELDS.some(f => f.key === k));
-check(missing.length === 0 && POOL_FIELDS.every(f => documentedPool.includes(f.key)), 'every documented pool option is edited, except the ones that identify the pool', missing.join());
-check(['maindhcp', 'legacy', 'leasefile', 'leasetrigger', 'hostsdir', 'piodir', 'loglevel', 'enable_tz'].every(k => DAEMON_FIELDS.some(f => f.key === k)) && DAEMON_FIELDS.length === 8, 'every daemon option is there');
+// The options of odhcpd's own tables (src/config.c of https://github.com/openwrt/odhcpd): the dhcp section ...
+const documentedPool = ['interface', 'ifname', 'networkid', 'master', 'ra', 'dhcpv6', 'dhcpv4', 'ndp', 'dynamicdhcp', 'dhcpv4_forcereconf', 'dhcpv6_assignall', 'dhcpv6_hostidlength', 'dhcpv6_na', 'dhcpv6_pd', 'dhcpv6_pd_preferred', 'dhcpv6_pd_min_len', 'dhcpv6_relay_servers', 'router', 'dns', 'dnr', 'dns_service', 'domain', 'leasetime', 'start', 'limit', 'max_preferred_lifetime', 'max_valid_lifetime', 'ra_default', 'ra_flags', 'ra_slaac', 'ra_advrouter', 'ra_offlink', 'ra_preference', 'ra_maxinterval', 'ra_mininterval', 'ra_lifetime', 'ra_reachabletime', 'ra_retranstime', 'ra_hoplimit', 'ra_mtu', 'ra_dns', 'ra_pref64', 'ndproxy_routing', 'ndproxy_slave', 'ndp_from_link_local', 'prefix_filter', 'ntp', 'upstream', 'captive_portal_uri', 'ipv6_only_preferred'];
+// ... of which only `interface` is not edited (it is what binds the pool to its interface; the page shows it in the header).
+// dhcpv6_raw is undocumented there and shown read only.
+const missing = documentedPool.filter(k => k !== 'interface' && !POOL_FIELDS.some(f => f.key === k));
+check(missing.length === 0 && POOL_FIELDS.every(f => documentedPool.includes(f.key)), 'every option of odhcpd\'s dhcp section is edited, except the one that binds the pool, and nothing odhcpd no longer reads is offered', missing.join());
+check(['maindhcp', 'leasefile', 'leasetrigger', 'hostsdir', 'piodir', 'loglevel', 'enable_tz'].every(k => DAEMON_FIELDS.some(f => f.key === k)) && DAEMON_FIELDS.length === 7, 'every daemon option is there');
+check(GLOBAL_FIELDS.map(f => f.key).join() === 'dhcp_default_duid' && GLOBAL_CONFIG === 'network' && BOOT6_FIELDS.map(f => f.key).join() === 'url,arch', 'the server DUID (network config) and the boot6 options (url, arch) are edited');
+check(all.every(f => f.label && f.hint && f.hint.length > 15), 'every option has a label and an explanation', all.filter(f => !f.hint).map(f => f.key).join());
 check(HOST_FIELDS.map(f => f.key).join() === 'name,ip,mac,duid,hostid,leasetime' && CONFIG === 'dhcp', 'the reservation options are the documented ones');
+check(CHECKS.dnr('1 dns.example.com') === null && CHECKS.dnr('1 dns.example.com 192.0.2.1,192.0.2.2 alpn=h2') === null && CHECKS.dnr('dns.example.com') !== null && CHECKS.dnr('70000 dns.example.com') !== null && CHECKS.url('tftp://[fd11::1]/pxe.efi') === null && CHECKS.url('pxe.efi') !== null, 'encrypted DNS entries need a priority and a domain; boot addresses need a scheme');
 
 console.log('== addresses ==');
 check(m.ipToInt('192.168.1.1') === 3232235777 && m.ipToInt('256.1.1.1') === null && m.ipToInt('1.2.3') === null && m.intToIp(3232235777) === '192.168.1.1', 'IPv4 addresses to and from numbers');
@@ -158,7 +162,118 @@ check(errs(x => { host(x, 'cfg2').values.ip = '192.168.1.1'; }).some(e => /route
 check(errs(x => { const n = m.newHost(x); n.values.name = 'bad name!'; n.values.mac = 'aa:bb:cc:dd:ee:01'; }).length === 1 && errs(x => { const n = m.newHost(x); n.values.name = 'x'; }).length === 1, 'a new reservation is validated like the others (a name with spaces; no MAC)');
 check(errs(x => { host(x, 'cfg1').removed = true; host(x, 'cfg2').values.ip = '192.168.1.2'; }).length === 0, 'a removed reservation frees its address and MAC');
 
+console.log('== pools, network boot entries and the server DUID ==');
+const verdictX = (after, draft) => { try { m.checkApplied(after, draft); return null; } catch (e) { return e.message; } };
+{
+// The config with options the tables do not describe, a network boot entry, a third interface without a pool and the
+// network config's globals section.
+const cfgX = () => ({
+  ...cfg({ daemon: { weird: 'x' }, lan: { dhcpv6_raw: 'abc', force: '1', dhcp_option: ['3,1.2.3.4', '6,8.8.8.8'] } }),
+  boot1: section('boot1', 'boot6', { url: 'tftp://[fd11::1]/pxe.efi', arch: '07' }),
+});
+const dumpX = { interface: [...dump.interface, { interface: 'guest', up: true, l3_device: 'br-guest', 'ipv4-address': [{ address: '192.168.50.1', mask: 24 }] }] };
+const globalsX = { '.anonymous': false, '.type': 'globals', '.name': 'globals', ula_prefix: 'fd00::/48', dhcp_default_duid: '0004b324b3332b47450aaa442f1f235bff2b' };
+const dx = m.readDhcp(cfgX(), v4, v6, ra, dumpX, svc, {}, globalsX);
+check(dx.globals.section === 'globals' && dx.globals.values.dhcp_default_duid === '0004b324b3332b47450aaa442f1f235bff2b' && d.globals.section === null && m.draftFrom(dx).globals.dhcp_default_duid === '0004b324b3332b47450aaa442f1f235bff2b', 'the server DUID is read from the globals section of the network config, and is empty without it');
+check(dx.boot6.length === 1 && dx.boot6[0].values.arch === '07' && m.draftFrom(dx).boot6[0].values.url === 'tftp://[fd11::1]/pxe.efi' && d.boot6.length === 0, 'network boot entries are read');
+check(j(dx.pools[0].extra.map(e => e.key).sort()) === '["dhcp_option","dhcpv6_raw","force"]' && dx.pools[0].extra.find(e => e.key === 'dhcp_option').value === '3,1.2.3.4, 6,8.8.8.8' && dx.pools[1].extra.length === 0 && j(dx.daemon.extra) === '[{"key":"weird","value":"x"}]', 'options the tables do not describe are listed read only, lists joined, `interface` left out');
+check(j(m.freeInterfaces(dx, m.draftFrom(dx))) === '["wan","guest"]', 'an interface without a pool can get one (loopback and interfaces with a pool cannot)', j(m.freeInterfaces(dx, m.draftFrom(dx))));
+
+// A pool for another interface
+const withGuest = edit => { const dr = m.draftFrom(dx); const section = m.addPool(dx, dr, 'guest'); edit?.(dr, section); return dr; };
+let dr = withGuest();
+check(dr.added[0].section === 'guest' && dr.pools.guest.dhcpv4 === 'server' && dr.pools.guest.ra === 'server' && dr.pools.guest.start === '' && m.poolList(dx, dr).length === 3 && m.poolList(dx, dr)[2].isNew && m.poolList(dx, dr)[2].info.v4.address === '192.168.50.1' && j(m.freeInterfaces(dx, dr)) === '["wan"]', 'adding a pool starts it as a server for DHCPv4, DHCPv6 and RA with every other option at its default');
+let ch = m.changesOf(dx, dr);
+check(ch.length === 1 && ch[0].label === 'New pool guest' && /DHCPv4 server, DHCPv6 server, Router advertisements \(RA\) server/.test(ch[0].to) && m.isDirty(dx, dr), 'the review lists the new pool with the options it starts with', j(ch));
+let ops = m.plan(dx, dr);
+check(ops.length === 1 && j(ops[0]) === '{"op":"add","config":"dhcp","type":"dhcp","name":"guest","values":{"interface":"guest","dhcpv4":"server","dhcpv6":"server","ra":"server"}}', 'it is written as a new dhcp section named after the interface, with the interface option', j(ops));
+dr = withGuest((x, s) => { x.pools[s].start = '50'; x.pools[s].limit = '100'; x.pools[s].dns = ['192.168.50.1']; x.pools[s].ra_slaac = false; });
+ops = m.plan(dx, dr);
+check(j(ops[0].values) === '{"interface":"guest","dhcpv4":"server","dhcpv6":"server","ra":"server","start":"50","limit":"100","dns":["192.168.50.1"],"ra_slaac":"0"}', 'options changed on a new pool are written with it (a list as a list, a switch as 0)', j(ops[0].values));
+check(m.problems(dx, withGuest((x, s) => { x.pools[s].start = '300'; })).errors.some(e => e.key === 'pool:guest:start' && /beyond the end of the subnet/.test(e.text)) && m.problems(dx, withGuest()).errors.length === 0, 'a new pool is validated like the others, against its interface\'s subnet');
+const taken = { ...cfgX(), guest: section('guest', 'host', { mac: 'aa:bb:cc:dd:ee:09' }) };
+const dTaken = m.readDhcp(taken, v4, v6, ra, dumpX, svc);
+const drTaken = m.draftFrom(dTaken);
+check(m.addPool(dTaken, drTaken, 'guest') === 'guest_pool' && m.addPool(dTaken, drTaken, 'wan') === 'wan', 'a section name that is taken by another section is not reused');
+const savedX = { ...cfgX(), guest: section('guest', 'dhcp', { interface: 'guest', dhcpv4: 'server', dhcpv6: 'server', ra: 'server' }) };
+check(verdictX(m.readDhcp(savedX, null, null, null, dumpX, null, {}, globalsX), withGuest()) === null && /Pool guest was not saved/.test(verdictX(dx, withGuest())), 'a pool is verified by its section name: found with its options, or reported missing');
+m.removePool(dr, 'guest');
+check(dr.added.length === 0 && dr.pools.guest === undefined && !m.isDirty(dx, dr), 'removing a pool that was only added in the form drops it');
+
+// Removing a pool
+dr = m.draftFrom(dx);
+m.removePool(dr, 'lan100');
+ch = m.changesOf(dx, dr);
+check(ch.length === 1 && ch[0].label === 'Remove pool lan100' && ch[0].to === 'removed' && m.poolList(dx, dr)[1].removed && m.isDirty(dx, dr), 'removing a pool is a change in the review', j(ch));
+check(j(m.plan(dx, dr)) === '[{"op":"delete","config":"dhcp","section":"lan100"}]' && m.problems(dx, dr).warnings.some(w => /Pool lan100 is removed: DHCP and router advertisements stop/.test(w)), 'the section is deleted, and the warning says what stops');
+const goneCfg = cfgX();
+delete goneCfg.lan100;
+check(verdictX(m.readDhcp(goneCfg, null, null, null, dumpX, null, {}, globalsX), dr) === null && /Pool lan100 was not saved/.test(verdictX(dx, dr)), 'a removed pool must be gone when read back');
+m.restorePool(dr, 'lan100');
+check(!m.isDirty(dx, dr) && m.plan(dx, dr).length === 0, 'restoring it undoes the removal');
+dr = m.draftFrom(dx);
+m.removePool(dr, 'lan');
+dr.pools.lan.start = 'not a number';
+check(m.problems(dx, dr).errors.length === 0 && m.plan(dx, dr).length === 1, 'a removed pool\'s options are neither validated nor written');
+
+// The new network and device options
+dr = m.draftFrom(dx);
+dr.pools.lan.dnr = ['1 dns.example.com 192.0.2.1 alpn=h2'];
+dr.pools.lan.ifname = 'br-lan';
+ops = m.plan(dx, dr);
+check(ops.length === 1 && j(ops[0].values) === '{"dnr":["1 dns.example.com 192.0.2.1 alpn=h2"],"ifname":"br-lan"}' && m.problems(dx, dr).errors.length === 0, 'encrypted DNS servers and the network device are written');
+dr.pools.lan.dnr = ['dns.example.com'];
+check(m.problems(dx, dr).errors.some(e => e.key === 'pool:lan:dnr' && e.index === 0), 'an encrypted DNS entry without a priority is refused');
+
+// The server DUID
+dr = m.draftFrom(dx);
+dr.globals.dhcp_default_duid = '0004aabbccdd';
+check(j(m.plan(dx, dr)) === '[{"op":"set","config":"network","section":"globals","values":{"dhcp_default_duid":"0004aabbccdd"}}]' && m.changesOf(dx, dr)[0].label === 'odhcpd: Server DUID', 'a changed server DUID is written to the network config, and named in the review');
+dr.globals.dhcp_default_duid = '';
+check(j(m.plan(dx, dr)) === '[{"op":"delete","config":"network","section":"globals","options":["dhcp_default_duid"]}]', 'an emptied one is deleted from the globals section');
+dr.globals.dhcp_default_duid = 'xyz';
+check(m.problems(dx, dr).errors.some(e => e.key === 'globals:dhcp_default_duid' && /hexadecimal/.test(e.text)) , 'a DUID must be hexadecimal');
+const noGlobals = m.readDhcp(cfgX(), v4, v6, ra, dumpX, svc);
+dr = m.draftFrom(noGlobals);
+dr.globals.dhcp_default_duid = '0004aabb';
+check(j(m.plan(noGlobals, dr)) === '[{"op":"add","config":"network","type":"globals","name":"globals","values":{"dhcp_default_duid":"0004aabb"}}]', 'without a globals section one is added');
+dr = m.draftFrom(dx);
+dr.globals.dhcp_default_duid = '0004aabb';
+check(/odhcpd: Server DUID was not saved/.test(verdictX(dx, dr)), 'a DUID that did not read back is reported');
+
+// Network boot entries
+dr = m.draftFrom(dx);
+let b = m.newBoot(dr);
+check(m.isDirty(dx, dr) && m.changesOf(dx, dr).length === 0 && m.plan(dx, dr).length === 0 && m.problems(dx, dr).errors.length === 0, 'an empty new boot row is dirty but changes nothing and is not complained about');
+b.values.url = 'tftp://[fd11::1]/arm.efi';
+b.values.arch = '11';
+check(m.changesOf(dx, dr)[0].label === 'New network boot entry tftp://[fd11::1]/arm.efi' && j(m.plan(dx, dr)) === '[{"op":"add","config":"dhcp","type":"boot6","values":{"url":"tftp://[fd11::1]/arm.efi","arch":"11"}}]', 'a new boot entry is added with its address and architecture');
+b.values.url = '';
+check(m.problems(dx, dr).errors.some(e => e.key === 'boot6:b1:url' && /needs an address/.test(e.text)), 'an entry needs an address');
+b.values.url = 'pxe.efi';
+check(m.problems(dx, dr).errors.some(e => e.key === 'boot6:b1:url'), 'the address needs a scheme');
+b.values.url = 'tftp://[fd11::1]/arm.efi';
+b.values.arch = 'efi';
+check(m.problems(dx, dr).errors.some(e => e.key === 'boot6:b1:arch'), 'the architecture code is a number');
+b.values.arch = '7';
+check(m.problems(dx, dr).warnings.some(w => /already serves architecture 7/.test(w)) && m.problems(dx, dr).errors.length === 0, 'two entries for the same architecture only warn ("07" and "7" are the same)');
+b.values.arch = '';
+dr.boot6[0].values.arch = '';
+check(m.problems(dx, dr).warnings.some(w => /already serves every client/.test(w)), 'two entries for every client warn too');
+dr = m.draftFrom(dx);
+dr.boot6[0].values.arch = '';
+check(j(m.plan(dx, dr)) === '[{"op":"delete","config":"dhcp","section":"boot1","options":["arch"]}]' && /architecture code/i.test(m.changesOf(dx, dr)[0].label) && m.changesOf(dx, dr)[0].from === '07' && m.changesOf(dx, dr)[0].to === 'not set', 'a cleared architecture is deleted from the entry');
+dr.boot6[0].values.arch = '07';
+dr.boot6[0].values.url = 'tftp://[fd11::2]/pxe.efi';
+check(j(m.plan(dx, dr)) === '[{"op":"set","config":"dhcp","section":"boot1","values":{"url":"tftp://[fd11::2]/pxe.efi"}}]', 'a changed address is set');
+dr = m.draftFrom(dx);
+dr.boot6[0].removed = true;
+check(j(m.plan(dx, dr)) === '[{"op":"delete","config":"dhcp","section":"boot1"}]' && /^Remove network boot entry/.test(m.changesOf(dx, dr)[0].label), 'a removed entry is deleted');
+check(/Network boot entries was not saved/.test(verdictX(dx, dr)) && verdictX(m.readDhcp(cfgX(), null, null, null, dumpX, null, {}, globalsX), m.draftFrom(dx)) === null, 'boot entries are verified by content');
+}
+
 console.log('== staging and reading back ==');
+
 const calls = [];
 const { stageOps } = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/core/ops.js')).href);
 const ed = { set: async (...a) => calls.push(['set', ...a]), add: async (...a) => calls.push(['add', ...a]), delete: async (...a) => calls.push(['delete', ...a]) };
