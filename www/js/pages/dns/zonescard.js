@@ -29,13 +29,13 @@ function serverChip(addr, tls, engine) {
 // The flags of one row as badges (the tooltip says what the flag means).
 const flagBadges = flags => flags.map(f => badge(flagWords([f])[0], 'info', FLAG_HINTS[f] ?? ''));
 
-// The legend under the filter box: what the badges of the table mean, one line each, for the engine in use. A folded details,
-// like the legends of the other pages, because the table is the point.
+// What the badges of the table mean, one line each, for the engine in use: always visible, in the header of the card, so it can be
+// read without hovering.
 function labelsLegend(engine) {
   const row = (badgeNode, text) => [h('dt', {}, badgeNode), h('dd', {}, text)];
   const unbound = engine === 'unbound';
-  return h('details', { className: 'legend dns-labels' },
-    h('summary', {}, 'What the labels mean'),
+  return h('div', { className: 'dns-labels' },
+    h('div', { className: 'dns-labels-title' }, 'What the labels mean'),
     h('dl', {},
       row(badge('clear text', 'warning'), clearTextHint(engine)),
       row(badge('TLS', 'success'), unbound ? 'The zone sends its queries to the server over DNS over TLS, so nobody on the path can read them (option tls_upstream).' : 'Queries to this server are encrypted (DNS over TLS).'),
@@ -66,15 +66,13 @@ function wanBlock(data) {
 // The words for the header: whether the WAN resolvers are really asked.
 const wanWords = { used: 'WAN resolvers in use', partly: 'some WAN resolvers in use', unused: 'WAN resolvers not used' };
 
-// The line at the top of the card: what a zone is, how many there are, and the Add zone button.
-function editBar(data, engine, items, edit, add) {
+// The header of the card: what a zone is and how many there are, then what the labels of the table mean.
+function editBar(data, engine, items, edit) {
   const { forwarders, domains, file } = forwarderCounts(data, edit.getDraft());
   const text = engine === 'dnsmasq'
     ? `Each entry of the server list of dnsmasq in /etc/config/dhcp is a zone: ${fmtNum(forwarders)} here, for ${fmtNum(domains)} domain${domains === 1 ? '' : 's'}. They are listed in the order of the list; the entry with the longest matching domain answers a query. Edit, remove or add one; the review bar at the top saves the changes.`
     : `A zone is a block of /etc/config/unbound with the servers and settings for a list of domains: ${fmtNum(forwarders)} here, for ${fmtNum(domains)} domain${domains === 1 ? '' : 's'}. They are listed in the order of the configuration; the zone with the longest matching domain answers a query, whatever its position. Edit, remove or add one; the review bar at the top saves the changes.${file ? ` ${fmtNum(file)} more only exist in /etc/unbound/unbound_ext.conf, which is read last, and stay read only here.` : ''}`;
-  const can = edit.canEdit && canEditForwarders(edit.getBase());
-  return h('div', { className: 'dns-legend dns-fwd-bar' }, h('span', {}, text),
-    h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !can, title: can ? 'Add a zone' : 'Zones cannot be changed with this login', onclick: add }, icon('plus-lg'), 'Add zone'));
+  return h('div', { className: 'dns-legend dns-fwd-bar' }, h('p', {}, text), items.length ? labelsLegend(engine) : null);
 }
 
 // The buttons and badges of the "Defined in" cell of one row.
@@ -129,8 +127,9 @@ function zoneRows(items, state, engine, edit, act, draw) {
     h('tbody', {}, body)));
 }
 
-// The filter box and the table. The filter redraws only the table, so the text box keeps its focus while typing.
-function zoneList(data, state, engine, edit, act) {
+// The filter box and the table. The filter redraws only the table, so the text box keeps its focus while typing. The Add zone
+// button is on the toolbar, at the end of the line of the filter box.
+function zoneList(data, state, engine, edit, act, add) {
   const items = forwarderItems(data, edit.getDraft());
   const note = noDefaultNote(data, engine);
   const holder = h('div', {});
@@ -140,9 +139,10 @@ function zoneList(data, state, engine, edit, act) {
     oninput: e => { state.fq = e.target.value; draw(); },
   });
   draw();
+  const can = edit.canEdit && canEditForwarders(edit.getBase());
+  const addButton = h('button', { type: 'button', className: 'btn btn-sm btn-fl dns-add', disabled: !can, title: can ? 'Add a zone' : 'Zones cannot be changed with this login', onclick: add }, icon('plus-lg'), 'Add zone');
   return h('div', { className: 'dns-pad' },
-    items.length ? h('div', { className: 'dns-toolbar dns-field' }, h('div', { className: 'search' }, icon('search'), input)) : null,
-    items.length ? labelsLegend(engine) : null,
+    h('div', { className: 'dns-toolbar dns-field' }, items.length ? h('div', { className: 'search' }, icon('search'), input) : null, addButton),
     note ? h('p', { className: 'muted small' }, note) : null, items.length ? holder : muted('No zones.'));
 }
 
@@ -169,11 +169,11 @@ export function zonesCard(data, state, edit) {
     restore: key => { restoreForwarder(edit.getDraft(), key); edit.changed(); },
   };
   const body = [
-    editBar(data, engine, items, edit, () => dialogFor(null)),
+    editBar(data, engine, items, edit),
     data.engine === 'unbound' && data.engines?.unbound?.control === false
       ? h('div', { className: 'dns-legend' }, 'unbound-control is not available, so the running forwarders come from Unbound\'s generated configuration and may not be what the running process uses.') : null,
     h('div', { className: 'dns-pad' }, wanBlock(data)),
-    h('div', { className: 'dns-top' }, zoneList(data, state, engine, edit, act)),
+    h('div', { className: 'dns-top' }, zoneList(data, state, engine, edit, act, () => dialogFor(null))),
   ];
   const sub = `${engineName(engine)} · ${fmtNum(items.length)} zone${items.length === 1 ? '' : 's'} · ${fmtNum(domains)} domain${domains === 1 ? '' : 's'}${data.truncated?.forwards ? ' (cut)' : ''}${wan ? ` · ${wan}` : ''}`;
   return foldCard(state, 'zones', [icon('signpost-split'), 'Zones', h('span', { className: 'sub' }, sub)], h('div', {}, body));

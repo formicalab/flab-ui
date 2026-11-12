@@ -17,6 +17,7 @@
 /* ── Forwarding ── */
 .dns-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-bottom: .75rem; }
 .dns-toolbar .search { flex: 1 1 14rem; max-width: 24rem; }
+.dns-toolbar .dns-add { margin-left: auto; }
 .dns-table td { vertical-align: top; }
 .dns-table td .dns-servers { white-space: normal; }
 /* A zone block: its name and state, then its domains as chips (the first few, a button for the rest). */
@@ -28,8 +29,9 @@
 .dns-count { margin-top: .25rem; }
 .dns-order { width: 2.5rem; text-align: right; font-variant-numeric: tabular-nums; }
 /* The legend of the labels: a badge, then what it means. */
-.dns-labels { margin-bottom: .75rem; font-size: .8rem; }
-.dns-labels dl { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1rem; align-items: baseline; margin: .6rem 0 0; }
+.dns-labels { margin-top: .75rem; font-size: .8rem; }
+.dns-labels-title { font-size: .75rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-text); }
+.dns-labels dl { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1rem; align-items: baseline; margin: .5rem 0 0; }
 .dns-labels dt { margin: 0; }
 .dns-labels dd { margin: 0; }
 .dns-row-removed > td:not(.dns-src) { opacity: .55; }
@@ -41,7 +43,7 @@
 .dns-fold > summary:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
 .dns-fold:not([open]) > summary { border-bottom: 0; }
 .dns-fold[open] > summary .dns-chevron { transform: rotate(90deg); }
-.dns-fwd-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.dns-fwd-bar p { margin: 0; }
 .dns-src { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; white-space: normal; }
 td.dns-src { display: table-cell; white-space: nowrap; }
 td.dns-src > * { margin-right: .35rem; }
