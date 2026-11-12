@@ -34,6 +34,7 @@ function listRow(f, io, list, index) {
 //   redraw()    redraws the page (after a list row was added or removed)
 //   register(element, index?)  receives the input element(s), so the page can mark the ones that hold an error
 export function fieldRow(f, io) {
+  // Stores an edited value in the draft and reports the edit.
   const change = value => { io.set(value); io.touched(); };
   const hint = f.hint ? h('div', { className: 'muted small set-hint' }, f.hint) : null;
   const placeholder = f.default != null ? `default: ${f.default}` : f.placeholder ?? '';

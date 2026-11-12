@@ -49,23 +49,6 @@ $remote = '/tmp/flab-ipsec-test'
 $scenarios = 'base', 'down', 'rekey', 'multi', 'orphan', 'ipv6', 'daemondown', 'unconfigured'
 
 #region Helpers
-function Invoke-Native {
-    <#
-    .SYNOPSIS
-    Runs a native command and throws on a nonzero exit code.
-    .DESCRIPTION
-    Arguments are passed as an array so options such as scp's -O are not parsed as PowerShell parameters.
-    .PARAMETER Command
-    Executable name.
-    .PARAMETER Arguments
-    Argument array passed to the executable.
-    #>
-    param([string]$Command, [string[]]$Arguments)
-
-    & $Command @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "$Command failed with exit code $LASTEXITCODE" }
-}
-
 function Invoke-Remote {
     <#
     .SYNOPSIS

@@ -19,6 +19,7 @@ const layersOf = (net, ifs, radios) => buildLayers(net, ifs, net.tunlinks ?? {},
 function summary(net, ifs, radios) {
   const rows = layersOf(net, ifs, radios).filter(r => !r.orphan);
   const up = rows.filter(r => r.up).length;
+  // Number of rows matching a predicate.
   const count = fn => rows.filter(fn).length;
   const wl = radios.flatMap(r => r.interfaces ?? []);
   const mesh = wl.filter(w => w.mode === 'mesh').length;

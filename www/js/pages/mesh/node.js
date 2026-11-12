@@ -11,6 +11,7 @@ import { STP_ROLE, stpKind } from '../network/util.js';
 // Module-level so the rate history survives the redraw on every poll; a peer series is keyed by the
 // interface and the peer's MAC.
 const tracker = createTracker();
+// Tracker key of one peer of a mesh interface.
 const peerKey = (n, p) => `${n.ifname}/${p.mac}`;
 
 // Feeds one poll into the tracker and drops peers that disappeared.

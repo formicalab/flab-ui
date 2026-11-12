@@ -13,6 +13,7 @@ export const ruleKey = r => `rule/${r.kind ?? 'rule'}/${r.key}`;
 // Feeds one poll into the tracker and drops series of rules and zones that disappeared.
 export function recordFirewall(fw) {
   const seen = new Set();
+  // Records one counter sample and marks its key as still present.
   const put = (key, packets, bytes) => { seen.add(key); tracker.record(key, { packets, bytes }); };
   for (const r of [...fw.rules, ...fw.redirects]) if (r.hits) put(ruleKey(r), r.hits.packets, r.hits.bytes);
   for (const z of fw.zones) {

@@ -12,7 +12,9 @@ import { series, latest } from './rates.js';
 // Helpers over the backend's security rating: the scored part with a given key (ike_enc, esp_pfs, ...),
 // its level (good/fair/weak/...) used as a chip color, and a "0xhex (decimal)" number format.
 const partOf = (conn, key) => conn.rating.parts.find(p => p.key === key);
+// Rating level of one scored part, or '' when the part is absent.
 const lvl = (conn, key) => partOf(conn, key)?.level ?? '';
+// A number as "0xhex (decimal)", or a dash when missing.
 const hex = n => n == null ? '–' : `0x${n.toString(16)} (${n})`;
 
 //#region header and flow diagram

@@ -7,10 +7,12 @@ const { LEVELS, levelLimit, levelKind, levelClass, programsOf, filterEntries, su
   await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/logs/entries.js')).href);
 
 let failed = 0;
+// Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
 // Builds an entry the way flab.logs returns one.
 const SEV = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug'];
+// An entry at syslog `level` (an index into SEV; null for no severity), with defaults for time and pid.
 const entry = (level, program, message, t = 1794395684, pid = null) => ({ t, facility: level == null ? null : 'daemon', severity: level == null ? null : SEV[level], level, program, pid, message });
 
 const entries = [
@@ -29,6 +31,7 @@ check([0, 3].every(l => levelKind(l) === 'danger') && levelKind(4) === 'warning'
 check(levelClass(2) === 'lv-err' && levelClass(4) === 'lv-warn' && levelClass(5) === 'lv-notice' && levelClass(6) === 'lv-info' && levelClass(7) === 'lv-debug' && levelClass(null) === 'lv-none', 'row classes follow the severity');
 
 console.log('== filtering ==');
+// The program names of `list`, comma-joined, with "(none)" for entries without one.
 const names = list => list.map(e => e.program ?? '(none)').join();
 check(filterEntries(entries).length === 6 && filterEntries(entries, { level: 'all' }).length === 6, 'no filter shows everything, including unparsed lines');
 check(names(filterEntries(entries, { level: 'err' })) === 'pppd', 'errors only');

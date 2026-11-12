@@ -49,9 +49,11 @@ const secondaryOf = (htmode, channel) => /40\+$/.test(htmode ?? '') ? 'above' : 
 export function spanOf(radio, channel, width = widthOf(radio.config?.htmode)) {
   const list = radio.channels ?? [];
   const byNo = new Map(list.map(c => [c.channel, c]));
+  // Whether the radio offers channel `n` and it is not disabled by the regulatory domain.
   const usable = n => byNo.has(n) && !byNo.get(n).disabled;
   const me = byNo.get(channel);
   if (!me) return { fits: false, channels: [], inside: [], overlap: [], lo: null, hi: null, secondary: null };
+  // Result for the block lo..hi: whether it fits, its channels split into inside/overlap, and the secondary channel.
   const build = (fits, lo, hi, secondary = null) => ({ fits, ...blockOf(list, lo, hi), lo, hi, secondary });
 
   if (radio.band === '2g') {

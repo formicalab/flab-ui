@@ -7,6 +7,7 @@ import path from 'node:path';
 const m = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/wifi/channels.js')).href);
 
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 const j = JSON.stringify;
 
@@ -16,8 +17,11 @@ const ch = (band, n, flags = {}) => ({ channel: n, freq: (band === '6g' ? 5950 :
 const radio2g = (config = {}, extra = {}) => ({ name: 'radio0', band: '2g', enabled: true, up: true, config: { channel: '6', htmode: 'HE40', ...config },
   channels: Array.from({ length: 13 }, (_, i) => ch('2g', i + 1)), interfaces: [{ mode: 'ap', ssid: 'home' }], ...extra });
 const band5 = [...[36, 40, 44, 48, 52, 56, 60, 64].map(n => ch('5g', n, n >= 52 ? { dfs: true } : {})), ...[100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140].map(n => ch('5g', n, { dfs: true })), ...[149, 153, 157, 161, 165].map(n => ch('5g', n))];
+// A 5 GHz radio with the full channel list and one AP, with `config` and `extra` applied on top.
 const radio5g = (config = {}, extra = {}) => ({ name: 'radio1', band: '5g', enabled: true, up: true, config: { channel: '104', htmode: 'HE160', ...config }, channels: band5, interfaces: [{ mode: 'ap', ssid: 'home' }], ...extra });
+// A hardware description holding `radios`.
 const hwOf = (...radios) => ({ radios });
+// A draft taken from `hw`, then modified by `edit`.
 const draftOf = (hw, edit) => { const d = m.draftFrom(hw); edit?.(d); return d; };
 
 console.log('== width ==');

@@ -3,12 +3,14 @@
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
+// Imports a module of the settings page by file name.
 const page = f => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/settings', f)).href);
 const m = await page('model.js');
 const { FIELDS, GROUPS } = await page('schema.js');
 const { ZONES } = await page('zones.js');
 
 let failed = 0;
+// Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 const j = JSON.stringify;
 
@@ -17,8 +19,11 @@ const cfg = (system = {}, ntp = {}) => ({
   cfg0: { '.anonymous': true, '.type': 'system', '.name': 'cfg0', hostname: 'openwrt', timezone: 'CET-1CEST,M3.5.0,M10.5.0/3', zonename: 'Europe/Rome', ttylogin: '0', log_size: '512', ...system },
   ntp: { '.anonymous': false, '.type': 'timeserver', '.name': 'ntp', use_dhcp: '0', server: ['time.ien.it', 'pool.ntp.org'], ...ntp },
 });
+// The `uci get system` reply above, read into the page model.
 const data = (...a) => m.readSettings(cfg(...a));
+// A draft of `d`, with `edit` applied to it.
 const draftOf = (d, edit) => { const dr = m.draftFrom(d); edit?.(dr); return dr; };
+// The keys of the changes between `d` and a draft, joined into one string.
 const keys = (d, dr) => m.changesOf(d, dr).map(c => c.key).join();
 
 console.log('== the schema ==');
@@ -44,6 +49,7 @@ const full = m.readSettings(cfg(), { unixtime: 1000, localtime: 4600 }, { sysntp
 check(full.clock.offset === 3600 && full.ntpd.running && j(full.ntpd.servers) === '["a.example","b.example"]', 'the clock offset and the servers on ntpd\'s command line', j([full.clock, full.ntpd]));
 check(m.readSettings(cfg(), null, {}).ntpd.running === false, 'a stopped or missing sysntpd is not running');
 check(m.readSettings({}).system.section === null && m.readSettings({ x: { '.type': 'rpcd' } }).ntp.section === null, 'a config without the sections reports none');
+// The schema field with key `f`.
 const byName = f => FIELDS.find(x => x.key === f);
 check(m.currentValue(byName('enabled'), d) === true && m.currentValue(byName('use_dhcp'), d) === false && m.currentValue(byName('enable_server'), d) === false, 'absent switches take OpenWrt\'s defaults, 0 is off');
 check(m.currentValue(byName('ttylogin'), data({ ttylogin: 'off' })) === false && m.currentValue(byName('ttylogin'), data({ ttylogin: 'yes' })) === true, 'switches in other spellings');
@@ -119,6 +125,7 @@ check(j(calls) === j([['set', 'system', 'cfg0', { hostname: 'r' }], ['delete', '
 console.log('== reading back after apply ==');
 const want = draftOf(d, x => { x.zone.name = 'Europe/London'; x.values.hostname = 'r'; x.values.server = ['x.example']; });
 const saved = data({ zonename: 'Europe/London', timezone: 'GMT0BST,M3.5.0/1,M10.5.0', hostname: 'r' }, { server: ['x.example'] });
+// The message of the error that verifying the saved data `after` against `draft` throws, or null if it passes.
 const verdict = (after, draft = want) => { try { m.checkApplied(d, after, draft); return null; } catch (err) { return err.message; } };
 check(verdict(saved) === null, 'matching data passes');
 check(/Time zone/.test(verdict(data({ hostname: 'r' }, { server: ['x.example'] }))), 'a zone that did not stick is reported by name');

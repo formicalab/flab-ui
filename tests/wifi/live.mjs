@@ -18,6 +18,7 @@ const shots = process.env.FLAB_SHOTS;
 let failed = 0;
 // Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
+// A deep copy of `o`, so each scenario can mutate its own state.
 const clone = o => JSON.parse(JSON.stringify(o));
 
 //#region The mock router
@@ -27,6 +28,7 @@ const BAND5 = [...[36, 40, 44, 48].map(n => chan('5g', n)), ...[52, 56, 60, 64, 
 // An access point interface as the plugin reports it.
 const ap = (ifname, section) => ({ section, ifname, mode: 'ap', ssid: 'home', networks: ['lan'], encryption: 'sae-mixed', security: 'WPA3', enabled: true, hidden: false, isolate: false, max_clients: null, macfilter: null,
   features: { roaming_11r: true, neighbor_11k: true, bss_transition_11v: true, wps: false, ocv: false, proxy_arp: false, wnm_sleep: false }, up: true, bssid: '94:83:C4:A2:15:C5', bss_status: 'ENABLED', clients: 0, rx_bytes: 1000, tx_bytes: 2000 });
+// The mock radios, built fresh for each scenario.
 const RADIOS = () => [
   { name: 'radio0', phy: 'phy0', band: '2g', enabled: true, up: true, pending: false, retry_failed: false,
     config: { channel: '6', htmode: 'HE40', country: 'IT', txpower: null, cell_density: 0, noscan: false, legacy_rates: false, beacon_int: null, path: 'platform/soc/18000000.wifi' },
@@ -105,6 +107,7 @@ function clientsReply() {
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 function answer(body) {
   const [, obj, method, args] = body.params;
+  // A JSON-RPC reply for the ubus status `code`, carrying `data` when there is any.
   const ok = ([code, data]) => ({ jsonrpc: '2.0', id: body.id, result: data === undefined ? [code] : [code, data] });
   const denied = { jsonrpc: '2.0', id: body.id, error: { code: -32002, message: 'Access denied' } };
 
@@ -148,15 +151,25 @@ let page = await open();
 
 // Helpers: a radio's card, its channel tiles, the banner, and screenshots.
 const card = name => page.locator('.rd-card').filter({ has: page.locator('.rd-head .name', { hasText: new RegExp(`^${name}$`) }) });
+// The channel tile `n` in the picker of radio `name`.
 const tile = (name, n) => card(name).locator('.rd-pick .chans button').filter({ has: page.locator('.n', { hasText: new RegExp(`^${n}$`) }) });
+// Whether the element `loc` has CSS class `cls`.
 const has = (loc, cls) => loc.evaluate((e, c) => e.classList.contains(c), cls);
+// How many channel tiles of radio `name` have CSS class `cls`.
 const count = (name, cls) => card(name).locator(`.rd-pick .chn.${cls}`).count();
+// The channel summary text under the picker of radio `name`.
 const summary = name => card(name).locator('.rd-pick-sum').innerText();
+// The notes under the settings banner, joined with " | ".
 const notes = () => page.locator('.set-notes .set-note').allInnerTexts().then(t => t.join(' | '));
+// The pending-changes banner.
 const bar = () => page.locator('.set-bar');
+// The Save and apply button.
 const saveBtn = () => page.locator('button:has-text("Save and apply")');
+// Saves a full-page screenshot named after `label`, only when a screenshot directory is configured.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `wifi-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
+// Waits for the save to end and returns its outcome message.
 const outcome = async () => { const n = page.locator('.set-bar .set-outcome.ok, .set-bar .set-outcome.bad').first(); await n.waitFor({ timeout: 40000 }); return (await n.innerText()).trim(); };
+// Clicks Refresh and waits for the page to settle.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
 
 //#region The real router (read only)

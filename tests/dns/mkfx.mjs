@@ -43,7 +43,9 @@ function procStat(pid, comm, start) {
 // The statistics of Unbound (`unbound-control stats_noreset`) for two threads that add up to `t`. `extended` adds the
 // answer codes, DNSSEC, cache and unwanted counters that only extended-statistics prints.
 function unboundStats(t, extended) {
+  // Scales the count `n` by `share` and rounds it to a whole number.
   const split = (n, share) => Math.round(n * share);
+  // The statistics lines of worker thread `i`, which handles `share` of the totals.
   const thread = (i, share) => {
     const q = split(t.queries, share), hit = split(t.hits, share), miss = q - hit;
     return [`thread${i}.num.queries=${q}`, `thread${i}.num.queries_ip_ratelimited=${split(t.ratelimited, share)}`, `thread${i}.num.cachehits=${hit}`, `thread${i}.num.cachemiss=${miss}`,
@@ -166,6 +168,7 @@ function services(running) {
 const DM_ZONES = ['blob.core.windows.net', 'database.windows.net', 'documents.azure.com', 'vault.azure.net', 'vaultcore.azure.net', 'azurewebsites.net', 'azuredatabricks.net', 'file.core.windows.net',
   'postgres.database.azure.com', 'privatelink.prod.migration.windowsazure.com', 'privatelink.siterecovery.windowsazure.com', 'guestconfiguration.azure.com', 'his.arc.azure.com', 'queue.core.windows.net',
   'monitor.azure.com', 'azure-api.net'];
+// The dnsmasq section described above, answering DNS on `port`.
 const dmSection = (port = '53') => section('cfg01411c', 'dnsmasq', {
   domainneeded: '1', localise_queries: '1', rebind_protection: '1', domain: 'flumini.formicalab.casa', expandhosts: '1', cachesize: '1000', authoritative: '1', readethers: '1', leasefile: '/tmp/dhcp.leases',
   resolvfile: '/tmp/resolv.conf.d/resolv.conf.auto', localservice: '1', ednspacket_max: '1232', strictorder: '1', rapidcommit: '1', rebind_domain: ['lab.formicalab.casa', ...DM_ZONES], interface: ['lan', 'wg0'], port,

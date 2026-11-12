@@ -99,7 +99,9 @@ export default {
     // A filter that changes what the router must compute waits for a pause in typing (`later`), then asks again; a
     // selector asks at once (`again`). A new request starts at the first rows.
     let timer = null;
+    // Asks again after a pause in typing.
     const later = () => { clearTimeout(timer); timer = setTimeout(() => { state.all = false; reload(); }, 350); };
+    // Asks again at once, starting at the first rows.
     const again = () => { state.all = false; reload(); };
     const search = searchControl(state, 'q', later, 'Filter: host, name, port, state…');
     const proto = selectControl(state, 'proto', again, 'Protocol');

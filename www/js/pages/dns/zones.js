@@ -16,6 +16,7 @@ import { CHECKS, differs, errorsOf, flag, normalize, show, validServer } from '.
 import { ZONE_FIELDS, ZONE_TYPES } from './schema.js';
 import { flagWords, isPublicIp, serverAddress, zoneDraft } from './model.js';
 
+// The zone field definition with the given key.
 const field = key => ZONE_FIELDS.find(f => f.key === key);
 const ZN = field('zone_name');
 const SV = field('server');
@@ -117,7 +118,7 @@ function fieldDiffs(base, now) {
 }
 
 // The values a new zone starts from: a forward zone, switched on, falling back to recursion as UCI does by default.
-export const newZoneValues = (type = 'forward_zone') => ({ zone_type: type, enabled: true, zone_name: [], server: [], tls_upstream: false, tls_index: '', tls_port: '', port: '', fallback: true, dns_assist: '', resolv_conf: false, url_dir: '' });
+const newZoneValues = (type = 'forward_zone') => ({ zone_type: type, enabled: true, zone_name: [], server: [], tls_upstream: false, tls_index: '', tls_port: '', port: '', fallback: true, dns_assist: '', resolv_conf: false, url_dir: '' });
 
 // The UCI sections of the reply as drafts: [{ key, isNew, removed, locked, values }]. A section is locked (read only) when its
 // lists were cut or its zone_type is one this page does not know.
@@ -141,6 +142,7 @@ const groupOf = type => (type === 'auth_zone' ? 'auth' : 'forward');
 // forward group, the zones that only the extension file defines (named "unbound_ext.conf"). `skip` leaves one section out.
 function owners(data, draft, skip, type) {
   const map = new Map();
+  // Records `who` as an owner of `zone`.
   const add = (zone, who) => map.set(zone, [...(map.get(zone) ?? []), who]);
   for (const d of draft.forwarders) {
     if (d.removed || d.key === skip || !d.values.enabled || groupOf(d.values.zone_type) !== groupOf(type)) continue;
@@ -151,7 +153,7 @@ function owners(data, draft, skip, type) {
 }
 
 // A section name for a new zone: a prefix by type and the first domain, unique among the sections that exist or are in the draft.
-export function newSectionName(data, draft, type, zones) {
+function newSectionName(data, draft, type, zones) {
   const first = normZone(zones[0] ?? 'new');
   const slug = (first === '.' ? 'default' : first).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32) || 'new';
   const prefix = { forward_zone: 'fwd', stub_zone: 'stub', auth_zone: 'auth' }[type] ?? 'zone';
@@ -374,6 +376,7 @@ function unboundItems(data, draft) {
   return items;
 }
 
+// The table items for the dnsmasq engine: one per server entry of its section, with the zones and server parsed out.
 function dnsmasqItems(draft) {
   return draft.forwarders.map(d => {
     const text = d.removed ? d.original : d.value;
@@ -448,6 +451,7 @@ export function forwarderProblems(data, draftIn) {
   const warnings = [];
   if (isUnbound(data)) {
     const base = unboundBase(data);
+    // Whether a zone is new or differs from what the router has.
     const changed = d => !d.removed && (d.isNew || fieldDiffs(base.get(d.key), d.values).length > 0);
     const live = draft.forwarders.filter(d => !d.removed);
     for (const d of live.filter(changed)) {
@@ -539,6 +543,7 @@ export function forwardingProblem(before, after, draftIn) {
   const running = new Set((after.forwards ?? []).map(r => normZone(r.zone)));
   const base = unboundBase(before);
   const keep = new Set();
+  // Whether the zone's values describe a forward zone (as opposed to an authoritative one).
   const forwardZone = v => v.zone_type === 'forward_zone';
   for (const d of draft.forwarders) if (!d.removed && d.values.enabled && forwardZone(d.values)) for (const z of d.values.zone_name.map(normZone)) keep.add(z);
   for (const d of draft.forwarders) {

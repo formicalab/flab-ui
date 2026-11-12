@@ -17,6 +17,7 @@ const shots = process.env.FLAB_SHOTS;
 let failed = 0;
 // Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
+// A deep copy, so a test can edit a fixture without touching the original.
 const clone = o => JSON.parse(JSON.stringify(o));
 
 //#region The mock router
@@ -74,6 +75,7 @@ function uci(method, args) {
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 function answer(body) {
   const [, obj, method, args] = body.params;
+  // Wraps a ubus status code and optional data as a JSON-RPC result.
   const ok = ([code, data]) => ({ jsonrpc: '2.0', id: body.id, result: data === undefined ? [code] : [code, data] });
   const denied = { jsonrpc: '2.0', id: body.id, error: { code: -32002, message: 'Access denied' } };
 
@@ -111,6 +113,7 @@ await ctx.route('**/ubus', async route => {
   const reply = body ? answer(body) : null;
   return reply ? route.fulfill({ contentType: 'application/json', body: JSON.stringify(reply) }) : route.continue();
 });
+// Opens the settings page in a new tab, signed in with `acls` (the root ACLs by default).
 const open = async acls => {
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(String(e)));
@@ -127,17 +130,29 @@ const open = async acls => {
 let page = await open();
 
 // Helpers: the controls by label, tiles, notes, the outcome line of a save, and screenshots.
+// The form field labeled `label`.
 const field = label => page.locator('.set-field').filter({ has: page.locator(`label.form-label:text-is("${label}")`) });
+// The input, drop-down or text area of the field labeled `label`.
 const input = label => field(label).locator('input, select, textarea').first();
+// The inputs of the list rows of the field labeled `label`.
 const rows = label => field(label).locator('.set-row input');
+// The checkbox of the switch labeled `label`.
 const sw = label => page.locator('.set-check').filter({ hasText: label }).locator('input');
+// The value of tile number `i`.
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
+// The small text under the value of tile number `i`.
 const tileSub = async i => (await page.locator('.tile .sub').nth(i).innerText()).trim();
+// All the notes under the form, joined into one string.
 const notes = () => page.locator('.set-notes .set-note').allInnerTexts().then(t => t.join(' | '));
+// The "Save and apply" button.
 const saveBtn = () => page.locator('button:has-text("Save and apply")');
+// The text of the review of pending changes.
 const review = () => page.locator('.set-changes').evaluate(e => e.textContent);
+// Saves a full-page screenshot named after `label`, when a screenshot folder is set.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `settings-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
+// Waits for the save bar to report the result of a save and returns its text.
 const outcome = async () => { const n = page.locator('.set-bar .set-outcome.ok, .set-bar .set-outcome.bad').first(); await n.waitFor({ timeout: 20000 }); return (await n.innerText()).trim(); };
+// Clicks Refresh and gives the page a moment to redraw.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
 
 //#region Navigation and the real router (read only)
@@ -152,6 +167,7 @@ check((await page.locator('.cmdbar h1').innerText()).trim() === 'System settings
 console.log('\n== the real router (read only, nothing is written) ==');
 const real = await page.evaluate(async () => {
   const sid = sessionStorage.getItem('sid');
+  // One ubus call from the page with its session, returning the data of the reply.
   const call = async (obj, method, args = {}) => (await (await fetch('/ubus', { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'call', params: [sid, obj, method, args] }) })).json()).result[1];
   return { board: await call('system', 'board'), cfg: (await call('uci', 'get', { config: 'system' })).values };
 });

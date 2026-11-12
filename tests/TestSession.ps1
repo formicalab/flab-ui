@@ -9,9 +9,30 @@ installed on the router, so what root may call is exactly what the ACL fragments
 tests must not need root's password, so they create a session on the router over ssh and grant it the same
 things as those fragments, no more: a fragment that is missing or wrong makes a test fail here just as it makes
 a page fail for root. The session id and the ACLs go to the browser, which stores them as a real sign-in does.
-The session lives in rpcd's memory and is destroyed when the test ends. Dot-source this file from a run.ps1.
+The session lives in rpcd's memory and is destroyed when the test ends. Dot-source this file from a run.ps1; it also
+provides Invoke-Native, which every run.ps1 uses.
 #>
 
+#region Shared helpers
+function Invoke-Native {
+    <#
+    .SYNOPSIS
+    Runs a native command and throws on a nonzero exit code.
+    .DESCRIPTION
+    Arguments are passed as an array so options such as scp's -O are not parsed as PowerShell parameters.
+    .PARAMETER Command
+    Executable name.
+    .PARAMETER Arguments
+    Argument array passed to the executable.
+    #>
+    param([string]$Command, [string[]]$Arguments)
+
+    & $Command @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "$Command failed with exit code $LASTEXITCODE" }
+}
+#endregion
+
+#region Test session
 function New-TestSession {
     <#
     .SYNOPSIS
@@ -96,3 +117,4 @@ function Remove-TestSession {
 
     if ($Sid) { ssh $Router "ubus call session destroy '{`"ubus_rpc_session`":`"$Sid`"}'" 2>$null | Out-Null }
 }
+#endregion

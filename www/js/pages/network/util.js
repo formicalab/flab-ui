@@ -14,6 +14,7 @@ const COUNTERS = d => ({ rx: d.stats?.rx_bytes, tx: d.stats?.tx_bytes });
 // Cumulative error and drop totals from the kernel counters (receive + transmit; CRC errors are added to
 // the errors total).
 export const errorsOf = d => (d.stats?.rx_errors ?? 0) + (d.stats?.tx_errors ?? 0) + (d.stats?.rx_crc_errors ?? 0);
+// Cumulative dropped packets (receive + transmit) of a device.
 export const dropsOf = d => (d.stats?.rx_dropped ?? 0) + (d.stats?.tx_dropped ?? 0);
 
 // Every device whose counters are tracked: ports, bridges, bridge members and VLAN devices.
@@ -40,6 +41,7 @@ export function traffic(name) {
 
 // Link changes and new errors since the page was opened.
 export const newFlaps = d => Math.max(0, (d.carrier_changes ?? 0) - (baseline.get(d.name)?.flaps ?? d.carrier_changes ?? 0));
+// Errors accumulated since the baseline was taken.
 export const newErrors = d => Math.max(0, errorsOf(d) - (baseline.get(d.name)?.errors ?? errorsOf(d)));
 
 // A link speed in Mbit/s as "100 Mbit/s" or "2.5 Gbit/s".

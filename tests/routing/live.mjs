@@ -13,7 +13,9 @@ const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/fla
 const sid = process.env.FLAB_SID;   // a session made by tests/TestSession.ps1, so no password is needed
 const acls = JSON.parse(process.env.FLAB_ACLS);   // what that session may call, like the ACLs of a real sign-in
 const shots = process.env.FLAB_SHOTS;
+// The parsed JSON fixture `f` from the scenario output directory.
 const load = f => JSON.parse(fs.readFileSync(path.join(out, f), 'utf8'));
+// A deep copy of `o`, so a test can change it without touching the loaded fixture.
 const clone = o => JSON.parse(JSON.stringify(o));
 
 let failed = 0;
@@ -37,6 +39,7 @@ const mock = { status: clone(rich), answers: clone(answers), lookups: [], diagSt
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 function answer(body) {
   const [, obj, method, args] = body.params;
+  // A successful ubus reply carrying `data`.
   const ok = data => ({ jsonrpc: '2.0', id: body.id, result: [0, data] });
   if (obj === 'uci' && ['set', 'add', 'delete', 'apply', 'commit'].includes(method)) { mock.writes.push(`${obj}.${method}`); return { jsonrpc: '2.0', id: body.id, result: [6] }; }
   if (obj === 'flab.routing' && method === 'status') { mock.statusCalls++; return ok(mock.status); }
@@ -71,19 +74,31 @@ await page.addInitScript(([id, granted]) => {
 }, [sid, acls]);
 
 // Helpers: tiles, the route list, the lookup form and answer, the controls and screenshots.
+// The big value of tile `i`.
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
+// The sub-line of tile `i`.
 const tileSub = async i => (await page.locator('.tile .sub').nth(i).innerText()).trim();
+// The rows of the route list.
 const rows = () => page.locator('.rt-routes tbody tr');
+// The route rows as whitespace-normalized text.
 const rowTexts = () => rows().allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+// The card whose header contains `title`.
 const cardOf = title => page.locator('.card').filter({ has: page.locator('.card-header', { hasText: title }) });
 // The route list card; "Routes" alone would also match the header of the tables card, which mentions routes.
 const routesCardEl = () => cardOf(/^\s*Routes/);
+// The lookup form's destination field.
 const dst = () => page.locator('.rt-field input').nth(0);
+// The lookup form's source field.
 const src = () => page.locator('.rt-field input').nth(1);
+// The lookup form's incoming-interface select.
 const iif = () => page.locator('.rt-field select');
+// The lookup answer panel.
 const result = () => page.locator('.rt-result');
+// The lookup answer as whitespace-normalized text.
 const resultText = async () => (await result().innerText()).replace(/\s+/g, ' ');
+// Presses Refresh and waits for the page to redraw.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
+// Saves a full-page screenshot named after `label` when FLAB_SHOTS is set.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `routing-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
 // Fills the lookup form and presses Look up.
 const submit = async (d, s = '', i = '') => {
@@ -153,8 +168,10 @@ const tr = await cardOf('Routing tables').locator('tbody tr').allInnerTexts().th
 check(tr.length === 5 && tr[0].startsWith('main (254) ordinary routes rule 32766 10 6') && tr[1].startsWith('local (255)') && tr.some(t => /^voip \(100\).*rule 100 1 0/.test(t)) && tr.some(t => /^220.*rule 200.*rule 220 1 0/.test(t)), 'the tables card: number, purpose, rules that consult each table, route counts', tr.join(' || '));
 const rl = await cardOf('Policy rules').locator('tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 check(rl.length === 11 && rl[0].startsWith('0 IPv4 every packet look up local (255) kernel default'), 'eleven rules in priority order, the kernel\'s own marked', rl.slice(0, 2).join(' || '));
+// How many of the rule rows end with `w` (their origin badge).
 const ends = w => rl.filter(t => t.endsWith(w)).length;
 check(ends('kernel default') === 5 && ends('netifd') === 2 && ends('strongSwan') === 1 && ends('unknown') === 3 && rl.some(t => /^100 IPv4 from 192\.168\.1\.0\/24 iif br-lan look up voip \(100\) netifd$/.test(t)) && rl.some(t => /^200 IPv4 not from 10\.0\.0\.0\/8 fwmark 0x1\/0xff look up 220 ignore prefixes \/0 or shorter unknown$/.test(t)), '"Added by": the kernel\'s own, netifd (a configured rule and the IPv6 reject rule), strongSwan, the rest unknown; selectors, "not" and suppress_prefixlength are shown', rl.join(' || '));
+// The title tooltip of the last origin badge in the policy rule with priority `prio`.
 const badgeTitle = async prio => cardOf('Policy rules').locator(`tbody tr:has(td.num:text-is("${prio}"))`).locator('.fl-badge').last().getAttribute('title');
 check(/Priority 220 and table 220 are strongSwan's defaults/.test(await badgeTitle(220)) && !/leftover/.test(await badgeTitle(220)) && /does not say who added/.test(await badgeTitle(300)) && /"config rule" section/.test(await badgeTitle(100)), 'each origin explains its evidence in a tooltip');
 check(rl.some(t => /^300 IPv4 uidrange 1000-1999 continue at rule 32766/.test(t)) && rl.some(t => /^400 IPv4 to 203\.0\.113\.0\/24 prohibit/.test(t)) && rl.some(t => /^4200000000 IPv6 from 2001:db8:1::1\/60 iif br-lan unreachable/.test(t)), 'goto and drop rules');

@@ -11,7 +11,7 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins.
 
 It is deployed to tmpfs for testing and removed again with one command; nothing is installed permanently. Like
 LuCI, it signs in with the router's own `root` login and creates no login of its own. Every page only reads the
-router except System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`), the channel of each radio on the Wi-Fi page (`/etc/config/wireless`) and the Services page, which starts, stops and restarts services; how configuration changes are made safely is described in
+router except System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), the channel of each radio on the Wi-Fi page (`/etc/config/wireless`) and the Services page, which starts, stops and restarts services; how configuration changes are made safely is described in
 [Configuration changes](#configuration-changes) and how services are controlled under [Services](#services-route-services).
 
 ## Contents
@@ -72,7 +72,7 @@ flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
   tests/                     bgp/, dhcp/, dns/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), routing/, services/, settings/, toolbox/, traffic/, wifi/,
-                             TestSession.ps1 (the temporary rpcd session the browser tests sign in with)
+                             TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
@@ -96,6 +96,7 @@ flab-ui/
                              healthBanner, muted, mono, GRADE_KIND
         controls.js          Command-bar controls: search, select, pause, toggle, refresh
         format.js            Bytes, line rates, durations, numbers
+        ip.js                parseAddress(): IPv4 and IPv6 addresses as BigInt values (Routing and BGP)
         rates.js             Rate tracker: turns cumulative counters into rates/ratios between polls
         icons.js             Inlined Bootstrap Icons path data, icon(name)
         theme.js             Follows the OS light/dark preference
@@ -110,7 +111,7 @@ flab-ui/
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         wireguard/           index.js, iface.js
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js
-        dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js
+        dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js (daemon and pool cards), boot6.js (network boot card)
         dns/                 DNS: index.js (page, state, the editing wiring), schema.js (the options and their areas, ZONE_FIELDS and ZONE_TYPES), edit.js (pure: draft, changes, problems, the UCI plan, the check after a save), zones.js (pure: the zone blocks of Unbound and the server entries of dnsmasq as a draft: items, changes, validation, plan, checks), model.js (pure: tiles, findings, activity, option areas), zonescard.js (the Zones card), zoneform.js (the dialog that adds or edits a zone), fold.js (the card that folds down to its header, used by Zones and Activity), cards.js (Configuration, Activity)
         interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
@@ -346,7 +347,7 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
 ## Configuration changes
 
-System settings, DHCP and the channel of the Wi-Fi radios change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
+System settings, DHCP, DNS and the channel of the Wi-Fi radios change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
 page with every control disabled and a note saying why.
 
 **Flow** (all of it is rpcd's `uci` object, wrapped by `www/js/core/uci.js`; pages call `applyChange()`, not the
@@ -387,7 +388,7 @@ happened; the router is on its previous configuration after every failure.
 - Mirror a change made to the router's configuration into `build/MT6000/etc/config/` in this repository.
 
 **Status.** `core/ubus.js` and `core/uci.js` (including `applyChange`) are unit-tested against a fake transport
-(`tests/network/uci.test.mjs`); the System settings, DHCP and Wi-Fi suites test their models and drive the whole flow in a
+(`tests/network/uci.test.mjs`); the System settings, DHCP, DNS and Wi-Fi suites test their models and drive the whole flow in a
 browser against a mock router. The real path was exercised against the router with the System settings model and
 `applyChange`,
 restoring the configuration afterwards: a confirmed change (zone, description, log port, NTP servers and
@@ -429,31 +430,31 @@ Things to know:
 
 ## How to add a page
 
-Example: a `dhcp` page.
+Example: an `ntp` page.
 
 1. **Backend (only if new data is needed).**
-   - `rpcd/ucode/flab.dhcp.uc` returning `{ 'flab.dhcp': { status: { call() {...} } } }`. Reuse
+   - `rpcd/ucode/flab.ntp.uc` returning `{ 'flab.ntp': { status: { call() {...} } } }`. Reuse
      `import { run } from 'flab.util'` and, for strongSwan-style output, `flab.vici`.
-   - `rpcd/acl.d/flab-dhcp.json`, so that root (read and write `*`) may call it:
+   - `rpcd/acl.d/flab-ntp.json`, so that root (read and write `*`) may call it:
      ```json
-     { "flab": { "description": "flab-ui DHCP page",
-                 "read": { "ubus": { "flab.dhcp": ["status"] } }, "write": {} } }
+     { "flab": { "description": "flab-ui NTP page",
+                 "read": { "ubus": { "flab.ntp": ["status"] } }, "write": {} } }
      ```
      A page that reads or writes a config through rpcd's `uci` object needs a fragment too, listing the config
      in its `uci` read (and write) lists, like `flab-settings.json`.
    - Prefer data sources that are not LuCI (see the hard rule above), and rpcd's own `uci`, `system` and
      `service` objects where they are enough: no plugin is needed for those.
-2. **Frontend.** Create `www/js/pages/dhcp.js` (or a `dhcp/` folder with `index.js` plus helpers):
+2. **Frontend.** Create `www/js/pages/ntp.js` (or an `ntp/` folder with `index.js` plus helpers):
    ```js
    import { ubus } from '../core/ubus.js';
    import { card, table } from '../core/ui.js';
    export default {
-     id: 'dhcp', label: 'DHCP', icon: 'hdd-stack', interval: 10000,
-     load: () => ubus('flab.dhcp', 'status'),
-     view: data => [card('Leases', table(['Host', 'IP'], data.leases.map(l => [l.name, l.ip])))],
+     id: 'ntp', label: 'NTP', icon: 'clock', interval: 10000,
+     load: () => ubus('flab.ntp', 'status'),
+     view: data => [card('Servers', table(['Server', 'Offset'], data.servers.map(s => [s.name, s.offset])))],
    };
    ```
-   Add `css: 'css/dhcp.css'` and the file if the page needs its own styles.
+   Add `css: 'css/ntp.css'` and the file if the page needs its own styles.
 3. **Register.** Import it in `www/js/pages/index.js` and add it to the `pages` array. Array order is
    navigation order.
 4. **Icons.** If you need a new icon, paste its `<path>` markup from icons.getbootstrap.com into the
@@ -1110,7 +1111,7 @@ advertised prefixes, the leases and last the reservations.
   closed group that holds an error opens by itself, so an error is never hidden.
   - **Add pool** (below the pools) offers the interfaces that have none and creates a `config dhcp` section named after
     the interface (with `option interface`), as a server for DHCPv4, DHCPv6 and RA with every other option at its default; only options that differ from the default are written.
-    **Remove pool** marks a pool for removal (greyed out, with Undo, and a warning that DHCP and RA stop on that
+    **Remove pool** marks a pool for removal (grayed out, with Undo, and a warning that DHCP and RA stop on that
     interface); one added in the form and not yet saved is simply dropped.
   - **Other options** a section holds that no table describes (options of other programs that read the same file,
     such as `dhcp_option` or `force`, and `dhcpv6_raw`) are listed read only at the bottom of the card, so
@@ -1144,7 +1145,7 @@ advertised prefixes, the leases and last the reservations.
 The state of the router's DNS resolver and its settings. It shows what the resolver does and how it is configured, and lets
 you change the resolver's **single-valued options** (a yes/no option, a choice, a number, a name) in `/etc/config/unbound` or
 `/etc/config/dhcp`, and its **zones** (Unbound's `config zone` blocks, dnsmasq's `server` entries: add, edit, remove, in a dialog);
-lists of options are still read only (they are edited in the file for now). It
+lists of options are shown read only (edit them in the file). It
 understands both engines, **Unbound** (read through `unbound-control`, which needs `option unbound_control '1'` in
 `/etc/config/unbound`) and **dnsmasq** (read through the ubus object `dnsmasq metrics` and UCI), and every mix: Unbound
 running, dnsmasq running, both (one of them on another port, for instance dnsmasq on 5353 behind Unbound; both are
@@ -1612,7 +1613,8 @@ Never starts, stops or restarts a service: every control call is either answered
 ## Conventions
 
 - Every function, lookup table and non-obvious block has a comment saying what it does and, where it is not
-  obvious, why. Comments describe current behavior, never history; neither does this README.
+  obvious, why. Comments describe current behavior, never history; neither does this README. Text, comments and
+  this README use American English (color, center, gray, synchronize).
 - PowerShell follows `Set-StrictMode -Version Latest`, `$ErrorActionPreference = 'Stop'`, comment-based help
   on functions and scripts, and `#region` blocks.
 - ucode uses tabs, JavaScript and CSS use two spaces.

@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 const m = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/toolbox/diagmodel.js')).href);
 
 const dir = process.argv[2];
+// The path of output file `f` inside the work directory.
 const file = f => path.join(dir, f);
 // Loads one output file as JSON, or null when the step did not produce it.
 const load = f => fs.existsSync(file(f)) ? JSON.parse(fs.readFileSync(file(f), 'utf8')) : null;

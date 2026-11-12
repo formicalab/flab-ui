@@ -7,6 +7,7 @@
 import { h } from './dom.js';
 import { icon } from './icons.js';
 
+// Opens a modal dialog in <body> and returns its handle (see the header for the shape).
 export function openDialog({ title, subtitle, body, footer, onClose }) {
   const bodyBox = h('div', { className: 'fl-dialog-body' }, body);
   const footBox = h('div', { className: 'fl-dialog-foot' }, footer);

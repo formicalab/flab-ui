@@ -77,6 +77,7 @@ function capCell(cap) {
 // when both sides send it, so one-sided rows are highlighted as mismatches.
 function capsBlock(p) {
   const names = [...new Set([...p.local_caps.map(c => c.name), ...p.neighbor_caps.map(c => c.name)])];
+  // The capability called `name` in one side's list, or undefined when that side does not offer it.
   const find = (list, name) => list.find(c => c.name === name);
   // One row per capability offered by either side.
   const rows = names.map(name => {
@@ -96,6 +97,7 @@ const STAT_COLS = [['received', 'received'], ['rejected', 'rejected'], ['filtere
 // Import/export update counters of a channel (cumulative since the session came up); non-zero
 // "rejected" and "filtered" counts are highlighted because they mean routes were dropped by policy.
 function statsTable(stats) {
+  // One counter cell; a dash when the counter is missing, highlighted when routes were rejected or filtered.
   const cell = (v, col) => h('td', { className: v > 0 && (col === 'rejected' || col === 'filtered') ? 'stat-warn' : '' }, v == null ? '–' : fmtNum(v));
   return h('div', { className: 'grid-wrap' }, h('table', { className: 'table stats-table' },
     h('thead', {}, h('tr', {}, h('th', {}, 'Route changes'), STAT_COLS.map(([, l]) => h('th', {}, l)))),
@@ -107,6 +109,7 @@ function statsTable(stats) {
 function channelBlock(ch) {
   if (!ch) return section('Routing', muted('No channel.'));
   const r = ch.routes ?? {};
+  // Badge for a channel's state text: green for UP/READY, amber for anything else.
   const upState = s => badge(s ?? '–', /UP|READY/.test(s ?? '') ? 'success' : 'warning');
   return section(`Routing · ${ch.afi}`, h('div', {},
     kv([

@@ -55,8 +55,11 @@ const masq = (o, extra = {}) => ({ r: { dst: WAN }, ...extra });
 // The synthetic table of the rich scenario.
 function richEntries() {
   const E = [];
+  // Adds `e` to the table and returns it.
   const add = e => { E.push(e); return e; };
+  // A TCP flow in `state` that expires after `timeout` seconds; `o` and `x` are the flow's overrides.
   const tcp = (timeout, state, o, x) => add(flow(4, 'tcp', timeout, state, o, x));
+  // A UDP flow that expires after `timeout` seconds; `o` and `x` are the flow's overrides.
   const udp = (timeout, o, x) => add(flow(4, 'udp', timeout, null, o, x));
   tcp(431996, 'ESTABLISHED', { src: '192.168.1.10', dst: '93.184.216.34', sport: 51234, dport: 443 }, { ...masq(), pk: [120, 150], by: [9800, 180000], flags: ['ASSURED'] });
   tcp(118, 'SYN_SENT', { src: '192.168.1.11', dst: '198.51.100.7', sport: 40000, dport: 8443 }, { r: { dst: WAN }, pk: [3, 0], by: [180, 0], flags: ['UNREPLIED'] });
@@ -103,6 +106,7 @@ function richEntries() {
 
 // How the entry reads in /proc/net/nf_conntrack, with the spacing the kernel uses.
 function conntrackLine(e) {
+  // One direction of the entry as a conntrack tuple: addresses, ports or ICMP fields, then counters for direction `i`.
   const tuple = (t, i) => {
     const ports = t.sport !== undefined ? ` sport=${t.sport} dport=${t.dport}` : (t.type !== undefined ? ` type=${t.type} code=0 id=4242` : (e.proto === 'gre' ? ' srckey=0x0 dstkey=0x0' : ''));
     const counters = e.by ? ` packets=${e.pk[i]} bytes=${e.by[i]}` : '';
@@ -123,6 +127,7 @@ function natOf(e) {
   const same = e.r.src === e.o.dst && e.r.dst === e.o.src && e.r.sport === e.o.dport && e.r.dport === e.o.sport;
   return same ? null : { src: e.r.dst, dst: e.r.src, sport: e.r.dport, dport: e.r.sport };
 }
+// The bytes the entry carried in both directions, or 0 without accounting.
 const total = e => (e.by ? e.by[0] + e.by[1] : 0);
 // Stable sort, largest key first.
 const bySize = (list, key) => list.map((e, i) => [e, i]).sort((a, b) => key(b[0]) - key(a[0]) || a[1] - b[1]).map(x => x[0]);
@@ -148,10 +153,12 @@ function reference(entries, names, args = {}, parseCap = 20000) {
   const limit = args.limit ?? 300, sort = args.sort ?? 'bytes', proto = args.proto ?? 'all', scope = args.scope ?? 'all';
   const terms = (args.q ?? '').trim().toLowerCase().split(' ').filter(Boolean);
   const parsed = entries.slice(0, parseCap);
+  // The lowercase text a search term is matched against: family, protocol, state, endpoints, names, flags, and NAT.
   const hay = e => {
     const n = natOf(e);
     return `ipv${e.fam} ${e.proto} ${e.state ?? ''} ${e.o.src} ${e.o.dst} ${e.o.sport ?? ''} ${e.o.dport ?? ''} ${names[e.o.src] ?? ''} ${names[e.o.dst] ?? ''} ${e.flags.join(' ')} ${n ? `${n.src} ${n.dst}` : ''} ${n ? `${n.sport ?? ''} ${n.dport ?? ''}` : ''}`.toLowerCase();
   };
+  // Whether all four addresses of the entry are private.
   const local = e => [e.o.src, e.o.dst, e.r.src, e.r.dst].every(isPrivate);
   const hits = parsed.filter(e => (proto === 'all' || e.proto === proto)
     && (scope === 'all' || local(e) === (scope === 'internal'))
@@ -198,6 +205,7 @@ const RICH_NAMES = {
 const NL = 'nlbw -c json -g';
 // The JSON `nlbw` prints for a group.
 const nlbwJson = (columns, data) => JSON.stringify({ columns, data });
+// The MAC address of host `n`.
 const MAC = n => `aa:bb:cc:00:00:${n}`;
 const IP_COLS = ['mac', 'ip', 'conns', 'rx_bytes', 'rx_pkts', 'tx_bytes', 'tx_pkts'];
 const L7_COLS = ['proto', 'port', 'conns', 'rx_bytes', 'rx_pkts', 'tx_bytes', 'tx_pkts', 'layer7'];
@@ -300,6 +308,7 @@ function prng(seed) {
 // 60000 entries: 40 local hosts and one heavy one, 3000 public hosts, IPv4 and IPv6, every kind of flow.
 function bigEntries(n = 60000) {
   const rnd = prng(12345);
+  // A pseudo-random integer in [0, k).
   const pick = k => Math.floor(rnd() * k);
   const publicV4 = Array.from({ length: 3000 }, () => `${11 + pick(200)}.${pick(256)}.${pick(256)}.${1 + pick(250)}`).filter(a => !isPrivate(a));
   const publicV6 = Array.from({ length: 500 }, () => `2606:4700:${(pick(65535) + 1).toString(16)}::${(pick(65535) + 1).toString(16)}`);
@@ -307,6 +316,7 @@ function bigEntries(n = 60000) {
   for (let i = 0; i < n; i++) {
     const heavy = rnd() < 0.3;
     const host = heavy ? 50 : 2 + pick(40);
+    // A pseudo-random byte count, spread over many orders of magnitude.
     const bytes = () => Math.floor(Math.exp(rnd() * 14));
     const kind = rnd();
     const sport = 1024 + pick(60000);
@@ -419,6 +429,7 @@ add('budget-big', 'big', 'connections', {});
 function usageReference(text) {
   const { columns, data } = JSON.parse(text);
   const rows = data.map(r => Object.fromEntries(columns.map((c, i) => [c, r[i]])));
+  // The total of column `k` over all rows.
   const sum = k => rows.reduce((n, r) => n + (r[k] ?? 0), 0);
   const sorted = rows.map((r, i) => [r, i]).sort((a, b) => (b[0].rx_bytes + b[0].tx_bytes) - (a[0].rx_bytes + a[0].tx_bytes) || a[1] - b[1]).map(x => x[0]);
   return { columns, rows: sorted.slice(0, 3000), total_rows: rows.length, truncated: rows.length > 3000,

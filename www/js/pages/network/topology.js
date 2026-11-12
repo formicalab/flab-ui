@@ -44,6 +44,7 @@ function arrange(net) {
   const rank = new Map(net.ports.map((p, i) => [p.name, p.board?.index ?? 1000 + i]));
   const sorted = [...leaves].sort((a, b) => rank.get(a.name) - rank.get(b.name));
 
+  // The switch a port belongs to (matched by its switch node), if any.
   const switchOf = p => switches.find(s => s.node === p.hardware?.switch_node);
   const ordered = [], done = new Set();
   for (const p of sorted) {
@@ -81,6 +82,7 @@ export function topologyCard(net) {
   const col = new Map(ordered.map((p, i) => [p.name, i + 1]));
   const byName = new Map(net.ports.map(p => [p.name, p]));
   const cells = [];
+  // Appends a cell to the diagram and returns it so callers can reference it in edges.
   const add = n => { cells.push(n); return n; };
 
   const soc = net.ports.map(p => p.hardware?.soc).find(Boolean);

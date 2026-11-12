@@ -12,6 +12,7 @@ import path from 'node:path';
 const work = process.argv[2];
 // File name of a command's fixture, as util.uc derives it: runs of non-alphanumerics become "_".
 const slug = cmd => cmd.replace(/[^A-Za-z0-9]+/g, '_') + '.txt';
+// The command line of `ip` for address `family` (4 or 6) with the arguments `rest`.
 const ip = (family, rest) => `/sbin/ip -${family} ${rest}`;
 
 //#region The rich scenario

@@ -7,11 +7,17 @@ import path from 'node:path';
 const dir = process.argv[2];
 // One plugin's output for a scenario, and the facts expect.json holds about the captured router.
 const read = f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+// The flab.network output of scenario `n`.
 const net = n => read(`${n}.flab.network.json`);
+// The flab.radio output of scenario `n`.
 const rad = n => read(`${n}.flab.radio.json`);
+// The flab.mesh output of scenario `n`.
 const mesh = n => read(`${n}.flab.mesh.json`);
+// The flab.wireguard output of scenario `n`.
 const wg = n => read(`${n}.flab.wireguard.json`);
+// The flab.firewall output of scenario `n`.
 const fwr = n => read(`${n}.flab.firewall.json`);
+// The flab.logs output of scenario `n`.
 const lgs = n => read(`${n}.flab.logs.json`);
 const expect = read('expect.json');
 let failed = 0;
@@ -19,11 +25,15 @@ let failed = 0;
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 // Lookups into a plugin's output: a port, a bridge (default: the captured one), one of its members, a radio.
 const port = (d, n) => d.ports.find(p => p.name === n);
+// Bridge `n` (default: the captured one) in network output `d`.
 const bridgeOf = (d, n = expect.bridge) => d.bridges.find(b => b.name === n);
+// Member port `n` of bridge `b` (default: the captured one).
 const memberOf = (d, n, b = expect.bridge) => bridgeOf(d, b).members.find(m => m.name === n);
+// Radio `n` in radio output `d`.
 const radio = (d, n) => d.radios.find(r => r.name === n);
 // Sum of an object's values; whether two lists hold the same items in any order.
 const sum = o => Object.values(o).reduce((a, b) => a + b, 0);
+// Whether lists `a` and `b` hold the same items in any order.
 const same = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
 console.log('== network: base (real captured state) ==');
@@ -235,6 +245,7 @@ for (const n of ['base', 'm-twopeers', 'm-weak', 'm-fwdoff', 'm-nopeer', 'm-down
 console.log('== wireguard ==');
 const wb = wg('base');
 const wi = wb.interfaces[0];
+// The peer with public key `key` (default: the site-to-site peer) on the first WireGuard interface.
 const wpeer = (d, key = expect.wg.site) => d.interfaces[0].peers.find(p => p.public_key === key);
 check(wb.interfaces.length === 1 && wi.name === expect.wg.name && wi.up === true && wi.enabled === true && wi.configured === true, 'the WireGuard interface found from the configuration');
 check(/^[A-Za-z0-9+/]{43}=$/.test(wi.public_key) && wi.listen_port > 0 && wi.mtu > 0 && wi.addresses.length >= 1 && typeof wi.rx_bytes === 'number', 'public key, listen port, MTU, addresses and counters', JSON.stringify([wi.public_key, wi.listen_port, wi.mtu, wi.addresses]));
@@ -260,7 +271,9 @@ check(wg('w-nowg').interfaces.length === 0, 'no WireGuard configured or running:
 
 console.log('== firewall ==');
 const fb = fwr('base');
+// Firewall zone `n` in firewall output `d`.
 const zone = (d, n) => d.zones.find(z => z.name === n);
+// Traffic rule `n`, matched by name or by key.
 const frule = (d, n) => d.rules.find(r => r.name === n || r.key === n);
 check(fb.engine === 'nftables' && fb.running === true && fb.hooks.input === 'drop' && fb.hooks.forward === 'drop' && fb.hooks.output === 'accept', 'nftables loaded, with its base chain policies', JSON.stringify(fb.hooks));
 check(same(fb.zones.map(z => z.name), expect.fw.zones) && fb.zones.every(z => z.enabled && ['input', 'output', 'forward'].every(k => /^(ACCEPT|REJECT|DROP)$/.test(z[k])) && Array.isArray(z.networks) && Array.isArray(z.forwards)), 'every configured zone with its policies', JSON.stringify(fb.zones.map(z => z.name)));

@@ -53,6 +53,7 @@ export const section = (title, ...body) => h('div', { className: 'blk' }, h('h3'
 // Elapsed/remaining lifetime bar. `rekeyIn` marks the soft limit, `expiresIn` (optional) the hard limit.
 export function lifebar({ elapsed, rekeyIn, expiresIn }) {
   const end = expiresIn != null ? elapsed + expiresIn : elapsed + (rekeyIn ?? 0);
+  // A value as a percentage of the bar's full length, clamped to 0-100.
   const pct = v => end > 0 ? Math.min(100, Math.max(0, v / end * 100)) : 0;
   const marker = rekeyIn != null && expiresIn != null ? h('i', { className: 'mark', style: `left:${pct(elapsed + rekeyIn)}%` }) : null;
   return h('div', { className: 'lifebar' }, h('div', { className: 'track' },

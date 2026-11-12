@@ -70,7 +70,7 @@ export const subject = data => data.engine ?? data.configured ?? null;
 //#region Tiles
 
 // Queries answered in total: Unbound counts them; dnsmasq's total is what it forwarded plus what it answered itself.
-export function totalQueries(data) {
+function totalQueries(data) {
   const s = data.stats;
   if (!s) return null;
   if (data.engine === 'unbound') return s.queries;
@@ -85,7 +85,7 @@ export function perMinute(total, since) {
 
 // The share of answers that needed no upstream query: { label, pct, sub }. Unbound: cache hits against hits and misses;
 // dnsmasq: its own answers (cache and local names) against those and the forwarded queries.
-export function cacheShare(data) {
+function cacheShare(data) {
   const s = data.stats;
   if (data.engine === 'dnsmasq') {
     const p = s ? pct(s.local_answered, s.forwarded + s.local_answered) : null;
@@ -141,7 +141,7 @@ export function wanNote(data) {
 
 // How many upstream servers the resolver can use: the default forwarders and the ones learned from the WAN that it really
 // asks (counted once each; see wanResolvers).
-export function upstreamCounts(data) {
+function upstreamCounts(data) {
   const defaults = defaultForwarders(data);
   const wan = wanResolvers(data).servers.filter(s => s.used).map(s => s.addr);
   const all = new Set([...defaults.map(serverAddress), ...wan]);
@@ -149,7 +149,7 @@ export function upstreamCounts(data) {
 }
 
 // DNSSEC as { text, sub, kind } for the tile: Validating, Off, Not supported, or unknown.
-export function dnssecInfo(data) {
+function dnssecInfo(data) {
   const d = data.dnssec ?? {};
   if (!subject(data) || d.supported == null) return { text: '–', sub: 'no resolver', kind: '' };
   if (d.supported === false) return { text: 'Not supported', sub: 'this build of dnsmasq has no DNSSEC', kind: 'none' };
@@ -220,6 +220,7 @@ function clearText(f, engine) {
 // What needs attention, worst first: [{ level: 'bad' | 'warn' | 'info', key, text }].
 export function findings(data) {
   const list = [];
+  // Appends one finding to the list.
   const add = (level, key, text) => list.push({ level, key, text });
   const engines = data.engines ?? {};
   const e = data.engine;
@@ -358,6 +359,7 @@ export function activity(data) {
   if (!s) return { rows: [], codes: [], since: null, note: data.engine ? 'The resolver reports no counters.' : 'No resolver is running.' };
   if (data.engine === 'dnsmasq') {
     const total = totalQueries(data);
+    // A share of the total query count (null when either number is unknown or the total is zero).
     const f = (n, d) => (n == null || !d ? null : n / d);
     const rows = [
       row('forwarded', 'Forwarded upstream', s.forwarded, f(s.forwarded, total), '', 'Queries dnsmasq had to ask an upstream server.'),
@@ -372,6 +374,7 @@ export function activity(data) {
     return { rows, codes: [], since: s.since, note: 'Counters since dnsmasq started. dnsmasq counts what it forwarded and what it answered itself; it reports neither answer codes nor resolution times.' };
   }
   const total = s.queries;
+  // A share of the query count (null when the count is unknown or zero).
   const f = n => (n == null || !total ? null : n / total);
   const rows = [
     row('queries', 'Queries received', s.queries, null, '', 'Every query a client sent to Unbound.'),
@@ -428,10 +431,13 @@ export function configAreas(data) {
 // A line about the state of an area, shown beside its title so a folded area still says something: the port, the interfaces
 // and the monitoring for General, the switches that matter for Security and privacy, nothing for the others.
 function areaSummary(engine, id, fields, draft) {
+  // The field of this area with the given key.
   const field = key => fields.find(f => f.key === key);
   // The value in force: the one set, else the package's default.
   const eff = key => (draft[key] === '' ? field(key)?.default : draft[key]);
+  // The value in force as text: its label when the field has one for it, else the raw value.
   const word = key => { const f = field(key); const v = eff(key); return f?.labels?.[v] ?? String(v ?? ''); };
+  // 'on' or 'off' for the value in force of a switch.
   const on = key => (eff(key) ? 'on' : 'off');
   if (engine === 'unbound' && id === 'general') {
     const lan = draft.iface_lan?.length ?? 0;

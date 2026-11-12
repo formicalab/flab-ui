@@ -9,6 +9,7 @@ import { peerDot, peerTitle, cmpPrefix, isUp, peerLabels } from './util.js';
 
 // Matrix cell contents: a check mark when the prefix is announced to the peer, a dash otherwise.
 const yes = () => h('span', { className: 'cap-yes', title: 'Announced' }, icon('check-circle', 17));
+// Matrix cell for a prefix that is not announced to the peer.
 const no = () => h('span', { className: 'muted', title: 'Not announced' }, '–');
 
 // Table with one row per announced prefix and one column per peer; a prefix appears once even when

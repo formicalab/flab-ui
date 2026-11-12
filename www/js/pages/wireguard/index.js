@@ -15,6 +15,7 @@ function summary(list) {
   const peers = list.flatMap(i => i.peers.filter(p => p.enabled).map(p => ({ i, p })));
   const connected = peers.filter(({ p }) => p.state === 'connected');
   const ages = peers.map(({ p }) => p.handshake_age).filter(a => a != null);
+  // Total live rate over all enabled peers in one direction (rx or tx).
   const sum = dir => peers.reduce((t, { i, p }) => t + (rateNow(i, p, dir) ?? 0), 0);
   return tiles(
     tile('Interfaces up', `${list.filter(i => i.up).length} / ${list.length}`, list.map(i => i.name).join(', ') || 'none', list.every(i => i.up || !i.enabled) ? 'text-success' : 'text-warning'),

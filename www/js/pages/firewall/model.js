@@ -25,6 +25,7 @@ export function buildMatrix(fw) {
 
   // Expands "*" and a missing side into the matching ends of the matrix.
   const sources = r => r.src === '*' ? names : r.src ? [r.src] : [ROUTER];
+  // Same expansion for the destination side.
   const dests = r => r.dest === '*' ? names : r.dest ? [r.dest] : [ROUTER];
 
   const accepts = new Map(), blocks = new Map();

@@ -4,8 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const work = process.argv[2];
+// The recorded reply of case `name`.
 const out = name => JSON.parse(fs.readFileSync(path.join(work, 'out', `${name}.json`), 'utf8'));
+// The expected data of fixture `name`.
 const expectOf = name => JSON.parse(fs.readFileSync(path.join(work, 'expect', `${name}.json`), 'utf8'));
+// The milliseconds case `name` took to run.
 const ms = name => Number(fs.readFileSync(path.join(work, 'out', `${name}.ms`), 'utf8'));
 const cases = JSON.parse(fs.readFileSync(path.join(work, 'cases.json'), 'utf8'));
 const tables = expectOf('tables');
@@ -14,6 +17,7 @@ let failed = 0;
 // Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 const j = JSON.stringify;
+// Whether two values are equal as JSON.
 const same = (a, b) => j(a) === j(b);
 // How an entry is identified across the table and the reply.
 const keyOf = e => [e.proto, e.src, e.sport ?? '', e.dst, e.dport ?? ''].join('|');
@@ -79,6 +83,7 @@ for (const c of cases.filter(c => c.scenario === 'rich' && c.method === 'connect
 let r = out('rich-default');
 check(r.total === tables.richLines && r.parsed === rich.length && r.truncated === false && r.available === true && r.count === 141 && r.max === 31232 && r.acct === true, 'total counts every line, parsed only the ones that are entries (one line is garbage)', j([r.total, r.parsed, r.truncated]));
 check(r.request.limit === 300 && r.request.sort === 'bytes' && r.request.proto === 'all' && r.request.scope === 'all' && r.request.q === '', 'defaults: limit 300, sort bytes, all protocols, all traffic');
+// The first entry of protocol `re` that satisfies `f`.
 const find = (re, f) => r.entries.find(e => e.proto === re && f(e));
 check(find('tcp', e => e.src === '192.168.1.10' && e.sport === 51234).nat && natKey(find('tcp', e => e.src === '192.168.1.10' && e.sport === 51234).nat) === natKey({ src: '203.0.113.9', dst: '93.184.216.34', sport: 51234, dport: 443 }), 'a masqueraded flow reports the translated source (the WAN address, same port)');
 check(natKey(find('tcp', e => e.src === '198.51.100.99').nat) === natKey({ src: '198.51.100.99', dst: '192.168.1.20', sport: 60000, dport: 80 }), 'a port forward reports the translated destination and port (8080 to 80)');
@@ -178,6 +183,7 @@ if (cases.some(c => c.name === 'real-status')) {
   check(typeof s.conntrack === 'boolean' && typeof s.nlbw === 'boolean' && typeof s.nlbwmon_running === 'boolean' && (s.count === null || (s.count >= 0 && s.count <= s.max)), 'status: booleans for the features, count not above the limit', j(s));
   r = out('real-connections');
   if (r.available) {
+    // The total of the counts in `list`.
     const sum = list => list.reduce((n, x) => n + x.count, 0);
     check(r.ok && r.entries.length <= 300 && r.parsed <= r.total && r.parsed <= 20000 && r.matched === r.parsed && r.entries.length === Math.min(300, r.parsed), `the table: ${r.total} lines, ${r.parsed} parsed, ${r.entries.length} returned`, j([r.total, r.parsed, r.matched, r.entries.length]));
     check(sum(r.aggregates.protocols) === r.parsed && sum(r.aggregates.states) <= r.parsed, 'every parsed entry is counted once per protocol', j(r.aggregates.protocols));
@@ -194,6 +200,7 @@ if (cases.some(c => c.name === 'real-status')) {
     for (const g of ['mac-ip', 'ip', 'layer7', 'fam']) {
       const u = out(`real-usage-${g}`);
       const rows = u.rows ?? [];
+      // The total of column `k` over the usage rows.
       const sum = k => rows.reduce((n, x) => n + (x[k] ?? 0), 0);
       check(u.ok === true && u.total_rows === rows.length && sum('rx_bytes') === u.totals.rx_bytes && sum('tx_bytes') === u.totals.tx_bytes && sum('conns') === u.totals.conns
         && rows.every((x, i) => i === 0 || x.rx_bytes + x.tx_bytes <= rows[i - 1].rx_bytes + rows[i - 1].tx_bytes), `usage ${g}: ${rows.length} rows, totals are the sums, largest first`, j(u).slice(0, 200));

@@ -105,6 +105,7 @@ async function stop(state) {
 export function track(state) {
   const d = state.diag;
   if (d.timer) return;
+  // One poll: appends the new output, repaints, and schedules the next poll while the job runs.
   const tick = async () => {
     const job = d.job;
     d.timer = null;
@@ -208,7 +209,9 @@ function wolPicker(state, status, disabled) {
   const f = state.diag.form;
   const hosts = status.hosts ?? [];
   if (!hosts.length) f.wolOther = true;
+  // The option label of a host: name, address and MAC address, whichever are known.
   const text = host => [host.name ?? 'unnamed', host.ip, host.mac].filter(Boolean).join(' · ');
+  // An option group titled `title` for the hosts in `list`; null when there are none.
   const group = (title, list) => (list.length ? h('optgroup', { label: title }, list.map(x => h('option', { value: x.mac }, text(x)))) : null);
   const input = textInput(state, 'host', { placeholder: 'aa:bb:cc:dd:ee:ff', mono: true, disabled });
   if (!hosts.length) return input;
@@ -233,7 +236,9 @@ function formCard(state, status) {
   const allowed = can('flab.diag', f.tool === 'wol' ? 'wake' : 'start');
   const tools = TOOLS.filter(([t]) => available(status, t));
   if (!tools.some(([t]) => t === f.tool) && tools.length) f.tool = tools[0][0];
+  // The address family field, shared by the tools that resolve names.
   const family = () => field('Address family', 'Force IPv4 or IPv6 name resolution', selectInput(state, 'family', [['', 'automatic'], ['4', 'IPv4'], ['6', 'IPv6']], running));
+  // The optional source field (interface or address the probes leave from), shared by ping and traceroute.
   const source = () => field('From (optional)', 'The interface or address the probes leave from', sourceInput(state, status, running));
 
   const options = f.tool === 'ping' ? [

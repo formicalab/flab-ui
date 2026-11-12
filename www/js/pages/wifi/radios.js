@@ -98,6 +98,7 @@ function header(r) {
 // the client count over the radio's non-mesh interfaces.
 function hero(r) {
   const live = r.live ?? {};
+  // One figure tile: label, value and an optional sub line.
   const stat = (label, value, sub) => h('div', { className: 'rd-stat' }, h('div', { className: 'label' }, label), h('div', { className: 'value' }, value), sub ? h('div', { className: 'sub' }, sub) : null);
   return h('div', { className: 'rd-hero' },
     stat('Channel', live.channel ?? '–', live.freq ? `${live.freq} MHz` : 'not running'),

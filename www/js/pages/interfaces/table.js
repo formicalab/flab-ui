@@ -98,6 +98,7 @@ function addressingCell(r) {
   // Prefixes netifd hands out to other interfaces (ip6assign) and prefixes received from the provider.
   const assigned = (i['ipv6-prefix-assignment'] ?? []).map(p => `${p.address}/${p.mask}`);
   const received = (i['ipv6-prefix'] ?? []).map(p => `${p.address}/${p.mask}`);
+  // One muted "label value" line with the value in monospace.
   const line = (label, v) => h('div', { className: 'muted small' }, `${label} `, h('span', { className: 'mono' }, v));
   return [
     h('div', {}, addressesOf(i).map(addressLine)),
@@ -114,7 +115,9 @@ function zoneCell(r, net) {
   if (!r.iface) return muted('–');
   const zone = (net.zones ?? []).find(z => z.networks.includes(r.name));
   const dhcp = net.dhcp?.[r.name];
+  // A zone's input/output/forward policy, NAT flag and the zones it may forward to, as one sentence.
   const policy = z => `input ${z.input}, output ${z.output}, forward ${z.forward}${z.masq ? ', NAT' : ''}; may forward to: ${z.forwards.join(', ') || 'nowhere'}`;
+  // The DHCP address range as "pool .100–.249", or null when the server has none.
   const pool = d => d.start != null && d.limit ? `pool .${d.start}–.${d.start + d.limit - 1}` : null;
   return [
     h('div', {}, zone ? badge(zone.name, zone.input === 'ACCEPT' ? 'success' : 'info', policy(zone)) : badge('no zone', '', 'Not in any firewall zone')),

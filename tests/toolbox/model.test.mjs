@@ -8,6 +8,7 @@ import path from 'node:path';
 const m = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/toolbox/diagmodel.js')).href);
 
 let failed = 0;
+// Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 const j = JSON.stringify;
 
@@ -15,6 +16,7 @@ import { DRILL, KDIG, KDIG_NX, NSLOOKUP, NSLOOKUP_NX, NSLOOKUP_PTR, PING_DOWN, P
 import { CHECK_OK, COMPARE, COMPARE_NX, TLS_EXAMPLE, TLS_EXPIRED, TLS_GAP, TLS_LEAFONLY, TLS_LOCAL, TLS_REFUSED, TLS_RESET, TLS_SELFSIGNED } from './samples-tools.mjs';
 
 console.log('== the form and its request ==');
+// A blank form aimed at 1.1.1.1, with `over` applied on top.
 const form = over => ({ ...m.blankForm(), host: '1.1.1.1', ...over });
 let r = m.requestOf(form());
 check(j(r.args) === j({ tool: 'ping', host: '1.1.1.1', count: 4, size: 56 }), 'a ping asks for the host, the count and the size', j(r));
@@ -175,6 +177,7 @@ let ck = m.parseCheck(CHECK_OK, false, { name: 'example.com' }, NOW);
 check(ck.steps.map(s => s.id).join() === m.CHECK_STEPS.map(s => s[0]).join() && ck.steps.every(s => s.state === 'ok') && ck.verdict.level === 'ok' && ck.done, 'a healthy router: every step ok and a good verdict', j(ck.steps.map(s => [s.id, s.state])));
 check(ck.steps[0].text === 'via 37.179.98.1 on pppoe-wan' && /37\.179\.98\.1 answers/.test(ck.steps[1].text) && /1\.1\.1\.1 \(.*\) and 8\.8\.8\.8 \(.*\) answer/.test(ck.steps[2].text) && /answers with 2 addresses in 0\.40 ms/.test(ck.steps[3].text), 'the steps say what they found', j(ck.steps.map(s => s.text)));
 check(ck.steps[7].tls.chain.length === 4 && /certificate for example\.com is trusted/.test(ck.steps[7].text), 'the TLS step carries the parsed certificate');
+// `text` with the body of the `nth` block named `id` replaced by `body`.
 const swapBlock = (text, id, body, nth = 0) => { const parts = text.split(/(?=### BEGIN )/); let seen = -1; return parts.map(p => { if (!p.startsWith(`### BEGIN ${id} `) || ++seen !== nth) return p; const head = p.split('\n')[0]; return `${head}\n${body}\n\n### END 1 ${head.split(' ')[3]}\n`; }).join(''); };
 const DOWN = '--- x ping statistics ---\n2 packets transmitted, 0 packets received, 100% packet loss';
 const TIMEOUT = ';; WARNING: response timeout for x@53(UDP)\n;; ERROR: failed to query server x@53(UDP)';

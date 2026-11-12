@@ -44,6 +44,7 @@ function shares(a, b) {
     total += d[k];
   }
   if (total <= 0) return null;
+  // Share of the interval spent in one field, as a percentage of all CPU time.
   const pct = k => d[k] / total * 100;
   const user = pct('user') + pct('nice');
   const system = pct('system');

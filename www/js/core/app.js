@@ -36,6 +36,7 @@ async function route() {
   clearInterval(timer);
   refresh = null;
   const mine = ++routeNo;
+  // Whether this render is still the active route (false once the user navigated elsewhere).
   const current = () => mine === routeNo;
 
   const page = pages.find(p => p.id === location.hash.slice(1)) ?? pages[0];
@@ -75,6 +76,7 @@ async function route() {
   // explicit refresh during a poll) is dropped, as is any reply for a page that was left meanwhile.
   let requests = 0;
   let loading = false;
+  // One poll cycle: fetches the page data and redraws, unless a newer request or a navigation superseded it.
   async function load() {
     const n = ++requests;
     loading = true;

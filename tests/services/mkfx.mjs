@@ -24,6 +24,7 @@ function scenario(name, { code, output }) {
   const dir = path.join(root, name);
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
+    // Writes `text` as the fixture of command `cmd`.
   const put = (cmd, text) => fs.writeFileSync(path.join(dir, slug(cmd)), text);
   put(LIST_CMD, [...INSTALLED, ...JUNK].sort().join('\n') + '\n');
   put(RC_CMD, RC.join('\n') + '\n');

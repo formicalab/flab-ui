@@ -15,28 +15,28 @@ import { fmtBytes, fmtNum, fmtSpan } from '../../core/format.js';
 //#region Thresholds
 
 // Connection tracking is called nearly full from this share of its limit, and full from the second one (percent).
-export const NEAR_LIMIT = 80;
-export const AT_LIMIT = 95;
+const NEAR_LIMIT = 80;
+const AT_LIMIT = 95;
 // A host is flagged when it holds at least this many connections and this share of the analyzed table, or this many
 // connections whatever the share.
-export const HOST_MIN = 100;
-export const HOST_SHARE = 0.4;
-export const HOST_VERY_MANY = 3000;
+const HOST_MIN = 100;
+const HOST_SHARE = 0.4;
+const HOST_VERY_MANY = 3000;
 // Unanswered connections are flagged when there are at least UNREPLIED_MIN of them and they make up this share of the
 // analyzed table, or when one host has at least UNREPLIED_HOST of them.
-export const UNREPLIED_MIN = 50;
-export const UNREPLIED_SHARE = 0.25;
-export const UNREPLIED_HOST = 20;
+const UNREPLIED_MIN = 50;
+const UNREPLIED_SHARE = 0.25;
+const UNREPLIED_HOST = 20;
 // An IP packet is at least this many bytes (an IPv4 ICMP echo or UDP datagram with no payload), so a counter that
 // averages less per packet cannot be right. It is judged only for a host with at least COUNTER_SAMPLE packets in that
 // direction, so a handful of packets is never flagged.
-export const MIN_PACKET_BYTES = 28;
-export const COUNTER_SAMPLE = 100000;
+const MIN_PACKET_BYTES = 28;
+const COUNTER_SAMPLE = 100000;
 // The filter the Connections tab sends is limited to this many characters of the alphabet below.
-export const FILTER_MAX = 64;
+const FILTER_MAX = 64;
 const FILTER_OK = /^[A-Za-z0-9.:_/ -]*$/;
 // The all-zero MAC address nlbwmon uses for traffic with no local device behind it.
-export const ZERO_MAC = '00:00:00:00:00:00';
+const ZERO_MAC = '00:00:00:00:00:00';
 
 //#endregion
 
@@ -47,8 +47,9 @@ const natural = (a, b) => a.localeCompare(b, 'en', { numeric: true });
 
 // Interface names by device, from netifd's interface dump: { device: [logical interface, ...] }. A PPPoE interface
 // has both its own device (pppoe-wan) and the device it runs on (eth1.1036), and both lead to "wan".
-export function logicalNames(ifs) {
+function logicalNames(ifs) {
   const map = new Map();
+  // Records that `name` is a logical interface of device `dev`, without duplicates.
   const add = (dev, name) => { if (dev && !(map.get(dev) ?? []).includes(name)) map.set(dev, [...(map.get(dev) ?? []), name]); };
   for (const i of ifs ?? []) {
     if (i.interface === 'loopback') continue;
@@ -65,6 +66,7 @@ export function logicalNames(ifs) {
 export function deviceRows(net, ifs) {
   const names = logicalNames(ifs);
   const rows = new Map();
+  // Adds a device row of the given kind unless that device is already listed.
   const add = (d, kind, extra = {}) => {
     if (rows.has(d.name)) return;
     rows.set(d.name, {
@@ -84,6 +86,7 @@ export function deviceRows(net, ifs) {
 // The kinds whose traffic is counted in the totals: a bridge, a VLAN device and the CPU conduit carry what their
 // ports already carry.
 const LEAF = new Set(['port', 'wifi', 'other']);
+// True for rows whose traffic counts toward the totals.
 export const isLeaf = row => LEAF.has(row.kind);
 
 // How rows are ordered: the WAN first, then ports, Wi-Fi, other members, VLANs, bridges and the CPU conduit.
@@ -92,6 +95,7 @@ const RANK = { port: 1, wifi: 2, other: 3, vlan: 4, bridge: 5, conduit: 6 };
 // The rows in display order (stable, so a row never jumps with the traffic); `wan` is the set of row names that
 // are a WAN device.
 export function orderRows(rows, wan) {
+  // Sort rank of a row: WAN devices first, then by kind (see RANK).
   const rank = r => (wan.has(r.name) ? 0 : RANK[r.kind] ?? 7);
   return [...rows].sort((a, b) => rank(a) - rank(b) || natural(a.name, b.name));
 }
@@ -102,6 +106,7 @@ export function orderRows(rows, wan) {
 // device are listed once.
 export function wanLinks(ifs, rows) {
   const names = new Set(rows.map(r => r.name));
+  // True when the interface has an IPv4 or IPv6 default route (a route with prefix length 0).
   const hasDefault = i => (i.route ?? []).some(r => r.mask === 0 && (r.target === '0.0.0.0' || r.target === '::'));
   let list = (ifs ?? []).filter(i => i.up && hasDefault(i));
   if (!list.length) list = (ifs ?? []).filter(i => i.interface === 'wan');

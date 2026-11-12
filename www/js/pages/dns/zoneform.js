@@ -51,6 +51,7 @@ export function openZoneDialog({ data, getDraft, key, onSave, onClose }) {
       }
     }
   }
+  // Called after every edit: from then on the problems are shown, and the form is revalidated.
   const touched = () => { touchedOnce = true; validate(); };
 
   // The connection of one field to the form.

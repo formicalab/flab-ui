@@ -170,6 +170,7 @@ export default {
     const rows = buildRows(data.list, data.procd);
     const sum = summarize(rows);
     const writable = data.list != null && can('flab.services', 'control');
+    // Info banner with a message.
     const note = text => h('div', { className: 'svc-note info' }, icon('info-circle'), h('div', { className: 'svc-note-body' }, text));
     return [
       data.list == null ? note('The services plugin is not installed on the router, so services can only be listed.') : null,

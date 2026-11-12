@@ -110,6 +110,7 @@ function ntpStatus(data) {
 // One card of the form, from its schema group: its legend on top, then either side-by-side columns (the time card:
 // the zone, the NTP client, the NTP server) or its fields in a flowing grid.
 function groupCard(ctx, g) {
+  // Controls of this group's fields, restricted to one column when `col` is given.
   const fieldsOf = col => FIELDS.filter(f => f.group === g.id && (col == null || f.col === col)).map(f => control(ctx, f));
   const body = g.columns
     ? h('div', { className: 'card-body set-cols' }, g.columns.map(c => h('section', { className: 'set-col' },

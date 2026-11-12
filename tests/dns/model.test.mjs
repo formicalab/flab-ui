@@ -13,8 +13,11 @@ const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'
 const j = JSON.stringify;
 // The text without the thousands separators the machine's locale adds ("26,000" or "26.000").
 const plain = s => s.replace(/(\d)[.,\u00a0\u202f](?=\d{3}\b)/g, '$1');
+// A deep copy, so a test can edit a fixture without touching the original.
 const clone = o => JSON.parse(JSON.stringify(o));
+// The keys of a list of findings.
 const keys = list => list.map(f => f.key);
+// The summary tile of `data` with the given label.
 const tileOf = (data, label) => m.summary(data).find(t => t.label === label);
 
 // A reply the way the plugin builds it, for each situation.
@@ -70,6 +73,7 @@ check(t[4].value === '3' && t[5].value === 'Not supported' && /no DNSSEC/.test(t
 const noWan = { ...clone(dm), upstream_used: false };
 check(tileOf(noWan, 'Upstream servers').value === '2', 'WAN resolvers dnsmasq ignores (noresolv) are not counted');
 {
+  // The WAN resolvers of a reply, with whether the resolver uses them.
   const w = d => m.wanResolvers(d);
   check(w(ub).verdict === 'unused' && w(ub).servers.length === 1 && w(ub).servers[0].used === false && /does not ask them: it sends queries to its own forwarders/.test(m.wanNote(ub)) && /resolv_conf '1'/.test(m.wanNote(ub)), 'Unbound does not ask the WAN resolvers when they are not among the servers in force, and says how to use them', m.wanNote(ub));
   check(/resolves names itself, from the root servers/.test(m.wanNote({ ...clone(ub), forwards: [] })), 'recursive Unbound says it asks the root servers instead');
@@ -102,6 +106,7 @@ check(m.perMinute(120, 60) === 120 && m.perMinute(null, 60) === null && m.perMin
 
 //#region Findings
 console.log('\n== findings ==');
+// The findings of a reply.
 const f = d => m.findings(d);
 // The ub reply has a clear-text zone only when tls is false for a public server.
 check(f(ub).length === 0, 'a healthy Unbound has nothing to report (TLS to Cloudflare, a private zone)', j(f(ub)));
@@ -175,6 +180,7 @@ const chips = m.listenerChips({ listeners: [
   { addr: '0.0.0.0', port: 53, proto: 'tcp', engine: 'dnsmasq' }, { addr: '127.0.0.1', port: 5353, proto: 'udp', engine: 'dnsmasq' }, { addr: '::', port: 53, proto: 'tcp', engine: 'dnsmasq' }] });
 check(chips.map(c => c.text).join() === '0.0.0.0:53,[::]:53,192.168.8.1:53,[::1]:53,127.0.0.1:5353', 'one chip per address and port: wildcards first, IPv4 before IPv6, by port', chips.map(c => c.text).join());
 check(same(chips[2].protos, ['tcp', 'udp']) && chips[0].wildcard && chips[1].wildcard && !chips[2].wildcard, 'protocols merged and sorted; the wildcard addresses are marked');
+// Whether two values serialize to the same JSON.
 function same(a, b) { return j(a) === j(b); }
 check(m.listenerChips({}).length === 0, 'no listeners, no chips');
 //#endregion
@@ -196,6 +202,7 @@ check(m.defaultForwarders({ forwards: [{ zone: '.', servers: [], flags: ['local-
 //#region Activity
 console.log('\n== activity ==');
 let a = m.activity(ub);
+// The activity row with key `k`.
 const row = (x, k) => x.rows.find(r => r.key === k);
 check(row(a, 'hits').value === 900 && Math.abs(row(a, 'hits').fraction - 0.75) < 1e-9 && row(a, 'hits').level === 'good' && Math.abs(row(a, 'misses').fraction - 0.25) < 1e-9, 'Unbound: hits and misses with their shares of the queries');
 check(!a.rows.some(r => ['secure', 'bogus', 'unwanted-queries', 'cache-msgs'].includes(r.key)) && a.codes.length === 0 && a.since === 3600, 'counters that are not reported are left out, not shown as zero; no answer codes');
@@ -242,6 +249,7 @@ check(m.configFields(none).length === 0, 'no resolver, no options');
 {
   // The plugin reports exactly the options the page describes; one missing there would show as "not set" on a router that has it.
   const src = readFileSync(new URL('../../rpcd/ucode/flab.dns.uc', import.meta.url), 'utf8');
+  // The sorted option names in the plugin's `const NAME = [...]` list.
   const listed = name => [...src.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`))[1].matchAll(/'([^']+)'/g)].map(x => x[1]).sort();
   check(j(listed('UNBOUND_OPTIONS')) === j(m.configFields(ub).map(x => x.key).sort()) && j(listed('DNSMASQ_OPTIONS')) === j(m.configFields(dm).map(x => x.key).sort()), 'the plugin reports every option of the schema, and no other');
 }
@@ -279,6 +287,7 @@ console.log('\n== editing the options ==');
 
   // A router where the service is enabled and the control channel is on, so that turning them off is a change.
   const U2 = { ...clone(U), config: { ...U.config, enabled: '1', unbound_control: '1' } };
+  // The warnings of a draft of `data` with `edits` applied, joined into one string.
   const warn = (data, edits) => { const x = e.draftFrom(data); Object.assign(x.values, edits); return e.problems(data, x).warnings.join(' | '); };
   check(/unbound-control/.test(warn(U2, { unbound_control: '0' })) && /port 5353 instead of 53/.test(warn(U, { listen_port: '5353' })) && /open resolver/.test(warn(U, { localservice: false })) && /web page could reach devices/.test(warn(U, { rebind_protection: '0' })) && /checked for forgery/.test(warn(U, { validator: false })) && /stopped and will not start/.test(warn(U2, { enabled: false })) && /read \/etc\/unbound\/unbound\.conf/.test(warn(U, { manual_conf: true })), 'risky changes are warned about: the control channel this page needs, another port, an open resolver, no rebind protection, no DNSSEC, stopping the service, manual configuration', [warn(U2, { unbound_control: '0' }), warn(U, { listen_port: '5353' }), warn(U2, { enabled: false })].join(' // '));
   check(warn(U, { verbosity: '2', rate_limit: '100' }) === '' && warn(U, { listen_port: '53' }) === '', 'harmless changes are not warned about; a port of 53 is not a change of port');

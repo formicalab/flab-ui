@@ -175,6 +175,7 @@ await page.waitForSelector('.layers-table');
 console.log('\n== interfaces: live router (pass-through) ==');
 mock.network = null;
 await refresh();
+// The row of the layers table whose name (third column) is `n`.
 const layerRow = n => page.locator(`.layers-table tr:has(td:nth-child(3) strong:text-is("${n}"))`);
 check(await page.locator('.port').count() === 0 && await page.locator('.br-card').count() === 0, 'no ports or bridge cards on this page');
 check(await layerRow('lan').count() === 1 && /br-lan/.test(await layerRow('lan').innerText()) && await layerRow('lan').locator('.cn.k-port, .cn.k-wifi, .cn.k-mesh').count() >= 3, 'layers: lan sits on br-lan, which groups ports and Wi-Fi');
@@ -337,8 +338,11 @@ await page.waitForSelector('.log-table');
 console.log('\n== logs: live router (pass-through) ==');
 mock.logs = null;
 await refresh();
+// The rows of the log table.
 const logRows = () => page.locator('.log-table tbody tr');
+// Whether the log pane is scrolled to (within 30 px of) its bottom.
 const atBottom = () => page.evaluate(() => { const p = document.querySelector('.log-pane'); return p.scrollHeight - p.scrollTop - p.clientHeight < 30; });
+// Picks `value` in the toolbar select with the given title.
 const choose = (title, value) => page.selectOption(`select[title="${title}"]`, value);
 const SOURCE = 'Which log to read', LEVEL = 'Hide entries below this severity', PROGRAM = 'Show one source only', LINES = 'How many of the newest lines to load';
 check(await logRows().count() >= 20, 'system log entries from the live router', String(await logRows().count()));

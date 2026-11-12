@@ -17,6 +17,7 @@ const shots = process.env.FLAB_SHOTS;
 let failed = 0;
 // Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
+// A deep copy, so a test can edit a fixture without touching the original.
 const clone = o => JSON.parse(JSON.stringify(o));
 
 //#region The mock router
@@ -72,6 +73,7 @@ function commit() {
     else if (op === 'add') cfg[section] = section_(section, option, value);
   }
 }
+// `section` under another name, for the code above that has a `section` parameter of its own.
 const section_ = (name, type, values) => section(name, type, values);
 // What a rollback or a failed confirmation puts back.
 const restore = () => { mock.cfg = mock.snapshot.cfg; mock.net = mock.snapshot.net; mock.staged = mock.restage; mock.snapshot = null; };
@@ -119,6 +121,7 @@ function uci(method, args) {
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 function answer(body) {
   const [, obj, method, args] = body.params;
+  // Wraps a ubus status code and optional data as a JSON-RPC result.
   const ok = ([code, data]) => ({ jsonrpc: '2.0', id: body.id, result: data === undefined ? [code] : [code, data] });
   const denied = { jsonrpc: '2.0', id: body.id, error: { code: -32002, message: 'Access denied' } };
 
@@ -164,25 +167,42 @@ let page = await open();
 
 // Helpers: tiles, the lease tables, reservation rows and pool controls, the banner, and screenshots.
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
+// The small text under the value of tile number `i`.
 const tileSub = async i => (await page.locator('.tile .sub').nth(i).innerText()).trim();
+// The card whose header contains `title`.
 const cardOf = title => page.locator('.card').filter({ has: page.locator('.card-header', { hasText: title }) });
+// The table body rows of the card titled `title`.
 const bodyRows = title => cardOf(title).locator('tbody tr');
 // A reservation row by the name it has now. Rows are found by their draft key (h0, h1, ... in the order of the
 // config, new rows after them), which the page puts in the row's id; the keys start over after a save.
 let KEYS = { flabn01: 'h0', 'SkyQ-L2-Mesh': 'h1', homeassistant: 'h2', soundbar: 'h3' };
+// The reservation row for the host called `name`.
 const hostRow = name => page.locator(`#dhcp-host-${KEYS[name]}`);
+// Every reservation row.
 const hostRows = () => page.locator('.dhcp-hosts tbody tr');
+// The input of a reservation row whose title is `field`.
 const hostInput = (row, field) => row.locator(`input[title="${field}"]`);
+// The card of the DHCP pool on interface `iface`.
 const poolCard = iface => page.locator('.card').filter({ has: page.locator('.card-header span:text-is("Pool ' + iface + '")') });
+// The folding group of a pool card whose summary contains `title`.
 const group = (iface, title) => poolCard(iface).locator('details').filter({ has: page.locator('summary', { hasText: title }) });
+// The form field (or checkbox) labeled `label` within `scope`.
 const field = (scope, label) => scope.locator('.set-field, .set-check').filter({ hasText: label }).first();
+// All the notes under the form, joined into one string.
 const notes = () => page.locator('.set-notes .set-note').allInnerTexts().then(t => t.join(' | '));
+// The save bar.
 const bar = () => page.locator('.set-bar');
+// How many error notes the form shows.
 const errorCount = () => page.locator('.set-notes .set-note.bad').count();
+// The "Save and apply" button.
 const saveBtn = () => page.locator('button:has-text("Save and apply")');
+// The text of the review of pending changes.
 const changes = () => page.locator('.set-changes').evaluate(e => e.textContent);
+// Saves a full-page screenshot named after `label`, when a screenshot folder is set.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `dhcp-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
+// Waits for the save bar to report the result of a save and returns its text.
 const outcome = async () => { const n = page.locator('.set-bar .set-outcome.ok, .set-bar .set-outcome.bad').first(); await n.waitFor({ timeout: 20000 }); return (await n.innerText()).trim(); };
+// Clicks Refresh and gives the page a moment to redraw.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
 
 //#region Navigation and the real router (read only)
@@ -194,8 +214,10 @@ check((await page.locator('.cmdbar h1').innerText()).trim() === 'DHCP and router
 console.log('\n== the real router (read only, nothing is written) ==');
 const real = await page.evaluate(async () => {
   const sid = sessionStorage.getItem('sid');
+  // One ubus call from the page with its session, returning the data of the reply.
   const call = async (obj, method, args = {}) => (await (await fetch('/ubus', { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'call', params: [sid, obj, method, args] }) })).json()).result[1];
   const cfg = (await call('uci', 'get', { config: 'dhcp' })).values;
+  // The number of leases across all the devices of a DHCP lease reply.
   const count = r => Object.values(r?.device ?? {}).reduce((n, d) => n + (d.leases?.length ?? 0), 0);
   return {
     hosts: Object.values(cfg).filter(s => s['.type'] === 'host').length, pools: Object.values(cfg).filter(s => s['.type'] === 'dhcp').length,
@@ -234,6 +256,7 @@ check((await page.locator('main .card-header').allInnerTexts()).map(t => t.trim(
 await shot('mock-base');
 
 console.log('\n== folding the daemon and the pools ==');
+// The clickable header of the pool card on `iface`.
 const foldHeader = iface => poolCard(iface).locator('.card-header');
 const daemonCard = page.locator('.card:has(.card-header:has-text("odhcpd daemon"))');
 check(await daemonCard.locator('.set-fields').first().isHidden() && /main DHCPv4 server · log level 6/.test(await daemonCard.locator('.card-header').innerText()), 'the daemon card starts folded, and its header sums up the main switch and the log level');
@@ -400,7 +423,7 @@ check(await errorCount() === 0, 'and is fine once the start is inside it');
 
 await foldHeader('wan').click();
 await poolCard('wan').locator('button:has-text("Remove pool")').click();
-check(/to be removed/.test(await poolCard('wan').locator('.card-header').innerText()) && await poolCard('wan').locator('select').first().isDisabled() && /Pool wan is removed/.test(await bar().innerText()), 'Remove pool marks an existing pool (greyed out, with a warning) until it is saved');
+check(/to be removed/.test(await poolCard('wan').locator('.card-header').innerText()) && await poolCard('wan').locator('select').first().isDisabled() && /Pool wan is removed/.test(await bar().innerText()), 'Remove pool marks an existing pool (grayed out, with a warning) until it is saved');
 await poolCard('wan').locator('button:has-text("Undo")').click();
 check(!/to be removed/.test(await poolCard('wan').locator('.card-header').innerText()) && await poolCard('wan').locator('select').first().isEnabled(), 'Undo brings it back');
 await poolCard('wan').locator('button:has-text("Remove pool")').click();

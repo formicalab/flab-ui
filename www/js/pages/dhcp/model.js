@@ -124,6 +124,7 @@ export function readDhcp(cfg, v4, v6, ra, dump, svc, dns = {}, network = null) {
     v4: i['ipv4-address']?.[0] ? { address: i['ipv4-address'][0].address, mask: i['ipv4-address'][0].mask } : null,
   }));
   const byDevice = new Map(interfaces.filter(i => i.device).map(i => [i.device, i]));
+  // The interface name (such as lan) for a device (such as br-lan); the device itself when no interface uses it.
   const ifaceOf = device => byDevice.get(device)?.name ?? device;
 
   const server = dhcpv4Server(cfg, dns.svc);
@@ -267,6 +268,7 @@ const isBlankBoot = row => row.section == null && BOOT6_FIELDS.every(f => row.va
 
 // What to call a boot entry in messages, and its one-line form for the review list.
 const bootTitle = v => v.url.trim() || 'entry without an address';
+// The one-line form of a boot entry: its URL and architecture.
 const bootLine = v => [v.url.trim(), v.arch.trim() && `architecture ${v.arch.trim()}`].filter(Boolean).join(' · ') || 'empty';
 
 // A new pool in one line for the review list: the options that differ from the defaults.
@@ -279,6 +281,7 @@ function poolLine(values) {
 // The differences between the router's values and the draft for the review list: [{ key, label, from, to }].
 export function changesOf(data, draft) {
   const out = [];
+  // Adds one review entry per field whose draft value differs from the router's value.
   const diffFields = (fields, raw, values, keyPrefix, labelPrefix) => {
     for (const f of fields) {
       const from = normalize(f, valueOf(f, raw[f.key]));
@@ -370,6 +373,7 @@ export function problems(data, draft) {
       continue;
     }
     for (const f of POOL_FIELDS) for (const e of errorsOf(f, draft.pools[p.section][f.key], `${label}: ${f.label}`)) errors.push({ key: `pool:${p.section}:${f.key}`, ...e });
+    // The draft value of one option of this pool.
     const val = key => poolValue(draft, p.section, key);
 
     if (val('dhcpv4') === 'server') {
@@ -451,6 +455,7 @@ export function plan(data, draft) {
     }
     return { set, del };
   };
+  // Queues the set and delete operations of one section; deletes are only queued for options that exist.
   const emit = (config, section, { set, del }, raw) => {
     if (Object.keys(set).length) ops.push({ op: 'set', config, section, values: set });
     const existing = del.filter(o => raw[o] !== undefined);
@@ -544,6 +549,7 @@ const bootSignature = v => BOOT6_FIELDS.map(f => v[f.key].trim()).join('|');
 // by content).
 export function checkApplied(after, draft) {
   const left = [];
+  // Records every field whose applied value differs from the draft as "label: field".
   const compare = (fields, raw, values, label) => {
     for (const f of fields) if (differs(f, normalize(f, valueOf(f, raw[f.key])), normalize(f, values[f.key]))) left.push(`${label}: ${f.label}`);
   };

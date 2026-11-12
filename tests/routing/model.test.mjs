@@ -7,6 +7,7 @@ import path from 'node:path';
 const m = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/routing/model.js')).href);
 
 let failed = 0;
+// Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 const j = JSON.stringify;
 
@@ -19,7 +20,9 @@ const route = (prefix, over = {}, ...hops) => {
     nexthops: hops.map(([via, dev, flags = []]) => ({ via, dev, weight: null, flags })), ...over,
   };
 };
+// A policy rule as the plugin returns it (IPv4, action lookup); `over` replaces fields.
 const rule = (priority, table, selectors = [['from', 'all']], over = {}) => ({ family: 4, priority, selectors, action: 'lookup', table, goto: null, suppress_prefixlength: null, ...over });
+// A full sample of the plugin's answer: routes, rules and the table names.
 const data = () => ({
   available: true, truncated: false, bird: true, table_ids: { main: 254, local: 255, default: 253, voip: 100 },
   routes: [
@@ -61,6 +64,7 @@ check(d.rules.filter(m.isKernelRule).length === 3 && !m.isKernelRule(d.rules[1])
 check(j(m.rulesFor(d, 'voip').map(r => r.priority)) === '[100]', 'the rules that consult a table');
 
 console.log('== who added a rule ==');
+// What routing.ruleOrigin says about rule `r`, with the UCI rules (none) and charon (running) overridable by `over`.
 const origin = (r, over = {}) => m.ruleOrigin(r, { uci_rules: [], charon: true, ...over });
 check(origin(d.rules[0]).kind === 'kernel' && origin(d.rules[2]).kind === 'kernel', 'the kernel\'s own rules say so');
 let o = origin(d.rules[1], { uci_rules: [{ section: 'cfg0a1b2c', anonymous: true, family: 4, priority: 100, lookup: 'voip' }] });
@@ -106,6 +110,7 @@ check(sorted.map(r => r.table).join() === 'local,main,main,main,main,main,voip',
 check(m.sortRoutes(all, { key: 'unknown', dir: 1 }).length === all.length, 'an unknown sort key falls back to the destination');
 
 console.log('== the meaning of a lookup answer ==');
+// A successful lookup answer for 1.1.1.1 via the main table; `over` replaces fields.
 const answer = over => ({ ok: true, family: 4, dst: '1.1.1.1', get: { ok: true, type: 'unicast', via: '192.0.2.1', dev: 'wan', src: '192.0.2.77', table: 'main', flags: [] }, match: d.routes[0], match_error: null, raw: {}, ...over });
 let v = m.interpret(answer(), d.routes);
 check(v.verdict === 'forward' && v.nextHop === '192.0.2.1' && v.dev === 'wan' && v.src === '192.0.2.77' && v.table === 'main' && v.paths === 1 && v.route === d.routes[0], 'a forwarded packet', j(v));

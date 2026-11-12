@@ -13,9 +13,12 @@ const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/fla
 const sid = process.env.FLAB_SID;   // a session made by tests/TestSession.ps1, so no password is needed
 const acls = JSON.parse(process.env.FLAB_ACLS);   // what that session may call, like the ACLs of a real sign-in
 const shots = process.env.FLAB_SHOTS;
+// The recorded reply of case `name` from the output directory.
 const load = name => JSON.parse(fs.readFileSync(path.join(work, 'out', `${name}.json`), 'utf8'));
 const cases = JSON.parse(fs.readFileSync(path.join(work, 'cases.json'), 'utf8'));
+// A deep copy of `o`, so each scenario can mutate its own state.
 const clone = o => JSON.parse(JSON.stringify(o));
+// `n` with thousands separators, as the page writes counts.
 const num = n => n.toLocaleString('en-US');
 // The size text of core/format.js.
 const bytes = n => { const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB']; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return `${n.toFixed(i ? 1 : 0)} ${u[i]}`; };
@@ -81,6 +84,7 @@ function connectionsAnswer(args) {
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 function answer(body) {
   const [, obj, method, args] = body.params;
+  // A successful JSON-RPC reply carrying `data`.
   const ok = data => ({ jsonrpc: '2.0', id: body.id, result: [0, data] });
   if (obj === 'uci' && ['set', 'add', 'delete', 'apply', 'commit'].includes(method)) { mock.writes.push(`${obj}.${method}`); return { jsonrpc: '2.0', id: body.id, result: [6] }; }
   if (obj === 'flab.network' && method === 'status') { mock.calls.network++; return ok(netStatus()); }
@@ -118,20 +122,35 @@ const tile = async label => {
   const t = page.locator('.tile').filter({ has: page.locator('.label', { hasText: new RegExp(`^${label.replace(/[()]/g, '\\$&')}$`) }) });
   return { value: (await t.locator('.value').innerText()).trim(), sub: (await t.locator('.sub').innerText()).trim(), cls: await t.locator('.value').getAttribute('class') };
 };
+// The network health banner text, whitespace collapsed.
 const banner = () => page.locator('.net-health').first().innerText().then(t => t.replace(/\s+/g, ' ').trim());
+// The CSS class of the network health banner, which carries its severity.
 const bannerClass = () => page.locator('.net-health').first().getAttribute('class');
+// The tab button labeled `name`.
 const tabButton = name => page.locator('.seg-tab', { hasText: name });
+// The labels of all tabs, in order.
 const tabNames = () => page.locator('.seg-tab').allInnerTexts().then(t => t.map(x => x.trim()));
+// The label of the selected tab.
 const activeTab = () => page.locator('.seg-tab.active').innerText();
+// Clicks Refresh and waits `ms` for the page to settle.
 const refresh = async (ms = 800) => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(ms); };
+// Opens the tab labeled `name` and waits for its data.
 const openTab = async name => { await tabButton(name).click(); await page.waitForTimeout(900); };
+// The command-bar dropdown that offers an option containing `text`.
 const selectOf = text => page.locator('.cmdbar select').filter({ has: page.locator('option', { hasText: text }) });
+// The connection filter input in the command bar.
 const connFilter = () => page.locator('.cmdbar input[placeholder^="Filter: host"]');
+// The text of every element in `loc`, whitespace collapsed.
 const texts = loc => loc.allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+// The rows of the connections table.
 const connRows = () => page.locator('.tr-conns tbody tr');
+// The rows of the first usage table.
 const hostRows = () => page.locator('.tr-usage').first().locator('tbody tr');
+// The arguments of the most recent `connections` call the mock received.
 const lastConn = () => mock.calls.connections.at(-1);
+// Saves a full-page screenshot named after `label`, only when a screenshot directory is configured.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `traffic-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
+// The card whose header contains `title`.
 const cardOf = title => page.locator('.card').filter({ has: page.locator('.card-header', { hasText: title }) });
 
 //#region Live
@@ -207,10 +226,12 @@ await openTab('Connections');
 await page.waitForSelector('.tr-conns', { timeout: 10000 });
 const rd = load('rich-default');
 check(await activeTab() === 'Connections' && mock.calls.connections.length >= 1 && j(lastConn()) === j({ q: '', limit: 300, sort: 'bytes', proto: 'all', scope: 'all' }), 'the first request: no filter, 300 rows, most traffic first', JSON.stringify(lastConn()));
+// `x` as JSON text, for comparing structures by value.
 function j(x) { return JSON.stringify(x); }
 let c = await tile('Connections');
 check(c.value === '141' && /of 31,232/.test(c.sub), 'the connection count tile');
 const ps = rd.aggregates.protocols;
+// The number of connections the protocol aggregate `n` counts, or 0 when it is absent.
 const count = n => ps.find(p => p.name === n)?.count ?? 0;
 c = await tile('By protocol');
 check(c.value === `${count('tcp')} TCP` && c.sub.startsWith(`${count('udp')} UDP · ${count('icmp') + count('icmpv6')} ICMP`), 'by protocol', `${c.value} | ${c.sub}`);
@@ -240,6 +261,7 @@ check(nocount.includes('ESTABLISHED') && nocount.endsWith('–'), 'an entry with
 const lostCount = rd.entries.filter(e => e.flags.includes('UNREPLIED')).length;
 check(await page.locator('.tr-conns tr.tr-lost').count() === lostCount && rows.filter(r => r.includes('UNREPLIED')).length === lostCount, `${lostCount} unanswered connections are tinted and badged`);
 check(/One row per tracked connection/.test(await page.locator('.tr-legend').first().innerText()) && (await page.locator('.tr-legend').first().boundingBox()).y < (await page.locator('.tr-conns').boundingBox()).y, 'the legend of the table explains Original, Translated and UNREPLIED above it');
+// The header text of the card titled `title`, whitespace collapsed.
 const cardHead = async title => (await cardOf(title).first().locator('.card-header').innerText()).replace(/\s+/g, ' ');
 check(/Connections 70 shown of 70 matching · most traffic first/.test(await cardHead('Connections')), 'the header counts the entries and says how they are ordered', await cardHead('Connections'));
 
@@ -288,6 +310,7 @@ await selectOf('Most traffic first').selectOption({ label: 'Most packets first' 
 await page.waitForTimeout(800);
 // The text an entry's first line shows: its endpoints, as the page writes them.
 const endpointOf = (addr, port) => (port == null ? addr : addr.includes(':') ? `[${addr}]:${port}` : `${addr}:${port}`);
+// The text an entry's first line shows for the flow: source endpoint, arrow, destination endpoint.
 const flowOf = e => `${endpointOf(e.src, e.sport)} → ${endpointOf(e.dst, e.dport)}`;
 check(lastConn().sort === 'packets' && (await texts(connRows()))[0].includes(flowOf(load('rich-sort-packets').entries[0])) && /most packets first/.test(await cardHead('Connections')) && load('rich-sort-packets').entries[0].packets[0] + load('rich-sort-packets').entries[0].packets[1] >= load('rich-default').entries.map(e => e.packets ? e.packets[0] + e.packets[1] : 0).reduce((a, b) => Math.max(a, b), 0), 'sorted by packets: the entry with the most packets first', j(lastConn()));
 await selectOf('Most packets first').selectOption({ label: 'Longest timeout first' });

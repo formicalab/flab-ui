@@ -50,21 +50,6 @@ $remote = '/tmp/flab-services-test'
 $scenarios = 'ok', 'fail', 'timeout', 'noresult'
 
 #region Helpers
-function Invoke-Native {
-    <#
-    .SYNOPSIS
-    Runs a native command and throws on a nonzero exit code.
-    .PARAMETER Command
-    Executable name.
-    .PARAMETER Arguments
-    Argument array passed to the executable.
-    #>
-    param([string]$Command, [string[]]$Arguments)
-
-    & $Command @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "$Command failed with exit code $LASTEXITCODE" }
-}
-
 function Invoke-Remote {
     <#
     .SYNOPSIS

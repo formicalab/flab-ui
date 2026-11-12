@@ -22,6 +22,7 @@ const TYPE_KIND = { local: 'info', broadcast: 'info', multicast: 'info', anycast
 // fall through to the next rule. Priority and table number are different things, which is easy to mix up because the
 // well-known ones (0 and 255 for the local table, 32766 and 254 for main) are close.
 export function howCard() {
+  // One numbered step of the explanation.
   const item = (...kids) => h('li', {}, ...kids);
   return card([icon('info-circle'), 'How the kernel picks a route'],
     h('div', { className: 'card-body rt-how' },
@@ -83,6 +84,7 @@ function action(rule, ids) {
 // their own list). The last column says who added each rule, as far as that can be told (see ruleOrigin).
 export function rulesCard(data) {
   const rules = [...data.rules].sort((a, b) => a.priority - b.priority || a.family - b.family);
+  // The "Added by" cell: muted text for the kernel's own rules, otherwise a badge with the inferred author.
   const origin = rule => {
     const o = ruleOrigin(rule, data);
     return o.kind === 'kernel' ? h('span', { className: 'muted', title: o.title }, 'kernel default') : badge(o.label, o.kind === 'unknown' ? 'warning' : 'info', o.title);

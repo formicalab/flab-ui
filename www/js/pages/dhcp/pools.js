@@ -21,6 +21,7 @@ const unfolded = new Set();
 function foldable(el, key) {
   const header = el.querySelector('.card-header');
   el.classList.toggle('dhcp-folded', !unfolded.has(key));
+  // Folds or unfolds the card and remembers the state.
   const toggle = () => {
     const isFolded = el.classList.toggle('dhcp-folded');
     if (isFolded) unfolded.delete(key); else unfolded.add(key);
@@ -36,7 +37,7 @@ function foldable(el, key) {
   return el;
 }
 
-// Connects the control of one field to the draft, under the control name `id` (also used to mark errors). `off` greys
+// Connects the control of one field to the draft, under the control name `id` (also used to mark errors). `off` grays
 // it out (a pool that is going to be removed).
 function controlFor(ctx, f, id, values, off = false) {
   return fieldRow(f, {
@@ -61,6 +62,7 @@ function extraOptions(extra, file) {
 
 // The one-line description of a pool in its header: subnet, then each service with its mode.
 function describe(ctx, pool) {
+  // The draft value of one option of this pool.
   const val = key => poolValue(ctx.draft, pool.section, key);
   const parts = [];
   const v4 = pool.info?.v4;
@@ -100,7 +102,7 @@ export function poolCard(ctx, pool) {
 }
 
 // Makes the card of a pool start unfolded (a pool that was just added: its options are what the user wants to see).
-export const unfold = section => unfolded.add(section);
+const unfold = section => unfolded.add(section);
 
 // The row below the pools for adding one: the interfaces that have none, and Add pool.
 export function addPoolBar(ctx) {

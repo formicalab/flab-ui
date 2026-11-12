@@ -13,6 +13,7 @@ const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/fla
 const sid = process.env.FLAB_SID;
 const acls = JSON.parse(process.env.FLAB_ACLS);
 const shots = process.env.FLAB_SHOTS;
+// A deep copy of `o`, so each scenario can mutate its own state.
 const clone = o => JSON.parse(JSON.stringify(o));
 
 let failed = 0;
@@ -22,6 +23,7 @@ const j = JSON.stringify;
 
 //#region The mock router
 const HOSTS = [{ mac: '34:c6:dd:35:4d:db', name: 'H7c', ip: '192.168.1.7', dev: 'br-lan', reserved: true }, { mac: 'dc:cd:2f:a8:b1:7a', name: 'Epson', ip: '192.168.1.21', reserved: true }, { mac: 'a4:5e:60:00:00:01', name: 'Tablet', ip: '192.168.1.50', dev: 'br-lan' }, { mac: '02:11:22:33:44:55' }];
+// The mock `status` reply: available tools, limits, devices, and hosts, reflecting the current `mock` switches.
 const STATUS = () => ({ generated: 1, tools: { ping: true, traceroute: true, nslookup: true, dig: false, kdig: true, drill: true, openssl: mock.openssl }, dns_tool: mock.dnsTool, types: ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'], devices: ['br-lan', 'lo', 'wan'], limits: { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75 }, starttls: ['smtp', 'imap', 'pop3', 'ftp'], upstream: ['2a01:8d0:601:5002:91:80:35:166', '1.1.1.1'], check_host: 'example.com', wol: mock.wol, hosts: mock.noHosts ? [] : HOSTS });
 
 // A block of the connectivity check's output with its body replaced (the END line keeps the given exit code).
@@ -87,6 +89,7 @@ function textOf(job) {
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 function answer(body) {
   const [, obj, method, args] = body.params;
+  // A successful JSON-RPC reply carrying `data`.
   const ok = data => ({ jsonrpc: '2.0', id: body.id, result: [0, data] });
   if (obj === 'uci' && ['set', 'add', 'delete', 'apply', 'commit'].includes(method)) { mock.writes.push(`${obj}.${method}`); return { jsonrpc: '2.0', id: body.id, result: [6] }; }
   if (obj === 'flab.diag') {
@@ -170,14 +173,23 @@ let page = await open();
 
 // Helpers.
 const tool = name => page.locator('.rt-seg .seg-tab', { hasText: name });
+// The target host input.
 const host = () => page.locator('.rt-host input');
+// The form field (diagnostic options or DNS servers) labeled `label`.
 const fieldOf = label => page.locator(`.rt-diagform label:has(span:text-is("${label}")), .rt-servers label:has(span:text-is("${label}"))`);
+// The Run button.
 const runBtn = () => page.locator('.rt-diag button:has-text("Run")');
+// The Stop button.
 const stopBtn = () => page.locator('.rt-diag button:has-text("Stop")');
+// The run state badge text, whitespace collapsed.
 const badgeText = () => page.locator('.rt-state').innerText().then(t => t.replace(/\s+/g, ' ').trim());
+// The text of the result area, whitespace collapsed.
 const resultText = () => page.locator('.rt-result-slot').innerText().then(t => t.replace(/\s+/g, ' '));
+// The value of the summary stat labeled `label`.
 const stat = label => page.locator(`.rt-stat:has(.l:text-is("${label}")) .v`).innerText();
+// Waits until the run state badge shows an end state (or `text`).
 const waitDone = (text = /Finished|Stopped|Failed|Ended|limit/) => page.locator('.rt-state .fl-badge', { hasText: text }).waitFor({ timeout: 20000 });
+// Saves a full-page screenshot named after `label`, only when a screenshot directory is configured.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `diag-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
 // Runs `tool` against `h` with the form's defaults and waits for the end.
 const runFor = async (t, h, wait = true) => {
@@ -401,6 +413,7 @@ check(j(mock.starts.at(-1)) === j({ tool: 'tls', host: 'mail.example', port: 465
 await fieldOf('Port').locator('input').fill(''); await fieldOf('STARTTLS').locator('select').selectOption('');
 
 console.log('\n== Wake-on-LAN ==');
+// The Wake-on-LAN host picker.
 const wolSelect = () => page.locator('.rt-host select');
 await tool('Wake-on-LAN').click();
 check(await fieldOf('Host to wake').count() === 1 && (await fieldOf('Interface').locator('option').allInnerTexts()).join() === 'automatic,br-lan,lo,wan' && /Sends one magic packet as an Ethernet frame \(etherwake\)/.test(await page.locator('.rt-note').innerText()) && await fieldOf('Pings').count() === 0, 'the form asks for a host and an interface, and says how the packet is sent');

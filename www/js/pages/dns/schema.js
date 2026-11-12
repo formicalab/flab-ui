@@ -12,9 +12,6 @@
 // a title and the keys in the order they appear; an option that is in no section lands in "Other options". A default is the one the
 // package applies when the option is absent (README column "Default"); an option without one has none worth showing.
 
-export const UNBOUND_CONFIG = 'unbound';
-export const DNSMASQ_CONFIG = 'dhcp';
-
 export const UNBOUND_AREAS = [
   { id: 'general', title: 'General', open: false, legend: 'Where Unbound listens, how it runs and what it reports.',
     sections: [

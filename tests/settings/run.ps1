@@ -35,26 +35,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+#region Setup
 $here = $PSScriptRoot
 . (Join-Path $here '..\TestSession.ps1')
 $sid = $null
 $work = Join-Path ([IO.Path]::GetTempPath()) 'flab-settings-test'
+#endregion
 
-function Invoke-Native {
-    <#
-    .SYNOPSIS
-    Runs a native command and throws on a nonzero exit code.
-    .PARAMETER Command
-    Executable name.
-    .PARAMETER Arguments
-    Argument array passed to the executable.
-    #>
-    param([string]$Command, [string[]]$Arguments)
-
-    & $Command @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "$Command failed with exit code $LASTEXITCODE" }
-}
-
+#region Run
 try {
     Write-Host '1/2 Unit tests: page model and zone table, configuration-change helpers'
     Invoke-Native 'node' @((Join-Path $here 'model.test.mjs'))
@@ -85,3 +73,4 @@ finally {
     Remove-TestSession -Router $Router -Sid $sid
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }
+#endregion

@@ -4,18 +4,21 @@
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
+// Imports a module of the DHCP page by file name.
 const page = f => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/dhcp', f)).href);
 const m = await page('model.js');
 const { CONFIG, GLOBAL_CONFIG, DAEMON_FIELDS, GLOBAL_FIELDS, POOL_FIELDS, POOL_GROUPS, HOST_FIELDS, BOOT6_FIELDS } = await page('schema.js');
 const { CHECKS } = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/core/fields.js')).href);
 
 let failed = 0;
+// Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 const j = JSON.stringify;
 
 // A `uci get dhcp` reply shaped like the real router's: two pools, the daemon, and four reservations (one without
 // an address, one with two MACs).
 const section = (name, type, values) => ({ '.anonymous': false, '.type': type, '.name': name, ...values });
+// The `uci get dhcp` reply above, with `over` overriding the daemon section or a pool.
 const cfg = (over = {}) => ({
   odhcpd: section('odhcpd', 'odhcpd', { maindhcp: '1', leasefile: '/tmp/odhcpd.leases', loglevel: '6', ...over.daemon }),
   lan: section('lan', 'dhcp', { interface: 'lan', start: '128', limit: '120', leasetime: '8h', dhcpv4: 'server', dhcpv6: 'server', ra: 'server', ra_slaac: '0', ra_flags: ['managed-config', 'other-config'], dns: '192.168.1.1', domain: 'lab.example.com', ...over.lan }),
@@ -42,8 +45,11 @@ const v6 = { device: { 'br-lan': { leases: [
 ] } } };
 const ra = { interfaces: { 'br-lan': [{ prefix: '2a01:827::1', length: 60, stale: false }, { prefix: 'fd00::1', length: 60, stale: true }] } };
 const svc = { odhcpd: { instances: { instance1: { running: true } } } };
+// The page model read from the fixture config (with `over` applied) and the lease, prefix and service fixtures.
 const data = (over) => m.readDhcp(cfg(over), v4, v6, ra, dump, svc);
+// A draft of `d`, with `edit` applied to it.
 const draftOf = (d, edit) => { const dr = m.draftFrom(d); edit?.(dr); return dr; };
+// The reservation of a draft that comes from config section `section`.
 const host = (dr, section) => dr.hosts.find(r => r.section === section);
 
 console.log('== the schema ==');
@@ -87,6 +93,7 @@ check(d.hosts[2].values.mac.length === 2 && m.draftFrom(d).hosts[2].values.mac =
 console.log('== who serves DHCPv4 ==');
 const dnsmasqSvc = { dnsmasq: { instances: { cfg01: { running: true } } } };
 const stopped = { dnsmasq: { instances: { cfg01: { running: false } } } };
+// The fixture config with the daemon's main DHCP switched off, so that dnsmasq serves DHCP.
 const split = over => cfg({ ...over, daemon: { maindhcp: '0', ...over?.daemon } });
 const NOW = 1_800_000_000;
 const leaseFile = [
@@ -145,7 +152,9 @@ const rv = m.changesOf(d, draftOf(d, x => { host(x, 'cfg1').values.ip = '192.168
 check(rv.length === 4 && rv.some(c => c.label === 'Reservation flabn01: IPv4 address' && c.from === '192.168.1.2' && c.to === '192.168.1.20') && rv.some(c => /^Remove reservation SkyQ-L2-Mesh/.test(c.label)) && rv.some(c => /^New reservation new/.test(c.label)) && rv.some(c => c.label === 'lan: Pool size'), 'the review lists each change by what it is', j(rv));
 
 console.log('== validation ==');
+// The errors that validating `edit` applied to a draft of `base` reports.
 const errs = (edit, base = d) => m.problems(base, draftOf(base, edit)).errors;
+// The warnings that validating `edit` applied to a draft of `base` reports.
 const warns = (edit, base = d) => m.problems(base, draftOf(base, edit)).warnings;
 check(errs(x => { x.pools.lan.start = 'x'; }).some(e => e.key === 'pool:lan:start') && errs(x => { x.pools.lan.limit = '0'; }).length === 1 && errs(x => { x.pools.lan.leasetime = 'soon'; }).length === 1 && errs(x => { x.pools.lan.leasetime = 'infinite'; }).length === 0, 'numbers and lease times are checked');
 check(errs(x => { x.pools.lan.dns = ['1.1.1.1', 'not an ip']; }).some(e => e.key === 'pool:lan:dns' && e.index === 1) && errs(x => { x.pools.lan.router = ['fd00::1']; }).length === 1 && errs(x => { x.pools.lan.dhcpv6_relay_servers = ['192.168.1.1']; }).length === 1, 'list items are checked by kind: DNS any IP, gateways IPv4, relay servers IPv6');
@@ -163,6 +172,7 @@ check(errs(x => { const n = m.newHost(x); n.values.name = 'bad name!'; n.values.
 check(errs(x => { host(x, 'cfg1').removed = true; host(x, 'cfg2').values.ip = '192.168.1.2'; }).length === 0, 'a removed reservation frees its address and MAC');
 
 console.log('== pools, network boot entries and the server DUID ==');
+// The message of the error that verifying the saved config `after` against `draft` throws, or null if it passes.
 const verdictX = (after, draft) => { try { m.checkApplied(after, draft); return null; } catch (e) { return e.message; } };
 {
 // The config with options the tables do not describe, a network boot entry, a third interface without a pool and the
@@ -283,6 +293,7 @@ const want = draftOf(d, x => { x.pools.lan.limit = '90'; host(x, 'cfg2').removed
 const savedCfg = cfg({ lan: { limit: '90' } });
 delete savedCfg.cfg2;
 savedCfg.cfg9 = section('cfg9', 'host', { mac: 'AA:BB:CC:DD:EE:01', name: 'n', ip: '192.168.1.40' });
+// The message of the error that verifying the saved config `after` against `draft` throws, or null if it passes.
 const verdict = (after, draft = want) => { try { m.checkApplied(after, draft); return null; } catch (e) { return e.message; } };
 check(verdict(m.readDhcp(savedCfg, null, null, null, dump, null)) === null, 'matching data passes, a new reservation found by its content under the name uci gave it');
 check(/lan: Pool size/.test(verdict(data())) && /Reservations/.test(verdict(data())), 'options and reservations that did not stick are named', verdict(data()));

@@ -81,6 +81,7 @@ function privateDomainsBlock(data) {
 // area also shows where the resolver listens, after its service and monitoring options. Edits are
 // saved with the review banner of the command bar (see index.js).
 function configPart(data, e, file, edit, chips) {
+  // One collapsible area: its sections of controls and a one-line state summary in the header.
   const area = a => {
     const sections = a.sections.map(s => h('section', { className: 'dns-sec' },
       s.title ? h('h4', { className: 'dns-sec-title' }, s.title) : null,

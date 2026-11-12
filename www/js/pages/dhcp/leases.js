@@ -46,6 +46,7 @@ export function leases6Card(data, filter) {
   const rows = data.leases6
     .filter(l => passes(filter, l.iface, [l.iface, l.duid, l.hostname, ...l.addresses.map(a => a.address), ...l.prefixes.map(p => `${p.address}/${p.length}`), l.static ? 'reserved' : 'dynamic']))
     .sort((a, b) => a.iface.localeCompare(b.iface) || a.hostname.localeCompare(b.hostname));
+  // The preferred and valid lifetimes of an address or prefix, as a readable line.
   const lifetimes = x => `preferred ${x.preferred == null ? '–' : fmtSpan(Math.max(0, x.preferred))}, valid ${x.valid == null ? '–' : fmtSpan(Math.max(0, x.valid))}`;
   return card(
     [icon('list-ul'), h('span', {}, 'DHCPv6 leases'), h('span', { className: 'sub' }, `${rows.length} of ${data.leases6.length}`)],

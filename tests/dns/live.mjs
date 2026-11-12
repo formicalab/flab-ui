@@ -12,10 +12,14 @@ const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/fla
 const sid = process.env.FLAB_SID;   // a session made by tests/TestSession.ps1, so no password is needed
 const acls = JSON.parse(process.env.FLAB_ACLS);   // what that session may call, like the ACLs of a real sign-in
 const shots = process.env.FLAB_SHOTS;
+// The parsed output of scenario `name`.
 const load = name => JSON.parse(fs.readFileSync(path.join(work, 'out', `${name}.json`), 'utf8'));
 const facts = JSON.parse(fs.readFileSync(path.join(work, 'facts.json'), 'utf8'));
+// A deep copy, so a test can edit a fixture without touching the original.
 const clone = o => JSON.parse(JSON.stringify(o));
+// A value as JSON, for comparing structures.
 const j = o => JSON.stringify(o);
+// A number the way the page writes it, with thousands separators.
 const num = n => n.toLocaleString('en-US');
 
 let failed = 0;
@@ -130,6 +134,7 @@ const uciMock = {
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 function answer(body) {
   const [, obj, method, args] = body.params;
+  // Wraps data as a successful JSON-RPC result.
   const ok = data => ({ jsonrpc: '2.0', id: body.id, result: [0, data] });
   const denied = { jsonrpc: '2.0', id: body.id, result: [6] };
   const invalid = { jsonrpc: '2.0', id: body.id, result: [2] };
@@ -175,24 +180,35 @@ const tile = async label => {
   const t = page.locator('.tile').filter({ has: page.locator('.label', { hasText: new RegExp(`^${label}$`) }) });
   return { value: (await t.locator('.value').innerText()).trim(), sub: (await t.locator('.sub').innerText()).trim(), cls: await t.locator('.value').getAttribute('class') };
 };
+// The labels of all the tiles.
 const tileLabels = () => page.locator('.tile .label').allInnerTexts().then(t => t.map(x => x.trim()));
+// The text of the network health banner.
 const banner = () => page.locator('.net-health').first().innerText().then(t => t.replace(/\s+/g, ' ').trim());
+// The CSS classes of the network health banner, which carry its severity.
 const bannerClass = () => page.locator('.net-health').first().getAttribute('class');
+// The card whose header contains `title`.
 const cardOf = title => page.locator('.card').filter({ has: page.locator('.card-header', { hasText: title }) });
+// The headers of all the cards.
 const headers = () => page.locator('.card-header').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+// The text of an element with its white space collapsed.
 const text = loc => loc.innerText().then(t => t.replace(/\s+/g, ' ').trim());
+// The texts of all the matching elements, each with its white space collapsed.
 const texts = loc => loc.allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+// Clicks Refresh and waits `ms` for the page to redraw.
 const refresh = async (ms = 700) => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(ms); };
 // Shows a reply: sets the mock and refreshes.
 const show = async (reply, ms) => { mock.reply = clone(reply); uciMock.reset(); await refresh(ms); };
+// Saves a full-page screenshot named after `label`, when a screenshot folder is set.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `dns-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
 // The browser's span text of core/format.js fmtSpan.
 const span = s => { s = Math.round(s); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : s < 86400 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h`; };
+// All the rows of the zones table.
 const zoneRows = () => page.locator('.dns-table tbody tr');
 // The rows as text, without the number of the first column.
 const zoneTexts = async () => (await texts(zoneRows())).map(r => r.replace(/^\d+\s+/, ''));
 // The row of the zone with this name (a section of /etc/config/unbound).
 const zoneRow = name => zoneRows().filter({ has: page.locator('.dns-zone-name', { hasText: new RegExp(`^${name}$`) }) });
+// The text box that filters the zones.
 const filterBox = () => page.locator('input[placeholder^="Filter zones"]');
 
 //#region Unbound
@@ -316,8 +332,10 @@ check(/since the resolver started 3d 4h ago/.test(await text(act.locator('.card-
 check(actRows.some(r => r.startsWith('Answered from the cache') && r.includes(num(T.hits)) && r.includes('65%')) && actRows.some(r => r.startsWith('Rate limited') && r.includes('12')) && actRows.some(r => r.startsWith('DNSSEC bogus answers') && r.includes('3')), 'counters with their shares', actRows.join(' | '));
 check(actRows.some(r => r.startsWith('NOERROR') && r.includes(num(44100))) && actRows.some(r => r.startsWith('SERVFAIL') && r.includes('910')) && actRows.some(r => r.startsWith('NXDOMAIN')), 'extended statistics: the answer codes', actRows.join(' | '));
 check((await act.locator('.dns-legend').boundingBox()).y < (await act.locator('table').first().boundingBox()).y, 'the legend sits above the counters');
+// The Configuration card.
 const conf = () => cardOf('Configuration');
 const areaTitles = await texts(conf().locator('.dns-area-title'));
+// Whether each area of the Configuration card is open.
 const areaOpen = () => conf().locator('.dns-area').evaluateAll(d => d.map(x => x.open));
 check(j(areaTitles) === '["General","Security and privacy","Local names and DHCP","Performance and cache"]' && j(await areaOpen()) === '[true,false,false,false]', 'General stays open once the user opened it, the others are folded', areaTitles.join(' | '));
 const areaSums = await texts(conf().locator('.dns-area-sum'));
@@ -339,16 +357,20 @@ const confText = await text(conf());
 check(/These are the settings of Unbound in \/etc\/config\/unbound/.test(confText) && /DNSSEC validation/.test(confText) && /Rate limit \(queries per second\)/.test(confText), 'the configuration says what it is and how a change is applied, with plain labels', confText.slice(0, 300));
 // A control by its label: the field of a text box, number, drop-down or list, or the checkbox of a yes/no option.
 const ctl = label => conf().locator('.set-field').filter({ has: page.locator('label.form-label', { hasText: new RegExp(`^${label}$`) }) });
+// The checkbox of the yes/no option labeled `label`.
 const chk = label => conf().locator('.set-check').filter({ hasText: new RegExp(`^${label}`) });
+// The text of the selected entry of the drop-down labeled `label`.
 const picked = label => ctl(label).locator('select option:checked').innerText();
 check(await picked('Rebind protection') === '1: Block private addresses (RFC 1918 and 4193)' && await picked('Remote control') === '1: Local host, unencrypted' && await picked('Local domain type') === 'Transparent: may forward or recurse' && await picked('DHCP server linked') === 'odhcpd' && await picked('IP protocols') === 'Built-in setting', 'options with a fixed set of values are drop-downs showing the one in force, with its number when the file holds a number', [await picked('Rebind protection'), await picked('Remote control'), await picked('Local domain type')].join(' | '));
 {
+  // The texts of the entries of the drop-down labeled `label`.
   const numberedTexts = async label => (await ctl(label).locator('select option').allInnerTexts()).map(t => t.trim());
   const rb = await numberedTexts('Rebind protection');
   const vb = await numberedTexts('Log verbosity');
   check(/^Default \(1: /.test(rb[0]) && rb.slice(1).every((t, i) => t.startsWith(`${i}: `)) && rb.length === 5 && vb.slice(1).every((t, i) => t.startsWith(`${i}: `)) && vb.length === 7 && (await numberedTexts('Remote control')).slice(1).every((t, i) => t.startsWith(`${i}: `)), 'every choice that is a number in the file shows it first ("0: Off", "1: …"), the default entry too; the others (IP protocols, local domain type) show words only', `${rb.join(' | ')} // ${vb.join(' | ')}`);
 }
 check((await ctl('IP protocols').locator('select option').allInnerTexts()).join('|') === 'Default (Both IPv4 and IPv6)|IPv4 only|IPv6 only (for testing)|IPv4 upstream, IPv4 and IPv6 locally|Both, IPv6 first|Both IPv4 and IPv6|Built-in setting' && await conf().locator('select:not([disabled])').count() === await conf().locator('select.form-select').count() && await conf().locator('select.form-select').count() >= 8, 'a drop-down lists every choice (and the default) and can be changed', String(await conf().locator('select.form-select').count()));
+// The type, value, limits, disabled state and placeholder of the number box labeled `label`.
 const numberOf = async label => ctl(label).locator('input').evaluate(i => ({ type: i.type, value: i.value, min: i.min, max: i.max, disabled: i.disabled, ph: i.placeholder }));
 const rl = await numberOf('Rate limit \\(queries per second\\)'), thr = await numberOf('Threads'), lp = await numberOf('Listen port'), ttl = await numberOf('Minimum TTL \\(s\\)');
 check(rl.type === 'number' && rl.value === '300' && rl.min === '0' && !rl.disabled && thr.type === 'number' && thr.value === '4' && thr.min === '1' && lp.type === 'number' && lp.value === '53' && lp.max === '65535' && ttl.type === 'number' && ttl.value === '0' && ttl.max === '1800', 'numbers are number inputs with their range', JSON.stringify([rl, thr, lp, ttl]));
@@ -528,9 +550,13 @@ await show(ub);
 
 //#region Changing the options
 console.log('\n== changing the options (Unbound) ==');
+// Opens every area of the Configuration card.
 const openAll = () => page.evaluate(() => document.querySelectorAll('.dns-area').forEach(d => { d.open = true; }));
+// The save bar of the command bar.
 const rbar = () => page.locator('.cmdbar .set-bar');
+// The input of the rate limit option.
 const rateIn = () => ctl('Rate limit \\(queries per second\\)').locator('input');
+// The "Save and apply" button of the save bar.
 const saveBtn = () => rbar().locator('button:has-text("Save and apply")');
 // Waits for the outcome of a save to show in the banner, and returns its text.
 const outcome = async re => { await page.waitForFunction(r => new RegExp(r).test(document.querySelector('.cmdbar .set-bar')?.innerText ?? ''), re.source, { timeout: 20000 }); return text(rbar().locator('.set-bar-outcome')); };
@@ -632,6 +658,7 @@ console.log('\n== changing the options (dnsmasq) ==');
 await show(load('dnsmasq'));
 await openAll();
 uciMock.log.length = 0;
+// The input of the cache size option.
 const cacheIn = () => ctl('Cache size \\(names\\)').locator('input');
 check(await conf().locator('.dns-priv-sec').count() === 0, 'dnsmasq has no private-domain list to show: its exceptions are the editable rebind exceptions option');
 await cacheIn().fill('500');
@@ -656,6 +683,7 @@ console.log('\n== changing the zones (Unbound) ==');
 // The main router as it keeps its zones: the Azure, lab and flumini domains in blocks of /etc/config/unbound.
 function zonesReply() {
   const r = load('unbound');
+  // Moves the forwarding blocks for `zones` from the file to a UCI forward_zone section called `name`.
   const move = (name, zones, servers, options) => {
     r.forward_uci.push({ section: name, type: 'forward_zone', enabled: true, zones, servers, options });
     for (const f of r.forwards) if (zones.includes(f.zone) && f.source === 'file') { f.source = 'uci'; f.section = name; }
@@ -667,10 +695,15 @@ function zonesReply() {
   return r;
 }
 const azureFirst = zonesReply().forward_uci.find(e => e.section === 'fwd_azure').zones[0];
+// The open zone dialog.
 const dlg = () => page.locator('dialog.fl-dialog[open]');
+// The Done button of the open dialog.
 const doneBtn = () => dlg().locator('button.btn-brand');
+// The list field labeled `label` in the open dialog.
 const listIn = label => dlg().locator('.set-field').filter({ has: page.locator('label.form-label', { hasText: new RegExp(`^${label}$`) }) });
+// The text of the header of the Zones card.
 const headerText = () => text(cardOf('Zones').locator('.card-header'));
+// The button with the given aria-label in the row of the zone `name`.
 const rowButton = (name, label) => zoneRow(name).locator(`button[aria-label="${label}"]`);
 await show(zonesReply());
 if (!await zc.locator('details.dns-fold').evaluate(d => d.open)) await zc.locator('summary.card-header').click();

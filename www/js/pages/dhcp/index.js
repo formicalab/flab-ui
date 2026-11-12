@@ -120,6 +120,7 @@ export default {
       ...poolList(data, state.draft).map(p => poolCard(ctx, p)),
       addPoolBar(ctx));
     const reservations = h('div', { className: 'dhcp-form' }, reservationsCard(ctx), bootCard(ctx));
+    // Turns a lease row into a static reservation draft and redraws.
     const reserve = l => { reserveFrom(state.draft, l); state.message = null; editor.redraw(); };
     const page = [
       summary(data),

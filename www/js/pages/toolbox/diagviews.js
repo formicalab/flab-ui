@@ -15,7 +15,7 @@ const day = ms => (ms == null ? '–' : new Date(ms).toISOString().slice(0, 10))
 
 // Copies `text` to the clipboard (the async API where the page may use it, a selected textarea otherwise). Resolves to
 // whether it worked.
-export async function copyText(text) {
+async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
     return true;
@@ -137,6 +137,7 @@ function certCard(c) {
     btn.textContent = ok ? 'Copied' : 'Copy failed';
     setTimeout(() => { btn.textContent = 'Copy PEM'; }, 1500);
   } }, 'Copy PEM');
+  // One label/value line of the certificate; null (no line) when the value is empty.
   const row = (label, value) => value == null || value === '' ? null : h('div', { className: 'rt-cert-row' }, h('span', { className: 'l' }, label), h('span', { className: 'v' }, value));
   return h('div', { className: `rt-cert ${c.n === 0 ? 'leaf' : ''}` },
     h('div', { className: 'rt-cert-head' }, badge(c.role, c.n === 0 ? 'info' : ''), h('strong', { className: 'rt-cert-name' }, c.subject), expiryBadge(c)),

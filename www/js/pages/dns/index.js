@@ -9,7 +9,6 @@
 // editing machinery the System settings and DHCP pages use (core/editpage.js, core/uci.js): stage, apply with the rollback
 // countdown, read the status back to prove the change was kept and the resolver still runs, confirm. What a change is, whether
 // it is valid and which UCI operations write it are in edit.js and zones.js.
-import { h } from '../../core/dom.js';
 import { ubus } from '../../core/ubus.js';
 import { refreshControl } from '../../core/controls.js';
 import { createEditor } from '../../core/editpage.js';

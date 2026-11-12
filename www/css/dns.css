@@ -2,7 +2,6 @@
 
 /* ── Shared ── */
 .dns-legend { padding: .75rem 1rem; color: var(--fl-muted); font-size: .8rem; border-bottom: 1px solid var(--fl-stroke); }
-.dns-legend.dns-flush { padding: 0 0 .75rem; border-bottom: 0; }
 .dns-pad { padding: .85rem 1rem; }
 .dns-top { border-top: 1px solid var(--fl-stroke); }
 .dns-hint { font-size: .8rem; margin-top: .15rem; }

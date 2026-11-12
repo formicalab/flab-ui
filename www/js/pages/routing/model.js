@@ -9,51 +9,11 @@
 //     rules:  [{ family, priority, selectors: [[name, value]], action, table, goto, suppress_prefixlength }] }
 // The lookup reply (flab.routing lookup) is described in rpcd/ucode/flab.routing.uc.
 import { prefixKey } from './bgp/util.js';
+import { parseAddress } from '../../core/ip.js';
+
+export { parseAddress };
 
 //#region Addresses
-
-// An IPv4 address as a BigInt, or null when it is not one.
-function v4Value(text) {
-  const p = text.split('.');
-  if (p.length !== 4 || p.some(x => !/^\d{1,3}$/.test(x) || +x > 255)) return null;
-  return p.reduce((n, x) => n * 256n + BigInt(x), 0n);
-}
-
-// An IPv6 address as a BigInt (with "::" compression and an optional IPv4 tail), or null when it is not one.
-function v6Value(text) {
-  if (!/^[0-9a-f:.]+$/i.test(text) || (text.match(/::/g) ?? []).length > 1) return null;
-  let body = text;
-  // An embedded IPv4 address ("::ffff:1.2.3.4") stands for the last two groups.
-  if (text.includes('.')) {
-    const cut = text.lastIndexOf(':') + 1;
-    const v4 = v4Value(text.slice(cut));
-    if (v4 == null) return null;
-    body = `${text.slice(0, cut)}${(v4 >> 16n).toString(16)}:${(v4 & 0xffffn).toString(16)}`;
-  }
-  const part = x => (x ? x.split(':') : []);
-  let groups;
-  if (body.includes('::')) {
-    const [head, rest] = body.split('::');
-    const a = part(head), b = part(rest);
-    if (a.length + b.length > 7) return null;
-    groups = [...a, ...Array(8 - a.length - b.length).fill('0'), ...b];
-  } else {
-    groups = part(body);
-  }
-  if (groups.length !== 8 || groups.some(g => !/^[0-9a-f]{1,4}$/i.test(g))) return null;
-  return groups.reduce((acc, g) => (acc << 16n) | BigInt(parseInt(g, 16)), 0n);
-}
-
-// { family, value } of an IPv4 or IPv6 address (a BigInt value), or null.
-export function parseAddress(text) {
-  const t = String(text ?? '').trim();
-  if (t.includes(':')) {
-    const value = v6Value(t);
-    return value == null ? null : { family: 6, value };
-  }
-  const value = v4Value(t);
-  return value == null ? null : { family: 4, value };
-}
 
 // Whether the text is an IPv4 or IPv6 address.
 export const isAddress = text => parseAddress(text) != null;
@@ -76,7 +36,7 @@ export function covers(prefix, address) {
 export const DROPS = ['blackhole', 'unreachable', 'prohibit', 'throw'];
 
 // What each dropping type means, for the lookup answer and the table.
-export const DROP_TEXT = {
+const DROP_TEXT = {
   blackhole: 'silently discarded (blackhole route)',
   unreachable: 'rejected with "host unreachable" (unreachable route)',
   prohibit: 'rejected with "administratively prohibited" (prohibit route)',
@@ -88,9 +48,6 @@ export const routeKey = r => `${r.family}|${r.table}|${r.prefix}|${r.from ?? ''}
 
 // "default" for a zero-length prefix, otherwise the prefix.
 export const destination = r => (r.len === 0 ? 'default' : r.prefix);
-
-// The first (or only) next hop of a route that has one, else null.
-export const firstHop = r => r.nexthops[0] ?? null;
 
 // A route as one line of `ip route` text (without the table), for the lookup answer.
 export function routeText(r) {
@@ -126,10 +83,12 @@ const TABLE_ROLE = {
 // [{ name, id, role, v4, v6, rules: [priority...] }] with the well-known tables first.
 export function tablesOf(data) {
   const names = new Map();
+  // The entry for a table name, created on first sight, so callers can count routes and rules onto it.
   const add = name => { if (!names.has(name)) names.set(name, { name, id: tableId(name, data.table_ids), role: TABLE_ROLE[name] ?? '', v4: 0, v6: 0, rules: [] }); return names.get(name); };
   add('main');
   for (const r of data.routes) add(r.table)[r.family === 6 ? 'v6' : 'v4']++;
   for (const rule of data.rules) if (rule.action === 'lookup' && rule.table != null) add(rule.table).rules.push(rule.priority);
+  // Sort rank of a table name: main, then local, then everything else.
   const order = n => (n === 'main' ? 0 : n === 'local' ? 1 : 2);
   return [...names.values()].map(t => ({ ...t, rules: [...new Set(t.rules)].sort((a, b) => a - b) }))
     .sort((a, b) => order(a.name) - order(b.name) || (a.id ?? 1e9) - (b.id ?? 1e9) || a.name.localeCompare(b.name));
@@ -213,7 +172,7 @@ export function filterRoutes(routes, { q = '', family = 'all', table = 'all' }, 
 }
 
 // Sort keys of the route list columns; each returns a comparable value.
-export const SORT_KEYS = {
+const SORT_KEYS = {
   prefix: r => prefixKey(r.prefix),
   type: r => r.type,
   next_hop: r => (r.nexthops[0]?.via ? prefixKey(`${r.nexthops[0].via}/0`) : -1n),
@@ -227,6 +186,7 @@ export const SORT_KEYS = {
 // then the destination order, so a table's routes stay readable.
 export function sortRoutes(routes, sort) {
   const key = SORT_KEYS[sort.key] ?? SORT_KEYS.prefix;
+  // Tie-break rank of a table: main first, local last, others between.
   const rank = t => (t === 'main' ? 0 : t === 'local' ? 2 : 1);
   return [...routes].sort((a, b) => {
     const x = key(a), y = key(b);

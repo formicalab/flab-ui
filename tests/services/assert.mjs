@@ -37,6 +37,7 @@ const ok = load('ok');
 const list = ok.list;
 const names = list.services.map(s => s.name);
 check(names.join() === INSTALLED.join(), 'every executable init script is listed, sorted; names that are not plain file names are dropped', names.join());
+// The service named `n` in the list.
 const svc = n => list.services.find(s => s.name === n);
 check(svc('dropbear').enabled && svc('dropbear').start === 19 && svc('cron').start === 50 && svc('done').start === 95, 'a service with an S link starts at boot, at that position');
 check(svc('acme').enabled === false && svc('acme').start === null && svc('umount').enabled === false, 'a service without an S link is disabled (a K link alone does not enable it)');
@@ -71,6 +72,7 @@ refusals('noresult', load('noresult'));
 if (fs.existsSync(path.join(dir, 'real.json'))) {
   console.log('\n== the real router (list only, nothing is run) ==');
   const real = JSON.parse(fs.readFileSync(path.join(dir, 'real.json'), 'utf8')).list;
+  // The non-empty, trimmed lines of capture file `f`.
   const lines = f => fs.readFileSync(path.join(dir, f), 'utf8').split('\n').map(s => s.trim()).filter(Boolean);
   const init = lines('real-init.txt').sort();
   const rc = lines('real-rc.txt');

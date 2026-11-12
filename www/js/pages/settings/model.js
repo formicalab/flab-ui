@@ -66,6 +66,7 @@ export function zoneGroups() {
 // A POSIX TZ rule such as "CET-1CEST,M3.5.0,M10.5.0/3": a standard-time name and offset, optionally a
 // daylight-time name (with offset) and the start and end rules. Loose on purpose; it catches typos.
 const TZ_RULE = /^(<[A-Za-z0-9+-]+>|[A-Za-z]{3,})[-+]?\d{1,2}(:\d{2}){0,2}([<A-Za-z][^,\s]*)?(,[A-Za-z0-9./:+-]+,[A-Za-z0-9./:+-]+)?$/;
+// Whether `rule` looks like a POSIX TZ rule.
 export const validRule = rule => TZ_RULE.test(rule);
 
 // The zone as the form holds it: the zone name when the table knows it, else '' (custom) with the rule as is.
@@ -117,6 +118,7 @@ export const isDirty = (data, draft) => changesOf(data, draft).length > 0
 export function problems(data, draft) {
   const errors = [];
   const warnings = [];
+  // The normalized draft value of the field with this key.
   const value = key => normalize(FIELDS.find(f => f.key === key), draft.values[key]);
 
   for (const f of FIELDS) {
@@ -165,6 +167,7 @@ export function plan(data, draft) {
   }
 
   const ops = [];
+  // Queues the set and delete operations for one config section; a missing section is added when it has values.
   const emit = (key, type, name) => {
     const { set, del } = bySection[key];
     const section = data[key].section;
@@ -198,6 +201,7 @@ export function checkApplied(before, after, draft) {
 export function fmtOffset(seconds) {
   const sign = seconds < 0 ? '-' : '+';
   const abs = Math.abs(seconds);
+  // Two-digit zero-padded number.
   const pad = n => String(n).padStart(2, '0');
   return `UTC${sign}${pad(Math.floor(abs / 3600))}:${pad(Math.floor(abs % 3600 / 60))}`;
 }
@@ -205,7 +209,9 @@ export function fmtOffset(seconds) {
 // The router's local seconds (the clock value that already includes the zone offset) as "2026-11-11 12:52:53",
 // and its date and time parts; read as UTC so the browser's own time zone does not shift them.
 export const fmtLocal = localtime => new Date(localtime * 1000).toISOString().replace('T', ' ').slice(0, 19);
+// The date part ("2026-11-11") of the router's local time.
 export const fmtDate = localtime => fmtLocal(localtime).slice(0, 10);
+// The time part ("12:52:53") of the router's local time.
 export const fmtTime = localtime => fmtLocal(localtime).slice(11);
 
 //#endregion

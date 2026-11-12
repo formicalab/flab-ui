@@ -102,6 +102,7 @@ export async function applyChange(ed, configs, stage, verify, { settleMs = SETTL
     const n = await ed.pending(config);
     if (n) throw new Error(`${n} change(s) are already staged in "${config}" in this session (for example from an attempt that was rolled back); discard them first.`);
   }
+  // Reverts whatever this attempt staged in each config, ignoring failures.
   const discard = async () => { for (const config of configs) await ed.revert(config).catch(() => {}); };
 
   try {

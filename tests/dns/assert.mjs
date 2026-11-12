@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const work = process.argv[2];
+// The parsed output of scenario `name`.
 const out = name => JSON.parse(fs.readFileSync(path.join(work, 'out', `${name}.json`), 'utf8'));
 const facts = JSON.parse(fs.readFileSync(path.join(work, 'facts.json'), 'utf8'));
 const scenarios = JSON.parse(fs.readFileSync(path.join(work, 'scenarios.json'), 'utf8'));
@@ -12,11 +13,13 @@ let failed = 0;
 // Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 const j = JSON.stringify;
+// Whether two values serialize to the same JSON.
 const same = (a, b) => j(a) === j(b);
 // The plugin's rounding to one decimal.
 const round1 = x => Math.floor(x * 10 + 0.5) / 10;
 // The listening sockets as "proto addr port engine" strings, sorted.
 const socks = r => r.listeners.map(l => `${l.proto} ${l.addr} ${l.port} ${l.engine}`).sort();
+// The forwarding entry of zone `z` in a result.
 const zone = (r, z) => r.forwards.find(f => f.zone === z);
 
 //#region The source and the ACL
@@ -168,6 +171,7 @@ if (scenarios.includes('real')) {
   console.log('\n== real (what the router under test reports: invariants only) ==');
   const r = out('real');
   sane(r, 'real');
+  // Whether a counter is unknown (null) or a non-negative integer.
   const nonneg = v => v === null || (Number.isInteger(v) && v >= 0);
   check([null, 'unbound', 'dnsmasq'].includes(r.engine) && ['unbound', 'dnsmasq'].every(n => typeof r.engines[n].installed === 'boolean' && typeof r.engines[n].running === 'boolean'), `the engine is ${r.engine}`, j(r.engines));
   check(r.engine === null || r.engines[r.engine].running === true, 'the engine named is running');
@@ -181,6 +185,7 @@ if (scenarios.includes('real')) {
     if (r.engine === 'unbound') check(r.stats.cache_hits + r.stats.cache_misses <= r.stats.queries + 1000 && (r.stats.recursion_avg_ms === null || r.stats.recursion_avg_ms >= 0), 'cache hits and misses fit the queries', j(r.stats));
     else check(r.stats.cache_size >= 0, 'the cache size is known');
   } else check(r.engine === null || r.engines[r.engine].control === false || r.engine === 'dnsmasq', 'no statistics only without a resolver, without unbound-control or without dnsmasq metrics');
+  // Whether a forwarding entry has a zone name, a server list and a flag list.
   const wellFormed = f => typeof f.zone === 'string' && f.zone !== '' && Array.isArray(f.servers) && Array.isArray(f.flags) && (f.zone === '.' || !f.zone.endsWith('.'));
   check(r.forwards.length <= 500 && r.forwards.every(wellFormed) && r.forwards.filter(f => f.zone === '.').length <= 1 && (r.engine !== 'dnsmasq' || r.forwards.length === 0 || r.forwards.findIndex(f => f.zone === '.') <= 0), `${r.forwards.length} forward rules, zones normalized, at most one default (first for dnsmasq)`, j(r.forwards.slice(0, 2)));
   check(r.upstream.every(a => typeof a === 'string' && !/^127\./.test(a) && a !== '::1') && new Set(r.upstream).size === r.upstream.length, `${r.upstream.length} WAN resolvers, no loopback, no duplicates`, j(r.upstream));

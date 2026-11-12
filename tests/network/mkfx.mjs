@@ -8,7 +8,9 @@ import path from 'node:path';
 
 const work = process.argv[2];
 const real = path.join(work, 'fx-real');
+// The contents of captured file `f`, without carriage returns.
 const text = f => fs.readFileSync(path.join(real, f), 'utf8').replace(/\r/g, '');
+// A deep copy of `o`, so a scenario can change it without touching the shared fixture.
 const clone = o => JSON.parse(JSON.stringify(o));
 
 // Planted in every wifi-iface so the assertions can prove no secret is ever forwarded.
@@ -37,7 +39,9 @@ if (!wgIf) throw new Error('the router has no WireGuard interface to test with')
 const wgPeers = Object.values(uciNet.values).filter(s => s['.type'] === `wireguard_${wgIf}`);
 if (wgPeers.length < 2) throw new Error('the router needs at least two WireGuard peers to test with');
 const wgSite = wgPeers.find(p => p.route_allowed_ips === '1') ?? wgPeers[0];
+// The name of the captured `wg show` output file for field `f` (e.g. latest_handshakes) of the WireGuard interface.
 const wgFile = f => `wg_show_${wgIf}_${f}.txt`;
+// The current time in whole seconds since the epoch.
 const nowS = () => Math.floor(Date.now() / 1000);
 const NEWKEY = `${'B'.repeat(43)}=`;
 
@@ -48,6 +52,7 @@ function wgSet(fx, field, key, value) {
 }
 // A capture's handshake times go stale while the test runs, so the connected peer is pinned to "30 s ago".
 const wgNormalize = fx => wgSet(fx, 'latest_handshakes', wgSite.public_key, nowS() - 30);
+// Applies `fn` to the values of the UCI dump `file` in fixture `fx`.
 const editUci = (fx, file, fn) => { const o = JSON.parse(fx.raw[file]); fn(o.values); fx.raw[file] = JSON.stringify(o); };
 
 // Firewall facts from the capture. `nft -j list ruleset` is saved as nft_j_list_ruleset.txt.
@@ -131,9 +136,13 @@ const member = 'phy1-ap0';
 const bridge = bridgeNames[0];
 const meshSection = Object.values(uci).find(s => s['.type'] === 'wifi-iface' && s.mode === 'mesh')?.['.name'];
 if (!meshSection) throw new Error('the router has no 802.11s mesh interface to test with');
+// The path of sysfs file `f` of network device `dev`.
 const sys = (dev, f) => `/sys/class/net/${dev}/${f}`;
+// The wifi-iface section of `radio` in fixture `fx`.
 const radioIf = (fx, radio) => Object.values(fx.uci).find(s => s['.type'] === 'wifi-iface' && s.device === radio);
+// The parsed wireless status of fixture `fx`.
 const wireless = fx => JSON.parse(fx.raw['network_wireless_status.json']);
+// Stores `w` as the wireless status of fixture `fx`.
 const setWireless = (fx, w) => { fx.raw['network_wireless_status.json'] = JSON.stringify(w); };
 
 const scenarios = {
@@ -355,6 +364,7 @@ function writeScenario(name, build) {
   const fx = build(baseFx());
   const dir = path.join(work, name);
   fs.mkdirSync(dir, { recursive: true });
+  // Writes `data` to `file` in this scenario's directory.
   const put = (file, data) => fs.writeFileSync(path.join(dir, file), data);
   for (const [file, data] of Object.entries(fx.raw)) put(file, data);
   put('files.json', JSON.stringify(fx.files));

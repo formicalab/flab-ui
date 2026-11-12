@@ -68,6 +68,7 @@ check(find(dual, 'azure_xfrm1').channels.length === 2 && find(dual, 'azure_xfrm2
 
 console.log('== announce (per-peer announcements) ==');
 const an = load('announce');
+// The sorted "prefix:protocol" strings that peer `n` exports.
 const ex = n => find(an, n).exported.map(e => `${e.prefix}:${e.protocol}`).sort();
 check(JSON.stringify(ex('azure_xfrm0')) === JSON.stringify(['10.0.0.12/32:direct1', '192.168.0.0/16:static1']), 'peer 0 announces aggregate + direct route', ex('azure_xfrm0').join());
 check(JSON.stringify(ex('azure_xfrm1')) === JSON.stringify(['192.168.0.0/16:static1', '192.168.50.0/24:ospf1']), 'peer 1 announces the OSPF-origin prefix (preference 150/10 parsed)', ex('azure_xfrm1').join());

@@ -53,7 +53,9 @@ function channelLines(p, text) {
 // Table of every BIRD protocol instance (BGP sessions, kernel, direct, ...): state, routing table, and
 // per-channel route counts, preference and import/export filters.
 export function protocolsCard(data) {
+  // Badge kind for a protocol state: only "up" is healthy.
   const stateKind = s => s === 'up' ? 'success' : 'warning';
+  // Chips for a channel's import and export filters (ACCEPT good, REJECT fair, named filters neutral, none as a dash).
   const filterChips = ch => h('span', { className: 'chips' }, [ch.input_filter, ch.output_filter].map(f => f ? chip(f, f === 'ACCEPT' ? 'good' : f === 'REJECT' ? 'fair' : 'info') : muted('–')));
   const rows = data.protocols.map(p => h('tr', {},
     h('td', {}, h('b', {}, p.name)),

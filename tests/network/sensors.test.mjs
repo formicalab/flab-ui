@@ -7,6 +7,7 @@ import path from 'node:path';
 const m = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/overview/temperatures.js')).href);
 
 let failed = 0;
+// Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
 // Sensors as the flab.sensors plugin reports them; the Qualcomm Wi-Fi drivers of a repeater give no reading while a radio is down.

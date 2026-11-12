@@ -8,6 +8,7 @@ import { describeMatch, packetsPerSec, fmtPps, ruleKey, wanZones } from './util.
 
 // Badge color per rule target: accepts are green, reject/drop amber, anything else (DNAT, MASQUERADE...) neutral.
 const ACTION = { ACCEPT: 'success', REJECT: 'warning', DROP: 'warning' };
+// Rule target as a colored badge, lowercased.
 const actionBadge = t => badge(t.toLowerCase(), ACTION[t] ?? 'info');
 
 // Zone name as a chip: "*" reads "any", and a missing side is the router itself (or `fallback`).

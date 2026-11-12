@@ -32,6 +32,7 @@ const flagBadges = flags => flags.map(f => badge(flagWords([f])[0], 'info', FLAG
 // What the badges of the table mean, one line each, for the engine in use: always visible, in the header of the card, so it can be
 // read without hovering.
 function labelsLegend(engine) {
+  // One legend entry: a term (the badge) and its explanation.
   const row = (badgeNode, text) => [h('dt', {}, badgeNode), h('dd', {}, text)];
   const unbound = engine === 'unbound';
   return h('div', { className: 'dns-labels' },
@@ -82,6 +83,7 @@ function sourceNodes(item, engine, edit, act) {
   }
   const where = engine === 'dnsmasq' ? 'A server entry of the dnsmasq section in /etc/config/dhcp.' : `The zone section ${item.name} of /etc/config/unbound.`;
   const can = edit.canEdit && canEditForwarders(edit.getBase());
+  // A small icon button for one row action.
   const button = (name, label, onclick, disabled) => h('button', { type: 'button', className: 'btn btn-sm btn-fl dns-act-btn', disabled, title: label, ariaLabel: label, onclick }, icon(name));
   if (item.pending === 'removed') return [badge('UCI', 'info', where), button('arrow-counterclockwise', 'Keep this zone (undo the removal)', () => act.restore(item.key), !can)];
   const why = item.locked ? ' This zone cannot be changed here: its lists are too long to read completely, or its type is unknown.' : '';
@@ -104,6 +106,7 @@ function nameCell(item, engine) {
 function domainsCell(item, state, draw) {
   const open = state.expanded.has(item.key);
   const shown = open ? item.zones : item.zones.slice(0, DOMAIN_LIMIT);
+  // One domain as a chip.
   const chip = z => h('span', { className: 'dns-domain mono' }, z === '.' ? [z, ' ', h('span', { className: 'muted' }, '(every other name)')] : z);
   const more = item.zones.length > DOMAIN_LIMIT
     ? h('button', { type: 'button', className: 'btn btn-sm btn-fl dns-toggle', ariaExpanded: String(open), onclick: () => { if (open) state.expanded.delete(item.key); else state.expanded.add(item.key); draw(); } },
@@ -133,6 +136,7 @@ function zoneList(data, state, engine, edit, act, add) {
   const items = forwarderItems(data, edit.getDraft());
   const note = noDefaultNote(data, engine);
   const holder = h('div', {});
+  // Redraws the table rows for the current filter.
   const draw = () => holder.replaceChildren(zoneRows(items, state, engine, edit, act, draw));
   const input = h('input', {
     className: 'form-control form-control-sm dns-input', type: 'search', placeholder: 'Filter zones, domains or servers…', value: state.fq,

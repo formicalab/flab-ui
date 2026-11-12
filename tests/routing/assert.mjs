@@ -53,6 +53,7 @@ check(find(6, 'local', '::1/128')?.type === 'local' && find(6, 'local', 'ff00::/
 
 console.log('== rich: rules ==');
 const rules = s.rules;
+// The rule of address `family` with priority `prio`.
 const rule = (family, prio) => rules.find(x => x.family === family && x.priority === prio);
 check(rules.filter(x => x.family === 4).length === 8 && rules.filter(x => x.family === 6).length === 3, 'every rule line is one rule');
 check(rule(4, 0).action === 'lookup' && rule(4, 0).table === 'local' && j(rule(4, 0).selectors) === '[["from","all"]]', 'the kernel\'s rule 0', j(rule(4, 0)));
@@ -71,6 +72,7 @@ check(!JSON.stringify(s).includes('TOPSECRETKEY') && !JSON.stringify(s).includes
 
 //#region Lookups
 console.log('== lookups ==');
+// The captured answer of the rich scenario's route lookup `n`.
 const L = n => load(`rich.lookup-${n}.json`);
 let l = L('fwd');
 check(l.ok && l.family === 4 && l.get.ok && l.get.type === 'unicast' && l.get.via === '192.0.2.1' && l.get.dev === 'wan' && l.get.src === '192.0.2.77' && l.get.table === 'main', 'a forwarded packet: next hop, device, source address, table', j(l.get));

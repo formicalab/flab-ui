@@ -8,16 +8,19 @@ import path from 'node:path';
 // ubus.js reads its session from sessionStorage when it loads, which node does not have.
 const store = new Map();
 globalThis.sessionStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: k => store.delete(k) };
+// Dynamically imports a module from www/js/core, after the sessionStorage stand-in above is in place.
 const core = f => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/core', f)).href);
 const { createUci, APPLY_TIMEOUT_S } = await core('uci.js');
 const { can, optional, AuthError, login, clearSession, ubus } = await core('ubus.js');
 
 let failed = 0;
+// Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
 // A fake ubus: records the calls and answers from a table keyed "object.method".
 function fake(answers = {}) {
   const calls = [];
+  // Records the call and returns the canned answer for "object.method" (called with args if it is a function).
   const call = async (object, method, args) => { calls.push([object, method, args]); const a = answers[`${object}.${method}`]; return typeof a === 'function' ? a(args) : (a ?? {}); };
   return { call, calls };
 }
@@ -67,7 +70,9 @@ check(f.calls[1][2].timeout === 10 && f.calls[2][1] === 'confirm' && f.calls[3][
 
 console.log('== uci: applyChange, the whole change with its safety net ==');
 const { applyChange } = await core('uci.js');
+// The ubus method names of `calls`, space-joined in call order.
 const names = calls => calls.map(c => c[1]).join(' ');
+// The error message `fn` rejects with, or null when it succeeds.
 const attempt = async fn => { try { await fn(); return null; } catch (e) { return e.message; } };
 const noWait = { settleMs: 0, sleep: async () => {} };
 let verified = 0;
@@ -98,6 +103,7 @@ check(f.calls.filter(c => c[1] === 'changes').length === 2, 'every config in the
 
 console.log('== session: what this login may call ==');
 const real = globalThis.fetch;
+// Stubs fetch so that every request answers with the ubus `result`.
 const reply = result => { globalThis.fetch = async () => ({ ok: true, json: async () => ({ result }) }); };
 reply([0, { ubus_rpc_session: 'abc', acls: { ubus: { 'flab.network': ['status'], uci: ['set', 'apply'], 'flab.any': ['*'] } } }]);
 await login('someone', 'x');
@@ -111,6 +117,7 @@ await login('nobody', 'x');
 check(!can('uci', 'set') && !can('flab.network', 'status'), 'a login that reports no ACLs may call nothing from the UI\'s point of view');
 clearSession();
 check(store.get('sid') === undefined && store.get('acls') === undefined && !can('flab.network', 'status'), 'signing out forgets the ACLs too');
+// The error message ubus('system', 'board') fails with when fetch is replaced by `fetchImpl`, or null if it succeeds.
 const fails = async fetchImpl => { globalThis.fetch = fetchImpl; try { await ubus('system', 'board'); return null; } catch (e) { return e.message; } };
 check(/cannot be reached/.test(await fails(async () => { throw new TypeError('Failed to fetch'); })), 'a network failure says the router cannot be reached');
 check(/HTTP 502/.test(await fails(async () => ({ ok: false, status: 502, json: async () => ({}) }))), 'an HTTP error status is reported as such, not as a parse error');

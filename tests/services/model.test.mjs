@@ -36,6 +36,7 @@ check(j(m.readProcd(null)) === '{}' && j(m.readProcd({ x: null })) === '{"x":{"r
 
 console.log('\n== rows ==');
 const rows = m.buildRows(list, procd);
+// The row of service `n`.
 const by = n => rows.find(r => r.name === n);
 check(rows.map(r => r.name).join() === 'acme,boot,dnsmasq,firewall,half,rpcd,ubus', 'init scripts and procd-only services, sorted by name', rows.map(r => r.name).join());
 check(by('dnsmasq').state === 'running' && by('dnsmasq').enabled && by('dnsmasq').start === 19 && by('dnsmasq').controllable, 'a running, enabled script is controllable');

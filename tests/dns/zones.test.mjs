@@ -5,13 +5,16 @@
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
+// The URL of a module of the DNS page, by file name.
 const url = f => pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/dns', f)).href;
 const z = await import(url('zones.js'));
 const e = await import(url('edit.js'));
 
 let failed = 0;
+// Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 const j = JSON.stringify;
+// A deep copy, so a test can edit a fixture without touching the original.
 const clone = o => JSON.parse(JSON.stringify(o));
 
 // Unbound as the main router keeps its zones: forward blocks (one with several domains, the default forwarders, a disabled
@@ -34,6 +37,7 @@ const ub = {
   ],
   truncated: {},
 };
+// The keys of a list of items, joined into one string.
 const keys = items => items.map(i => i.key).join();
 
 //#region Unbound: the blocks
@@ -112,7 +116,9 @@ check(z.canEditForwarders(ub) && !z.canEditForwarders({ ...ub, config_section: n
 //#region Validation
 console.log('\n== validation ==');
 d = e.draftFrom(ub);
+// The problems of validating `form` against the Unbound fixture (`key` is the entry being edited, or null for a new one).
 const bad = (form, key = null) => z.formProblems(ub, d, key, form);
+// The texts of a list of problems, joined into one string.
 const texts = list => list.map(x => x.text).join(' | ');
 f = z.formFor(ub, d, null);
 check(bad(f).map(x => x.key).join() === 'zone_name,server', 'a new empty zone needs a domain and a server', texts(bad(f)));
@@ -209,6 +215,7 @@ dd = e.draftFrom(dm); f = z.formFor(dm, dd, null); f.zones = ['Corp.Example']; f
 check(z.forwarderPlan(dm, dd)[0].values.server.at(-1) === '/Corp.Example/', 'answering locally is /domain/');
 dd = e.draftFrom(dm); for (const k of ['e0', 'e1', 'e2', 'e3', 'e4']) z.removeForwarder(dd, k);
 check(j(z.forwarderPlan(dm, dd)) === j([{ op: 'delete', config: 'dhcp', section: 'cfg01', options: ['server'] }]) && z.forwarderProblems(dm, dd).warnings.some(w => /No default server is left/.test(w)), 'removing every entry deletes the option, and the lack of a default server is a warning');
+// The problems of validating `form` as a new entry against the dnsmasq fixture.
 const dp = form => z.formProblems(dm, dd, null, form);
 check(dp(z.newEntryForm()).length === 2 && dp({ zones: ['.'], mode: 'local', server: '' }).some(x => /not "\."/.test(x.text)) && dp({ zones: ['.', 'a.example'], mode: 'forward', server: '1.1.1.1' }).some(x => /cannot be mixed/.test(x.text)) && dp({ zones: ['a.example'], mode: 'forward', server: 'a b' }).some(x => x.key === 'server') && !dp({ zones: ['a.example'], mode: 'default', server: '' }).length && !dp({ zones: ['a.example'], mode: 'forward', server: '10.0.0.1#5353' }).length, 'the entry form is checked: domains, the root zone, the server');
 dd = e.draftFrom(dm); f = z.formFor(dm, dd, 'e1'); f.server = '10.0.0.9'; z.saveForwarder(dm, dd, 'e1', f);
@@ -230,6 +237,7 @@ check(z.dnsmasqServerError('10.0.0.1#5353') === null && z.dnsmasqServerError('dn
 check(z.typeLabel('forward_zone') === 'Forward' && z.typeLabel('auth_zone') === 'Authoritative' && z.typeLabel('weird') === 'weird' && z.typeLabel('') === 'Unknown', 'type labels');
 check(z.fieldsOf('stub_zone').map(x => x.key).join() === 'enabled,zone_name,server,port,fallback,dns_assist,resolv_conf' && z.fieldsOf('nope').length === 0, 'each type uses its own fields');
 d = e.draftFrom(ub); items = z.forwarderItems(ub, d);
+// The keys of the items that the search `text` matches, joined into one string.
 const hits = text => items.filter(i => z.matchItem(i, text)).map(i => i.key).join();
 check(hits('') === keys(items) && hits('AZURE') === 'fwd_azure' && hits('10.9.9.9') === 'stub_corp' && hits('authoritative') === 'auth_icann' && hits('disabled') === 'fwd_google,auth_icann' && hits('validated') === 'file:file.example' && hits('stub corp') === 'stub_corp' && hits('zzz') === '', 'the filter looks at names, types, domains, servers, flags and state, every word must match');
 z.removeForwarder(d, 'stub_corp'); items = z.forwarderItems(ub, d);

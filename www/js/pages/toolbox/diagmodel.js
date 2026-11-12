@@ -22,7 +22,7 @@ export const normMac = text => (isMac(text) ? String(text).toLowerCase().replace
 export const hostOf = (hosts, mac) => (hosts ?? []).find(x => x.mac === normMac(mac)) ?? null;
 
 // The number limits of each field, as the plugin enforces them: [min, max, default].
-export const LIMITS = { count: [1, 10, 4], size: [0, 1400, 56], hops: [1, 30, 20], probes: [1, 3, 2], port: [1, 65535, 443] };
+const LIMITS = { count: [1, 10, 4], size: [0, 1400, 56], hops: [1, 30, 20], probes: [1, 3, 2], port: [1, 65535, 443] };
 
 // The DNS record types the page offers.
 export const DNS_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'];
@@ -77,6 +77,7 @@ export function requestOf(form) {
   const source = String(form.source ?? '').trim();
   if (source && !isAddress(source) && !/^[A-Za-z0-9_.:-]{1,15}$/.test(source)) return { error: 'The source must be an address or an interface name.' };
   const args = { tool: form.tool, host };
+  // Validates one numeric option against LIMITS and stores it in `args`; returns an error message, or null when valid.
   const need = (field, label) => {
     const n = numberOf(form[field], field);
     if (n == null) return `${label} must be a whole number from ${LIMITS[field][0]} to ${LIMITS[field][1]}.`;
@@ -555,10 +556,14 @@ function pingOf(block) {
 // the job is still going (a missing block is then pending rather than skipped). `now` is the time for the certificate.
 export function parseCheck(text, running, ctx = {}, now = Date.now()) {
   const blocks = parseBlocks(text);
+  // All blocks with the given id (a step can have several, such as one per public address).
   const of = id => blocks.filter(b => b.id === id);
+  // The first block with the given id, or null.
   const first = id => of(id)[0] ?? null;
   const steps = CHECK_STEPS.map(([id, title]) => ({ id, title, state: running ? 'pending' : 'skip', text: '', output: '' }));
+  // The step with the given id.
   const step = id => steps.find(s => s.id === id);
+  // Records the outcome of a step: its state, message and the output of the blocks it was judged from.
   const set = (id, state, msg, blocksUsed = []) => {
     const s = step(id);
     s.state = state;
@@ -633,6 +638,7 @@ export function parseCheck(text, running, ctx = {}, now = Date.now()) {
     step('tls').tls = tls;
   }
 
+  // The state of a step once it has been judged.
   const state = id => step(id).state;
   const notes = [];
   if (state('ipv6') === 'bad') notes.push('IPv4 works, but IPv6 does not: the router has an IPv6 default route that does not lead anywhere. Applications that prefer IPv6 can be slow.');

@@ -47,6 +47,7 @@ export const fmtTemp = t => t == null ? '–' : `${t.toFixed(1)} °C`;
 // max and critical limits. A mark at or past the scale end is omitted; max is skipped when it equals critical.
 function gauge(s, lvl) {
   const limit = s.crit ?? s.max ?? 125;
+  // A temperature as a position on the bar, clamped to 0-100 percent of the scale.
   const pct = v => Math.min(100, Math.max(0, v / limit * 100));
   const marks = [];
   if (s.throttle != null) marks.push(['throttle', s.throttle, 'warn']);

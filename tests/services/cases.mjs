@@ -13,6 +13,7 @@ export const DETACHED = ['rpcd', 'uhttpd', 'network'];
 // The command lines the plugin builds; fixtures are named after them (see rpcd/lib/flab/util.uc).
 export const LIST_CMD = 'for f in /etc/init.d/*; do [ -f "$f" ] && [ -x "$f" ] && echo "${f##*/}"; done 2>/dev/null';
 export const RC_CMD = 'ls -1 /etc/rc.d 2>/dev/null';
+// The command line that runs `action` on init script `name` and prints its exit code.
 export const waitCmd = (name, action) => `timeout 45 /etc/init.d/${name} ${action} </dev/null >/tmp/flab-service.out 2>&1; echo $?`;
 export const OUTPUT_CMD = 'head -c 4096 /tmp/flab-service.out 2>/dev/null; rm -f /tmp/flab-service.out';
 // The fixture file name of a command.

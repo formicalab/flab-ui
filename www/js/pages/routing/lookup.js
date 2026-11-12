@@ -48,6 +48,7 @@ function clear(state) {
 
 // The form: destination, optional source and arrival interface, and the buttons.
 function form(state, devices) {
+  // A labeled text input bound to state.form[key]; Enter submits the lookup.
   const field = (key, label, placeholder, title) => h('label', { className: 'rt-field', title },
     h('span', {}, label),
     h('input', {

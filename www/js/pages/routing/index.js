@@ -124,6 +124,7 @@ export default {
   // selector and the peer selector follow what the router has. Each tab shows its own filters.
   controls({ rerender, reload }) {
     const routesNodes = [], bgpNodes = [];
+    // Shows the controls of the active tab and hides those of the other.
     const show = () => { routesNodes.forEach(n => { n.hidden = state.tab !== 'routes'; }); bgpNodes.forEach(n => { n.hidden = state.tab !== 'bgp'; }); };
     const tabs = tabsControl(state, 'tab', () => { state.all = false; show(); reload(); });
     const family = selectControl(state, 'family', rerender, 'Address family');

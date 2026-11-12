@@ -10,6 +10,7 @@ import { fmtBytes, fmtLine, fmtSpan } from '../../core/format.js';
 // Module-level so the rate history survives the redraw on every poll; a peer series is keyed by the
 // interface and the peer's public key.
 const tracker = createTracker();
+// Tracker key of one peer of an interface.
 const peerKey = (i, p) => `${i.name}/${p.public_key}`;
 // Abbreviated public key ("abcdefgh…xyz12=") for display; the full key is in the tooltip.
 const shortKey = k => `${k.slice(0, 8)}…${k.slice(-5)}`;

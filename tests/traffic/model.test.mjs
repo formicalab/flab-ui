@@ -15,6 +15,7 @@ const plain = s => s.replace(/(\d)[.,\u00a0\u202f](?=\d{3}\b)/g, '$1');
 
 //#region Interfaces
 console.log('== interface rows ==');
+// A device row named `name`, up with carrier and traffic counters, with `over` applied on top.
 const dev = (name, over = {}) => ({ name, up: true, carrier: true, speed: 1000, stats: { rx_bytes: 100, tx_bytes: 50 }, ...over });
 const net = {
   ports: [dev('eth0', { role: 'nic' }), dev('eth1', { role: 'nic' }), dev('eth10', { role: 'switch', carrier: false, speed: null }), dev('lan1', { role: 'switch' }), dev('eth2', { role: 'conduit' })],
@@ -29,6 +30,7 @@ const ifs = [
   { interface: 'backup', up: false, l3_device: 'eth0', device: 'eth0', route: [{ target: '0.0.0.0', mask: 0 }] },
 ];
 let rows = m.deviceRows(net, ifs);
+// The row of device `n`.
 const by = n => rows.find(r => r.name === n);
 check(rows.length === 10 && new Set(rows.map(r => r.name)).size === rows.length, 'every device once, ports, bridge members and VLANs together', rows.map(r => r.name).join());
 check(by('lan1').kind === 'port' && by('lan1').bridge === undefined, 'a port that is also a bridge member keeps its own entry');
@@ -48,6 +50,7 @@ check(m.wanLinks([{ interface: 'a', up: true, l3_device: 'eth0', route: [{ targe
 const wanSet = new Set(['eth1.1036']);
 check(m.orderRows(rows, wanSet).map(r => r.name).join() === 'eth1.1036,eth0,eth1,eth10,lan1,phy0-ap0,tap0,eth1.20,br-lan,eth2'.replace('eth1.20,br-lan', 'eth1.20,br-lan'), 'order: the WAN, ports (natural order: eth10 after eth1), Wi-Fi, other, VLANs, bridges, the conduit', m.orderRows(rows, wanSet).map(r => r.name).join());
 const rates = { eth0: { rxNow: 1000, txNow: 500 }, eth1: { rxNow: 4000, txNow: 100 }, lan1: { rxNow: 0, txNow: 0 }, 'phy0-ap0': { rxNow: null, txNow: 2000 }, 'br-lan': { rxNow: 99999, txNow: 99999 }, 'eth1.1036': { rxNow: 99999, txNow: 99999 } };
+// The live rates of device `n`, or nulls when it has none.
 const rateOf = n => rates[n] ?? { rxNow: null, txNow: null };
 const tot = m.liveTotals(rows, rateOf);
 check(tot.rx === 5000 && tot.tx === 2600 && tot.n === 6, 'totals add ports, Wi-Fi and other members only, not bridges, VLANs or the conduit; an unknown rate counts as zero', j(tot));
@@ -63,7 +66,9 @@ console.log('\n== connection table load and findings ==');
 check(m.tableLoad(100, 1000).level === 'ok' && m.tableLoad(800, 1000).level === 'warn' && m.tableLoad(799, 1000).level === 'ok' && m.tableLoad(950, 1000).level === 'bad' && m.tableLoad(null, 1000).pct === null && m.tableLoad(5, 0).pct === null, 'the table is warned about from 80% and critical from 95%');
 check(m.fmtPct(3.456) === '3.5' && m.fmtPct(42.4) === '42' && m.fmtPct(null) === '–' && m.fmtPct(0) === '0.0', 'percent formatting');
 check(m.hostName({ '10.0.0.1': 'nas' }, '10.0.0.1') === 'nas' && m.hostName({}, '10.0.0.2') === '10.0.0.2' && m.hostLabel({ '10.0.0.1': 'nas' }, '10.0.0.1') === 'nas (10.0.0.1)' && m.hostLabel(undefined, '10.0.0.2') === '10.0.0.2', 'host names fall back to the address');
+// A top-host aggregate entry for `addr`.
 const host = (addr, connections, bytes = 0, unreplied = 0) => ({ addr, connections, bytes, unreplied });
+// A healthy connections reply, with `over` applied on top.
 const table = (over = {}) => ({
   ok: true, available: true, count: 1000, max: 31232, acct: true, total: 1000, parsed: 1000, truncated: false, names: { '192.168.1.50': 'nas' },
   aggregates: { protocols: [], states: [], unreplied: 0, nat: 0, sources: { by_connections: [host('192.168.1.10', 100)], by_bytes: [] }, destinations: { by_connections: [], by_bytes: [] }, unreplied_sources: [] }, ...over,
@@ -109,6 +114,7 @@ check(m.filterError('') === null, 'an empty filter is fine');
 //#region Entries
 console.log('\n== entries ==');
 check(m.endpoint('10.0.0.1', 443) === '10.0.0.1:443' && m.endpoint('2001:db8::1', 443) === '[2001:db8::1]:443' && m.endpoint('10.0.0.1', null) === '10.0.0.1' && m.endpoint('::1', undefined) === '::1' && m.endpoint('10.0.0.1', 0) === '10.0.0.1:0', 'endpoints: IPv6 in brackets with a port, no port for ICMP');
+// An established TCP entry over IPv4, with `over` applied on top.
 const flow = (over = {}) => ({ family: 4, proto: 'tcp', state: 'ESTABLISHED', timeout: 300, flags: ['ASSURED'], src: '192.168.1.10', dst: '93.184.216.34', sport: 51234, dport: 443, nat: null, bytes: [100, 2000], packets: [3, 4], ...over });
 check(m.natSummary(flow()) === null, 'no NAT, no summary');
 let n = m.natSummary(flow({ nat: { src: '203.0.113.9', dst: '93.184.216.34', sport: 51234, dport: 443 } }));
@@ -139,6 +145,7 @@ check(m.stateCount({ states: [{ name: 'ESTABLISHED', count: 7 }] }, 'ESTABLISHED
 
 //#region Usage
 console.log('\n== usage ==');
+// A usage row for a host, with `over` applied on top.
 const row = (mac, ip, rx, tx, conns = 1, over = {}) => ({ mac, ip, rx_bytes: rx, tx_bytes: tx, rx_pkts: 10, tx_pkts: 5, conns, ...over });
 const rowsUsage = [
   row('aa:bb:cc:00:00:10', '192.168.1.10', 5000, 800, 120),

@@ -49,6 +49,7 @@ export const refreshControl = reload => button('Refresh', 'arrow-clockwise', rel
 export function tabsControl(state, key, onchange) {
   const node = h('div', { className: 'seg', role: 'tablist' });
   let options = [];
+  // Rebuilds the tab buttons from the current options and marks the selected one.
   const draw = () => {
     node.hidden = options.length < 2;
     node.replaceChildren(...options.map(([value, label]) => h('button', {

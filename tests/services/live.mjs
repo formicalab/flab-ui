@@ -18,12 +18,14 @@ const shots = process.env.FLAB_SHOTS;
 let failed = 0;
 // Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
+// Resolves after `ms` milliseconds.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 //#region The mock router
 // The init scripts of the mock router: [name, enabled position or null, protected].
 const SCRIPTS = [['acme', null, false], ['boot', 10, true], ['cron', 50, false], ['dnsmasq', 19, false], ['done', 95, true], ['dropbear', 19, false],
   ['failsvc', 90, false], ['firewall', 19, false], ['network', 20, false], ['odhcpd', 35, false], ['rpcd', 12, false], ['uhttpd', 50, false], ['wpad', 19, false]];
+// The procd entry of a service that is running with process id `pid`.
 const running = pid => ({ instances: { instance1: { running: true, pid } } });
 // procd's view: firewall, network and failsvc have no instance; acme is known but idle; ubus has no init script.
 const baseProcd = () => ({ acme: {}, cron: running(1770), dnsmasq: running(1800), dropbear: running(1900), odhcpd: running(2000), rpcd: running(2100), uhttpd: running(2200), wpad: running(2300), ubus: running(300) });
@@ -37,6 +39,7 @@ async function control(args) {
   mock.calls.push({ name, action });
   if (mock.delay) await sleep(mock.delay);
   if (mock.controlError) return { error: { code: -32000, message: mock.controlError } };
+  // The control result of a successful run of `action` on `name`; `over` replaces fields.
   const reply = (over = {}) => [0, { name, action, ok: true, code: 0, detached: false, output: '', error: null, ...over }];
   if (name === 'failsvc') return reply({ ok: false, code: 1, output: 'failsvc: cannot open /etc/failsvc.conf', error: 'The service script failed with exit code 1.' });
   if (['rpcd', 'uhttpd', 'network'].includes(name) && action !== 'start') {
@@ -51,6 +54,7 @@ async function control(args) {
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 async function answer(body) {
   const [, obj, method, args] = body.params;
+  // The JSON-RPC reply for a ubus `[code, data]` result.
   const ok = ([code, data]) => ({ jsonrpc: '2.0', id: body.id, result: data === undefined ? [code] : [code, data] });
   const denied = { jsonrpc: '2.0', id: body.id, error: { code: -32002, message: 'Access denied' } };
 
@@ -98,27 +102,37 @@ const open = async acls => {
 let page = await open();
 
 // Helpers: tiles, rows and buttons (found by the ids the page gives them), the notes, and screenshots.
+// The big value of tile `i`.
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
+// The table row of service `name`.
 const rowOf = name => page.locator(`[id="svc-row-${name}"]`);
+// The `action` button of service `name`.
 const btn = (name, action) => page.locator(`[id="svc-${name}-${action}"]`);
+// The service names in the table, in row order.
 const names = () => page.locator('.svc-table tbody tr td:first-child').allInnerTexts().then(t => t.map(s => s.trim()));
+// The confirmation box shown before a stop or restart.
 const confirmBox = () => page.locator('#svc-confirm');
+// The box that reports the outcome of the last action.
 const outcomeBox = () => page.locator('#svc-outcome');
+// Saves a full-page screenshot named after `label` when FLAB_SHOTS is set.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `services-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
+// Presses Refresh and waits for the page to redraw.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(600); };
 // Waits until `fn` returns true (polling), for conditions that follow a call to the mock.
 const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await sleep(100); } return false; };
+// The text of the state cell (second column) of service `name`.
 const stateOf = name => rowOf(name).locator('td').nth(1).innerText().then(t => t.trim());
 
 //#region Navigation and the real router (read only)
 console.log('== navigation ==');
 const nav = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
-check(nav.indexOf('Logs') === nav.indexOf('Services') + 1 && nav.indexOf('Services') > nav.indexOf('Devices and Interfaces'), 'Services sits just before Logs, after the network pages', nav.join(' | '));
+check(nav.indexOf('Toolbox') === nav.indexOf('Services') + 1 && nav.indexOf('Logs') === nav.indexOf('Toolbox') + 1 && nav.indexOf('Services') > nav.indexOf('Devices and Interfaces'), 'Services sits just before Toolbox and Logs, after the network pages', nav.join(' | '));
 check((await page.locator('.cmdbar h1').innerText()).trim() === 'Services', 'the page title');
 
 console.log('\n== the real router (read only, no service is touched) ==');
 const real = await page.evaluate(async () => {
   const sid = sessionStorage.getItem('sid');
+  // Calls ubus `obj.method` with this session and returns the data part of the answer.
   const call = async (obj, method, args = {}) => (await (await fetch('/ubus', { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'call', params: [sid, obj, method, args] }) })).json()).result[1];
   const scripts = (await call('flab.services', 'list')).services;
   const procd = Object.keys(await call('service', 'list'));
