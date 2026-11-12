@@ -16,9 +16,9 @@ textarea.form-control { resize: vertical; }
 .set-fields ::placeholder, .set-col ::placeholder { font-style: italic; opacity: .65; }
 .set-fields .form-control, .set-col .form-control { font-family: var(--fl-mono); }
 
-/* Switches: the toggle on the left, label and hint beside it. */
-.set-switch { display: flex; align-items: flex-start; gap: .6rem; padding-left: 0; margin: 0; }
-.set-switch .form-check-input { float: none; margin: .2rem 0 0; flex: none; }
+/* Boolean options: a checkbox on the left, label and hint beside it. */
+.set-check { display: flex; align-items: flex-start; gap: .6rem; padding-left: 0; margin: 0; }
+.set-check .form-check-input { float: none; margin: .2rem 0 0; flex: none; }
 
 /* List fields: one input per row with a remove button, then the add button. */
 .set-list { display: grid; gap: .4rem; margin-bottom: .5rem; }

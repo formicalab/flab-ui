@@ -41,7 +41,7 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
 rpcd ---- built-in objects:  session, system, network.interface, service, uci (configuration changes)
    |
    '----- ucode plugins (this repo): flab.wifi, flab.radio, flab.mesh, flab.wireguard, flab.firewall,
-                |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.diag, flab.traffic, flab.sensors, flab.system, flab.logs, flab.services
+                |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.diag, flab.traffic, flab.dns, flab.sensors, flab.system, flab.logs, flab.services
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici
@@ -71,7 +71,7 @@ Design principles:
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
-  tests/                     bgp/, dhcp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), routing/, services/, settings/, toolbox/, traffic/, wifi/,
+  tests/                     bgp/, dhcp/, dns/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), routing/, services/, settings/, toolbox/, traffic/, wifi/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -111,11 +111,12 @@ flab-ui/
         wireguard/           index.js, iface.js
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js
         dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js
+        dns/                 DNS (read only): index.js (page, state), schema.js (the options and their groups), model.js (pure: tiles, findings, forwarders, activity, option groups), forwarding.js (the Forwarding card), cards.js (Listening and configuration, Activity, Upstream from the WAN, Try it)
         interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
           bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js
-        toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, result views of ping, traceroute and DNS),
+        toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, result views of ping, traceroute and DNS; Wake-on-LAN),
                              diagviews.js (check, comparison and certificate views), diagmodel.js (pure: request checks, output
                              parsing, the check's verdict)
         traffic/             Traffic: index.js (page, tabs, state, polling), model.js (pure: interfaces and totals, WAN, findings, entries, NAT,
@@ -259,11 +260,12 @@ return {
 | `flab.wireguard.uc` | `flab.wireguard` | `status` | uci network (`proto wireguard` interfaces and `wireguard_<if>` peer sections), uci firewall (zone); `wg show <if> public-key/listen-port/peers/endpoints/allowed-ips/latest-handshakes/transfer/persistent-keepalive` (the single-field forms never print the private or pre-shared key); sysfs MTU and counters |
 | `flab.firewall.uc` | `flab.firewall` | `status` | uci firewall (defaults, zones, forwardings, `rule`, `redirect`, `nat`, `include`, `ipset`), uci network (interface names); `nft -j list ruleset` (per-rule hit counters matched through the `!fw4: <name>` comment, reject/drop chain counters per zone, the devices behind each zone, flowtable devices, base chain policies); procfs conntrack count and limit |
 | `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles and port order); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines) |
-| `flab.diag.uc` | `flab.diag` | `status`, `start` (`tool`, `host`, options), `read` (`id`, `from`), `stop` (`id`) | busybox `ping` and `traceroute`, the first of `dig`, `kdig`, `drill`, `nslookup`, and `openssl s_client` / `x509`, run detached under `timeout` with their output in `/tmp/flab-diag/<id>/out`; `ip route get` and `ip route show default` for the connectivity check; `command -v` for the tools, `/sys/class/net` for the interface names, `/tmp/resolv.conf.d/resolv.conf.auto` for the upstream resolvers; every argument validated before a command line is built |
+| `flab.diag.uc` | `flab.diag` | `status`, `start` (`tool`, `host`, options), `read` (`id`, `from`), `stop` (`id`), `wake` (`mac`, `iface`) | busybox `ping` and `traceroute`, the first of `dig`, `kdig`, `drill`, `nslookup`, and `openssl s_client` / `x509`, run detached under `timeout` with their output in `/tmp/flab-diag/<id>/out`; `ip route get` and `ip route show default` for the connectivity check; `etherwake` or `socat` for Wake-on-LAN, with the host list from uci dhcp hosts, `dhcp ipv4leases`, `/tmp/dhcp.leases`, `/etc/ethers` and `/proc/net/arp`; `command -v` for the tools, `/sys/class/net` for the interface names, `/tmp/resolv.conf.d/resolv.conf.auto` for the upstream resolvers; every argument validated before a command line is built |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
 | `flab.routing.uc` | `flab.routing` | `status`, `lookup` (`dst`, `src`, `iif`) | `ip -4/-6 route show table all`, `ip -4/-6 rule show`, `/etc/iproute2/rt_tables`, `command -v birdc`, `pidof charon`, uci network (only the `rule` and `rule6` sections, and only their section name, family, priority and lookup table); `lookup` runs `ip route get` and `ip route get ... fibmatch` for a validated address, optional source address and interface name |
 | `flab.traffic.uc` | `flab.traffic` | `status`; `connections` (`q`, `limit`, `sort`, `proto`, `scope`); `usage_periods`; `usage` (`period`, `group`) | procfs `/proc/net/nf_conntrack` and `/proc/sys/net/netfilter/nf_conntrack_{count,max,acct}`; `command -v nlbw`, `pidof nlbwmon`, `nlbw -c list`, `nlbw -c json -g <group> [-t <period>]`; names from uci dhcp (`host` sections), `dhcp ipv4leases`/`ipv6leases` (ubus, odhcpd), `/tmp/dhcp.leases`, `/tmp/hosts/*`, `/etc/ethers`, `/proc/net/arp`, `ip -6 neigh show` (see [Traffic](#traffic-route-traffic)) |
+| `flab.dns.uc` | `flab.dns` | `status` (no arguments) | procd `service list` (ubus), `pidof unbound`/`pidof dnsmasq`, `command -v unbound`/`dnsmasq`, `netstat -lntup`, `unbound-control status`/`stats_noreset`/`list_forwards`/`list_local_data`, `unbound -V`, the generated `/var/lib/unbound/unbound.conf` and `unbound_ext.conf` (forward-zone clauses), `dnsmasq --version`, ubus `dnsmasq metrics`, uci unbound and uci dhcp (the `unbound` and `dnsmasq` sections), `/tmp/resolv.conf.d/resolv.conf.auto`, `/tmp/hosts/*`, `/tmp/dhcp.leases`, `/proc/<pid>/stat` and `/proc/uptime` (see [DNS](#dns-route-dns)) |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
 | `flab.system.uc` | `flab.system` | `cpu` | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime` |
 | `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
@@ -313,7 +315,8 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
   skip the plugin. Regular expressions are POSIX ERE (no `(?:` non-capturing groups, no lazy quantifiers); the
   code uses `[[:space:]]` instead of `\s` in classes. Use `100000.0` to force float division. Optional
   chaining (`a?.b`) and `??` work. `ucode -c <plugin>.uc` checks syntax (library modules with `export`
-  cannot be compiled that way).
+  cannot be compiled that way). `0 == ''` is true, so `util.num()` (which tests for `''`) turns the integer 0 of
+  a ubus reply into null: use it for strings only, and test a number with `type(v) == 'int'`.
 
 ## Security model
 
@@ -465,9 +468,9 @@ unit test.
 
 ## Pages
 
-Navigation order: Overview · Wired network · Bridges · Wi-Fi · Mesh · IPsec VPN · WireGuard · Firewall · DHCP ·
+Navigation order: Overview · Wired network · Bridges · Wi-Fi · Mesh · IPsec VPN · WireGuard · Firewall · DHCP · DNS ·
 Devices and Interfaces · Routing · Traffic · Services · Toolbox · Logs, then Settings at the bottom, next to Sign out. The network
-pages run from the physical layer up; Devices and Interfaces recaps how they fit together, followed by routing
+pages run from the physical layer up; DHCP and DNS, the services the clients of those networks use, come next; Devices and Interfaces recaps how they fit together, followed by routing
 (the kernel's routes and BGP), traffic (where the bandwidth goes), the procd services, the toolbox (diagnostic tools) and the logs.
 
 ### Overview (default)
@@ -967,7 +970,7 @@ anything, so the init scripts do the work, as they do for `/etc/init.d/<name> re
 
 ### Toolbox (route `#toolbox`)
 Diagnostic tools that run on the router and show their output as it arrives: a connectivity check, ping, traceroute, DNS
-lookups and comparisons and a TLS certificate check. The form has a tool selector, the host, and the options of the tool:
+lookups and comparisons, a TLS certificate check and Wake-on-LAN. The form has a tool selector, the host, and the options of the tool:
 for ping the count
 (1 to 10), the packet size (0 to 1400), the address family and a source (an interface or an address; the router's interface
 names are offered as suggestions); for traceroute the maximum hops (1 to 30), the probes per hop (1 to 3), UDP or ICMP
@@ -1005,13 +1008,28 @@ again. The form remembers its values while the page is open; Run is disabled for
   AD flag), the time the tool reports and the fastest server. Differing answers are highlighted, with the note that a
   CDN gives each resolver its own, correct set; a server that does not answer shows "No reply".
 - **TLS certificate:** connects to a host and port (optionally with another server name, or after STARTTLS for SMTP, IMAP,
-  POP3 and FTP) and shows the session (protocol, cipher, key exchange) and every certificate the server sent, from the
-  server certificate to the root: subject, issuer, key and signature algorithm, validity with the days left, names,
-  certificate authority flag, serial, SHA-256 fingerprint, and the PEM text with a copy button. Findings say whether the
-  chain is trusted by the router's CA store, whether the certificate covers the name or address asked for (wildcards match
+  POP3 and FTP) and shows the session (protocol, cipher, key exchange) and the certificates exactly as the server sent
+  them, in the order sent: the router's own certificate authorities are never used to add or reorder any (`openssl
+  s_client` lists the certificates received, not the chain it verified). Each shows subject, issuer, key and signature
+  algorithm, validity with the days left, names, certificate authority flag, serial, SHA-256 fingerprint, and the PEM text
+  with a copy button. Findings say whether the chain is trusted by the router's CA store, and judge the chain the server
+  sent on its own: a server that sends only its own certificate, a gap or wrong order (a certificate that is not the
+  issuer of the one before it), or a chain in order. A dashed marker shows where the issuer is missing; when the router
+  trusts such a chain only because its CA store makes up for the missing certificate, the finding says so. Further findings
+  say whether the certificate covers the name or address asked for (wildcards match
   one label), whether it is expired, not yet valid or ends within 14 days, a weak RSA key or a SHA-1 or MD5 signature, a
   protocol older than TLS 1.2, and why a connection failed (refused, timed out, name not found, or a server that hung up
   without sending a certificate).
+- **Wake-on-LAN:** sends one magic packet (six `ff` bytes, then the MAC sixteen times) with `flab.diag wake`, which is not a job:
+  it answers at once. The host is chosen from a list of the hosts the router knows (static DHCP hosts, odhcpd and dnsmasq
+  leases, `/etc/ethers` and the ARP table; the status marks static DHCP hosts `reserved`): the reservations come first, then
+  the hosts only seen on the network, each shown as name, address and MAC. *Another MAC address…* brings up a text field, which
+  is the only control when the router knows no host. The interface is the one the host was last seen on, or
+  `br-lan`, unless chosen. The packet goes out as a raw Ethernet frame with `etherwake` when the router has it, otherwise as a UDP
+  broadcast to port 9 through `socat`; the tool is not offered when neither exists. The result names the host, the interface and the
+  method, says the router cannot know whether the host woke up, and offers a ping of the host's address. The MAC is validated as six
+  hex pairs and the interface must be a safe name of an existing device before either reaches a command. The permission is its own
+  (`wake` under `write`).
 - **From the Routing page:** a forwarded answer of the next-hop lookup offers Ping and Traceroute buttons that open the
   Toolbox with the destination filled in and start the job.
 - **Jobs:** each run is a job. `flab.diag start` returns at once with a job id and `read` returns the output so far, which
@@ -1038,7 +1056,7 @@ boolean, the argument list is built from those values
 only, the job id is generated from `/dev/urandom` and checked as exactly twelve hex digits whenever it comes back, and `stop`
 only kills a process whose name is one of the tools or the shell running one of its own `job.sh` scripts (so a recycled pid
 is never hit). The ACL fragment
-`rpcd/acl.d/flab-diag.json` grants `status` and `read` (read) and `start` and `stop` (write).
+`rpcd/acl.d/flab-diag.json` grants `status` and `read` (read) and `start`, `stop` and `wake` (write).
 
 ### Logs (route `#logs`)
 Refreshed every 5 s, from `flab.logs`. The last entries of the **system log** (`logread`, logd's ring buffer
@@ -1107,6 +1125,97 @@ advertised prefixes, the leases and last the reservations.
   [Configuration changes](#configuration-changes)); a pool or daemon change reloads odhcpd, which does not drop
   existing leases. A daemon that is not running is reported, and the configuration stays editable.
 
+### DNS (route `#dns`)
+The state of the router's DNS resolver. It is an **initial, read-only page**: it shows what the resolver does and how it is
+configured and changes nothing (the options are edited in `/etc/config/unbound` or `/etc/config/dhcp` for now). It
+understands both engines, **Unbound** (read through `unbound-control`, which needs `option unbound_control '1'` in
+`/etc/config/unbound`) and **dnsmasq** (read through the ubus object `dnsmasq metrics` and UCI), and every mix: Unbound
+running, dnsmasq running, both (one of them on another port, for instance dnsmasq on 5353 behind Unbound; both are
+reported and the one on port 53 is the engine the page describes), none running (a finding) and installed but stopped
+(the configured engine is still described from its configuration). One call, `flab.dns status`, every 10 s; the page
+pauses while a text box has the focus. Top to bottom:
+- **Tiles**: Resolver (engine, version, uptime, and "dnsmasq also runs (port 5353)" when both run), Queries (since the resolver
+  started, and the average per minute; for dnsmasq the forwarded plus the locally answered), the share answered without
+  asking upstream (Unbound: cache hits against hits and misses; dnsmasq: its own answers against those and the forwarded
+  ones, labeled "Answered locally"), Resolution time (Unbound's average and median; dnsmasq reports none, so the forwarded
+  count is shown instead), Upstream servers (the default forwarders and the resolvers the WAN gave, each counted once;
+  "Recursive" for an Unbound with no default forwarder) and DNSSEC (Validating, Off, or Not supported by this build).
+- **Banner** (`model.findings`, worst first): no resolver installed or running, or installed but stopped (critical); a running
+  engine with nothing on port 53; the other engine also running (information); DNSSEC off (a warning that says which option
+  turns it on) and a dnsmasq build without DNSSEC (information only); rebind protection off; dnsmasq with no upstream at all
+  (critical; an Unbound without forwarders is recursive, not broken); forwarding in clear text to a public address (information:
+  every public `server=` of dnsmasq, and for Unbound a forward zone that is known not to use TLS); `unbound-control` not enabled
+  or no dnsmasq metrics; SERVFAIL above 5% of the answers (needs extended statistics and at least 20 answers); bogus DNSSEC
+  answers; rate-limited queries; dnsmasq with more than 2% of its forwarded queries unanswered (at least 20 forwarded); a cut list.
+  **Clear text for Unbound**: `unbound-control list_forwards` does not say whether a forwarder uses TLS (the `+` flags are
+  `i`, not DNSSEC-validated, and possibly others), so the plugin reads the `forward-tls-upstream` setting of each `forward-zone`
+  clause of Unbound's generated configuration; a zone that is not found there is "unknown" and never accused.
+- **Listening and configuration** (full width, on top): two parts under one header. *Listening on* shows one chip per address and
+  port with its protocols (from `netstat -lntup`, only the resolvers' sockets; Unbound's loopback control port 8953 and dnsmasq's
+  DHCP socket are left out); `0.0.0.0` and `[::]` are marked "all addresses", and the engine is named when both run.
+  *Configuration* shows every option the page knows, in titled groups (Unbound: Protection and privacy, DNSSEC, Listening and
+  protocols, Local names and DHCP, Performance and cache, Service and monitoring; dnsmasq: Listening, Upstream servers, Local
+  names, Protection and DNSSEC, Cache, DHCP, Logging), each with a one-line explanation, and an "Other options" group for
+  options of the section the page has no description for. The options are described as data in `dns/schema.js`, in the format
+  of `core/fields.js`, and drawn with the same controls as the System settings and DHCP pages (`core/forms.js`), disabled
+  because the page is read only: a checkbox for a yes/no option, a drop-down for a fixed set of values (rebind protection,
+  remote control, local domain type, DHCP server linked, IP protocols, recursion, resource profile, log verbosity, the
+  router-name levels; the values and defaults are from the OpenWrt Unbound package's README and the dnsmasq manual), a number
+  input with its range for a number, a text box for a name and a list for several values. An option that is not set shows its
+  default (a placeholder, or "Default (…)" in a drop-down, or the default state of a checkbox). To make the options editable,
+  set `canEdit` in `cards.js` and add what the System settings and DHCP pages have: a draft kept across the polls, a plan of
+  UCI operations and the review banner (`core/editpage.js`); the field tables already carry the types, ranges and defaults
+  those need. Without a resolver the card is only the listening part.
+- **Forwarding**: the default forwarders (the `.` zone) with a TLS or clear-text mark, then the conditional zones, which can be about
+  ninety (the main router has 89 nearly identical ones). By default zones that share the same servers, flags and TLS setting are
+  one line ("86 zones" with a button that opens the list); "List every zone" switches to one row each, 12 at first with "Show all N";
+  the filter box matches zones, servers and the words of the flags and redraws only the table, so typing is not interrupted. Flags:
+  `i` is shown as "not DNSSEC-validated" (Unbound's `domain-insecure`); dnsmasq's `/zone/` (answered locally) and `/zone/#` (uses the
+  default servers) are marked too. Each forwarder says where it is defined ("Defined in" column, and a line under the default
+  forwarders): *UCI* (an Unbound zone section, named in the tooltip, or a dnsmasq `server` entry) or *unbound_ext.conf* (zones
+  that only Unbound's extension file defines: on the main router 88 of the 90). Zones that are defined in different places never
+  share a group. The card is read only for now: a line at the top counts the UCI forwarders and the extension-file ones, an
+  *Add forwarder* button and an *Edit* and a *Remove* button on every UCI forwarder are drawn disabled, and extension-file zones
+  have none (edit that file). To make the list editable, set `canEdit` in `forwarding.js`, open a form for the entry with the fields
+  of `ZONE_FIELDS` (`dns/schema.js`; `model.zoneDraft(entry)` builds its values from an entry of the reply's `forward_uci`) drawn
+  with the shared controls, and save through UCI as the System settings and DHCP pages do; for dnsmasq an entry is the text of a
+  `server` list value (`/zone/zone/address#port`, `/zone/`, `/zone/#` or a plain address).
+- **Activity** (full width): the engine's counters with a share bar where one makes sense, and, for Unbound with extended statistics, the answer
+  codes. A counter the engine does not report (Unbound's extended ones when `extended_stats` is off) is left out, never shown as
+  zero, and the card says how to turn them on.
+- **Upstream from the WAN** (beside Try it): the resolvers in `/tmp/resolv.conf.d/resolv.conf.auto`, without loopback ones; dnsmasq's `noresolv`
+  is said to ignore them.
+- **Try it**: a name box with **Look up** and **Compare resolvers**, which call `openTool('dns', name)` and `openTool('compare', name)`
+  of the Toolbox: it opens with the form filled in and the tool started. An empty name is refused with a hint.
+
+#### The plugin
+`flab.dns` is read-only; the ACL fragment (`rpcd/acl.d/flab-dns.json`) grants `status` under `read` and nothing else (no write, no
+generic `file` or exec grant). `status` takes no arguments: whatever a request carries is ignored, and every command the plugin runs
+is a fixed string (a test reads the source and fails if a `run()` call takes a template or a variable). A command that fails or is
+missing leaves its part null and adds a warning; it never fails the call, and the whole call is a handful of small commands.
+- `ok`, `generated`; `engine` (`unbound`, `dnsmasq` or null: the running engine that listens on port 53, else any running one,
+  Unbound first), `configured` (the engine described when none runs: the installed one, Unbound only when it is enabled in UCI or
+  dnsmasq is absent); `engines.unbound` and `engines.dnsmasq` with `installed`, `running`, `pid` (procd's, else `pidof`), `version`,
+  `uptime`, `port`, `stats` and, for Unbound, `control` (whether `unbound-control` answered).
+- `version`, `uptime` (seconds: Unbound's own, or for dnsmasq the process age from `/proc/<pid>/stat` field 22 and `/proc/uptime`),
+  `listeners` (`addr`, `port`, `proto`, `engine`; unique, at most 50), `stats`, `config` (the whitelisted UCI options that are set; a
+  list stays a list; every option of `dns/schema.js` and no other, which a test checks), `defaults` (what the engine does for an option that is not set, only where certain), `forwards` (`zone`,
+  `servers`, `flags`, `tls`, `source`, `section`; the default zone first, at most 500; zones lowercase without a trailing dot;
+  `source` is `uci` for a forwarder that UCI defines (an Unbound zone section, named in `section`, or a dnsmasq `server` entry) and
+  `file` for one that only Unbound's extension file defines), `forward_uci` (the forwarders that can be changed through UCI: for
+  Unbound the `config zone` sections of type `forward_zone`, enabled or not, as `section`, `enabled`, `zones`, `servers` and `options`
+  (`tls_upstream`, `tls_index`, `tls_port`, `port`, `fallback`, `dns_assist`, `resolv_conf`); for dnsmasq the `server` entries as
+  written, `index` and `value`), `upstream`,
+  `upstream_used` (dnsmasq: not `noresolv`; null for Unbound), `local_names` (Unbound: the distinct names of `list_local_data` without
+  the reverse ones; dnsmasq: the names of the host files and named leases), `dnssec` (`supported`, `enabled`), `truncated`
+  (`forwards`, `listeners`) and `warnings`.
+- `stats` for Unbound: `queries`, `cache_hits`, `cache_misses`, `prefetch`, `expired`, `ratelimited`, `timed_out`, `recursion_avg_ms`,
+  `recursion_median_ms`, `rcodes`, `secure`, `bogus`, `unwanted_queries`, `unwanted_replies`, `cache_msgs`, `cache_rrsets`,
+  `cache_bytes`, `since`, from the `total.*` lines of `stats_noreset`; whatever extended statistics would add is null when it is
+  off. For dnsmasq: `forwarded`, `local_answered`, `auth_answered`, `stale_answered`, `unanswered`, `cache_inserted`,
+  `cache_live_freed`, `cache_size` (the configured one) and `since`. `dnssec.enabled` for Unbound is whether the `validator` module is
+  loaded; for dnsmasq the `dnssec` option, and `supported` is whether the build's compile options say `DNSSEC` (not `no-DNSSEC`).
+
 ### System settings (route `#settings`)
 Changes the router: it shows and edits `/etc/config/system`: every option the OpenWrt wiki
 documents for the `system` section and for its `timeserver` (NTP) section, in four cards that each take the full
@@ -1134,7 +1243,7 @@ the ACL fragment `rpcd/acl.d/flab-settings.json`.
 - **System log**: `log_size`, `log_buffer_size`, `log_type`, `log_file`, `log_remote`, `log_ip`, `log_port`,
   `log_proto`, `log_hostname`, `log_prefix`, `log_trailer_null`.
 - **Kernel, cron and memory**: `buffersize`, `conloglevel`, `cronloglevel`, `zram_comp_algo`, `zram_size_mb`.
-- **Controls**: switches show the value, or OpenWrt's default when the option is absent. An empty text control
+- **Controls**: checkboxes show the value, or OpenWrt's default when the option is absent. An empty text control
   shows "default: ..." or an example in gray italics, never a value-looking placeholder. Numbers, hosts, IP
   addresses, paths, interface names, enums and the time zone rule are validated; a bad entry is marked, explained
   and blocks saving. An emptied option is deleted from the file instead of being stored empty.
@@ -1160,12 +1269,13 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 |---|---|---|
 | BGP | `pwsh -File flab-ui\tests\bgp\run.ps1 [-Browser]` | `flab.bgp` parser and findings, the BGP tab of the Routing page |
 | Routing | `pwsh -File flab-ui\tests\routing\run.ps1 [-Browser]` | The Routing model (addresses, tables, findings, filters, lookup meaning, rule origins); `flab.routing` against a captured and a synthetic router (every route and rule syntax, every lookup answer, refused input); the Routes tab, the lookup and the BGP tab against mocked replies |
-| Toolbox | `pwsh -File flab-ui\tests\toolbox\run.ps1 [-Browser] [-KeepWork]` | The Toolbox model (request checks, the parsers of ping, traceroute, DNS, comparison and certificate output, the connectivity check's verdicts); `flab.diag` running real jobs on the router (streaming, offsets, stop, DNS, traceroute, the router's own certificate, a comparison, a whole connectivity check, every allowed option, 56 refused requests with an injection canary, job-id traversal, the three-job cap, CRLF source); the page against a scripted job engine |
+| Toolbox | `pwsh -File flab-ui\tests\toolbox\run.ps1 [-Browser] [-KeepWork]` | The Toolbox model (request checks, the parsers of ping, traceroute, DNS, comparison and certificate output, the connectivity check's verdicts, MAC handling); `flab.diag` running real jobs on the router (streaming, offsets, stop, DNS, traceroute, the router's own certificate, a comparison, a whole connectivity check, a Wake-on-LAN packet on loopback, every allowed option, 56 refused tool requests and 18 refused wake requests with an injection canary, job-id traversal, the three-job cap, CRLF source); the page against a scripted job engine |
 | Traffic | `pwsh -File flab-ui\tests\traffic\run.ps1 [-Browser]` | The Traffic model (interfaces, WAN, totals, findings, endpoints, NAT, states, merging hosts by MAC, filtering and sorting, protocol rows); `flab.traffic` against a captured and several synthetic routers (every protocol, TCP state, NAT form and IPv6 spelling, a 60000-entry table, nlbwmon periods, no nlbw, no conntrack, no accounting) checked against an independent reference, and every refused argument; the Live, Connections and Usage tabs against mocked replies |
 | IPsec | `pwsh -File flab-ui\tests\ipsec\run.ps1 [-Browser]` | `flab.ipsec`, IPsec page, throughput history |
 | Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
 | Settings | `pwsh -File flab-ui\tests\settings\run.ps1 [-Browser]` | System settings model, option table and zone table; the whole editing flow against a mock router |
 | DHCP | `pwsh -File flab-ui\tests\dhcp\run.ps1 [-Browser]` | DHCP model (address helpers, reading config and leases, validation, change plan); the page against the router's own data, then the whole editing flow against a mock router |
+| DNS | `pwsh -File flab-ui\tests\dns\run.ps1 [-Router ...] [-Url ...] [-Browser]` | The DNS model (tiles, findings, forwarders grouped and filtered, activity, options); `flab.dns` against a captured and several synthetic routers (Unbound with and without extended statistics or `unbound-control`, dnsmasq, both, stopped, none, cut lists) and a call with shell metacharacters as arguments; the page against mocked replies |
 | Wi-Fi | `pwsh -File flab-ui\tests\wifi\run.ps1 [-Browser]` | Wi-Fi channel model (blocks of channels, errors and warnings, change plan); the radio cards and pickers against the router's own data, then the whole channel-change flow against a mock router |
 | Services | `pwsh -File flab-ui\tests\services\run.ps1 [-Browser]` | Services model; `flab.services` against fixtures (nothing is executed) and a read-only `list` on the router; the page against the router's own services, then the whole start, stop and restart flow against a mock |
 
@@ -1226,14 +1336,17 @@ half way, to see that a script job ends and leaves no ping or openssl behind),
 sends the 56 lines of `refusals.txt` (shell metacharacters, leading `-`, out-of-range and non-numeric numbers, bad
 sources, servers, ports, server names, protocols and types; several would create a canary file if a command ran) and checks that all were refused, no job
 appeared and the canary does not exist, tries six job ids that are not the plugin's own (paths, wrong length, empty) on
-`read` and `stop`, and starts four jobs to see the fourth refused. `live.mjs` answers `flab.diag` from a scripted job
+`read` and `stop`, sends a Wake-on-LAN packet out of the loopback device (where nothing hears it) and the 18 lines of
+`wake-refusals.txt` (a bad MAC, injections in the MAC and the interface, an interface that does not exist, wrong types), and starts four jobs to see the fourth refused. `live.mjs` answers `flab.diag` from a scripted job
 engine (output revealed piece by piece, an endless ping, a refused start, a script that cannot run; the browser clock is held
 at the day the samples were captured so the days left on a certificate do not drift) and drives the page: the navigation
 entry above Logs, the form's checks, a ping
 read while it runs and after, loss, no reply and a bad host, the options sent, stopping, traceroute (partial, not
 reached, IPv6), DNS (answers, NXDOMAIN, the nslookup note), the connectivity check (a healthy router, a broken resolver, a dead
-next hop, a script that fails), the comparison (the choices offered, rows arriving, DNSSEC, the fastest, a silent server), the certificate check (a good chain, the
-PEM copy, expired, self-signed, hung up, refused, STARTTLS, a router without openssl), leaving the page and coming back, a redraw
+next hop, a script that fails), the comparison (the choices offered, rows arriving, DNSSEC, the fastest, a silent server), the certificate check (a good chain, a server that sends only its own certificate, a gap in the chain, the
+PEM copy, expired, self-signed, hung up, refused, STARTTLS, a router without openssl), Wake-on-LAN (the host list with reservations first, a typed MAC, a bad MAC, a normalized
+MAC, a chosen interface, a host without an address, a refusal from the router, etherwake and socat, the Ping button, a router with
+neither tool, a login without the wake permission), leaving the page and coming back, a redraw
 in the middle of a job, a login that
 may not run diagnostics, and the dark theme. `-KeepWork` keeps the temporary folder so the browser test can be repeated.
 
@@ -1261,6 +1374,28 @@ Connections tab (tiles, every kind of entry, the top lists and their click-throu
 order and row selectors, invalid filters that are not sent, findings, no counters, no tracking, errors, 2000 rows, the polling cache),
 the Usage tab (periods, the period note and its window under a monthly, a day-count and an end-of-month interval, tiles, merged hosts, names, filter, sort, protocols, another period, counters that cannot be right, 3000 hosts, an empty period, an error,
 nlbwmon stopped and nlbw missing, which also removes the tab) and checks that the page wrote nothing and logged no error.
+
+### DNS scenarios
+`pwsh -File flab-ui\tests\dns\run.ps1 [-Router ...] [-Url ...] [-Browser]`. `real` records what the router under test reports (the capture is
+read-only: `unbound-control` reads, the dnsmasq ubus metrics, UCI, procd's service list; on the main router it is Unbound, on the
+GL-X3000 dnsmasq) and is checked for invariants only (shapes, uniqueness, no loopback WAN resolvers, counters that are null or
+non-negative). The synthetic scenarios are hand-built, deterministic and run through the repository's plugin on the router with
+`FLAB_FIXTURES`: `unbound` (extended statistics with answer codes, DNSSEC, cache sizes, ninety forward zones of which two carry
+the `+i` flag, a clear-text public zone, a default zone over TLS known from the generated configuration, a WAN resolver, local
+data), `unbound-basic` (extended statistics off as on the main router: the extended counters must be null, not zero),
+`unbound-nocontrol` (`unbound-control` prints nothing: no statistics, a warning that says how to enable it, the version from
+`unbound -V` and the forwarders from the generated configuration), `unbound-many` (520 zones and 60 sockets, to see both caps and the
+`truncated` flags), `dnsmasq` (as the GL-X3000: ubus metrics, a server list with sixteen wildcard zones, a local DoH proxy and a
+public server, a build without DNSSEC, the jail's pid pair, IPv6 sockets, host files and leases), `both` (dnsmasq on port 5353 behind
+Unbound), `stopped` (both installed, nothing running) and `none`. A call with shell metacharacters in `host`, `zone` and `q` must give
+the reply of a call without arguments, and `run.ps1` then checks that its canary file does not exist on the router. `assert.mjs` also
+reads the plugin source (every `run()` call takes one fixed string, twelve different commands, nothing writes, `request.args` is never
+used) and the ACL (exactly `flab.dns: [status]` under `read`). The browser pass (`live.mjs`) answers `flab.dns` from the scenario
+outputs and `flab.diag` from a mock that records the request and runs nothing, and drives every tile, finding and card for both
+engines, both together, stopped and none; the forwarders (grouped, listed, "Show all", filter, a filter that keeps the focus); the
+configuration with a default marked; the Try it buttons into the Toolbox (the hash, the prefilled form, the request the mock saw); the
+polling pause while a box has the focus; the type scale and weights; the dark theme; that nothing was written and no console error
+occurred. `-Router` and `-Url` default to the main router; the browser pass needs the UI deployed on the router it is given.
 
 ### IPsec scenarios
 Captures `swanctl --list-conns|--list-sas|--stats|--version --raw`, `ip -s xfrm state` (key material is

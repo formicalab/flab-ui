@@ -285,6 +285,149 @@ X509v3 Basic Constraints: critical
 
 ### END 0 492273.50
 `;
+export const TLS_LEAFONLY = `### BEGIN tls 505102.44 127.0.0.1 24433
+Connecting to 127.0.0.1
+CONNECTED(00000003)
+depth=0 CN=localhost
+verify error:num=20:unable to get local issuer certificate
+verify return:1
+depth=0 CN=localhost
+verify error:num=64:IP address mismatch
+verify return:1
+depth=0 CN=localhost
+verify error:num=21:unable to verify the first certificate
+verify return:1
+depth=0 CN=localhost
+verify return:1
+---
+Certificate chain
+ 0 s:CN=localhost
+   i:O=Example Lab, CN=Example Lab Issuing CA
+   a:PKEY: EC, (prime256v1); sigalg: ecdsa-with-SHA256
+   v:NotBefore: Nov 12 11:17:45 2026 GMT; NotAfter: Dec 12 11:17:45 2026 GMT
+-----BEGIN CERTIFICATE-----
+MIIBpjCCAUugAwIBAgIUUe7Usnm+BBpitl303TqCU0BOv0AwCgYIKoZIzj0EAwIw
+NzEUMBIGA1UECgwLRXhhbXBsZSBMYWIxHzAdBgNVBAMMFkV4YW1wbGUgTGFiIElz
+c3VpbmcgQ0EwHhcNMjYxMTEyMTExNzQ1WhcNMjYxMjEyMTExNzQ1WjAUMRIwEAYD
+VQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASCn5DgP4LR
+t8i7DFx/+vgqpC6xFCrup55qUNI4qWvhABoAm3uXNpf8o+d/0quHF8XoALMze0K6
+lMg12rnFjuPso1gwVjAUBgNVHREEDTALgglsb2NhbGhvc3QwHQYDVR0OBBYEFCVk
+Q+XxVZZEzRp0gyO2NVdFJGoaMB8GA1UdIwQYMBaAFPf+8DepeezpcyEYmqBXbD0D
+J3cMMAoGCCqGSM49BAMCA0kAMEYCIQDk3oLupcvG+rme9qohJm4YcPIbkiNnpq0s
+I2Lt4CBySgIhALjhDxzOvJqpSGerR9Zhdr1smYEvnZWV/52gjMFo5xBa
+-----END CERTIFICATE-----
+---
+Server certificate
+subject=CN=localhost
+issuer=O=Example Lab, CN=Example Lab Issuing CA
+---
+No client certificate CA names sent
+Peer signing digest: SHA256
+Peer signature type: ecdsa_secp256r1_sha256
+Negotiated TLS1.3 group: X25519MLKEM768
+---
+SSL handshake has read 1886 bytes and written 1622 bytes
+Verification error: unable to verify the first certificate
+---
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+Protocol: TLSv1.3
+Server public key is 256 bit
+This TLS version forbids renegotiation.
+No ALPN negotiated
+Early data was not sent
+Verify return code: 21 (unable to verify the first certificate)
+---
+DONE
+### CERT 1
+serial=51EED4B279BE041A62B65DF4DD3A8253404EBF40
+sha256 Fingerprint=65:F5:27:FB:CA:62:BA:06:99:62:37:48:EA:88:01:10:DB:F1:C6:A5:7A:3C:56:BF:F4:71:3C:2F:BA:4F:0C:54
+X509v3 Subject Alternative Name: 
+    DNS:localhost
+
+### END 0 505102.65
+`;
+export const TLS_GAP = `### BEGIN tls 505106.60 127.0.0.1 24434
+Connecting to 127.0.0.1
+CONNECTED(00000003)
+depth=0 CN=localhost
+verify error:num=20:unable to get local issuer certificate
+verify return:1
+depth=0 CN=localhost
+verify error:num=64:IP address mismatch
+verify return:1
+depth=0 CN=localhost
+verify error:num=21:unable to verify the first certificate
+verify return:1
+depth=0 CN=localhost
+verify return:1
+---
+Certificate chain
+ 0 s:CN=localhost
+   i:O=Example Lab, CN=Example Lab Issuing CA
+   a:PKEY: EC, (prime256v1); sigalg: ecdsa-with-SHA256
+   v:NotBefore: Nov 12 11:17:45 2026 GMT; NotAfter: Dec 12 11:17:45 2026 GMT
+-----BEGIN CERTIFICATE-----
+MIIBpjCCAUugAwIBAgIUUe7Usnm+BBpitl303TqCU0BOv0AwCgYIKoZIzj0EAwIw
+NzEUMBIGA1UECgwLRXhhbXBsZSBMYWIxHzAdBgNVBAMMFkV4YW1wbGUgTGFiIElz
+c3VpbmcgQ0EwHhcNMjYxMTEyMTExNzQ1WhcNMjYxMjEyMTExNzQ1WjAUMRIwEAYD
+VQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASCn5DgP4LR
+t8i7DFx/+vgqpC6xFCrup55qUNI4qWvhABoAm3uXNpf8o+d/0quHF8XoALMze0K6
+lMg12rnFjuPso1gwVjAUBgNVHREEDTALgglsb2NhbGhvc3QwHQYDVR0OBBYEFCVk
+Q+XxVZZEzRp0gyO2NVdFJGoaMB8GA1UdIwQYMBaAFPf+8DepeezpcyEYmqBXbD0D
+J3cMMAoGCCqGSM49BAMCA0kAMEYCIQDk3oLupcvG+rme9qohJm4YcPIbkiNnpq0s
+I2Lt4CBySgIhALjhDxzOvJqpSGerR9Zhdr1smYEvnZWV/52gjMFo5xBa
+-----END CERTIFICATE-----
+ 1 s:O=Example Lab, CN=Example Lab Root
+   i:O=Example Lab, CN=Example Lab Root
+   a:PKEY: EC, (prime256v1); sigalg: ecdsa-with-SHA256
+   v:NotBefore: Nov 12 11:17:44 2026 GMT; NotAfter: Dec 12 11:17:44 2026 GMT
+-----BEGIN CERTIFICATE-----
+MIIBuDCCAV2gAwIBAgIUPkiJONh9Gf7Rf0uGNEgtifTQ9ykwCgYIKoZIzj0EAwIw
+MTEUMBIGA1UECgwLRXhhbXBsZSBMYWIxGTAXBgNVBAMMEEV4YW1wbGUgTGFiIFJv
+b3QwHhcNMjYxMTEyMTExNzQ0WhcNMjYxMjEyMTExNzQ0WjAxMRQwEgYDVQQKDAtF
+eGFtcGxlIExhYjEZMBcGA1UEAwwQRXhhbXBsZSBMYWIgUm9vdDBZMBMGByqGSM49
+AgEGCCqGSM49AwEHA0IABBNfSuSnl8qYOFtdPjXfcNbrpKtsmuq8nmmOJHrJ6EaF
+7fWp0qWk6U5kaDa6FleAFOUfYYSS4oZrwXLNoi3g/B6jUzBRMB0GA1UdDgQWBBTs
+rQjsO9Wo8WUUw3GdtNS3vQmZ1zAfBgNVHSMEGDAWgBTsrQjsO9Wo8WUUw3GdtNS3
+vQmZ1zAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0kAMEYCIQDQAr52nZlU
+w82gunK611/43EX0Nc6UhjTzHfHf5rvALQIhAMRkqfFo5SAakpDPafm9WHYO5l3P
+kPXKci7/s1M5qF2s
+-----END CERTIFICATE-----
+---
+Server certificate
+subject=CN=localhost
+issuer=O=Example Lab, CN=Example Lab Issuing CA
+---
+No client certificate CA names sent
+Peer signing digest: SHA256
+Peer signature type: ecdsa_secp256r1_sha256
+Negotiated TLS1.3 group: X25519MLKEM768
+---
+SSL handshake has read 2334 bytes and written 1622 bytes
+Verification error: unable to verify the first certificate
+---
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+Protocol: TLSv1.3
+Server public key is 256 bit
+This TLS version forbids renegotiation.
+No ALPN negotiated
+Early data was not sent
+Verify return code: 21 (unable to verify the first certificate)
+---
+DONE
+### CERT 1
+serial=51EED4B279BE041A62B65DF4DD3A8253404EBF40
+sha256 Fingerprint=65:F5:27:FB:CA:62:BA:06:99:62:37:48:EA:88:01:10:DB:F1:C6:A5:7A:3C:56:BF:F4:71:3C:2F:BA:4F:0C:54
+X509v3 Subject Alternative Name: 
+    DNS:localhost
+### CERT 2
+serial=3E488938D87D19FED17F4B8634482D89F4D0F729
+sha256 Fingerprint=7D:36:12:E5:19:22:98:C0:63:59:97:97:0B:42:40:23:BF:D1:EC:74:5D:76:B7:86:39:50:74:30:B4:E6:16:BA
+X509v3 Basic Constraints: critical
+    CA:TRUE
+
+### END 0 505106.91
+`;
 export const TLS_SELFSIGNED = `### BEGIN tls 492280.38 self-signed.badssl.com 443
 Connecting to 104.154.89.105
 CONNECTED(00000003)

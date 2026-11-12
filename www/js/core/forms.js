@@ -39,9 +39,9 @@ export function fieldRow(f, io) {
   const placeholder = f.default != null ? `default: ${f.default}` : f.placeholder ?? '';
 
   if (f.type === 'bool') {
-    const input = h('input', { className: 'form-check-input', type: 'checkbox', role: 'switch', checked: io.get(), disabled: io.disabled, onchange: e => change(e.target.checked) });
+    const input = h('input', { className: 'form-check-input', type: 'checkbox', checked: io.get(), disabled: io.disabled, onchange: e => change(e.target.checked) });
     io.register(input);
-    return h('label', { className: 'form-check form-switch set-switch' }, input, h('span', {}, f.label, hint));
+    return h('label', { className: 'form-check set-check' }, input, h('span', {}, f.label, hint));
   }
 
   let input;
@@ -57,8 +57,10 @@ export function fieldRow(f, io) {
     }
   } else if (f.type === 'enum') {
     // A value the router has that the documentation does not list is kept selectable, so it is not silently replaced.
+    // `f.labels` ({ value: words }) gives a value a description; without it the value itself is shown.
     const current = io.get();
-    const options = [['', f.default != null ? `Default (${f.default})` : 'Default'], ...f.options.map(o => [o, o])];
+    const labelOf = v => f.labels?.[v] ?? v;
+    const options = [['', f.default != null ? `Default (${labelOf(f.default)})` : 'Default'], ...f.options.map(o => [o, labelOf(o)])];
     if (current && !f.options.includes(current)) options.push([current, current]);
     input = h('select', { className: 'form-select form-select-sm', disabled: io.disabled, onchange: e => change(e.target.value) }, options.map(([v, label]) => h('option', { value: v }, label)));
     input.value = current;
@@ -67,8 +69,11 @@ export function fieldRow(f, io) {
     input = h('textarea', { className: 'form-control form-control-sm', rows: 3, value: io.get(), disabled: io.disabled, spellcheck: false, oninput: e => change(e.target.value) });
     io.register(input);
   } else {
+    // An `int` field with `number: true` is a number input (spin buttons, the range from min and max); without it the
+    // field is a text box that the model validates.
+    const numeric = f.type === 'int' && f.number ? { type: 'number', step: 1, ...(f.min != null ? { min: f.min } : {}), ...(f.max != null ? { max: f.max } : {}) } : {};
     input = h('input', { className: 'form-control form-control-sm', placeholder, value: io.get(), disabled: io.disabled, spellcheck: false, autocomplete: 'off',
-      ...(f.type === 'int' ? { inputMode: 'numeric' } : {}), oninput: e => change(e.target.value) });
+      ...(f.type === 'int' ? { inputMode: 'numeric' } : {}), ...numeric, oninput: e => change(e.target.value) });
     io.register(input);
   }
   return h('div', { className: `set-field${f.type === 'text' ? ' wide' : ''}` }, h('label', { className: 'form-label' }, f.label), input, hint);

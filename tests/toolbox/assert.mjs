@@ -24,6 +24,15 @@ check(st.types.join() === 'A,AAAA,MX,TXT,NS,CNAME,SOA,PTR,SRV,CAA' && st.limits.
 check(typeof st.tools.openssl === 'boolean' && st.starttls.join() === 'smtp,imap,pop3,ftp' && st.check_host === 'example.com' && Array.isArray(st.upstream) && st.upstream.length <= 4 && st.upstream.every(a => m.isAddress(a) && !/^(127\.|::1$)/.test(a)), 'the status also tells whether openssl exists, the STARTTLS protocols, the default check host and the upstream resolvers (never loopback)', j(st.upstream));
 check(st.devices.every(d => /^[A-Za-z0-9_.:-]+$/.test(d) && !d.startsWith('-')), 'every interface name is a safe word');
 
+console.log('== Wake-on-LAN ==');
+check(['etherwake', 'socat', ''].includes(st.wol) && Array.isArray(st.hosts) && st.hosts.length <= 300 && st.hosts.every(x => /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(x.mac) && (x.ip === undefined || m.isAddress(x.ip)) && (x.dev === undefined || /^[A-Za-z0-9_.:-]+$/.test(x.dev)) && (x.reserved === undefined || x.reserved === true)) && new Set(st.hosts.map(x => x.mac)).size === st.hosts.length, 'the status says how a packet can be sent and lists the known hosts: one entry per MAC, lowercase, with an address and the interface where known', j(st.hosts?.slice(0, 2)));
+const w1 = load('out-diag-wake.json'), w2 = load('out-diag-wake2.json');
+check(st.wol === '' || (w1.ok === true && w1.mac === '02:00:00:00:00:01' && w1.iface === 'lo' && w1.method === st.wol && typeof w1.sent === 'number' && (st.wol === 'etherwake' ? w1.command === 'etherwake -i lo 02:00:00:00:00:01' : /^UDP broadcast to 255\.255\.255\.255:9 on lo \(socat\)$/.test(w1.command))), 'a magic packet goes out of the loopback device and the reply says how', j(w1));
+check(st.wol === '' || (w2.ok === true && w2.mac === '02:00:00:00:00:02'), 'a MAC written with dashes is accepted and normalized', j(w2));
+const wakeRefusals = fs.readFileSync(path.join(import.meta.dirname, 'wake-refusals.txt'), 'utf8').split('\n').filter(Boolean);
+const wakeRefused = wakeRefusals.map((_, i) => load(`out-diag-wakerefused-${i + 1}.json`));
+check(wakeRefusals.length >= 15 && wakeRefused.every(r => r !== null && r.ok === false && typeof r.error === 'string' && r.error.length > 5), `all ${wakeRefusals.length} bad wake requests were refused with a reason`, wakeRefused.map((r, i) => r?.ok ? wakeRefusals[i] : null).filter(Boolean).join(' || '));
+
 console.log('== a ping, read while it runs and after it ended ==');
 const ps = load('out-diag-ping.start.json');
 check(ps.ok && /^[0-9a-f]{12}$/.test(ps.id) && ps.tool === 'ping' && ps.command === 'ping -c 5 -W 2 -w 20 -s 56 127.0.0.1' && ps.limit === 25, 'start returns a job id and the exact command line', j(ps));

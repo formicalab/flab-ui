@@ -12,7 +12,7 @@ const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'
 const j = JSON.stringify;
 
 import { DRILL, KDIG, KDIG_NX, NSLOOKUP, NSLOOKUP_NX, NSLOOKUP_PTR, PING_DOWN, PING_OK, PING_V6, TRACE, TRACE6, TRACE6_NAMES, TRACE_NAMES } from './samples.mjs';
-import { CHECK_OK, COMPARE, COMPARE_NX, TLS_EXAMPLE, TLS_EXPIRED, TLS_LOCAL, TLS_REFUSED, TLS_RESET, TLS_SELFSIGNED } from './samples-tools.mjs';
+import { CHECK_OK, COMPARE, COMPARE_NX, TLS_EXAMPLE, TLS_EXPIRED, TLS_GAP, TLS_LEAFONLY, TLS_LOCAL, TLS_REFUSED, TLS_RESET, TLS_SELFSIGNED } from './samples-tools.mjs';
 
 console.log('== the form and its request ==');
 const form = over => ({ ...m.blankForm(), host: '1.1.1.1', ...over });
@@ -107,6 +107,14 @@ r = m.requestOf(form({ tool: 'compare', host: 'example.com', type: 'AAAA', extra
 check(j(r.args) === j({ tool: 'compare', host: 'example.com', type: 'AAAA', servers: ['router', '1.1.1.1', '8.8.8.8', '192.168.1.53'] }), 'a comparison sends the chosen servers and the extra one', j(r));
 check(m.requestOf(form({ tool: 'compare', servers: [] })).error && m.requestOf(form({ tool: 'compare', servers: ['router', '1.1.1.1', '8.8.8.8', '9.9.9.9', '4.4.4.4', '5.5.5.5'], extraServer: '6.6.6.6' })).error && m.requestOf(form({ tool: 'compare', extraServer: 'a b' })).error && j(m.requestOf(form({ tool: 'compare', extraServer: '1.1.1.1' })).args.servers) === j(['router', '1.1.1.1', '8.8.8.8']), 'no servers, too many, a bad extra server are refused; a repeated one is not added twice');
 
+console.log('== Wake-on-LAN ==');
+check(m.isMac('aa:bb:cc:dd:ee:ff') && m.isMac('AA-BB-CC-DD-EE-FF') && !m.isMac('aa:bb:cc:dd:ee') && !m.isMac('aa:bb:cc:dd:ee:fg') && !m.isMac('aabbccddeeff') && !m.isMac('aa:bb:cc:dd:ee:ff\n1') && !m.isMac('1.1.1.1;ls'), 'a MAC address is six hex pairs joined by colons or dashes');
+check(m.normMac('AA-BB-CC-DD-EE-FF') === 'aa:bb:cc:dd:ee:ff' && m.normMac('nonsense') === 'nonsense' && m.normMac(undefined) === '', 'a MAC is written in lowercase with colons');
+check(j(m.requestOf({ ...m.blankForm(), tool: 'wol', host: ' AA-BB-CC-DD-EE-FF ' }).args) === j({ tool: 'wol', mac: 'aa:bb:cc:dd:ee:ff' }) && j(m.requestOf({ ...m.blankForm(), tool: 'wol', host: 'aa:bb:cc:dd:ee:ff', iface: 'br-lan' }).args) === j({ tool: 'wol', mac: 'aa:bb:cc:dd:ee:ff', iface: 'br-lan' }), 'a wake request carries the MAC (normalized) and the interface when one is chosen');
+check(m.requestOf({ ...m.blankForm(), tool: 'wol', host: '1.1.1.1' }).error && m.requestOf({ ...m.blankForm(), tool: 'wol', host: '' }).error && m.requestOf({ ...m.blankForm(), tool: 'wol', host: 'aa:bb:cc:dd:ee:ff', iface: 'br lan' }).error && m.requestOf({ ...m.blankForm(), tool: 'wol', host: 'aa:bb:cc:dd:ee:ff', iface: 'x;y' }).error, 'a host name instead of a MAC, an empty field and a bad interface are refused');
+const wolHosts = [{ mac: 'aa:bb:cc:dd:ee:ff', name: 'nas', ip: '192.168.1.5', dev: 'br-lan' }];
+check(m.hostOf(wolHosts, 'AA-BB-CC-DD-EE-FF').name === 'nas' && m.hostOf(wolHosts, '11:22:33:44:55:66') === null && m.hostOf(undefined, 'aa:bb:cc:dd:ee:ff') === null, 'a known host is found by its MAC, however it is written');
+
 console.log('== script blocks ==');
 const blocks = m.parseBlocks('### BEGIN a 10.00 x y\nline1\n\n### END 0 10.50\n### BEGIN b 11.00 \npartial');
 check(blocks.length === 2 && blocks[0].id === 'a' && blocks[0].detail === 'x y' && blocks[0].output === 'line1' && blocks[0].exit === 0 && Math.abs(blocks[0].secs - 0.5) < 1e-9 && !blocks[0].running, 'a block has its id, detail, output, exit code and duration', j(blocks[0]));
@@ -141,6 +149,16 @@ tl = m.parseTls(TLS_EXPIRED, { name: 'expired.badssl.com' }, NOW);
 check(tl.level === 'bad' && tl.chain[0].daysLeft < 0 && tl.findings.some(x => /expired 4232 days ago/.test(x.text)) && tl.findings.filter(x => /has expired|expired \d+ days/.test(x.text)).length === 1 && tl.verify.code === 10, 'an expired certificate says how long ago, once');
 tl = m.parseTls(TLS_SELFSIGNED, { name: 'self-signed.badssl.com' }, NOW);
 check(tl.level === 'bad' && tl.chain[0].selfSigned && tl.chain[0].role === 'Server certificate' && tl.findings.some(x => /self-signed/.test(x.text)), 'a self-signed certificate is called out');
+check(tl.findings.every(x => !x.chain), 'a lone self-signed certificate is not called an incomplete chain');
+tl = m.parseTls(TLS_EXAMPLE, { name: 'example.com' }, NOW);
+check(tl.gaps.length === 0 && tl.findings.some(x => x.chain && x.level === 'ok' && /4 certificates in order/.test(x.text)), 'a chain in order says so');
+tl = m.parseTls(TLS_LEAFONLY, { target: '127.0.0.1:24433' }, NOW);
+check(tl.chain.length === 1 && tl.gaps.length === 0 && tl.findings.some(x => x.chain && x.level === 'warn' && /only its own certificate, without the certificate of its issuer \(O=Example Lab, CN=Example Lab Issuing CA\)/.test(x.text) && !/CA store/.test(x.text)), 'a server that sends only its own certificate is told so, naming the missing issuer');
+tl = m.parseTls(TLS_LEAFONLY.replace('Verify return code: 21 (unable to verify the first certificate)', 'Verify return code: 0 (ok)'), { target: '127.0.0.1:24433' }, Date.UTC(2026, 10, 20));
+check(tl.findings.some(x => x.chain && x.level === 'warn' && /only trusts it because its own CA store holds that issuer/.test(x.text)) && tl.level === 'warn', 'when the router\'s CA store makes up for the missing issuer, that is said and the chain is not called trusted on its own');
+tl = m.parseTls(TLS_GAP, { target: '127.0.0.1:24434' }, NOW);
+check(j(tl.gaps) === '[0]' && tl.chain.length === 2 && tl.findings.some(x => x.chain && x.level === 'warn' && /incomplete or out of order: certificate 0 was issued by O=Example Lab, CN=Example Lab Issuing CA, but the next certificate it sent is O=Example Lab, CN=Example Lab Root/.test(x.text)), 'a gap between the certificates sent is found');
+check(m.parseTls(TLS_EXAMPLE.replace(/ 1 s:/, ' 1 s:X'), { name: 'example.com' }, NOW).gaps.join() === '0', 'a certificate that is not the issuer of the one before it is a gap');
 tl = m.parseTls(TLS_RESET, { target: 'x.example:443' }, NOW);
 check(tl.error && /closed the connection/.test(tl.error) && tl.chain.length === 0 && tl.level === 'bad' && tl.verify === null, 'a server that hangs up has no chain, an error and no verification');
 tl = m.parseTls(TLS_REFUSED, { target: '127.0.0.1:9' }, NOW);

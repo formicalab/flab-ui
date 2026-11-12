@@ -11,8 +11,8 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, can, ubus } from '../../core/ubus.js';
 import { badge, button, card, mono, muted } from '../../core/ui.js';
-import { DNS_TYPES, MAX_SERVERS, PUBLIC_RESOLVERS, STARTTLS, WEAK_NSLOOKUP, blankForm, endOf, fmtMs, isAddress, parseBlocks, parseDns, parsePing, parseTraceroute, pingVerdict, requestOf, scriptProblem } from './diagmodel.js';
-import { checkBody, compareBody, tlsBody } from './diagviews.js';
+import { DNS_TYPES, MAX_SERVERS, PUBLIC_RESOLVERS, STARTTLS, WEAK_NSLOOKUP, blankForm, endOf, fmtMs, isAddress, isMac, normMac, parseBlocks, parseDns, parsePing, parseTraceroute, pingVerdict, requestOf, scriptProblem } from './diagmodel.js';
+import { checkBody, compareBody, tlsBody, wolBody } from './diagviews.js';
 
 // How often a running job is read, in milliseconds.
 const READ_EVERY = 500;
@@ -20,13 +20,16 @@ const READ_EVERY = 500;
 const STATUS_TTL = 60000;
 
 // The tools offered, with their labels and titles.
-const TOOLS = [['check', 'Connectivity check'], ['ping', 'Ping'], ['traceroute', 'Traceroute'], ['dns', 'DNS lookup'], ['compare', 'DNS compare'], ['tls', 'TLS certificate']];
+const TOOLS = [['check', 'Connectivity check'], ['ping', 'Ping'], ['traceroute', 'Traceroute'], ['dns', 'DNS lookup'], ['compare', 'DNS compare'], ['tls', 'TLS certificate'], ['wol', 'Wake-on-LAN']];
 
 // Whether the router has what `tool` needs (`status` is the plugin's answer).
 const available = (status, tool) => {
   const t = status.tools ?? {};
-  return { ping: t.ping, traceroute: t.traceroute, dns: Boolean(status.dns_tool), compare: Boolean(status.dns_tool), check: t.ping && Boolean(status.dns_tool), tls: t.openssl }[tool];
+  return { ping: t.ping, traceroute: t.traceroute, dns: Boolean(status.dns_tool), compare: Boolean(status.dns_tool), check: t.ping && Boolean(status.dns_tool), tls: t.openssl, wol: Boolean(status.wol) }[tool];
 };
+
+// The select value of "Another MAC address…" in the Wake-on-LAN host list.
+const WOL_OTHER = '__other';
 
 let cached = null;
 let cachedAt = 0;
@@ -52,15 +55,34 @@ const elapsed = job => Math.max(0, Math.round(((job.t1 ?? Date.now()) - job.t0) 
 // Starts a job from the form. A refused request (the plugin checks everything again) becomes the job's error.
 async function start(state) {
   const d = state.diag;
+  if (d.form.tool === 'wol' && !d.form.wolOther && d.status?.hosts?.length && !d.status.hosts.some(x => x.mac === normMac(d.form.host))) {
+    d.formError = 'Choose a host from the list, or pick "Another MAC address…" and enter one.';
+    return state.rerender();
+  }
   const req = requestOf(d.form);
   if (req.error) { d.formError = req.error; return state.rerender(); }
   d.formError = null;
   const job = {
-    tool: req.args.tool, host: req.args.host ?? cached?.check_host ?? 'example.com', id: null, command: '', text: '', size: 0, running: true, exit: null, stopped: false, timedOut: false, error: null, limit: null, t0: Date.now(), t1: null,
+    tool: req.args.tool, host: req.args.host ?? req.args.mac ?? cached?.check_host ?? 'example.com', id: null, command: '', text: '', size: 0, running: true, exit: null, stopped: false, timedOut: false, error: null, limit: null, t0: Date.now(), t1: null,
     name: req.args.sni ?? (isAddress(req.args.host) ? null : req.args.host), target: req.args.port ? `${req.args.host}:${req.args.port}` : req.args.host, total: req.args.servers?.length ?? null,
   };
   d.job = job;
   state.rerender();
+  // Waking a host is one quick call, not a job to follow: its answer is the whole result.
+  if (req.args.tool === 'wol') {
+    try {
+      const r = await ubus('flab.diag', 'wake', { mac: req.args.mac, ...(req.args.iface ? { iface: req.args.iface } : {}) });
+      job.wake = r;
+      job.command = r.command ?? '';
+      job.text = r.output ?? '';
+      job.exit = r.ok ? 0 : 1;
+      if (!r.ok) job.error = r.error;
+    } catch (e) {
+      job.error = e instanceof AuthError ? 'The session has expired. Sign in again.' : e.message;
+    }
+    job.running = false; job.t1 = Date.now();
+    return state.rerender();
+  }
   try {
     const r = await ubus('flab.diag', 'start', req.args);
     if (!r.ok) { job.running = false; job.error = r.error; job.t1 = Date.now(); }
@@ -180,12 +202,35 @@ function serverPicker(state, status, disabled) {
     field('One more (optional)', 'Any other DNS server, by address or name', textInput(state, 'extraServer', { placeholder: 'e.g. 192.168.1.53', mono: true, disabled })));
 }
 
+// The host choice of Wake-on-LAN: a list of the hosts the router knows (its DHCP reservations first, then the other hosts it
+// has seen), and "Another MAC address…", which brings up a text field. Without any known host only the text field shows.
+function wolPicker(state, status, disabled) {
+  const f = state.diag.form;
+  const hosts = status.hosts ?? [];
+  if (!hosts.length) f.wolOther = true;
+  const text = host => [host.name ?? 'unnamed', host.ip, host.mac].filter(Boolean).join(' · ');
+  const group = (title, list) => (list.length ? h('optgroup', { label: title }, list.map(x => h('option', { value: x.mac }, text(x)))) : null);
+  const input = textInput(state, 'host', { placeholder: 'aa:bb:cc:dd:ee:ff', mono: true, disabled });
+  if (!hosts.length) return input;
+  const select = h('select', { className: 'form-select form-select-sm', disabled, onchange: e => {
+    f.wolOther = e.target.value === WOL_OTHER;
+    f.host = f.wolOther || !e.target.value ? '' : e.target.value;
+    state.rerender();
+  } },
+  h('option', { value: '' }, 'Choose a host…'),
+  group('Reservations', hosts.filter(x => x.reserved)),
+  group('Seen on the network', hosts.filter(x => !x.reserved)),
+  h('option', { value: WOL_OTHER }, 'Another MAC address…'));
+  select.value = f.wolOther ? WOL_OTHER : (hosts.some(x => x.mac === normMac(f.host)) ? normMac(f.host) : '');
+  return [select, f.wolOther ? input : null];
+}
+
 // The form card: the tool, the host and the options that tool has, and Run / Stop.
 function formCard(state, status) {
   const d = state.diag;
   const f = d.form;
   const running = Boolean(d.job?.running);
-  const allowed = can('flab.diag', 'start');
+  const allowed = can('flab.diag', f.tool === 'wol' ? 'wake' : 'start');
   const tools = TOOLS.filter(([t]) => available(status, t));
   if (!tools.some(([t]) => t === f.tool) && tools.length) f.tool = tools[0][0];
   const family = () => field('Address family', 'Force IPv4 or IPv6 name resolution', selectInput(state, 'family', [['', 'automatic'], ['4', 'IPv4'], ['6', 'IPv6']], running));
@@ -210,17 +255,20 @@ function formCard(state, status) {
     field('Port', 'The TCP port to connect to (default 443)', textInput(state, 'port', { type: 'number', placeholder: '443', disabled: running })),
     field('Server name (optional)', 'The name to ask the server for (SNI) and to check the certificate against, when it differs from the host', textInput(state, 'sni', { placeholder: 'same as the host', mono: true, disabled: running })),
     field('STARTTLS', 'Start in plain text and upgrade to TLS, as mail and FTP servers do', selectInput(state, 'starttls', [['', 'none (TLS from the start)'], ...STARTTLS.map(s => [s, s.toUpperCase()])], running)),
+  ] : f.tool === 'wol' ? [
+    field('Interface', 'The network the host is on. Automatic uses the interface the router last saw the host on, or br-lan', selectInput(state, 'iface', [['', 'automatic'], ...(status.devices ?? []).map(x => [x, x])], running)),
   ] : [];
 
   const weak = f.tool === 'dns' && status.dns_tool === 'nslookup' && WEAK_NSLOOKUP.includes(f.type);
-  const hostLabel = f.tool === 'check' ? 'Host to test (optional)' : f.tool === 'compare' ? 'Name to look up' : 'Host or address';
-  const hostHint = f.tool === 'check' ? `The name used for the DNS and TLS steps (${status.check_host ?? 'example.com'} by default)` : f.tool === 'compare' ? 'The name every server is asked about' : 'The name or address to probe';
-  const hostHolder = f.tool === 'check' ? (status.check_host ?? 'example.com') : 'e.g. example.com or 1.1.1.1';
+  const hostLabel = f.tool === 'check' ? 'Host to test (optional)' : f.tool === 'compare' ? 'Name to look up' : f.tool === 'wol' ? 'Host to wake' : 'Host or address';
+  const hostHint = f.tool === 'check' ? `The name used for the DNS and TLS steps (${status.check_host ?? 'example.com'} by default)` : f.tool === 'compare' ? 'The name every server is asked about' : f.tool === 'wol' ? 'A host the router knows: its DHCP reservations first, then the other hosts it has seen. Or enter another MAC address' : 'The name or address to probe';
+  const hostHolder = f.tool === 'check' ? (status.check_host ?? 'example.com') : f.tool === 'wol' ? 'aa:bb:cc:dd:ee:ff' : 'e.g. example.com or 1.1.1.1';
+  const hostControl = f.tool === 'wol' ? wolPicker(state, status, running) : textInput(state, 'host', { placeholder: hostHolder, mono: true, disabled: running });
   return card([icon('activity'), 'Diagnostics', h('span', { className: 'sub' }, 'Run a tool on the router and watch its output as it arrives')],
     h('div', { className: 'card-body rt-diag' },
-      segment(tools, f.tool, v => { f.tool = v; d.formError = null; state.rerender(); }, running),
+      segment(tools, f.tool, v => { f.tool = v; if (v === 'wol' && !isMac(f.host)) f.host = ''; d.formError = null; state.rerender(); }, running),
       h('div', { className: 'rt-diagform' },
-        field(hostLabel, hostHint, textInput(state, 'host', { placeholder: hostHolder, mono: true, disabled: running }), 'rt-host'),
+        field(hostLabel, hostHint, hostControl, 'rt-host'),
         ...options,
         h('div', { className: 'rt-actions' },
           running ? button('Stop', 'x-lg', () => stop(state)) : runButton(state, allowed),
@@ -230,7 +278,8 @@ function formCard(state, status) {
       !allowed ? h('div', { className: 'rt-error' }, icon('exclamation-triangle'), 'This login is not allowed to run diagnostics.') : null,
       weak ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `This router only has busybox nslookup, which cannot show ${f.type} records in full. Installing bind-dig, knot-dig or ldns-drill gives complete answers.`) : null,
       ['dns', 'compare', 'check'].includes(f.tool) && status.dns_tool && status.dns_tool !== 'nslookup' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Using ${status.dns_tool}.`) : null,
-      f.tool === 'check' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Walks down the stack: default route, next hop, internet, DNS (through the router and a public resolver), IPv6 and a secure connection. About 15 seconds.') : null));
+      f.tool === 'check' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Walks down the stack: default route, next hop, internet, DNS (through the router and a public resolver), IPv6 and a secure connection. About 15 seconds.') : null,
+      f.tool === 'wol' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Sends one magic packet${status.wol === 'etherwake' ? ' as an Ethernet frame (etherwake)' : ' as a UDP broadcast to port 9 (socat)'}. The host has to be switched off but connected, with Wake-on-LAN enabled in its firmware and operating system, and on the same network as the chosen interface.`) : null));
 }
 
 //#endregion
@@ -313,8 +362,8 @@ function dnsBody(job) {
 function resultNodes(d) {
   const job = d.job;
   if (!job) return [];
-  const title = { ping: 'Ping', traceroute: 'Traceroute', dns: 'DNS lookup', check: 'Connectivity check', compare: 'DNS comparison', tls: 'TLS certificate' }[job.tool];
-  const bodies = { ping: pingBody, traceroute: traceBody, dns: dnsBody, check: checkBody, compare: j => compareBody(j, d.status), tls: tlsBody };
+  const title = { ping: 'Ping', traceroute: 'Traceroute', dns: 'DNS lookup', check: 'Connectivity check', compare: 'DNS comparison', tls: 'TLS certificate', wol: 'Wake-on-LAN' }[job.tool];
+  const bodies = { ping: pingBody, traceroute: traceBody, dns: dnsBody, check: checkBody, compare: j => compareBody(j, d.status), tls: tlsBody, wol: j => wolBody(j, d.status, ip => d.openPing(ip)) };
   const problem = scriptProblem(job);
   const body = job.error && !job.text ? h('div', { className: 'rt-error' }, icon('x-circle'), job.error)
     : problem && !parseBlocks(job.text).length ? null : bodies[job.tool](job);
@@ -334,6 +383,8 @@ export function diagView(data, state) {
   d.status = data.status;
   const result = h('div', { className: 'rt-result-slot' }, ...resultNodes(d));
   d.resultEl = result;
+  // The Wake-on-LAN result offers a ping of the host it woke: fill the form in and run it.
+  d.openPing = ip => { Object.assign(d.form, { tool: 'ping', host: ip }); d.job = null; d.formError = null; d.autorun = true; state.rerender(); };
   if (d.job?.running) track(state);
   // A "ping / trace this address" button on the lookup answer opens the tab with the job ready to start.
   if (d.autorun) { d.autorun = false; queueMicrotask(() => start(state)); }

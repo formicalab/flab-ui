@@ -130,7 +130,7 @@ let page = await open();
 const field = label => page.locator('.set-field').filter({ has: page.locator(`label.form-label:text-is("${label}")`) });
 const input = label => field(label).locator('input, select, textarea').first();
 const rows = label => field(label).locator('.set-row input');
-const sw = label => page.locator('.set-switch').filter({ hasText: label }).locator('input');
+const sw = label => page.locator('.set-check').filter({ hasText: label }).locator('input');
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
 const tileSub = async i => (await page.locator('.tile .sub').nth(i).innerText()).trim();
 const notes = () => page.locator('.set-notes .set-note').allInnerTexts().then(t => t.join(' | '));
@@ -161,7 +161,7 @@ check(await input('Hostname').inputValue() === realSystem.hostname && await inpu
 check(await page.locator('.card .card-header').allInnerTexts().then(t => t.map(x => x.trim()).filter(x => ['General', 'Time zone and NTP', 'System log', 'Kernel, cron and memory'].includes(x)).join(' | ')) === 'General | Time zone and NTP | System log | Kernel, cron and memory', 'four full-width cards, in order: General, Time zone and NTP, System log, Kernel cron and memory');
 check(await page.evaluate(() => { const w = document.querySelector('main').clientWidth; return [...document.querySelectorAll('.settings-grid > .card')].every(c => c.getBoundingClientRect().width > w * 0.9); }), 'every card takes the full width of the page');
 check(await page.locator('.set-col').count() === 3 && await page.evaluate(() => { const c = [...document.querySelectorAll('.set-col')].map(e => e.getBoundingClientRect().top); return c.every(t => Math.abs(t - c[0]) < 2); }), 'the time card has three columns (zone, NTP client, NTP server) side by side');
-check(await page.locator('.set-field').count() === 23 && await page.locator('.set-switch').count() === 6, 'every option of the wiki is there: 21 fields and 2 for the zone, 6 switches', `${await page.locator('.set-field').count()} / ${await page.locator('.set-switch').count()}`);
+check(await page.locator('.set-field').count() === 23 && await page.locator('.set-check').count() === 6, 'every option of the wiki is there: 21 fields and 2 for the zone, 6 checkboxes', `${await page.locator('.set-field').count()} / ${await page.locator('.set-check').count()}`);
 check(await input('Hostname').isEnabled() && await saveBtn().isDisabled() && await page.locator('.set-bar').isHidden(), 'the router login may edit; the review banner is hidden and Save disabled until something changes');
 check(!/not allowed/.test(await page.locator('main').innerText()), 'no read-only warning for a login with write access');
 await shot('real');

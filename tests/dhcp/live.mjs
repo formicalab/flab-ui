@@ -153,7 +153,7 @@ const hostRows = () => page.locator('.dhcp-hosts tbody tr');
 const hostInput = (row, field) => row.locator(`input[title="${field}"]`);
 const poolCard = iface => page.locator('.card').filter({ has: page.locator('.card-header span:text-is("Pool ' + iface + '")') });
 const group = (iface, title) => poolCard(iface).locator('details').filter({ has: page.locator('summary', { hasText: title }) });
-const field = (scope, label) => scope.locator('.set-field, .set-switch').filter({ hasText: label }).first();
+const field = (scope, label) => scope.locator('.set-field, .set-check').filter({ hasText: label }).first();
 const notes = () => page.locator('.set-notes .set-note').allInnerTexts().then(t => t.join(' | '));
 const bar = () => page.locator('.set-bar');
 const saveBtn = () => page.locator('button:has-text("Save and apply")');
@@ -165,7 +165,7 @@ const refresh = async () => { await page.click('button:has-text("Refresh")'); aw
 //#region Navigation and the real router (read only)
 console.log('== navigation ==');
 const nav = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
-check(nav.indexOf('DHCP') === nav.indexOf('Firewall') + 1 && nav.indexOf('Devices and Interfaces') === nav.indexOf('DHCP') + 1, 'DHCP sits after Firewall and before the Devices and Interfaces recap', nav.join(' | '));
+check(nav.indexOf('DHCP') === nav.indexOf('Firewall') + 1 && nav.indexOf('DNS') === nav.indexOf('DHCP') + 1 && nav.indexOf('Devices and Interfaces') === nav.indexOf('DNS') + 1, 'DHCP sits after Firewall, then DNS, before the Devices and Interfaces recap', nav.join(' | '));
 check((await page.locator('.cmdbar h1').innerText()).trim() === 'DHCP and router advertisements · odhcpd', 'the page title');
 
 console.log('\n== the real router (read only, nothing is written) ==');
@@ -307,9 +307,9 @@ await field(group('lan', 'Router advertisements'), 'Router lifetime').locator('i
 await field(group('lan', 'Services'), 'Create leases dynamically').locator('input').uncheck();
 await group('lan100', 'Services').locator('select').first().selectOption('disabled');
 await page.locator('.card:has(.card-header:has-text("odhcpd daemon"))').locator('.set-field').filter({ hasText: 'Log level' }).locator('input').fill('5');
-await page.locator('.card:has(.card-header:has-text("odhcpd daemon"))').locator('.set-switch').filter({ hasText: 'main DHCPv4' }).locator('input').uncheck();
+await page.locator('.card:has(.card-header:has-text("odhcpd daemon"))').locator('.set-check').filter({ hasText: 'main DHCPv4' }).locator('input').uncheck();
 check(/no longer the main DHCPv4 server/.test(await bar().innerText()), 'switching odhcpd off as the main DHCPv4 server warns');
-await page.locator('.card:has(.card-header:has-text("odhcpd daemon"))').locator('.set-switch').filter({ hasText: 'main DHCPv4' }).locator('input').check();
+await page.locator('.card:has(.card-header:has-text("odhcpd daemon"))').locator('.set-check').filter({ hasText: 'main DHCPv4' }).locator('input').check();
 await shot('mock-pools');
 //#endregion
 

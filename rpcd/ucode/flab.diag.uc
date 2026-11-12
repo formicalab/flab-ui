@@ -6,6 +6,11 @@
 //   ubus call flab.diag start '{"tool":"ping","host":"1.1.1.1","count":4}'
 //   ubus call flab.diag read '{"id":"<id from start>","from":0}'
 //   ubus call flab.diag stop '{"id":"<id from start>"}'
+//   ubus call flab.diag wake '{"mac":"aa:bb:cc:dd:ee:ff","iface":"br-lan"}'
+//
+// `wake` is not a job: it sends one Wake-on-LAN magic packet (etherwake when the router has it, else a UDP broadcast
+// through socat) and returns at once. The MAC address is validated as six hex pairs and the interface must be a
+// safe name of an existing network device before either reaches a command.
 //
 // rpcd runs plugins in-process, so a call that waited for a ten-second ping (or a traceroute) would hold up every
 // other call, including the page's own polling. `start` therefore launches the tool detached and returns at once
@@ -26,7 +31,8 @@
 
 'use strict';
 
-import { run, safe_ifname } from 'flab.util';
+import { run, safe_ifname, uci_all, ubus_call } from 'flab.util';
+import { connect } from 'ubus';
 import { mkdir, readfile, writefile, lsdir, stat, access } from 'fs';
 
 // Where the jobs live (tmpfs): one directory per job with `out` (the output), `pid` and `rc` (the exit code).
@@ -249,7 +255,8 @@ function compare_script(tool, name, type_, servers) {
 }
 
 // The script of the certificate check: the handshake with the full chain, then `openssl x509` on every certificate the
-// server sent (serial, SHA-256 fingerprint, alternative names, CA flag), each under a `### CERT n` line. `sni` is the
+// server sent (serial, SHA-256 fingerprint, alternative names, CA flag), each under a `### CERT n` line. s_client lists
+// the certificates received, in the order received, even when the router's CA store could complete the chain. `sni` is the
 // name sent to the server (null for an address) and `starttls` an allow-listed protocol or null.
 function tls_script(host, port, sni, starttls) {
 	let s = PRELUDE;
@@ -393,16 +400,6 @@ function upstream_resolvers() {
 	return out;
 }
 
-// The reply of `status`: which tools exist, which DNS tool is used, the resolvers the router asks upstream, and the
-// interface names.
-function status() {
-	let tools = {};
-	for (let t in [ 'ping', 'traceroute', 'nslookup', 'dig', 'kdig', 'drill', 'openssl' ])
-		tools[t] = trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '';
-	let devices = sort(filter(lsdir('/sys/class/net') ?? [], valid_iface));
-	return { generated: time(), tools, dns_tool: dns_tool(), types: TYPES, devices, limits: LIMITS, starttls: STARTTLS, upstream: upstream_resolvers(), check_host: CHECK_HOST };
-}
-
 // The reply of `start`: validates the request, then launches the tool in the background.
 function start(request) {
 	let a = request?.args ?? {};
@@ -477,6 +474,154 @@ function stop(request) {
 
 //#endregion
 
+//#region Wake-on-LAN
+
+// The most hosts `status` lists for Wake-on-LAN.
+const MAX_HOSTS = 300;
+
+// A MAC address written as six hex pairs separated by ":" or "-", as lowercase pairs joined by ":"; null for anything else.
+function norm_mac(s) {
+	if (!whole(s, /^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$/))
+		return null;
+	return lc(replace(s, '-', ':'));
+}
+
+// How a magic packet can be sent from this router: "etherwake" (a raw Ethernet frame), "socat" (a UDP broadcast to
+// port 9) or "" when neither is installed.
+function wol_method() {
+	for (let t in [ 'etherwake', 'socat' ])
+		if (trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '')
+			return t;
+	return '';
+}
+
+// The hosts a magic packet can be sent to, as [{ mac, name, ip, dev, reserved }] sorted by name then address. The MACs come
+// from the static DHCP hosts (`reserved`: true), the leases (odhcpd through ubus, dnsmasq's lease file), /etc/ethers and the
+// ARP table; `dev` is the interface a host was last seen on (ARP), which is where its packet has to go.
+function wol_hosts() {
+	let by = {};
+	// Records a field of a host; the first non-empty value for a field wins, so the sources are listed by precedence.
+	let put = (mac, field, value) => {
+		mac = norm_mac(mac ?? '');
+		if (mac == null || value == null || value == '')
+			return;
+		by[mac] ??= { mac };
+		by[mac][field] ??= '' + value;
+	};
+	for (let name, s in uci_all('dhcp')) {
+		if (s['.type'] != 'host' || s.mac == null)
+			continue;
+		for (let mac in (type(s.mac) == 'array' ? s.mac : split(s.mac, /[ \t]+/))) {
+			put(mac, 'name', s.name);
+			put(mac, 'ip', s.ip);
+			// A static DHCP host is a reservation: the router hands this host this address, so it is the list's first choice.
+			let key = norm_mac(mac);
+			if (key != null) {
+				by[key] ??= { mac: key };
+				by[key].reserved = true;
+			}
+		}
+	}
+	let v4 = ubus_call(connect(), 'dhcp', 'ipv4leases', {}) ?? {};
+	for (let dev, d in v4.device ?? {})
+		for (let l in d.leases ?? []) {
+			put(l.mac, 'name', l.hostname);
+			put(l.mac, 'ip', l.address);
+		}
+	for (let line in split(readfile('/tmp/dhcp.leases') ?? '', '\n')) {
+		let f = split(trim(line), /[ \t]+/);
+		if (length(f) >= 4 && index(f[2], ':') < 0) {
+			put(f[1], 'name', f[3] == '*' ? null : f[3]);
+			put(f[1], 'ip', f[2]);
+		}
+	}
+	for (let line in split(readfile('/etc/ethers') ?? '', '\n')) {
+		let f = split(trim(line), /[ \t]+/);
+		if (length(f) >= 2 && substr(f[0], 0, 1) != '#') {
+			put(f[0], is_address(f[1]) ? 'ip' : 'name', f[1]);
+		}
+	}
+	let arp = split(readfile('/proc/net/arp') ?? '', '\n');
+	for (let i = 1; i < length(arp); i++) {
+		let f = split(trim(arp[i]), /[ \t]+/);
+		// Flag 0x2 is a complete entry; an incomplete one has the all-zero MAC.
+		if (length(f) >= 6 && (hex(substr(f[2], 2)) & 2) && valid_iface(f[5])) {
+			put(f[3], 'ip', f[0]);
+			put(f[3], 'dev', f[5]);
+		}
+	}
+	let key = (h) => lc(h.name ?? '~');
+	let list = sort(values(by), (a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : (a.ip ?? '') < (b.ip ?? '') ? -1 : 1);
+	return length(list) > MAX_HOSTS ? slice(list, 0, MAX_HOSTS) : list;
+}
+
+// The bytes of a magic packet for `mac` (six 0xff, then the MAC sixteen times) as the escapes `printf` turns back into bytes.
+function magic_format(mac) {
+	let bytes = split(mac, ':');
+	let s = '\\xff\\xff\\xff\\xff\\xff\\xff';
+	for (let i = 0; i < 16; i++)
+		for (let b in bytes)
+			s += '\\x' + b;
+	return s;
+}
+
+// The reply of `wake`: sends a magic packet for a MAC address out of an interface (the one the host was last seen on, or
+// br-lan, when none is given).
+function wake(request) {
+	let a = request?.args ?? {};
+	let mac = norm_mac(a.mac);
+	if (mac == null)
+		return { ok: false, error: 'Enter a MAC address such as aa:bb:cc:dd:ee:ff.' };
+	let method = wol_method();
+	if (method == '')
+		return { ok: false, error: 'The router has neither etherwake nor socat, so it cannot send a magic packet.' };
+	let devices = lsdir('/sys/class/net') ?? [];
+	let iface = a.iface;
+	if (iface == null || iface == '') {
+		iface = null;
+		for (let h in wol_hosts())
+			if (h.mac == mac && h.dev != null)
+				iface = h.dev;
+		if (iface == null && index(devices, 'br-lan') >= 0)
+			iface = 'br-lan';
+		if (iface == null)
+			return { ok: false, error: 'Choose the interface the host is connected to.' };
+	}
+	if (!valid_iface(iface) || index(devices, iface) < 0)
+		return { ok: false, error: 'The interface must be a network device of this router.' };
+
+	let command, display;
+	if (method == 'etherwake') {
+		command = `timeout 5 etherwake -i '${iface}' '${mac}' 2>&1`;
+		display = `etherwake -i ${iface} ${mac}`;
+	} else {
+		command = `printf '${magic_format(mac)}' | timeout 5 socat - UDP-DATAGRAM:255.255.255.255:9,broadcast,so-bindtodevice=${iface} 2>&1`;
+		display = `UDP broadcast to 255.255.255.255:9 on ${iface} (socat)`;
+	}
+	let lines = split(trim(run(`${command}; echo rc=$?`) ?? ''), '\n');
+	let rc = match(pop(lines) ?? '', /^rc=([0-9]+)$/);
+	let output = trim(join('\n', lines));
+	if (rc == null || +rc[1] != 0)
+		return { ok: false, error: output != '' ? output : 'The magic packet could not be sent.', method, iface, mac, command: display };
+	return { ok: true, mac, iface, method, command: display, output, sent: time() };
+}
+
+//#endregion
+
+//#region Status
+
+// The reply of `status`: which tools exist, which DNS tool is used, the resolvers the router asks upstream, the
+// interface names, how a Wake-on-LAN packet can be sent and the hosts it can be sent to.
+function status() {
+	let tools = {};
+	for (let t in [ 'ping', 'traceroute', 'nslookup', 'dig', 'kdig', 'drill', 'openssl' ])
+		tools[t] = trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '';
+	let devices = sort(filter(lsdir('/sys/class/net') ?? [], valid_iface));
+	return { generated: time(), tools, dns_tool: dns_tool(), types: TYPES, devices, limits: LIMITS, starttls: STARTTLS, upstream: upstream_resolvers(), check_host: CHECK_HOST, wol: wol_method(), hosts: wol_hosts() };
+}
+
+//#endregion
+
 // rpcd registration: ubus object flab.diag.
 return {
 	'flab.diag': {
@@ -501,6 +646,12 @@ return {
 			args: { id: '' },
 			call: function(request) {
 				return stop(request);
+			},
+		},
+		wake: {
+			args: { mac: '', iface: '' },
+			call: function(request) {
+				return wake(request);
 			},
 		},
 	},

@@ -1,11 +1,14 @@
-// Shared handling of editable UCI options, used by every page that edits a config (System settings, DHCP). Pure
-// functions with no DOM and no network.
+// Shared handling of editable UCI options, used by every page that edits a config (System settings, DHCP) and by the
+// DNS page, which shows its options through the same controls (read only for now). Pure functions with no DOM and no
+// network.
 //
 // A page describes its options as a table of fields (see pages/settings/schema.js for the full format):
-//   { key, type: string | text | bool | int | enum | list, label, hint?, default?, check?, min?, max?, options?, items? }
-// (`items` is the fixed set of values a list may hold) and these functions read a field's value from a UCI section, normalize and compare values, describe them for
-// the review list, and validate them. A value in a form is a string ('' = not set), a boolean (a switch, with
-// the OpenWrt default when the option is absent) or an array of strings (a list).
+//   { key, type: string | text | bool | int | enum | list, label, hint?, default?, check?, min?, max?, options?, labels?,
+//     number?, items? }
+// (`items` is the fixed set of values a list may hold, `labels` gives each value of an enum a description and `number`
+// makes an int a number input) and these functions read a field's value from a UCI section, normalize and compare values,
+// describe them for the review list, and validate them. A value in a form is a string ('' = not set), a boolean (a
+// checkbox, with the OpenWrt default when the option is absent) or an array of strings (a list).
 
 //#region Reading UCI
 

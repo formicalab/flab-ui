@@ -1,0 +1,18 @@
+{"mac":"zz"}
+{"mac":"aa:bb:cc:dd:ee"}
+{"mac":"aa:bb:cc:dd:ee:ff:00"}
+{"mac":"aabbccddeeff"}
+{"mac":"aa:bb:cc:dd:ee:ff;touch /tmp/flab-diag-canary","iface":"lo"}
+{"mac":"aa:bb:cc:dd:ee:ff\ntouch /tmp/flab-diag-canary","iface":"lo"}
+{"mac":"$(touch /tmp/flab-diag-canary)","iface":"lo"}
+{"mac":"aa:bb:cc:dd:ee:ff","iface":"lo;touch /tmp/flab-diag-canary"}
+{"mac":"aa:bb:cc:dd:ee:ff","iface":"lo\ntouch /tmp/flab-diag-canary"}
+{"mac":"aa:bb:cc:dd:ee:ff","iface":"`touch /tmp/flab-diag-canary`"}
+{"mac":"aa:bb:cc:dd:ee:ff","iface":"-i"}
+{"mac":"aa:bb:cc:dd:ee:ff","iface":"no-such0"}
+{"mac":"aa:bb:cc:dd:ee:ff","iface":"../../etc"}
+{"mac":"aa:bb:cc:dd:ee:ff","iface":"a'b"}
+{"mac":1}
+{"mac":["aa:bb:cc:dd:ee:ff"]}
+{"iface":"lo"}
+{}

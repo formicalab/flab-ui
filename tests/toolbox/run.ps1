@@ -96,11 +96,11 @@ try {
 
     Write-Host '2/3 Running the diagnostics plugin on the router (real jobs against loopback)'
     Invoke-Remote "rm -rf $remote; mkdir -p $remote"
-    Invoke-Native 'scp' @('-O', '-r', $libs, $diagPlugin, (Join-Path $here 'harness.uc'), (Join-Path $here 'refusals.txt'), "${Router}:$remote/")
+    Invoke-Native 'scp' @('-O', '-r', $libs, $diagPlugin, (Join-Path $here 'harness.uc'), (Join-Path $here 'refusals.txt'), (Join-Path $here 'wake-refusals.txt'), "${Router}:$remote/")
     Invoke-Remote @"
 set -e
 cd $remote
-for f in *.uc flab/*.uc refusals.txt; do tr -d '\r' < `$f > `$f.l && mv `$f.l `$f; done
+for f in *.uc flab/*.uc refusals.txt wake-refusals.txt; do tr -d '\r' < `$f > `$f.l && mv `$f.l `$f; done
 # The plugin is run with CRLF line endings, as a Windows checkout deploys it: its scripts must not carry the CRs.
 sed 's/`$/\r/' flab.diag.uc > flab.diag.uc.l && mv flab.diag.uc.l flab.diag.uc
 "@
@@ -166,6 +166,12 @@ ps | grep -cE '[o]penssl s_client|[p]ing -4 -c 2' > out-diag-check2.procs.txt ||
 before=$(ls /tmp/flab-diag | wc -l)
 i=0
 while IFS= read -r line; do i=$((i + 1)); d start "$line" > out-diag-refused-$i.json; done < refusals.txt
+# Wake-on-LAN: one packet out of the loopback device, where nothing hears it, then every refused request (the canary is
+# checked below with the others).
+d wake '{"mac":"02:00:00:00:00:01","iface":"lo"}' > out-diag-wake.json
+d wake '{"mac":"02-00-00-00-00-02","iface":"lo"}' > out-diag-wake2.json
+i=0
+while IFS= read -r line; do i=$((i + 1)); d wake "$line" > out-diag-wakerefused-$i.json; done < wake-refusals.txt
 after=$(ls /tmp/flab-diag | wc -l)
 echo "$before $after" > out-diag-refused.count
 if [ -e /tmp/flab-diag-canary ]; then echo yes > out-diag-canary.txt; else echo no > out-diag-canary.txt; fi

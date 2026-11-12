@@ -1,11 +1,11 @@
-// The result views of the Diagnostics tab's three richer tools: the connectivity check, the DNS comparison and the
-// certificate check. Each takes the job (its text so far, whether it still runs) and returns the nodes to paint; the
+// The result views of the Toolbox's richer tools: the connectivity check, the DNS comparison, the certificate check and
+// Wake-on-LAN. Each takes the job (its text so far, whether it still runs) and returns the nodes to paint; the
 // meaning of the text comes from diagmodel.js. The views are repainted every time new output arrives, so a view
 // must show a partial result sensibly (a step still running, a server not asked yet).
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, mono, muted } from '../../core/ui.js';
-import { PUBLIC_RESOLVERS, fmtMs, parseCheck, parseCompare, parseTls } from './diagmodel.js';
+import { badge, button, mono, muted } from '../../core/ui.js';
+import { PUBLIC_RESOLVERS, fmtMs, hostOf, parseCheck, parseCompare, parseTls } from './diagmodel.js';
 
 // The icon and color class of a check step's state.
 const STATE_ICON = { ok: ['check-circle', 'ok'], warn: ['exclamation-triangle', 'warn'], bad: ['x-circle', 'bad'], skip: ['info-circle', 'skip'], pending: ['hourglass-split', 'pending'] };
@@ -100,6 +100,25 @@ export function compareBody(job, status) {
 
 //#endregion
 
+//#region Wake-on-LAN
+
+// The Wake-on-LAN result: that the magic packet went out (and how), what that does and does not prove, and a button to
+// ping the host once it has had a moment. `openPing(ip)` fills the ping form in and runs it.
+export function wolBody(job, status, openPing) {
+  const r = job.wake;
+  if (!r?.ok) return h('div', { className: 'rt-error' }, icon('x-circle'), job.error ?? 'The magic packet could not be sent.');
+  const host = hostOf(status?.hosts, r.mac);
+  const who = host?.name ? `${host.name} (${r.mac})` : r.mac;
+  const how = r.method === 'etherwake' ? 'an Ethernet frame (etherwake)' : 'a UDP broadcast to port 9 (socat)';
+  return h('div', { className: 'rt-wolbody' },
+    h('div', { className: 'rt-verdict ok' },
+      h('div', { className: 'rt-headline' }, icon('check-circle'), `Magic packet sent to ${who}.`),
+      h('div', { className: 'rt-text' }, `It left the router on ${r.iface} as ${how}. That is all the router can tell: a host that is off does not answer, so whether it woke up has to be checked.`)),
+    host?.ip ? h('div', { className: 'rt-actions' }, button(`Ping ${host.ip}`, 'activity', () => openPing(host.ip)), muted('Waking takes a few seconds; the first pings may get no reply.')) : muted('The router does not know this host\'s address, so it cannot ping it for you.'));
+}
+
+//#endregion
+
 //#region Certificate check
 
 // The "valid until" badge of a certificate: red when expired, amber when close, otherwise green.
@@ -132,7 +151,16 @@ function certCard(c) {
       c.pem ? h('details', { className: 'rt-raw' }, h('summary', {}, 'PEM'), h('div', { className: 'rt-pem-actions' }, copy), h('pre', {}, c.pem)) : null));
 }
 
-// The certificate check: the verdicts first, then the session and the chain from the server's certificate to the root.
+// What the chain lacks, drawn where it lacks it: after a certificate that the next one did not issue (a gap), and at the
+// end when the last certificate has no issuer in the chain and is not a root. A lone certificate gets the stronger text.
+function missingNote(c, kind, count) {
+  const text = kind === 'gap' ? ['Gap. ', `This certificate was issued by ${c.issuer}, but the server did not send that certificate next.`]
+    : count === 1 ? ['Issuer not sent. ', `The server sent no certificate for ${c.issuer}.`]
+      : ['End of the chain. ', `The server did not send the issuer of this certificate, ${c.issuer}. Servers usually leave out the root; a missing intermediate would show as a failed verification.`];
+  return h('div', { className: 'rt-chain-missing' }, h('strong', {}, text[0]), text[1]);
+}
+
+// The certificate check: the verdicts first, then the session and the chain exactly as the server sent it.
 export function tlsBody(job) {
   const t = parseTls(job.text, { name: job.name, target: job.target });
   if (t.running && !t.chain.length) return h('div', { className: 'rt-running' }, h('span', { className: 'spinner-border spinner-border-sm' }), 'Connecting…');
@@ -141,7 +169,11 @@ export function tlsBody(job) {
   return h('div', { className: 'rt-tlsbody' },
     h('div', { className: 'rt-findings' }, t.findings.map(f => h('div', { className: `rt-finding ${f.level}` }, icon(kind[f.level]), f.text))),
     session.length ? h('div', { className: 'rt-stats' }, session.map(([l, v]) => h('div', { className: 'rt-stat' }, h('div', { className: 'v rt-small' }, v), h('div', { className: 'l' }, l)))) : null,
-    t.chain.length ? h('div', { className: 'rt-chain' }, h('h3', {}, `Certificate chain (${t.chain.length})`), t.chain.map(certCard)) : null);
+    t.chain.length ? h('div', { className: 'rt-chain' },
+      h('h3', {}, `Certificate chain sent by the server (${t.chain.length})`),
+      h('p', { className: 'rt-chain-note' }, 'The certificates exactly as the server sent them, in order. The router\'s own certificate authorities are not used to add any.'),
+      t.chain.flatMap((c, i) => [certCard(c), t.gaps.includes(i) ? missingNote(c, 'gap') : null]),
+      t.chain.at(-1).selfSigned || (t.chain.length > 1 && t.verify?.code !== 20 && t.verify?.code !== 21) ? null : missingNote(t.chain.at(-1), 'end', t.chain.length)) : null);
 }
 
 //#endregion

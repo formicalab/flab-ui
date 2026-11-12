@@ -7,7 +7,7 @@
 import { chromium } from 'playwright-core';
 import path from 'node:path';
 import { DRILL, KDIG, KDIG_NX, NSLOOKUP, PING_DOWN, PING_LOSSY, PING_OK, PING_V6, PING_BAD, TRACE, TRACE6, TRACE6_NAMES, TRACE_NAMES } from './samples.mjs';
-import { CHECK_OK, COMPARE, COMPARE_NX, TLS_EXAMPLE, TLS_EXPIRED, TLS_REFUSED, TLS_RESET, TLS_SELFSIGNED } from './samples-tools.mjs';
+import { CHECK_OK, COMPARE, COMPARE_NX, TLS_EXAMPLE, TLS_EXPIRED, TLS_GAP, TLS_LEAFONLY, TLS_REFUSED, TLS_RESET, TLS_SELFSIGNED } from './samples-tools.mjs';
 
 const baseUrl = process.env.FLAB_URL ?? 'https://openwrt.lab.formicalab.casa/flab/';
 const sid = process.env.FLAB_SID;
@@ -21,7 +21,8 @@ const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'
 const j = JSON.stringify;
 
 //#region The mock router
-const STATUS = () => ({ generated: 1, tools: { ping: true, traceroute: true, nslookup: true, dig: false, kdig: true, drill: true, openssl: mock.openssl }, dns_tool: mock.dnsTool, types: ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'], devices: ['br-lan', 'lo', 'wan'], limits: { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75 }, starttls: ['smtp', 'imap', 'pop3', 'ftp'], upstream: ['2a01:8d0:601:5002:91:80:35:166', '1.1.1.1'], check_host: 'example.com' });
+const HOSTS = [{ mac: '34:c6:dd:35:4d:db', name: 'H7c', ip: '192.168.1.7', dev: 'br-lan', reserved: true }, { mac: 'dc:cd:2f:a8:b1:7a', name: 'Epson', ip: '192.168.1.21', reserved: true }, { mac: 'a4:5e:60:00:00:01', name: 'Tablet', ip: '192.168.1.50', dev: 'br-lan' }, { mac: '02:11:22:33:44:55' }];
+const STATUS = () => ({ generated: 1, tools: { ping: true, traceroute: true, nslookup: true, dig: false, kdig: true, drill: true, openssl: mock.openssl }, dns_tool: mock.dnsTool, types: ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'], devices: ['br-lan', 'lo', 'wan'], limits: { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75 }, starttls: ['smtp', 'imap', 'pop3', 'ftp'], upstream: ['2a01:8d0:601:5002:91:80:35:166', '1.1.1.1'], check_host: 'example.com', wol: mock.wol, hosts: mock.noHosts ? [] : HOSTS });
 
 // A block of the connectivity check's output with its body replaced (the END line keeps the given exit code).
 function swapBlock(text, id, body, exit = 1) {
@@ -55,7 +56,7 @@ function script(a) {
   }
   if (a.tool === 'compare') return { chunks: reveal(h === 'nx.example' ? COMPARE_NX : COMPARE, 4), exit: 0 };
   if (a.tool === 'tls') {
-    const sample = { 'expired.example': TLS_EXPIRED, 'self-signed.example': TLS_SELFSIGNED, 'reset.example': TLS_RESET, 'closed.example': TLS_REFUSED }[h] ?? TLS_EXAMPLE;
+    const sample = { 'expired.example': TLS_EXPIRED, 'self-signed.example': TLS_SELFSIGNED, 'leaf-only.example': TLS_LEAFONLY, 'gap.example': TLS_GAP, 'reset.example': TLS_RESET, 'closed.example': TLS_REFUSED }[h] ?? TLS_EXAMPLE;
     return { chunks: reveal(sample, 3), exit: 0 };
   }
   if (a.tool === 'ping') {
@@ -76,7 +77,7 @@ function script(a) {
   return { chunks: [a.type === 'MX' ? DRILL : KDIG], exit: 0 };
 }
 
-const mock = { dnsTool: 'kdig', openssl: true, jobs: new Map(), starts: [], stops: [], reads: 0, next: 1, writes: [] };
+const mock = { dnsTool: 'kdig', openssl: true, wol: 'etherwake', noHosts: false, wakes: [], jobs: new Map(), starts: [], stops: [], reads: 0, next: 1, writes: [] };
 
 // The text of an endless job after its current read: the header and one line per read.
 function textOf(job) {
@@ -126,6 +127,12 @@ function answer(body) {
         if (!job.stopped && cur < last) job.pos++;
       }
       return ok({ ok: true, id: job.id, running, exit: running ? null : job.stopped ? 143 : job.script.exit, size: text.length, text: text.slice(args.from ?? 0), truncated: false, timed_out: false, stopped: job.stopped });
+    }
+    if (method === 'wake') {
+      mock.wakes.push(args);
+      if (args.mac === '02:00:00:00:00:99') return ok({ ok: false, error: 'The interface must be a network device of this router.' });
+      const iface = args.iface ?? (args.mac === '34:c6:dd:35:4d:db' ? 'br-lan' : 'br-lan');
+      return ok({ ok: true, mac: args.mac, iface, method: mock.wol, command: mock.wol === 'etherwake' ? `etherwake -i ${iface} ${args.mac}` : `UDP broadcast to 255.255.255.255:9 on ${iface} (socat)`, output: '', sent: 1 });
     }
     if (method === 'stop') {
       mock.stops.push(args.id);
@@ -184,7 +191,7 @@ console.log('== the page and the form ==');
 check((await page.locator('.nav-pane a.active').innerText()).trim() === 'Toolbox' && (await page.locator('.cmdbar h1').innerText()).trim() === 'Toolbox' && await page.locator('.cmdbar .seg-tab').count() === 0, 'the Toolbox is its own page, with no tabs');
 const navItems = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
 check(navItems.indexOf('Toolbox') === navItems.indexOf('Logs') - 1 && navItems.indexOf('Toolbox') > 0, 'it sits just above Logs in the navigation', navItems.join(' | '));
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,DNS compare,TLS certificate', 'the Toolbox offers the connectivity check, ping, traceroute, DNS lookup and comparison, and the certificate check');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,DNS compare,TLS certificate,Wake-on-LAN', 'the Toolbox offers the connectivity check, ping, traceroute, DNS lookup and comparison, the certificate check and Wake-on-LAN');
 check(await tool('Ping').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Pings').locator('input').inputValue() === '4' && await fieldOf('Size (bytes)').locator('input').inputValue() === '56' && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'ping is the default tool, with its defaults, and nothing is shown before the first run');
 check((await page.locator('#rt-diag-devices option').evaluateAll(o => o.map(x => x.value))).join() === 'br-lan,lo,wan', 'the router\'s interfaces are offered as sources');
 await shot('empty');
@@ -362,9 +369,10 @@ check(/The port must be a whole number from 1 to 65535/.test(await page.locator(
 await fieldOf('Port').locator('input').fill('');
 await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'tls', host: 'example.com', port: 443 }), 'the port defaults to 443 and nothing else is sent', j(mock.starts.at(-1)));
-check(await page.locator('.rt-finding.ok').count() === 3 && await page.locator('.rt-finding.bad, .rt-finding.warn').count() === 0 && await page.locator('.rt-result-slot .card-header').innerText().then(t => /TLS certificate · example\.com:443/.test(t.replace(/\s+/g, ' '))), 'a good certificate: trusted, covers the name, valid; the header names host and port');
+check(await page.locator('.rt-finding.ok').count() === 4 && await page.locator('.rt-finding.bad, .rt-finding.warn').count() === 0 && await page.locator('.rt-result-slot .card-header').innerText().then(t => /TLS certificate · example\.com:443/.test(t.replace(/\s+/g, ' '))), 'a good certificate: trusted, in order, covers the name, valid; the header names host and port');
+check(await page.locator('.rt-chain-missing').count() === 0 && /exactly as the server sent them/.test(await page.locator('.rt-chain-note').innerText()), 'the chain is said to be exactly what the server sent, and a complete one has no missing marker');
 check(await stat('Protocol') === 'TLSv1.3' && await stat('Cipher') === 'TLS_AES_256_GCM_SHA384' && await stat('Key exchange') === 'X25519MLKEM768', 'the protocol, cipher and key exchange');
-check(await page.locator('.rt-cert').count() === 4 && await page.locator('.rt-cert.leaf').count() === 1 && /Certificate chain \(4\)/.test(await page.locator('.rt-chain h3').innerText()), 'the chain shows all four certificates, the first one marked');
+check(await page.locator('.rt-cert').count() === 4 && await page.locator('.rt-cert.leaf').count() === 1 && /Certificate chain sent by the server \(4\)/.test(await page.locator('.rt-chain h3').innerText()), 'the chain shows all four certificates, the first one marked');
 const leafText = (await page.locator('.rt-cert.leaf').innerText()).replace(/\s+/g, ' ');
 check(/Server certificate CN=example\.com \d+ days left/.test(leafText) && /Issued by C=US, O=SSL Corporation, CN=Cloudflare TLS Issuing ECC CA 3/.test(leafText) && /Key EC prime256v1 · signed with ecdsa-with-SHA256/.test(leafText) && /Valid 2026-09-26 to 2026-12-25/.test(leafText) && /Names example\.com \*\.example\.com/.test(leafText) && /Serial 01EEE6AABB521D5E14FC315FD9985690/.test(leafText) && /SHA-256 85:CA:6A:B0/.test(leafText) && /Certificate authority no/.test(leafText), 'the server certificate: issuer, key, dates, names, serial and fingerprint', leafText);
 check(await page.locator('.rt-cert').nth(1).innerText().then(t => t.replace(/\s+/g, ' ')).then(t => /Intermediate/.test(t) && /Certificate authority yes/.test(t)), 'the issuers are labeled as intermediates and certificate authorities');
@@ -379,6 +387,11 @@ await fieldOf('Server name (optional)').locator('input').fill('expired.badssl.co
 check(j(mock.starts.at(-1)) === j({ tool: 'tls', host: 'expired.example', port: 443, sni: 'expired.badssl.com' }) && await page.locator('.rt-finding.bad').count() === 1 && /expired \d+ days ago/.test(await page.locator('.rt-finding.bad').innerText()) && /expired \d+ days ago/.test(await page.locator('.rt-cert.leaf .rt-cert-head .fl-badge').last().innerText()), 'an expired certificate: said once as a finding and as a badge; the server name is sent', await page.locator('.rt-findings').innerText());
 await host().fill('self-signed.example'); await fieldOf('Server name (optional)').locator('input').fill('self-signed.badssl.com'); await runBtn().click(); await waitDone();
 check(await page.locator('.rt-cert').count() === 1 && /self-signed/.test(await page.locator('.rt-finding.bad').innerText()) && /Issued by itself \(self-signed\)/.test((await page.locator('.rt-cert').innerText()).replace(/\s+/g, ' ')), 'a self-signed certificate is called out');
+await host().fill('leaf-only.example'); await fieldOf('Server name (optional)').locator('input').fill(''); await runBtn().click(); await waitDone();
+check(await page.locator('.rt-cert').count() === 1 && /only its own certificate, without the certificate of its issuer/.test(await page.locator('.rt-finding.warn').innerText()) && /Issuer not sent\. The server sent no certificate for O=Example Lab, CN=Example Lab Issuing CA/.test((await page.locator('.rt-chain-missing').innerText()).replace(/\s+/g, ' ')), 'a server that sends only its own certificate: a warning and a marker where the issuer should be');
+await shot('tls-leaf-only');
+await host().fill('gap.example'); await runBtn().click(); await waitDone();
+check(await page.locator('.rt-cert').count() === 2 && /incomplete or out of order/.test(await page.locator('.rt-finding.warn').innerText()) && await page.locator('.rt-chain > *').evaluateAll(n => n.map(x => x.className.trim()).join()) === ',rt-chain-note,rt-cert leaf,rt-chain-missing,rt-cert', 'a gap in the chain is marked between the two certificates');
 await fieldOf('Server name (optional)').locator('input').fill(''); await host().fill('reset.example'); await runBtn().click(); await waitDone();
 check(await page.locator('.rt-cert').count() === 0 && /closed the connection during the handshake/.test(await page.locator('.rt-finding.bad').innerText()), 'a server that hangs up has no chain and a plain explanation');
 await host().fill('closed.example'); await fieldOf('Port').locator('input').fill('9'); await runBtn().click(); await waitDone();
@@ -386,6 +399,50 @@ check(/closed\.example:9 refused the connection/.test(await page.locator('.rt-fi
 await host().fill('mail.example'); await fieldOf('Port').locator('input').fill('465'); await fieldOf('STARTTLS').locator('select').selectOption('smtp'); await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'tls', host: 'mail.example', port: 465, starttls: 'smtp' }) && /-starttls smtp/.test(await page.locator('.rt-result-slot .card-header').innerText()), 'a STARTTLS check sends the protocol');
 await fieldOf('Port').locator('input').fill(''); await fieldOf('STARTTLS').locator('select').selectOption('');
+
+console.log('\n== Wake-on-LAN ==');
+const wolSelect = () => page.locator('.rt-host select');
+await tool('Wake-on-LAN').click();
+check(await fieldOf('Host to wake').count() === 1 && (await fieldOf('Interface').locator('option').allInnerTexts()).join() === 'automatic,br-lan,lo,wan' && /Sends one magic packet as an Ethernet frame \(etherwake\)/.test(await page.locator('.rt-note').innerText()) && await fieldOf('Pings').count() === 0, 'the form asks for a host and an interface, and says how the packet is sent');
+check((await page.locator('.rt-host optgroup').evaluateAll(g => g.map(x => `${x.label}: ${[...x.querySelectorAll('option')].map(o => o.textContent).join(' / ')}`))).join(' | ') === 'Reservations: H7c · 192.168.1.7 · 34:c6:dd:35:4d:db / Epson · 192.168.1.21 · dc:cd:2f:a8:b1:7a | Seen on the network: Tablet · 192.168.1.50 · a4:5e:60:00:00:01 / unnamed · 02:11:22:33:44:55', 'the list offers the DHCP reservations first, then the other hosts the router has seen, by name, address and MAC');
+check((await wolSelect().locator('> option').allInnerTexts()).join('|') === 'Choose a host…|Another MAC address…' && await host().count() === 0 && await wolSelect().inputValue() === '', 'it starts with nothing chosen, and no text field for a MAC');
+await runBtn().click();
+check(/Choose a host from the list/.test(await page.locator('.rt-diag .rt-error').innerText()) && mock.wakes.length === 0, 'running with nothing chosen is refused in the form');
+await wolSelect().selectOption('dc:cd:2f:a8:b1:7a'); await runBtn().click(); await waitDone();
+check(j(mock.wakes.at(-1)) === j({ mac: 'dc:cd:2f:a8:b1:7a' }) && mock.starts.every(s => s.tool !== 'wol'), 'the chosen host\'s MAC is sent, with no interface when it is left on automatic, and no job is started');
+check(/^Wake-on-LAN · dc:cd:2f:a8:b1:7a\s+etherwake -i br-lan dc:cd:2f:a8:b1:7a/.test((await page.locator('.rt-result-slot .card-header').innerText()).replace(/\s+/g, ' ')) && /^Finished/.test(await badgeText()), 'the header shows the MAC and the command that ran');
+const wolText = await resultText();
+check(/Magic packet sent to Epson \(dc:cd:2f:a8:b1:7a\)\./.test(wolText) && /left the router on br-lan as an Ethernet frame \(etherwake\)/.test(wolText) && /whether it woke up has to be checked/.test(wolText) && await page.locator('.rt-verdict.ok').count() === 1, 'the result names the host, the interface and the method, and says the router cannot know whether it woke', wolText);
+await shot('wol');
+await page.locator('.rt-wolbody button', { hasText: 'Ping 192.168.1.21' }).click();
+await page.locator('.rt-result-slot .card-header', { hasText: 'Ping · 192.168.1.21' }).waitFor({ timeout: 10000 });
+await waitDone();
+check(mock.starts.at(-1).tool === 'ping' && mock.starts.at(-1).host === '192.168.1.21' && await tool('Ping').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '192.168.1.21', 'the Ping button runs a ping of the host\'s address', j(mock.starts.at(-1)));
+await tool('Wake-on-LAN').click();
+check(await wolSelect().inputValue() === '' && await wolSelect().locator('option:checked').innerText() === 'Choose a host…', 'a host address left in the form by the Ping button is not taken for a choice');
+await wolSelect().selectOption('02:11:22:33:44:55'); await fieldOf('Interface').locator('select').selectOption('lo'); await runBtn().click(); await waitDone();
+check(j(mock.wakes.at(-1)) === j({ mac: '02:11:22:33:44:55', iface: 'lo' }) && /Magic packet sent to 02:11:22:33:44:55\./.test(await resultText()) && /does not know this host's address/.test(await resultText()) && await page.locator('.rt-wolbody button').count() === 0, 'a chosen interface is sent; a host without an address has no Ping button');
+await wolSelect().selectOption('__other');
+check(await host().count() === 1 && await host().inputValue() === '' && await host().getAttribute('placeholder') === 'aa:bb:cc:dd:ee:ff', '"Another MAC address…" brings up a text field');
+await host().fill('192.168.1.21'); await runBtn().click();
+check(/Enter a MAC address such as aa:bb:cc:dd:ee:ff/.test(await page.locator('.rt-diag .rt-error').innerText()) && mock.wakes.length === 2, 'an address instead of a MAC is refused in the form');
+await host().fill('AA-BB-CC-DD-EE-FF'); await runBtn().click(); await waitDone();
+check(j(mock.wakes.at(-1)) === j({ mac: 'aa:bb:cc:dd:ee:ff', iface: 'lo' }) && /Magic packet sent to aa:bb:cc:dd:ee:ff\./.test(await resultText()), 'a typed MAC is normalized and sent');
+await host().fill('02:00:00:00:00:99'); await runBtn().click(); await waitDone(/Failed/);
+check(/The interface must be a network device of this router\./.test(await page.locator('.rt-result-slot .rt-error').innerText()) && await page.locator('.rt-verdict').count() === 0, 'a refusal from the router is shown as a failure, not as success');
+mock.wol = 'socat';
+page = await open();
+await tool('Wake-on-LAN').click();
+check(/UDP broadcast to port 9 \(socat\)/.test(await page.locator('.rt-note').innerText()), 'with only socat the note says the packet is a UDP broadcast');
+await wolSelect().selectOption('34:c6:dd:35:4d:db'); await runBtn().click(); await waitDone();
+check(/UDP broadcast to 255\.255\.255\.255:9 on br-lan \(socat\)/.test(await page.locator('.rt-result-slot .card-header').innerText()) && /as a UDP broadcast to port 9 \(socat\)/.test(await resultText()), 'the result names the UDP broadcast');
+mock.wol = 'etherwake';
+mock.noHosts = true;
+page = await open();
+await tool('Wake-on-LAN').click();
+check(await wolSelect().count() === 0 && await host().isVisible(), 'a router that knows no hosts shows only the MAC field');
+mock.noHosts = false;
+page = await open();
 
 console.log('\n== a refused start ==');
 await tool('Ping').click(); await host().fill('refused.example'); await runBtn().click();
@@ -419,12 +476,25 @@ const limited = clone(acls);
 limited.ubus['flab.diag'] = (limited.ubus['flab.diag'] ?? []).filter(m => !['start', 'stop'].includes(m));
 const p2 = await open(limited);
 check(await p2.locator('.rt-diag button:has-text("Run")').isDisabled() && /not allowed to run diagnostics/.test(await p2.locator('.rt-diag').innerText()), 'Run is disabled and the page says why');
+await p2.locator('.rt-seg .seg-tab', { hasText: 'Wake-on-LAN' }).click();
+check(await p2.locator('.rt-diag button:has-text("Run")').isEnabled(), 'waking a host is its own permission: a login that may not start tools can still use it');
 await p2.close();
+const noWake = clone(acls);
+noWake.ubus['flab.diag'] = (noWake.ubus['flab.diag'] ?? []).filter(m => m !== 'wake');
+const p3 = await open(noWake);
+await p3.locator('.rt-seg .seg-tab', { hasText: 'Wake-on-LAN' }).click();
+check(await p3.locator('.rt-diag button:has-text("Run")').isDisabled() && /not allowed to run diagnostics/.test(await p3.locator('.rt-diag').innerText()), 'a login without the wake permission cannot run it');
+await p3.close();
 
 console.log('\n== a router without openssl ==');
 mock.openssl = false;
 page = await open();
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,DNS compare', 'the certificate check is not offered without openssl');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,DNS compare,Wake-on-LAN', 'the certificate check is not offered without openssl');
+mock.openssl = true;
+mock.wol = '';
+page = await open();
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,DNS compare,TLS certificate', 'Wake-on-LAN is not offered on a router that has neither etherwake nor socat');
+mock.wol = 'etherwake';
 mock.openssl = true;
 
 console.log('\n== busybox nslookup only ==');

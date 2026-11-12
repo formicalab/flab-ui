@@ -71,6 +71,9 @@
 .rt-small { font-size: .875rem !important; overflow-wrap: anywhere; }
 .rt-chain { display: grid; gap: .75rem; margin-top: 1.25rem; }
 .rt-chain h3 { font-size: 1rem; margin: 0; }
+.rt-chain-note { margin: 0; color: var(--fl-muted); font-size: .875rem; }
+.rt-chain-missing { border: 1px dashed var(--fl-warn-fg); border-radius: 8px; padding: .6rem 1rem; color: var(--fl-warn-fg); font-size: .875rem; overflow-wrap: anywhere; }
+.rt-chain-missing strong { color: inherit; }
 .rt-cert { border: 1px solid var(--fl-stroke); border-radius: 8px; padding: .7rem 1rem; display: grid; gap: .5rem; }
 .rt-cert.leaf { border-left: 4px solid var(--fl-brand); }
 .rt-cert-head { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
@@ -81,3 +84,7 @@
 .rt-cert-row .v { overflow-wrap: anywhere; }
 .rt-fp { font-size: .8rem; }
 .rt-pem-actions { margin-top: .5rem; }
+
+/* ── Wake-on-LAN ── */
+.rt-wolbody { display: grid; gap: .75rem; }
+.rt-wolbody .rt-actions { align-items: center; flex-wrap: wrap; }

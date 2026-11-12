@@ -12,6 +12,15 @@ export const isHost = text => /^[A-Za-z0-9_.:][A-Za-z0-9_.:-]{0,252}$/.test(Stri
 // An IPv4 or IPv6 address (the characters an address can hold, with a colon for IPv6).
 export const isAddress = text => /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/.test(String(text)) || (String(text).includes(':') && /^[0-9A-Fa-f:.]{2,45}$/.test(String(text)));
 
+// A MAC address: six hex pairs separated by colons or dashes.
+export const isMac = text => /^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$/.test(String(text ?? ''));
+
+// A MAC address as lowercase pairs joined by colons (what the plugin sends back); the text itself when it is not one.
+export const normMac = text => (isMac(text) ? String(text).toLowerCase().replaceAll('-', ':') : String(text ?? ''));
+
+// The known host with this MAC address from the plugin's host list ({ mac, name, ip, dev }), or null.
+export const hostOf = (hosts, mac) => (hosts ?? []).find(x => x.mac === normMac(mac)) ?? null;
+
 // The number limits of each field, as the plugin enforces them: [min, max, default].
 export const LIMITS = { count: [1, 10, 4], size: [0, 1400, 56], hops: [1, 30, 20], probes: [1, 3, 2], port: [1, 65535, 443] };
 
@@ -37,7 +46,7 @@ export const blankForm = () => ({
   hops: String(LIMITS.hops[2]), probes: String(LIMITS.probes[2]), method: 'udp', resolve: '',
   type: 'A', server: '',
   port: '', sni: '', starttls: '',
-  servers: ['router', '1.1.1.1', '8.8.8.8'], extraServer: '',
+  servers: ['router', '1.1.1.1', '8.8.8.8'], extraServer: '', iface: '', wolOther: false,
 });
 
 // A whole number between the limits of `field`, or null when the text is not one. Empty text is the default.
@@ -52,6 +61,13 @@ export function numberOf(text, field) {
 // chosen tool uses are sent.
 export function requestOf(form) {
   const host = String(form.host ?? '').trim();
+  // Wake-on-LAN takes a MAC address in the host field and an optional interface (empty: the one the host was seen on).
+  if (form.tool === 'wol') {
+    if (!isMac(host)) return { error: 'Enter a MAC address such as aa:bb:cc:dd:ee:ff.' };
+    const iface = String(form.iface ?? '').trim();
+    if (iface && !/^[A-Za-z0-9_.:-]{1,15}$/.test(iface)) return { error: 'The interface must be a network device name.' };
+    return { args: iface ? { tool: 'wol', mac: normMac(host), iface } : { tool: 'wol', mac: normMac(host) } };
+  }
   // The connectivity check works without a host (it uses the plugin's default name).
   if (form.tool === 'check') {
     if (host && !isHost(host)) return { error: 'Enter a host name, or leave it empty to use the default.' };
@@ -386,14 +402,16 @@ function keyOf(text) {
 }
 
 // What a certificate check's output says: the connection, the chain and the findings.
-//   { running, error, address, protocol, cipher, group, verify: { code, text } | null, chain: [certificate], findings, level }
+//   { running, error, address, protocol, cipher, group, verify: { code, text } | null, chain: [certificate], gaps, findings, level }
+// `chain` is exactly what the server sent, in order; `gaps` the positions i where certificate i was not issued by
+// certificate i + 1.
 // A certificate is { n, subject, issuer, key, bits, sigalg, notBefore, notAfter, daysLeft, serial, sha256, sans, ca,
 // selfSigned, role, pem }. `findings` is [{ level: 'ok' | 'warn' | 'bad', text }] and `level` the worst of them.
 // `ctx.name` is the name the certificate should cover (none for an address, which is matched against its IP names), and
 // `now` the time to judge dates by, in milliseconds.
 export function parseTls(text, ctx = {}, now = Date.now()) {
   const block = parseBlocks(text).find(b => b.id === 'tls');
-  const out = { running: !block || block.running, error: null, address: null, protocol: null, cipher: null, group: null, verify: null, chain: [], findings: [], level: 'ok' };
+  const out = { running: !block || block.running, error: null, address: null, protocol: null, cipher: null, group: null, verify: null, chain: [], gaps: [], findings: [], level: 'ok' };
   if (!block) return out;
   const lines = block.output.split('\n');
   let section = '';
@@ -442,6 +460,9 @@ export function parseTls(text, ctx = {}, now = Date.now()) {
     c.daysLeft = c.notAfter == null ? null : Math.floor((c.notAfter - now) / 86400000);
     c.role = c.n === 0 ? 'Server certificate' : c.selfSigned ? 'Root' : 'Intermediate';
   }
+  // The chain as the server sent it, judged on its own: each certificate should have been issued by the next one. The
+  // router's CA store plays no part here (s_client lists the certificates received, not the ones it verified).
+  out.gaps = out.chain.flatMap((c, i) => (i + 1 < out.chain.length && c.issuer !== out.chain[i + 1].subject ? [i] : []));
   if (!out.chain.length && !block.running) {
     out.error = connectionError(block.output, ctx);
     out.verify = null;
@@ -461,6 +482,25 @@ function connectionError(output, ctx) {
   return `No certificate was received from ${target}.`;
 }
 
+// What the certificates the server sent say about the chain itself, whatever the router's CA store would add: a lone
+// certificate without its issuer, a gap or a wrong order, or a chain in order. Each finding has `chain: true`.
+function chainFindings(t, leaf) {
+  const sent = t.chain.length;
+  const last = t.chain[sent - 1];
+  const trusted = t.verify?.code === 0;
+  if (t.gaps.length) {
+    const i = t.gaps[0];
+    return [{ level: 'warn', chain: true, text: `The chain the server sent is incomplete or out of order: certificate ${i} was issued by ${t.chain[i].issuer}, but the next certificate it sent is ${t.chain[i + 1].subject}.${trusted ? ' The router only trusts it because its own CA store fills the gap.' : ''}` }];
+  }
+  if (sent === 1 && !leaf.selfSigned)
+    return [{ level: 'warn', chain: true, text: `The server sent only its own certificate, without the certificate of its issuer (${leaf.issuer}). A client that does not already have that issuer cannot verify it.${trusted ? ' The router only trusts it because its own CA store holds that issuer.' : ''}` }];
+  if (sent > 1 && last.selfSigned)
+    return [{ level: 'ok', chain: true, text: `The server sent ${sent} certificates in order, up to the root ${last.subject}.` }];
+  if (sent > 1 && t.verify?.code !== 20 && t.verify?.code !== 21)
+    return [{ level: 'ok', chain: true, text: `The server sent ${sent} certificates in order, ending with ${last.subject}; the root that issued it is not part of the chain, as usual.` }];
+  return [];
+}
+
 // What the chain and the session mean: the trust verdict, the name, the dates, weak algorithms and old protocols.
 function findingsOf(t, ctx, now) {
   const f = [];
@@ -478,6 +518,7 @@ function findingsOf(t, ctx, now) {
       if (!(t.verify.code === 10 && leaf.daysLeft != null && leaf.daysLeft < 0)) f.push({ level: 'bad', text: VERIFY_TEXT[t.verify.code] ?? `The certificate is not trusted: ${t.verify.text}.` });
     }
   }
+  f.push(...chainFindings(t, leaf));
   if (covered === true) f.push({ level: 'ok', text: `The certificate covers ${name}.` });
   else if (covered === false) f.push({ level: 'bad', text: `The certificate does not cover ${name}. It is valid for ${names.join(', ') || 'no name'}.` });
   if (leaf.notBefore != null && leaf.notBefore > now) f.push({ level: 'bad', text: `The certificate is not valid until ${new Date(leaf.notBefore).toISOString().slice(0, 10)}.` });
@@ -587,7 +628,7 @@ export function parseCheck(text, running, ctx = {}, now = Date.now()) {
   else if (tlsBlock) {
     tls = parseTls(text, { name: ctx.name, target: ctx.name }, now);
     const leaf = tls.chain[0];
-    const bad = tls.findings.find(x => x.level === 'bad');
+    const bad = tls.findings.find(x => x.level === 'bad') ?? tls.findings.find(x => x.level === 'warn' && x.chain);
     set('tls', tls.error ? 'bad' : tls.level, tls.error ?? (bad ? bad.text : leaf ? `${tls.protocol ?? 'TLS'} · certificate for ${ctx.name ?? 'the server'} is trusted, ${leaf.daysLeft} days left` : 'No certificate was received.'), [tlsBlock]);
     step('tls').tls = tls;
   }

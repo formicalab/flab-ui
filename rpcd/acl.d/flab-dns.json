@@ -1,0 +1,11 @@
+{
+  "flab": {
+    "description": "flab-ui DNS page: the state of the router's DNS resolver, Unbound or dnsmasq (read only)",
+    "read": {
+      "ubus": {
+        "flab.dns": ["status"]
+      }
+    },
+    "write": {}
+  }
+}
