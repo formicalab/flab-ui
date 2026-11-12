@@ -252,5 +252,62 @@ check(m.configFields(stopped).length > 0 && m.subject(stopped) === 'unbound' && 
 }
 //#endregion
 
+//#region Editing
+console.log('\n== editing the options ==');
+{
+  const e = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/dns/edit.js')).href);
+  const U = { ...clone(ub), config_section: { config: 'unbound', name: 'ub_main' } };
+  const D = { ...clone(dm), config_section: { config: 'dhcp', name: 'cfg01411c' } };
+  let d = e.draftFrom(U);
+  check(!e.isDirty(U, d) && e.changesOf(U, d).length === 0 && j(e.plan(U, d)) === '[]' && e.problems(U, d).errors.length === 0 && e.problems(U, d).warnings.length === 0, 'an untouched form has no changes, writes nothing and has no problems');
+  d.values.rate_limit = '500'; d.values.extended_stats = true; d.values.rebind_protection = '2'; d.values.domain = 'lan.example';
+  const ch = e.changesOf(U, d);
+  check(j(ch.map(c => c.key)) === '["extended_stats","rate_limit","rebind_protection","domain"]' && j(ch[0]) === '{"key":"extended_stats","label":"Extended statistics","from":"off","to":"on"}' && ch[2].from === 'Block private addresses (RFC 1918 and 4193)' && ch[2].to === 'Also this router\'s own global /64' && ch[3].to === 'lan.example' && e.isDirty(U, d), 'the changes are listed in the order of the page, with words for the choices and on/off for the switches', j(ch));
+  check(j(e.plan(U, d)) === j([{ op: 'set', config: 'unbound', section: 'ub_main', values: { extended_stats: '1', rate_limit: '500', rebind_protection: '2', domain: 'lan.example' } }]), 'the plan is one set of the changed options only, a boolean as 1 or 0', j(e.plan(U, d)));
+  d = e.draftFrom(U); d.values.rate_limit = ''; d.values.verbosity = ''; d.values.validator = false; d.values.localservice = false; d.values.protocol = 'ip4_only';
+  // The keys of a values object in a fixed order, so the comparison does not depend on the order the plan builds it in.
+  const sorted = ops => j(ops.map(o => (o.values ? { ...o, values: Object.fromEntries(Object.entries(o.values).sort()) } : o)));
+  check(sorted(e.plan(U, d)) === sorted([{ op: 'set', config: 'unbound', section: 'ub_main', values: { validator: '0', localservice: '0', protocol: 'ip4_only' } }, { op: 'delete', config: 'unbound', section: 'ub_main', options: ['rate_limit'] }]), 'an emptied option is deleted, but only when the router has it; a boolean whose default applies is written when changed', j(e.plan(U, d)));
+  d = e.draftFrom(U); d.values.rate_limit = ' 500 '; d.values.domain = '  lan.example  ';
+  check(e.plan(U, d)[0].values.rate_limit === '500' && e.plan(U, d)[0].values.domain === 'lan.example', 'values are trimmed');
+  d = e.draftFrom(U); d.values.iface_lan = ['x']; d.values.mystery = 'y'; d.values.domain_insecure = ['a.example'];
+  check(!e.isDirty(U, d) && j(e.plan(U, d)) === '[]', 'lists and options the page has no description for are not editable yet: changing them changes nothing');
+  check(j(e.plan({ ...U, config_section: null }, { values: { ...d.values, rate_limit: '1' } })) === '[]', 'without a UCI section there is nothing to write');
+
+  d = e.draftFrom(U); d.values.rate_limit = 'abc'; d.values.listen_port = '70000'; d.values.num_threads = '0'; d.values.edns_size = '12';
+  const er = e.problems(U, d).errors;
+  check(er.length === 4 && er.some(x => x.key === 'rate_limit' && /whole number/.test(x.text)) && er.some(x => x.key === 'listen_port' && /at most 65535/.test(x.text)) && er.some(x => x.key === 'num_threads' && /at least 1/.test(x.text)) && er.some(x => x.key === 'edns_size' && /at least 512/.test(x.text)), 'a number that is not a whole number or out of its range is an error', j(er));
+  d = e.draftFrom(U); d.values.rate_limit = ''; d.values.listen_port = '';
+  check(e.problems(U, d).errors.length === 0, 'an empty number is "not set", not an error');
+
+  // A router where the service is enabled and the control channel is on, so that turning them off is a change.
+  const U2 = { ...clone(U), config: { ...U.config, enabled: '1', unbound_control: '1' } };
+  const warn = (data, edits) => { const x = e.draftFrom(data); Object.assign(x.values, edits); return e.problems(data, x).warnings.join(' | '); };
+  check(/unbound-control/.test(warn(U2, { unbound_control: '0' })) && /port 5353 instead of 53/.test(warn(U, { listen_port: '5353' })) && /open resolver/.test(warn(U, { localservice: false })) && /web page could reach devices/.test(warn(U, { rebind_protection: '0' })) && /checked for forgery/.test(warn(U, { validator: false })) && /stopped and will not start/.test(warn(U2, { enabled: false })) && /read \/etc\/unbound\/unbound\.conf/.test(warn(U, { manual_conf: true })), 'risky changes are warned about: the control channel this page needs, another port, an open resolver, no rebind protection, no DNSSEC, stopping the service, manual configuration', [warn(U2, { unbound_control: '0' }), warn(U, { listen_port: '5353' }), warn(U2, { enabled: false })].join(' // '));
+  check(warn(U, { verbosity: '2', rate_limit: '100' }) === '' && warn(U, { listen_port: '53' }) === '', 'harmless changes are not warned about; a port of 53 is not a change of port');
+  check(/no DNSSEC support/.test(warn(D, { dnssec: true })) && /only serve DHCP/.test(warn(D, { port: '0' })) && /port 5353 instead of 53/.test(warn(D, { port: '5353' })) && /open resolver/.test(warn(D, { localservice: false })) && warn(D, { cachesize: '500' }) === '', 'dnsmasq: DNSSEC in a build without it, a port of 0 or another port, an open resolver; a bigger cache is fine');
+
+  d = e.draftFrom(D); d.values.cachesize = '500'; d.values.strictorder = false; d.values.rebind_protection = false;
+  check(sorted(e.plan(D, d)) === sorted([{ op: 'set', config: 'dhcp', section: 'cfg01411c', values: { cachesize: '500', strictorder: '0', rebind_protection: '0' } }]), 'dnsmasq options are written to its section of the dhcp config', j(e.plan(D, d)));
+
+  d = e.draftFrom(U); d.values.rate_limit = '500'; d.values.extended_stats = true;
+  const after = { ...clone(U), config: { ...U.config, rate_limit: '500', extended_stats: '1' } };
+  let threw = null;
+  try { e.checkApplied(U, after, d); } catch (x) { threw = x; }
+  check(threw === null, 'a change that was kept passes the check');
+  try { e.checkApplied(U, U, d); } catch (x) { threw = x; }
+  check(threw && /Extended statistics, Rate limit \(queries per second\) were not saved/.test(threw.message), 'a change that was not kept fails it, naming the options', threw?.message);
+  threw = null;
+  const down = { ...clone(after), engines: { ...after.engines, unbound: { ...after.engines.unbound, running: false } } };
+  try { e.checkApplied(U, down, d); } catch (x) { threw = x; }
+  check(threw && /Unbound is not running after the change/.test(threw.message) && e.engineRunning(U) && !e.engineRunning(down), 'a resolver that stopped running after the change fails the check, so the change is rolled back', threw?.message);
+  threw = null;
+  d = e.draftFrom(U2); d.values.enabled = false;
+  const off = { ...clone(U2), config: { ...U2.config, enabled: '0' }, engines: { ...U2.engines, unbound: { ...U2.engines.unbound, running: false } } };
+  try { e.checkApplied(U2, off, d); } catch (x) { threw = x; }
+  check(threw === null, 'switching the Unbound service off is the one change that may stop it');
+}
+//#endregion
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

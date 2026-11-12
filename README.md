@@ -111,7 +111,7 @@ flab-ui/
         wireguard/           index.js, iface.js
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js
         dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js
-        dns/                 DNS (read only): index.js (page, state), schema.js (the options and their areas), model.js (pure: tiles, findings, forwarders, activity, option areas), forwarding.js (the Forwarding card), cards.js (Listening and configuration, Activity, Upstream from the WAN, Try it)
+        dns/                 DNS (read only): index.js (page, state, the editing wiring), schema.js (the options and their areas), edit.js (pure: draft, changes, problems, the UCI plan, the check after a save), model.js (pure: tiles, findings, forwarders, activity, option areas), forwarding.js (the Forwarding card), cards.js (Listening and configuration, Activity, Upstream from the WAN, Try it)
         interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
@@ -1126,8 +1126,9 @@ advertised prefixes, the leases and last the reservations.
   existing leases. A daemon that is not running is reported, and the configuration stays editable.
 
 ### DNS (route `#dns`)
-The state of the router's DNS resolver. It is an **initial, read-only page**: it shows what the resolver does and how it is
-configured and changes nothing (the options are edited in `/etc/config/unbound` or `/etc/config/dhcp` for now). It
+The state of the router's DNS resolver and its settings. It shows what the resolver does and how it is configured, and lets
+you change the resolver's **single-valued options** (a yes/no option, a choice, a number, a name) in `/etc/config/unbound` or
+`/etc/config/dhcp`; lists and the forwarders are still read only (they are edited in the file for now). It
 understands both engines, **Unbound** (read through `unbound-control`, which needs `option unbound_control '1'` in
 `/etc/config/unbound`) and **dnsmasq** (read through the ubus object `dnsmasq metrics` and UCI), and every mix: Unbound
 running, dnsmasq running, both (one of them on another port, for instance dnsmasq on 5353 behind Unbound; both are
@@ -1163,23 +1164,33 @@ pauses while a text box has the focus. Top to bottom:
   the number of options and, for General and Security and privacy, a line about how they are set (port, interfaces, remote
   control, statistics; DNSSEC, rebind protection, who may ask, rate limit), so a folded area still says something. An "Other
   options" area holds options of the section the page has no description for. The options are described as data in `dns/schema.js`, in the format
-  of `core/fields.js`, and drawn with the same controls as the System settings and DHCP pages (`core/forms.js`), disabled
-  because the page is read only: a checkbox for a yes/no option, a drop-down for a fixed set of values (rebind protection,
+  of `core/fields.js`, and drawn with the same controls as the System settings and DHCP pages (`core/forms.js`):
+  a checkbox for a yes/no option, a drop-down for a fixed set of values (rebind protection,
   remote control, local domain type, DHCP server linked, IP protocols, recursion, resource profile, log verbosity, the
   router-name levels; the values and defaults are from the OpenWrt Unbound package's README and the dnsmasq manual), a number
   input with its range for a number, a text box for a name and a list for several values. An option that is not set shows its
-  default (a placeholder, or "Default (…)" in a drop-down, or the default state of a checkbox). To make the options editable,
-  set `canEdit` in `cards.js` and add what the System settings and DHCP pages have: a draft kept across the polls, a plan of
-  UCI operations and the review banner (`core/editpage.js`); the field tables already carry the types, ranges and defaults
-  those need. Without a resolver the card is only the listening part.
+  default (a placeholder, or "Default (…)" in a drop-down, or the default state of a checkbox).
+  **Changing the options**: every described option of a single value can be edited when the login may write (`uci set`); lists
+  and options the page has no description for stay disabled. An edit shows the review banner of the command bar (as on the System
+  settings and DHCP pages: how many changes and which, *Details* with each one from → to, *Discard edits*, *Save and apply*),
+  plus warnings for risky changes (switching off the control channel this page reads, another port, no longer local-only, no
+  rebind protection, no DNSSEC, stopping Unbound, manual configuration; for dnsmasq DNSSEC in a build without it, port 0). A bad
+  number is an error that blocks the save, marks the control and opens the folded area it is in. Saving stages the edits,
+  applies them with the 30 second rollback countdown, reads `flab.dns status` back (changes held, and the resolver still runs;
+  it gets a few seconds to restart) and confirms; otherwise the router puts the previous settings back, nothing stays staged
+  and the edits stay in the form. Only what changed is written, to the `unbound` section of `/etc/config/unbound` or the dnsmasq
+  section of `/etc/config/dhcp` (`flab.dns` reports it as `config_section`): a boolean as `1` or `0`, an emptied option is deleted.
+  The model for all of this is `dns/edit.js` (pure and unit-tested); `core/editpage.js` takes the config name as a function
+  because it depends on the engine. A login without the `uci` write methods sees the settings read only, with a note. Changes
+  already staged in the session are reported and can be discarded first. Without a resolver the card is only the listening part.
 - **Forwarding**: the default forwarders (the `.` zone) with a TLS or clear-text mark, then the conditional zones, which can be about
-  ninety (the main router has 89 nearly identical ones). By default zones that share the same servers, flags and TLS setting are
+  ninety (the main router has 91 plus the two UCI ones, nearly identical). By default zones that share the same servers, flags and TLS setting are
   one line ("86 zones" with a button that opens the list); "List every zone" switches to one row each, 12 at first with "Show all N";
   the filter box matches zones, servers and the words of the flags and redraws only the table, so typing is not interrupted. Flags:
   `i` is shown as "not DNSSEC-validated" (Unbound's `domain-insecure`); dnsmasq's `/zone/` (answered locally) and `/zone/#` (uses the
   default servers) are marked too. Each forwarder says where it is defined ("Defined in" column, and a line under the default
   forwarders): *UCI* (an Unbound zone section, named in the tooltip, or a dnsmasq `server` entry) or *unbound_ext.conf* (zones
-  that only Unbound's extension file defines: on the main router 88 of the 90). Zones that are defined in different places never
+  that only Unbound's extension file defines: on the main router the 89 Azure private-link zones; `lab.formicalab.casa` and `flumini.formicalab.casa` were moved to UCI zone sections `fwd_lab` and `fwd_flumini`). Zones that are defined in different places never
   share a group. The card is read only for now: a line at the top counts the UCI forwarders and the extension-file ones, an
   *Add forwarder* button and an *Edit* and a *Remove* button on every UCI forwarder are drawn disabled, and extension-file zones
   have none (edit that file). To make the list editable, set `canEdit` in `forwarding.js`, open a form for the entry with the fields
@@ -1195,8 +1206,9 @@ pauses while a text box has the focus. Top to bottom:
   of the Toolbox: it opens with the form filled in and the tool started. An empty name is refused with a hint.
 
 #### The plugin
-`flab.dns` is read-only; the ACL fragment (`rpcd/acl.d/flab-dns.json`) grants `status` under `read` and nothing else (no write, no
-generic `file` or exec grant). `status` takes no arguments: whatever a request carries is ignored, and every command the plugin runs
+`flab.dns` itself is read-only (it never writes); the ACL fragment (`rpcd/acl.d/flab-dns.json`) grants its `status` method and, for
+the option editing, rpcd's `uci` methods (`get`, `changes` under `read`; `set`, `add`, `delete`, `revert`, `apply`, `confirm`,
+`rollback` under `write`) on the `unbound` and `dhcp` configs only: no generic `file` or exec grant, no other config. `status` takes no arguments: whatever a request carries is ignored, and every command the plugin runs
 is a fixed string (a test reads the source and fails if a `run()` call takes a template or a variable). A command that fails or is
 missing leaves its part null and adds a warning; it never fails the call, and the whole call is a handful of small commands.
 - `ok`, `generated`; `engine` (`unbound`, `dnsmasq` or null: the running engine that listens on port 53, else any running one,
@@ -1205,7 +1217,7 @@ missing leaves its part null and adds a warning; it never fails the call, and th
   `uptime`, `port`, `stats` and, for Unbound, `control` (whether `unbound-control` answered).
 - `version`, `uptime` (seconds: Unbound's own, or for dnsmasq the process age from `/proc/<pid>/stat` field 22 and `/proc/uptime`),
   `listeners` (`addr`, `port`, `proto`, `engine`; unique, at most 50), `stats`, `config` (the whitelisted UCI options that are set; a
-  list stays a list; every option of `dns/schema.js` and no other, which a test checks), `defaults` (what the engine does for an option that is not set, only where certain), `forwards` (`zone`,
+  list stays a list; every option of `dns/schema.js` and no other, which a test checks), `config_section` (`config` and `name` of the UCI section that holds them, so the page can write them; null without one), `defaults` (what the engine does for an option that is not set, only where certain), `forwards` (`zone`,
   `servers`, `flags`, `tls`, `source`, `section`; the default zone first, at most 500; zones lowercase without a trailing dot;
   `source` is `uci` for a forwarder that UCI defines (an Unbound zone section, named in `section`, or a dnsmasq `server` entry) and
   `file` for one that only Unbound's extension file defines), `forward_uci` (the forwarders that can be changed through UCI: for
@@ -1396,11 +1408,15 @@ public server, a build without DNSSEC, the jail's pid pair, IPv6 sockets, host f
 Unbound), `stopped` (both installed, nothing running) and `none`. A call with shell metacharacters in `host`, `zone` and `q` must give
 the reply of a call without arguments, and `run.ps1` then checks that its canary file does not exist on the router. `assert.mjs` also
 reads the plugin source (every `run()` call takes one fixed string, twelve different commands, nothing writes, `request.args` is never
-used) and the ACL (exactly `flab.dns: [status]` under `read`). The browser pass (`live.mjs`) answers `flab.dns` from the scenario
-outputs and `flab.diag` from a mock that records the request and runs nothing, and drives every tile, finding and card for both
+used) and the ACL (`flab.dns: [status]` and the staged `uci` methods on the `unbound` and `dhcp` configs, nothing else). The browser pass (`live.mjs`) answers `flab.dns` from the scenario
+outputs, `flab.diag` from a mock that records the request and runs nothing, and rpcd's `uci` object from a stateful mock (staged
+edits, apply, confirm and rollback on the current scenario's section; any write to another config is refused and counted, and none
+of it reaches the router), and drives every tile, finding and card for both
 engines, both together, stopped and none; the forwarders (grouped, listed, "Show all", filter, a filter that keeps the focus); the
-configuration with a default marked; the Try it buttons into the Toolbox (the hash, the prefilled form, the request the mock saw); the
-polling pause while a box has the focus; the type scale and weights; the dark theme; that nothing was written and no console error
+configuration with a default marked; the editing of the options (the review banner, the details, a save with its calls in order and
+the values written, an emptied option deleted, warnings, an invalid number that opens its folded area, discarding, a resolver that
+stops and is rolled back, an apply the router refuses, changes already staged, a login that may not write, dnsmasq's section); the Try it buttons into the Toolbox (the hash, the prefilled form, the request the mock saw); the
+polling pause while a box has the focus; the type scale and weights; the dark theme; that nothing was written to another config and no console error
 occurred. `-Router` and `-Url` default to the main router; the browser pass needs the UI deployed on the router it is given.
 
 ### IPsec scenarios

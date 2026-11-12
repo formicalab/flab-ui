@@ -402,7 +402,7 @@ export function configAreas(data) {
   const placed = new Set(areas.flatMap(a => a.sections.flatMap(s => s.fields.map(f => f.key))));
   const strays = known.filter(f => !placed.has(f.key));
   const unknown = Object.entries(data.config ?? {}).filter(([key]) => !known.some(f => f.key === key))
-    .map(([key, value]) => ({ key, type: Array.isArray(value) ? 'list' : 'string', label: key, hint: '' }));
+    .map(([key, value]) => ({ key, type: Array.isArray(value) ? 'list' : 'string', label: key, hint: '', unknown: true }));
   const rest = [...strays, ...unknown];
   return [...areas, ...(rest.length ? [{ id: 'other', title: 'Other options', legend: 'Options of this section that the page has no description for.', open: false, sections: [{ title: '', fields: rest }], count: rest.length, summary: '' }] : [])];
 }

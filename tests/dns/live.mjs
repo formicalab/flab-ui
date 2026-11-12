@@ -28,15 +28,69 @@ const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'
 const DIAG_STATUS = { generated: 1, tools: { ping: true, traceroute: true, openssl: true }, dns_tool: 'dig', types: ['A', 'AAAA', 'MX'], devices: ['br-lan'], limits: { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75 }, starttls: [], upstream: [], check_host: 'example.com', hosts: [] };
 const mock = { reply: clone(load('unbound')), dnsCalls: 0, dnsMethods: new Set(), writes: [], diagStarts: [], diagOther: [], unknownFlab: [] };
 
+// A stateful mock of rpcd's uci object for the one config the page edits (the current scenario's `config_section`). The
+// committed options are the scenario's plus the changes applied so far; staged edits wait for `apply`; `rollback` restores what
+// was there before the apply. Any write to another config is refused and counted in mock.writes, so the test can show the page
+// never touched anything else, and nothing here reaches the router.
+const uciMock = {
+  applied: [], staged: [], backup: null, log: [], failApply: false, engineDown: false,
+  // Forgets every edit (a new scenario starts from its own options).
+  reset() { this.applied = []; this.staged = []; this.backup = null; },
+  // The options of the section: the scenario's, with the applied edits (and the staged ones when asked).
+  values(withStaged) {
+    const vals = clone(mock.reply.config ?? {});
+    for (const op of [...this.applied, ...(withStaged ? this.staged : [])]) {
+      if (op.kind === 'set') Object.assign(vals, op.values);
+      else for (const o of op.options ?? []) delete vals[o];
+    }
+    return vals;
+  },
+  // Answers one call of the uci object, or null for a method the mock does not know.
+  call(method, args, ok, denied, invalid) {
+    const sec = mock.reply.config_section;
+    const own = sec && args?.config === sec.config;
+    this.log.push({ method, args: clone(args ?? {}) });
+    if (['set', 'delete', 'add'].includes(method) && !own) { mock.writes.push(`uci.${method} ${args?.config}`); return denied; }
+    if (method === 'get') return own ? ok({ values: { [sec.name]: { '.type': mock.reply.configured === 'unbound' ? 'unbound' : 'dnsmasq', '.name': sec.name, ...this.values(true) } } }) : ok({ values: {} });
+    if (method === 'set') { this.staged.push({ kind: 'set', section: args.section, values: args.values }); return ok({}); }
+    if (method === 'delete') { this.staged.push({ kind: 'delete', section: args.section, options: args.options }); return ok({}); }
+    if (method === 'changes') {
+      const list = this.staged.flatMap(op => op.kind === 'set' ? Object.entries(op.values).map(([k, v]) => ['set', op.section, k, v]) : (op.options ?? []).map(o => ['remove', op.section, o]));
+      return ok({ changes: own ? list : [] });
+    }
+    if (method === 'revert') { this.staged = []; return ok({}); }
+    if (method === 'apply') {
+      if (this.failApply) return invalid;
+      this.backup = clone(this.applied);
+      this.applied.push(...this.staged);
+      this.staged = [];
+      return ok({});
+    }
+    if (method === 'confirm') { this.backup = null; return ok({}); }
+    if (method === 'rollback') { if (this.backup) this.applied = this.backup; this.backup = null; return ok({}); }
+    return null;
+  },
+};
+
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 function answer(body) {
   const [, obj, method, args] = body.params;
   const ok = data => ({ jsonrpc: '2.0', id: body.id, result: [0, data] });
-  if (obj === 'uci' && ['set', 'add', 'delete', 'apply', 'commit', 'rollback', 'confirm'].includes(method)) { mock.writes.push(`${obj}.${method}`); return { jsonrpc: '2.0', id: body.id, result: [6] }; }
+  const denied = { jsonrpc: '2.0', id: body.id, result: [6] };
+  const invalid = { jsonrpc: '2.0', id: body.id, result: [2] };
+  if (obj === 'uci') {
+    const r = uciMock.call(method, args ?? {}, ok, denied, invalid);
+    return r ?? ok({});
+  }
   if (obj === 'flab.dns') {
     mock.dnsMethods.add(method);
     mock.dnsCalls++;
-    return ok(clone(mock.reply));
+    const r = clone(mock.reply);
+    // The status reads the configuration fresh, so it shows the edits that were applied; a resolver that "stopped" while an
+    // applied change waits for its confirmation is how the test makes a change go wrong.
+    if (r.config_section) r.config = uciMock.values(false);
+    if (uciMock.engineDown && uciMock.backup && r.engines?.[r.configured]) r.engines[r.configured].running = false;
+    return ok(r);
   }
   if (obj === 'flab.diag') {
     if (method === 'status') return ok(clone(DIAG_STATUS));
@@ -63,7 +117,8 @@ page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 await page.addInitScript(([id, granted]) => {
   sessionStorage.setItem('sid', id);
-  sessionStorage.setItem('acls', JSON.stringify(granted));
+  // A test can replace the permissions (a login that may not write) by keeping them under another key.
+  sessionStorage.setItem('acls', sessionStorage.getItem('flab-test-acls') ?? JSON.stringify(granted));
 }, [sid, acls]);
 
 // Helpers: tiles, banner, cards, rows and screenshots.
@@ -80,7 +135,7 @@ const text = loc => loc.innerText().then(t => t.replace(/\s+/g, ' ').trim());
 const texts = loc => loc.allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 const refresh = async (ms = 700) => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(ms); };
 // Shows a reply: sets the mock and refreshes.
-const show = async (reply, ms) => { mock.reply = clone(reply); await refresh(ms); };
+const show = async (reply, ms) => { mock.reply = clone(reply); uciMock.reset(); await refresh(ms); };
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `dns-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
 // The browser's span text of core/format.js fmtSpan.
 const span = s => { s = Math.round(s); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : s < 86400 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h`; };
@@ -197,22 +252,22 @@ await page.waitForTimeout(400);
 check((await conf().locator('.dns-area').nth(3).locator('summary .dns-chevron').evaluate(x => getComputedStyle(x).transform)) === 'none', 'and right when folded');
 await conf().locator('.dns-area').nth(3).locator('summary').click();
 const confText = await text(conf());
-check(/Read only for now/.test(confText) && /DNSSEC validation/.test(confText) && /Rate limit \(queries per second\)/.test(confText) && /\/etc\/config\/unbound/.test(confText), 'the configuration is read only, with plain labels', confText.slice(0, 300));
+check(/These are the settings of Unbound in \/etc\/config\/unbound/.test(confText) && /DNSSEC validation/.test(confText) && /Rate limit \(queries per second\)/.test(confText), 'the configuration says what it is and how a change is applied, with plain labels', confText.slice(0, 300));
 // A control by its label: the field of a text box, number, drop-down or list, or the checkbox of a yes/no option.
 const ctl = label => conf().locator('.set-field').filter({ has: page.locator('label.form-label', { hasText: new RegExp(`^${label}$`) }) });
 const chk = label => conf().locator('.set-check').filter({ hasText: new RegExp(`^${label}`) });
 const picked = label => ctl(label).locator('select option:checked').innerText();
 check(await picked('Rebind protection') === 'Block private addresses (RFC 1918 and 4193)' && await picked('Remote control') === 'Local host, unencrypted' && await picked('Local domain type') === 'Transparent: may forward or recurse' && await picked('DHCP server linked') === 'odhcpd' && await picked('IP protocols') === 'Built-in setting', 'options with a fixed set of values are drop-downs showing the one in force', [await picked('Rebind protection'), await picked('Remote control'), await picked('Local domain type')].join(' | '));
-check((await ctl('IP protocols').locator('select option').allInnerTexts()).join('|') === 'Default (Both IPv4 and IPv6)|IPv4 only|IPv6 only (for testing)|IPv4 upstream, IPv4 and IPv6 locally|Both, IPv6 first|Both IPv4 and IPv6|Built-in setting' && await conf().locator('select:not([disabled])').count() === 0 && await conf().locator('select.form-select').count() >= 8, 'a drop-down lists every choice (and the default) and is disabled, because the page is read only', String(await conf().locator('select.form-select').count()));
+check((await ctl('IP protocols').locator('select option').allInnerTexts()).join('|') === 'Default (Both IPv4 and IPv6)|IPv4 only|IPv6 only (for testing)|IPv4 upstream, IPv4 and IPv6 locally|Both, IPv6 first|Both IPv4 and IPv6|Built-in setting' && await conf().locator('select:not([disabled])').count() === await conf().locator('select.form-select').count() && await conf().locator('select.form-select').count() >= 8, 'a drop-down lists every choice (and the default) and can be changed', String(await conf().locator('select.form-select').count()));
 const numberOf = async label => ctl(label).locator('input').evaluate(i => ({ type: i.type, value: i.value, min: i.min, max: i.max, disabled: i.disabled, ph: i.placeholder }));
 const rl = await numberOf('Rate limit \\(queries per second\\)'), thr = await numberOf('Threads'), lp = await numberOf('Listen port'), ttl = await numberOf('Minimum TTL \\(s\\)');
-check(rl.type === 'number' && rl.value === '300' && rl.min === '0' && rl.disabled && thr.type === 'number' && thr.value === '4' && thr.min === '1' && lp.type === 'number' && lp.value === '53' && lp.max === '65535' && ttl.type === 'number' && ttl.value === '0' && ttl.max === '1800', 'numbers are number inputs with their range, disabled', JSON.stringify([rl, thr, lp, ttl]));
+check(rl.type === 'number' && rl.value === '300' && rl.min === '0' && !rl.disabled && thr.type === 'number' && thr.value === '4' && thr.min === '1' && lp.type === 'number' && lp.value === '53' && lp.max === '65535' && ttl.type === 'number' && ttl.value === '0' && ttl.max === '1800', 'numbers are number inputs with their range', JSON.stringify([rl, thr, lp, ttl]));
 const str = await ctl('Local domain').locator('input').evaluate(i => ({ type: i.type, value: i.value, disabled: i.disabled }));
 const prefix = await ctl('DNS64 prefix').locator('input').evaluate(i => ({ value: i.value, ph: i.placeholder }));
-check(str.type === 'text' && str.value === 'lab.formicalab.casa' && str.disabled && prefix.value === '' && prefix.ph === 'default: 64:ff9b::/96', 'a name is a text box; one that is not set is empty and shows its default', JSON.stringify([str, prefix]));
-check(await chk('DNSSEC validation').locator('input').isChecked() && !await chk('Extended statistics').locator('input').isChecked() && await conf().locator('.set-check input:not([disabled])').count() === 0 && await conf().locator('.form-switch, [role=switch]').count() === 0 && await chk('Service enabled').locator('input').isChecked(), 'yes/no options are disabled checkboxes, checked or not, with no switches');
+check(str.type === 'text' && str.value === 'lab.formicalab.casa' && !str.disabled && prefix.value === '' && prefix.ph === 'default: 64:ff9b::/96', 'a name is a text box; one that is not set is empty and shows its default', JSON.stringify([str, prefix]));
+check(await chk('DNSSEC validation').locator('input').isChecked() && !await chk('Extended statistics').locator('input').isChecked() && await conf().locator('.set-check input[disabled]').count() === 0 && await conf().locator('.form-switch, [role=switch]').count() === 0 && await chk('Service enabled').locator('input').isChecked(), 'yes/no options are checkboxes, checked or not, with no switches');
 const lan = await ctl('LAN interfaces').locator('input').evaluateAll(i => i.map(x => `${x.value}${x.disabled ? '' : ' (editable)'}`));
-check(lan.join() === 'lan,lan100,wg0' && await ctl('LAN interfaces').locator('button:not([disabled])').count() === 0 && await ctl('LAN interfaces').locator('button').count() === 4, 'a list shows one disabled box per value, and its add and remove buttons are disabled', lan.join());
+check(lan.join() === 'lan,lan100,wg0' && await ctl('LAN interfaces').locator('button:not([disabled])').count() === 0 && await ctl('LAN interfaces').locator('button').count() === 4, 'a list shows one box per value, still read only: its boxes and its add and remove buttons are disabled', lan.join());
 check(/refuses forged ones/.test(confText) && /DNS rebinding|reach devices on the LAN/.test(confText), 'important options carry a short explanation');
 const secTitles = (await texts(conf().locator('.dns-area').first().locator('.dns-sec-title'))).map(t => t.toLowerCase());
 const secSec = (await texts(conf().locator('.dns-area').nth(1).locator('.dns-sec-title'))).map(t => t.toLowerCase());
@@ -371,7 +426,7 @@ x = await tile('Resolver');
 check(x.value === 'Stopped' && /text-danger/.test(x.cls) && /Unbound is installed but not running/.test(x.sub), 'a stopped resolver', `${x.value} | ${x.sub}`);
 check((await bannerClass()).includes('bad') && /Unbound and dnsmasq are installed but not running/.test(await banner()), 'the banner is critical and names both', await banner());
 check(/No resolver is listening/.test(await text(cardOf('Listening and configuration'))) && (await tile('Queries')).value === '–' && /not running/.test(await text(cardOf('Listening and configuration').locator('.card-header'))), 'no sockets, no counters, the configuration marked "not running"');
-check((await cardOf('Forwarding').count()) === 1 && /Read only/.test(await text(cardOf('Listening and configuration'))), 'the configured forwarders and options are still shown');
+check((await cardOf('Forwarding').count()) === 1 && /These are the settings of Unbound/.test(await text(cardOf('Listening and configuration'))), 'the configured forwarders and options are still shown');
 await shot('stopped');
 await show(load('none'));
 x = await tile('Resolver');
@@ -379,6 +434,128 @@ check(x.value === 'None' && /text-danger/.test(x.cls) && (await tile('Upstream s
 check((await bannerClass()).includes('bad') && /No DNS resolver is running or installed/.test(await banner()), 'the banner is critical');
 check((await headers()).join('|').includes('Listening on') && !(await headers()).join('|').includes('configuration') && await cardOf('Forwarding').count() === 0 && await cardOf('Activity').count() === 0 && /No resolver is installed, so there are no counters/.test(await text(page.locator('main'))), 'Forwarding and Activity give way to a sentence, and the card is only Listening on', (await headers()).join(' | '));
 check(same(await texts(cardOf('Upstream from the WAN').locator('.dns-server')), ['192.0.2.53']) && await cardOf('Try it').count() === 1, 'the WAN resolvers and Try it remain');
+await show(ub);
+//#endregion
+
+//#region Changing the options
+console.log('\n== changing the options (Unbound) ==');
+const openAll = () => page.evaluate(() => document.querySelectorAll('.dns-area').forEach(d => { d.open = true; }));
+const rbar = () => page.locator('.cmdbar .set-bar');
+const rateIn = () => ctl('Rate limit \\(queries per second\\)').locator('input');
+const saveBtn = () => rbar().locator('button:has-text("Save and apply")');
+// Waits for the outcome of a save to show in the banner, and returns its text.
+const outcome = async re => { await page.waitForFunction(r => new RegExp(r).test(document.querySelector('.cmdbar .set-bar')?.innerText ?? ''), re.source, { timeout: 20000 }); return text(rbar().locator('.set-bar-outcome')); };
+// The values of a call's `set`, with the keys in a fixed order.
+const setValues = call => JSON.stringify(Object.fromEntries(Object.entries(call.args.values).sort()));
+await show(ub);
+await openAll();
+check(await rbar().isHidden(), 'with nothing changed there is no review banner');
+check(!/null/.test(await text(page.locator('main > :first-child'))) && !/\bnull\b/.test(await text(page.locator('main'))), 'no stray "null" is drawn (the notes that do not apply draw nothing)');
+check(await chk('Extended statistics').locator('input').isEnabled() && await rateIn().isEnabled() && await ctl('Rebind protection').locator('select').isEnabled() && await ctl('Local domain').locator('input').isEnabled() && await ctl('LAN interfaces').locator('input').first().isDisabled() && await ctl('Domains without DNSSEC').locator('button').isDisabled(), 'single-valued options can be edited; lists are still read only');
+await chk('Extended statistics').locator('input').check();
+await rateIn().fill('500');
+await ctl('Rebind protection').locator('select').selectOption('2');
+await ctl('Local domain').locator('input').fill('lan.example');
+check(await rbar().isVisible() && /4 unsaved changes: Extended statistics, Rate limit \(queries per second\), Rebind protection, Local domain/.test(await text(rbar().locator('.set-bar-summary'))), 'editing shows the review banner with the number of changes and which', await text(rbar()));
+await rbar().locator('button:has-text("Details")').click();
+const changeList = await text(rbar().locator('.set-changes'));
+check(/Extended statistics: off → on/.test(changeList) && /Rate limit \(queries per second\): 300 → 500/.test(changeList) && /Rebind protection: Block private addresses \(RFC 1918 and 4193\) → Also this router's own global \/64/.test(changeList) && /Local domain: lab\.formicalab\.casa → lan\.example/.test(changeList), 'the details list each change from → to, with the words of a choice', changeList);
+check(await saveBtn().isEnabled() && await rbar().locator('.set-note.bad').count() === 0 && uciMock.log.every(c => c.method !== 'set'), 'Save is available and nothing has been sent to the router yet');
+await shot('editing');
+await saveBtn().click();
+const saved = await outcome(/Saved: the router applied the change/);
+const methods = uciMock.log.map(c => c.method);
+check(/Saved: the router applied the change and it was confirmed/.test(saved) && methods.indexOf('set') > -1 && methods.indexOf('set') < methods.indexOf('apply') && methods.indexOf('apply') < methods.indexOf('confirm') && !methods.includes('rollback'), 'Save stages the edits, applies them with the rollback countdown and confirms', methods.join());
+const setCall = uciMock.log.find(c => c.method === 'set');
+check(setCall.args.config === 'unbound' && setCall.args.section === 'ub_main' && setValues(setCall) === '{"domain":"lan.example","extended_stats":"1","rate_limit":"500","rebind_protection":"2"}', 'only the changed options are written, to the unbound section, a boolean as 1', JSON.stringify(setCall.args));
+check(j(uciMock.log.find(c => c.method === 'apply').args) === '{"rollback":true,"timeout":30}', 'the change is applied with a 30 second rollback countdown');
+check(await chk('Extended statistics').locator('input').isChecked() && await rateIn().inputValue() === '500' && await picked('Rebind protection') === 'Also this router\'s own global /64' && await ctl('Local domain').locator('input').inputValue() === 'lan.example' && await rbar().locator('.set-bar-summary:has-text("No unsaved changes")').count() === 1, 'afterwards the page shows what the router now has, and there is nothing unsaved');
+
+// Emptying an option deletes it; a risky change is warned about before saving.
+await openAll();
+await rateIn().fill('');
+await chk('Local service only').locator('input').uncheck();
+const notes = await text(rbar().locator('.set-notes'));
+check(/open resolver/.test(notes) && await rbar().locator('.set-note.warn').count() === 1 && await saveBtn().isEnabled(), 'switching off "local service only" is warned about but can still be saved', notes);
+uciMock.log.length = 0;
+await saveBtn().click();
+await outcome(/Saved: the router applied the change/);
+const del = uciMock.log.find(c => c.method === 'delete');
+check(setValues(uciMock.log.find(c => c.method === 'set')) === '{"localservice":"0"}' && del && j(del.args.options) === '["rate_limit"]' && del.args.section === 'ub_main', 'an emptied option is deleted, and a switch that was on by default is written as 0', j(uciMock.log.map(c => c.method)));
+await openAll();
+check((await text(ctl('Rate limit \\(queries per second\\)'))).includes('Default') === false && await rateIn().inputValue() === '' && await rateIn().getAttribute('placeholder') === 'default: 0' && !await chk('Local service only').locator('input').isChecked(), 'the emptied option shows its default again, and the switch is off');
+
+// An invalid value stops the save, marks the control and opens the folded area it is in.
+await page.evaluate(() => { document.querySelectorAll('.dns-area').forEach(d => { d.open = false; }); });
+await page.evaluate(() => { const el = [...document.querySelectorAll('.dns-area .set-field')].find(f => f.querySelector('label')?.textContent === 'Threads').querySelector('input'); el.value = '0'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+check(await saveBtn().isDisabled() && /Threads.*at least 1/.test(await text(rbar().locator('.set-note.bad'))) && await ctl('Threads').locator('input.is-invalid').count() === 1 && (await page.locator('.dns-area').evaluateAll(d => d.map(x => x.open))).filter(Boolean).length === 1, 'an out-of-range number is an error that stops the save, marks the control and opens the folded area', await text(rbar()));
+await rbar().locator('button:has-text("Discard edits")').click();
+await page.waitForTimeout(600);
+check(await rbar().isHidden() && await ctl('Threads').locator('input').inputValue() === '4', 'Discard edits puts back what the router has');
+
+// A change that makes the resolver stop is rolled back, and the edits stay in the form.
+uciMock.engineDown = true;
+uciMock.log.length = 0;
+await openAll();
+await ctl('Log verbosity').locator('select').selectOption('2');
+await saveBtn().click();
+const rolled = await outcome(/rolled back/);
+const m2 = uciMock.log.map(c => c.method);
+check(/The change was rolled back: Unbound is not running after the change/.test(rolled) && m2.includes('apply') && m2.includes('rollback') && !m2.includes('confirm'), 'a change after which the resolver does not run is rolled back, not confirmed', `${rolled} / ${m2.join()}`);
+check(uciMock.applied.length === 3 && uciMock.staged.length === 0 && await rbar().locator('.set-bar-summary:has-text("1 unsaved change")').count() === 1 && await ctl('Log verbosity').locator('select').inputValue() === '2', 'the router keeps its previous settings, nothing stays staged and the edit stays in the form so it can be fixed');
+uciMock.engineDown = false;
+// A router that refuses the apply: the staged edits are thrown away and nothing is confirmed.
+uciMock.failApply = true;
+uciMock.log.length = 0;
+await saveBtn().click();
+await outcome(/uci\.apply failed \(ubus code 2\)/);
+const m3 = uciMock.log.map(c => c.method);
+check(m3.includes('apply') && m3.includes('revert') && !m3.includes('confirm') && uciMock.staged.length === 0 && await rbar().locator('.set-note.bad').count() >= 1, 'an apply the router refuses reverts what was staged and says so', m3.join());
+uciMock.failApply = false;
+await rbar().locator('button:has-text("Discard edits")').click();
+await page.waitForTimeout(600);
+
+// Changes already staged in the session are reported and can be discarded, and they block a save.
+uciMock.staged = [{ kind: 'set', section: 'ub_main', values: { verbosity: '3' } }];
+await refresh(900);
+check(/1 change\(s\) are already staged in this session/.test(await text(page.locator('main'))), 'changes left staged in the session are reported');
+await page.locator('main button:has-text("Discard them")').click();
+await page.waitForTimeout(700);
+check(uciMock.staged.length === 0 && !/already staged/.test(await text(page.locator('main'))), 'and can be discarded');
+
+// A login that may not write sees everything, read only.
+await page.evaluate(() => {
+  const a = JSON.parse(sessionStorage.getItem('acls'));
+  a.ubus.uci = (a.ubus.uci ?? []).filter(m => !['set', 'add', 'delete', 'revert', 'apply', 'confirm', 'rollback'].includes(m));
+  sessionStorage.setItem('flab-test-acls', JSON.stringify(a));
+});
+await page.reload();
+await page.waitForSelector('.tile');
+await openAll();
+check(await conf().locator('input:not([disabled]), select:not([disabled])').count() === 0 && /this login cannot change them/.test(await text(conf())) && /not allowed to change the configuration/.test(await text(page.locator('main'))), 'a login that may not write sees the settings read only, and is told why', await text(page.locator('main')).then(t => t.slice(0, 200)));
+await page.evaluate(() => sessionStorage.removeItem('flab-test-acls'));
+await page.reload();
+await page.waitForSelector('.tile');
+
+console.log('\n== changing the options (dnsmasq) ==');
+await show(load('dnsmasq'));
+await openAll();
+uciMock.log.length = 0;
+const cacheIn = () => ctl('Cache size \\(names\\)').locator('input');
+await cacheIn().fill('500');
+await chk('Ask servers in order').locator('input').uncheck();
+await ctl('Local domain').locator('input').fill('lan.example');
+check(/3 unsaved changes: Local domain, Ask servers in order, Cache size \(names\)/.test(await text(rbar().locator('.set-bar-summary'))) || /3 unsaved changes/.test(await text(rbar().locator('.set-bar-summary'))), 'dnsmasq: the review banner counts the changes', await text(rbar()));
+await saveBtn().click();
+await outcome(/Saved: the router applied the change/);
+const dset = uciMock.log.find(c => c.method === 'set');
+check(dset.args.config === 'dhcp' && dset.args.section === 'cfg01411c' && setValues(dset) === '{"cachesize":"500","domain":"lan.example","strictorder":"0"}', 'dnsmasq options are written to its section of the dhcp config', JSON.stringify(dset.args));
+await openAll();
+check(await cacheIn().inputValue() === '500' && !await chk('Ask servers in order').locator('input').isChecked(), 'and shown afterwards');
+await ctl('Listen port').locator('input').fill('5353');
+check(/port 5353 instead of 53/.test(await text(rbar().locator('.set-notes'))), 'dnsmasq: another port is warned about');
+await rbar().locator('button:has-text("Discard edits")').click();
+await page.waitForTimeout(600);
 await show(ub);
 //#endregion
 
@@ -409,7 +586,8 @@ await shot('dark');
 await page.emulateMedia({ colorScheme: 'light' });
 //#endregion
 
-check(mock.writes.length === 0, 'the page wrote nothing to the router', mock.writes.join());
+check(mock.writes.length === 0, 'the page wrote to no other config than the one it edits (and the mock never reached the router)', mock.writes.join());
+check(uciMock.log.every(c => c.args.config === undefined || ['unbound', 'dhcp'].includes(c.args.config)), 'every uci call named the unbound or the dhcp config', [...new Set(uciMock.log.map(c => c.args.config))].join());
 check([...mock.dnsMethods].join() === 'status' && mock.diagOther.length === 0 && mock.unknownFlab.length === 0, 'the only flab.dns call is status; the Toolbox made no other call than status and the two starts', `${[...mock.dnsMethods]} ${mock.diagOther} ${mock.unknownFlab}`);
 check(errors.length === 0, 'no console or page errors', errors.slice(0, 3).join(' | '));
 await browser.close();

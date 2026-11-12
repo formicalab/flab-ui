@@ -4,7 +4,7 @@
 // read-only login and about leftovers. The page keeps what is specific to it: its schema, its model, its controls.
 //
 // createEditor(spec) returns the editor; spec is
-//   config      the uci config being edited
+//   config      the uci config being edited, or a function that returns it (null: nothing to edit)
 //   readBack    (cfg) => data       reads a fresh `uci get` reply into the page's data shape, for the check after a save
 //   readAfter   optional async () => data    reads the data for that check some other way (a page that must not
 //               load the whole config, for example because it holds secrets, reads just the sections it edits)
@@ -19,7 +19,10 @@ import { applyChange, uci } from './uci.js';
 
 // Creates the editor for one page; see the description of `spec` above.
 export function createEditor(spec) {
-  const { config, model } = spec;
+  const { model } = spec;
+  // The config being edited: a name, or a function for a page whose config depends on what it found (the DNS page edits
+  // /etc/config/unbound or /etc/config/dhcp, whichever resolver the router uses); null means there is nothing to edit.
+  const configName = () => (typeof spec.config === 'function' ? spec.config() : spec.config);
   // What the form holds (`draft`) and the data it was made from (`base`), kept here so they survive the redraw on
   // every poll. `message` is the outcome of the last save or discard ({ kind: ok | bad | info, text }).
   const state = { base: null, draft: null, busy: false, message: null };
@@ -47,7 +50,7 @@ export function createEditor(spec) {
   // Throws away the changes staged in this session (they would be applied together with this page's).
   async function discardStaged() {
     try {
-      await uci.revert(config);
+      await uci.revert(configName());
       state.message = { kind: 'ok', text: 'The staged changes were discarded.' };
     } catch (e) {
       state.message = { kind: 'bad', text: e.message };
@@ -66,6 +69,7 @@ export function createEditor(spec) {
   // confirm. Any failure leaves the router on its previous config and the edits in the form.
   async function save() {
     const { base, draft } = state;
+    const config = configName();
     state.busy = true;
     state.message = { kind: 'info', text: 'Applying the change…' };
     redraw();
@@ -113,7 +117,8 @@ export function createEditor(spec) {
 
     // Adds how many changes are already staged in this session to the loaded data (applying would commit those too).
     async withStaged(data) {
-      data.staged = can('uci', 'set') ? (await optional(uci.pending(config))) ?? 0 : 0;
+      const config = configName();
+      data.staged = config && can('uci', 'set') ? (await optional(uci.pending(config))) ?? 0 : 0;
       return data;
     },
 

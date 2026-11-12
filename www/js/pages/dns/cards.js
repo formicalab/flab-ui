@@ -5,7 +5,8 @@ import { badge, card, meter } from '../../core/ui.js';
 import { fmtNum, fmtSpan } from '../../core/format.js';
 import { fieldRow, legend } from '../../core/forms.js';
 import { openTool } from '../toolbox/index.js';
-import { activity, configAreas, configDraft, engineName, fmtPct, listenerChips, subject } from './model.js';
+import { activity, configAreas, engineName, fmtPct, listenerChips, subject } from './model.js';
+import { isEditable } from './edit.js';
 
 //#region Listening and configuration
 
@@ -27,23 +28,18 @@ function listeningPart(data, chips) {
     : h('div', { className: 'dns-pad muted' }, data.engine ? 'The resolver is running, but no listening socket was found for it.' : 'No resolver is listening: nothing answers DNS queries on this router.');
 }
 
-// The shape of the form for an editing page: a draft of the values (one per option, from configDraft) and what is allowed.
-// Nothing is editable yet, so `canEdit` is false and every control is disabled; the settings can be made writable by
-// setting it from the login's permissions, keeping the draft across the redraws of the poll (the page's `isPaused`
-// already stops them while a control has the focus), and adding a plan of UCI operations and a save with the review
-// banner, as the System settings and DHCP pages do (core/editpage.js). The controls and the field tables need no change.
-const canEdit = false;
-
-// The control for one option, connected to the draft.
-function control(f, draft) {
+// The control for one option, connected to the draft. `edit` is { canEdit, draft, inputs, touched, redraw } from the page: a
+// described option of a single value is editable when the login may write; lists and options the page has no description
+// for stay disabled (not editable yet).
+function control(f, edit) {
   return fieldRow(f, {
     id: f.key,
-    get: () => draft[f.key],
-    set: v => { draft[f.key] = v; },
-    disabled: !canEdit,
-    touched: () => {},
-    redraw: () => {},
-    register: () => {},
+    get: () => edit.draft.values[f.key],
+    set: v => { edit.draft.values[f.key] = v; },
+    disabled: !(edit.canEdit && isEditable(f)),
+    touched: edit.touched,
+    redraw: edit.redraw,
+    register: (el, index) => { if (index == null) edit.inputs[f.key] = el; else (edit.inputs[f.key] ??= [])[index] = el; },
   });
 }
 
@@ -52,33 +48,35 @@ const opened = new Map();
 
 // The resolver's options as the shared controls, in collapsible areas (General first, then Security and privacy, then the
 // rest), each with its sections: a checkbox for a yes/no option, a drop-down for a fixed set of values, a number input for a
-// number, a text box for a name and a list for several values. A folded area still shows its state in one line.
-function configPart(data, e, file) {
-  const draft = configDraft(data);
+// number, a text box for a name and a list for several values. A folded area still shows its state in one line. Edits are
+// saved with the review banner of the command bar (see index.js).
+function configPart(data, e, file, edit) {
   const area = a => h('details', { className: 'dns-area', open: opened.get(a.id) ?? a.open, ontoggle: ev => opened.set(a.id, ev.target.open) },
     h('summary', {}, h('span', { className: 'dns-chevron' }), h('span', { className: 'dns-area-title' }, a.title), h('span', { className: 'dns-area-count muted' }, `${a.count} options`), a.summary ? h('span', { className: 'dns-area-sum muted' }, a.summary) : null),
     h('div', { className: 'dns-area-body' },
       h('p', { className: 'muted small dns-area-legend' }, a.legend),
       a.sections.map(s => h('section', { className: 'dns-sec' },
         s.title ? h('h4', { className: 'dns-sec-title' }, s.title) : null,
-        h('div', { className: 'set-fields' }, s.fields.map(f => control(f, draft)))))));
+        h('div', { className: 'set-fields' }, s.fields.map(f => control(f, edit)))))));
   return h('div', {},
-    legend([
-      `Read only for now: this page shows the settings of ${engineName(e)} but cannot change them. Edit ${file} and restart the service to change one.`,
-      'A box that is empty, or a drop-down that says "Default", is not set in the file: the default shown applies.']),
+    legend(edit.canEdit ? [
+      `These are the settings of ${engineName(e)} in ${file}. A change is saved and applied at once; if the router does not look right afterwards, or this page is closed before it finishes, the router puts the previous settings back by itself within 30 seconds.`,
+      'A box that is empty, or a drop-down that says "Default", is not set in the file: the default shown applies. Lists, options this page has no description for, and the forwarders can only be changed in the file for now.']
+      : [`Read only: this page shows the settings of ${engineName(e)} but this login cannot change them. Edit ${file} and restart the service to change one.`,
+        'A box that is empty, or a drop-down that says "Default", is not set in the file: the default shown applies.']),
     h('div', { className: 'dns-areas' }, configAreas(data).map(area)));
 }
 
 // The full-width card at the top: where the resolver listens and how it is configured. Without a resolver there is
 // nothing to configure, and the card is only the listening part.
-export function resolverCard(data) {
+export function resolverCard(data, edit) {
   const chips = listenerChips(data);
   const e = subject(data);
   const file = e === 'unbound' ? '/etc/config/unbound' : '/etc/config/dhcp';
   const listening = chips.length ? `${chips.length} address${chips.length === 1 ? '' : 'es'} and port${chips.length === 1 ? '' : 's'}${data.truncated?.listeners ? ' (cut)' : ''}` : 'not listening';
   if (!e) return card([icon('broadcast'), 'Listening on', h('span', { className: 'sub' }, listening)], listeningPart(data, chips));
   return card([icon('broadcast'), 'Listening and configuration', h('span', { className: 'sub' }, `${listening} · ${engineName(e)} · ${file}${data.engine ? '' : ' · not running'}`)],
-    h('div', {}, partTitle('Listening on'), listeningPart(data, chips), h('div', { className: 'dns-top' }, partTitle('Configuration'), configPart(data, e, file))));
+    h('div', {}, partTitle('Listening on'), listeningPart(data, chips), h('div', { className: 'dns-top' }, partTitle('Configuration'), configPart(data, e, file, edit))));
 }
 
 //#endregion

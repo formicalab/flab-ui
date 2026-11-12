@@ -9,7 +9,7 @@
 // forwarders (the default ones and the conditional zones), the resolvers learned from the WAN, the configuration
 // options that are set and whether DNSSEC validation is available and on.
 //
-// Read-only. `status` takes no arguments (anything sent is ignored), so no value from a request ever reaches
+// Read-only: the plugin never writes anything (the page changes settings through rpcd's own `uci` object). `status` takes no arguments (anything sent is ignored), so no value from a request ever reaches
 // a shell; every command below is a fixed string. A command that fails or prints nothing leaves its part of the
 // reply null and adds a warning, it never fails the call.
 
@@ -621,6 +621,11 @@ function status() {
 			f.source = 'file';
 	}
 	let forward_uci = configured == 'unbound' ? uci_zones : (configured == 'dnsmasq' ? dnsmasq_uci_servers(sec_dm) : []);
+
+	// The UCI section that holds the described engine's options, so a page can write them: Unbound's `unbound` section of
+	// /etc/config/unbound, dnsmasq's section of /etc/config/dhcp. Null when the engine has no such section.
+	let owner = configured == 'unbound' ? sec_ub : (configured == 'dnsmasq' ? sec_dm : null);
+	let config_section = owner?.['.name'] != null ? { config: configured == 'unbound' ? 'unbound' : 'dhcp', name: owner['.name'] } : null;
 	let cut_listeners = length(sockets) > MAX_LISTENERS;
 	if (cut_listeners)
 		sockets = slice(sockets, 0, MAX_LISTENERS);
@@ -651,6 +656,7 @@ function status() {
 		listeners: sockets,
 		stats: engine ? detail.stats : null,
 		config,
+		config_section,
 		defaults: configured == 'unbound' ? UNBOUND_DEFAULTS : (configured == 'dnsmasq' ? DNSMASQ_DEFAULTS : {}),
 		forwards,
 		forward_uci,

@@ -33,7 +33,7 @@ check(!/popen|system\(|exec|writefile|unlink|mkdir|rename/.test(code), 'nothing 
 check(!/request\.args|\.args\b/.test(code), 'status never looks at the request: it takes no arguments');
 check(/call: function\(request\) \{\s*return status\(\);/.test(code) && (code.match(/call:/g) ?? []).length === 1 && !/args:/.test(code), 'one method, status, declared without arguments');
 const acl = JSON.parse(fs.readFileSync(path.join(here, '../../rpcd/acl.d/flab-dns.json'), 'utf8'));
-check(same(Object.keys(acl), ['flab']) && same(acl.flab.read, { ubus: { 'flab.dns': ['status'] } }) && same(acl.flab.write, {}), 'the ACL grants exactly flab.dns: [status] under read: no write, no file, no exec', j(acl));
+check(same(Object.keys(acl), ['flab']) && same(acl.flab.read, { ubus: { 'flab.dns': ['status'], uci: ['get', 'changes'] }, uci: ['unbound', 'dhcp'] }) && same(acl.flab.write, { ubus: { uci: ['set', 'add', 'delete', 'revert', 'apply', 'confirm', 'rollback'] }, uci: ['unbound', 'dhcp'] }), 'the ACL grants flab.dns: [status] and the staged uci edits of the unbound and dhcp configs, and nothing else: no file, no exec, no other config', j(acl));
 //#endregion
 
 //#region Every scenario
@@ -70,6 +70,7 @@ console.log('\n== unbound (extended statistics, ninety forwarders) ==');
   check(facts.azureZones.every(z => zone(r, z).source === 'file' && zone(r, z).section === undefined) && zone(r, 'lab.formicalab.casa').source === 'file' && r.forwards.filter(f => f.source === 'uci').length === 2, 'the zones that only the extension file defines are marked "file" and have no section', String(r.forwards.filter(f => f.source === 'file').length));
   check(r.local_names === facts.localNames, `${facts.localNames} local names (reverse names and repeated records are not counted)`, String(r.local_names));
   check(same(r.dnssec, { supported: true, enabled: true }) && same(r.warnings, []), 'DNSSEC is validating (the validator module is loaded) and nothing was left unread', j([r.dnssec, r.warnings]));
+  check(same(r.config_section, { config: 'unbound', name: 'ub_main' }), 'the UCI section that holds the options is named, so a page can write them', j(r.config_section));
 }
 
 console.log('\n== unbound-basic (the main router: extended statistics off) ==');
@@ -117,6 +118,7 @@ console.log('\n== dnsmasq (the GL-X3000) ==');
   check(r.forward_uci.length === facts.dmZones.length + 3 && same(r.forward_uci[0], { index: 0, value: `/*.${facts.dmZones[0]}/10.0.2.4` }) && same(r.forward_uci.at(-1), { index: facts.dmZones.length + 2, value: '1.1.1.1' }) && r.forwards.every(f => f.source === 'uci' && f.section === undefined), 'every server entry is listed as written, with its index, and every forwarder is a UCI one', j(r.forward_uci.slice(0, 1)));
   check(r.local_names === facts.dmNames, `${facts.dmNames} local names from the host files and the named leases`, String(r.local_names));
   check(same(r.dnssec, { supported: false, enabled: false }) && same(r.warnings, []), 'the build says no-DNSSEC, so validation is not supported', j(r.dnssec));
+  check(same(r.config_section, { config: 'dhcp', name: 'cfg01411c' }), 'dnsmasq\'s options are in the dnsmasq section of the dhcp config', j(r.config_section));
 }
 
 console.log('\n== both (dnsmasq on 5353 behind Unbound) ==');
@@ -140,7 +142,7 @@ console.log('\n== none (no resolver) ==');
 {
   const r = out('none');
   check(r.engine === null && r.configured === null && !r.engines.unbound.installed && !r.engines.dnsmasq.installed && r.version === null && r.stats === null && r.uptime === null, 'nothing installed, nothing running', j(r.engines));
-  check(r.listeners.length === 0 && r.forwards.length === 0 && same(r.config, {}) && same(r.defaults, {}) && same(r.dnssec, { supported: null, enabled: null }) && r.local_names === null && r.upstream_used === null && same(r.warnings, []), 'every part is empty or null', j(r));
+  check(r.listeners.length === 0 && r.forwards.length === 0 && same(r.config, {}) && same(r.defaults, {}) && same(r.dnssec, { supported: null, enabled: null }) && r.local_names === null && r.upstream_used === null && r.config_section === null && same(r.forward_uci, []) && same(r.warnings, []), 'every part is empty or null', j(r));
   check(same(r.upstream, ['192.0.2.53']), 'the WAN resolvers are still reported');
 }
 
