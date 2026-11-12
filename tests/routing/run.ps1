@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-Tests the Routing page (kernel routes, tables, policy rules and the next-hop lookup) without changing the router.
+Tests the Routing page (kernel routes, tables, policy rules, the next-hop lookup and BGP) without changing the router.
 
 .DESCRIPTION
 1. Unit tests of the page model (address math, tables, findings, filtering and sorting, what a lookup answer means).
@@ -10,8 +10,10 @@ Tests the Routing page (kernel routes, tables, policy rules and the next-hop loo
    and runs the repository's flab.routing.uc on the router against every scenario (FLAB_FIXTURES), asserting the JSON.
    The lookup arguments are also tried with shell metacharacters, which must be refused before any command runs.
 4. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1) and drives the
-   Routing page with mocked flab.routing replies: the Routes tab, the lookup, the table and rule cards, and the
-   BGP tab. Nothing reaches the router's configuration.
+   Routing page with mocked flab.routing replies: the Routes tab, the lookup (and its buttons into the Toolbox), the
+   table and rule cards, and the BGP tab. Nothing reaches the router's configuration.
+
+The diagnostic tools have their own suite, tests/toolbox/run.ps1.
 
 Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (deploy.ps1 -Action Deploy) and
 installs playwright-core into the temporary work folder. Everything created on the router (/tmp/flab-routing-test) and
@@ -25,12 +27,17 @@ Base URL of the deployed UI (used by -Browser).
 
 .PARAMETER Browser
 Also run the browser test.
+
+.PARAMETER KeepWork
+Keep the local work folder (the plugin outputs and the browser test's node modules) after the run, so the browser test
+can be repeated by hand. The folder is %TEMP%\flab-routing-test.
 #>
 [CmdletBinding()]
 param(
     [string]$Router = 'root@openwrt.lab.formicalab.casa',
     [string]$Url = 'https://openwrt.lab.formicalab.casa/flab/',
-    [switch]$Browser
+    [switch]$Browser,
+    [switch]$KeepWork
 )
 
 Set-StrictMode -Version Latest
@@ -96,7 +103,7 @@ FLAB_RECORD=$remote/fx-real FLAB_PLUGIN=$remote/flab.routing.uc ucode -L "$remot
 "@
     Invoke-Native 'scp' @('-O', '-r', "${Router}:$remote/fx-real", $work)
 
-    Write-Host '3/4 Building scenarios and running the plugin on the router'
+    Write-Host '3/4 Building scenarios and running the routing plugin on the router'
     Invoke-Native 'node' @((Join-Path $here 'mkfx.mjs'), $work)
     $scenarios = @(Get-Content (Join-Path $work 'scenarios.json') -Raw | ConvertFrom-Json)
     $lookups = @(Get-Content (Join-Path $work 'lookup-names.json') -Raw | ConvertFrom-Json)
@@ -138,5 +145,5 @@ finally {
     # Always remove the router-side work folder and the local one, even after a failure.
     Remove-TestSession -Router $Router -Sid $sid
     ssh $Router "rm -rf $remote" 2>$null
-    Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not $KeepWork) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
 }

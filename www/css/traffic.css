@@ -1,0 +1,34 @@
+/* Traffic page styling (Live, Connections and Usage tabs). Loaded on demand by core/app.js. */
+
+/* ── Shared ── */
+.tr-num { text-align: right; }
+.tr-legend { padding: .75rem 1rem; color: var(--fl-muted); font-size: .85rem; border-bottom: 1px solid var(--fl-stroke); }
+.tr-note { display: flex; gap: .6rem; align-items: flex-start; padding: .7rem 1rem; border-radius: 8px; border: 1px solid var(--fl-stroke); border-left: 4px solid var(--fl-info-fg); background: var(--fl-surface); color: var(--fl-muted); font-size: .85rem; }
+.tr-note > svg { flex: none; margin-top: .15rem; color: var(--fl-info-fg); }
+.tr-note strong { color: var(--fl-text); }
+.tr-more { display: flex; align-items: center; gap: 1rem; padding: .6rem 1rem; border-top: 1px solid var(--fl-stroke); }
+.tr-share { display: flex; align-items: center; gap: .5rem; min-width: 110px; }
+.tr-share .meter { flex: 1; min-width: 60px; }
+.tr-share span { font-size: .8rem; color: var(--fl-muted); min-width: 2.6rem; text-align: right; }
+.tr-rx { color: var(--fl-brand); font-weight: 600; }
+.tr-tx { color: var(--fl-ok-fg); font-weight: 600; }
+
+/* ── Live ── */
+.tr-live td { vertical-align: middle; }
+.tr-live .tr-if .chip { margin-left: .35rem; }
+.tr-live .tr-if .fl-badge { margin-left: .4rem; }
+.tr-live tr.tr-dim > td { opacity: .6; }
+.tr-live .spark { width: 150px; height: 28px; }
+
+/* ── Connections ── */
+.tr-caption { font-size: .8rem; color: var(--fl-muted); font-weight: 600; margin: 0 0 .4rem; }
+.tr-pick { cursor: pointer; }
+.tr-pick:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
+.tr-hosts td { vertical-align: top; }
+.tr-conns td { vertical-align: top; }
+.tr-conns tr.tr-lost > td { background: var(--fl-warn-bg); }
+.tr-badges { display: flex; flex-wrap: wrap; gap: .25rem; }
+
+/* ── Usage ── */
+.tr-usage td { vertical-align: middle; }
+.tr-addrs > div { line-height: 1.35; }

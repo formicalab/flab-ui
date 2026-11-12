@@ -29,12 +29,15 @@ import firewall from './firewall/index.js';
 import dhcp from './dhcp/index.js';
 import interfaces from './interfaces/index.js';
 import routing from './routing/index.js';
+import traffic from './traffic/index.js';
 import services from './services.js';
+import toolbox from './toolbox/index.js';
 import logs from './logs/index.js';
 import settings from './settings/index.js';
 
 // Network pages go from the physical layer up (ports, bridges, radios, tunnels, firewall); DHCP and router
 // advertisements, a service on top of those, come next; Devices and Interfaces is the recap that ties them
-// together, followed by routing (the kernel's routes and BGP), the services and the logs.
+// together, followed by routing (the kernel's routes and BGP), traffic (where the bandwidth goes), the services, the toolbox
+// (diagnostic tools) and the logs.
 // System settings is the only other page that changes the router; it sits at the bottom of the navigation, by Sign out.
-export const pages = [overview, network, bridges, wifi, mesh, ipsec, wireguard, firewall, dhcp, interfaces, routing, services, logs, settings];
+export const pages = [overview, network, bridges, wifi, mesh, ipsec, wireguard, firewall, dhcp, interfaces, routing, traffic, services, toolbox, logs, settings];

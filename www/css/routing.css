@@ -24,6 +24,7 @@
 .rt-raw summary { cursor: pointer; color: var(--fl-muted); font-size: .85rem; }
 .rt-raw pre { margin: .5rem 0 0; padding: .5rem .75rem; border-radius: 6px; background: var(--fl-surface-hover); font-size: .78rem; white-space: pre-wrap; }
 .rt-dev { display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.rt-try { display: inline-flex; gap: .5rem; flex-wrap: wrap; }
 
 /* ── Tables, rules and the route list ── */
 .rt-pick { cursor: pointer; }

@@ -1,0 +1,11 @@
+{
+  "flab": {
+    "description": "flab-ui Traffic page: the connection tracking table and nlbwmon usage per host (read only)",
+    "read": {
+      "ubus": {
+        "flab.traffic": ["status", "connections", "usage_periods", "usage"]
+      }
+    },
+    "write": {}
+  }
+}

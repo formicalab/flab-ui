@@ -32,7 +32,7 @@ const DUMP = { interface: [
   { interface: 'internet', up: true, l3_device: 'wan' },
   { interface: 'lan', up: true, l3_device: 'br-lan' },
 ] };
-const mock = { status: clone(rich), answers: clone(answers), lookups: [], statusCalls: 0, bgp: { daemon: { running: false, error: 'no control socket' }, peers: [], paths: [] }, writes: [] };
+const mock = { status: clone(rich), answers: clone(answers), lookups: [], diagStarts: [], statusCalls: 0, bgp: { daemon: { running: false, error: 'no control socket' }, peers: [], paths: [] }, writes: [] };
 
 // The JSON-RPC answer for a request the mock handles, or null to let it through to the real router.
 function answer(body) {
@@ -45,6 +45,9 @@ function answer(body) {
     return ok(mock.answers[`${args.dst}|${args.src ?? ''}|${args.iif ?? ''}`] ?? { ok: true, dst: args.dst, family: 4, get: { ok: false, error: 'Network is unreachable' }, match: null, match_error: 'x', raw: { get: '', match: '' } });
   }
   if (obj === 'flab.bgp' && method === 'status') return ok(mock.bgp);
+  // The Toolbox is opened by the lookup's buttons; it is answered here so that nothing runs on the router.
+  if (obj === 'flab.diag' && method === 'status') return ok({ generated: 1, tools: { ping: true, traceroute: true, openssl: true }, dns_tool: 'kdig', types: ['A'], devices: ['lo'], limits: {}, starttls: [], upstream: [], check_host: 'example.com' });
+  if (obj === 'flab.diag' && method === 'start') { mock.diagStarts.push(args); return ok({ ok: false, error: 'Not run in this test.' }); }
   if (obj === 'network.interface' && method === 'dump') return ok(DUMP);
   return null;
 }
@@ -103,7 +106,7 @@ console.log('== the Routes tab ==');
 const nav = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
 check(nav.includes('Routing') && !nav.includes('BGP') && (await page.locator('.nav-pane a.active').innerText()).trim() === 'Routing', 'the navigation has a Routing entry and no separate BGP one', nav.join(' | '));
 check((await page.locator('.cmdbar h1').innerText()).trim() === 'Routing', 'the page title');
-check((await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes,BGP' && await page.locator('.seg-tab.active').innerText() === 'Routes', 'two tabs, Routes open, because BIRD is installed');
+check((await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes,BGP' && await page.locator('.seg-tab.active').innerText() === 'Routes', 'two tabs, Routes open: Routes and (because BIRD is installed) BGP');
 check(await tile(0) === 'internet' && /via 192\.0\.2\.1 · wan/.test(await tileSub(0)) && /1 more/.test(await tileSub(0)), 'the IPv4 default route tile: logical interface, next hop and device, and that a second default route exists', `${await tile(0)} | ${await tileSub(0)}`);
 check(await tile(1) === 'internet' && /via fe80::1/.test(await tileSub(1)), 'the IPv6 default route tile');
 check(await tile(2) === '16' && /10 IPv4 · 6 IPv6/.test(await tileSub(2)), 'routes in the main table, by family', `${await tile(2)} | ${await tileSub(2)}`);
@@ -240,7 +243,7 @@ check(await page.locator('.cmdbar input[placeholder="Filter routes…"]').isVisi
 console.log('\n== a router without BIRD, without ip, and a long route list ==');
 mock.status.bird = false;
 await refresh();
-check(await page.locator('.seg').isHidden(), 'without birdc there are no tabs');
+check((await page.locator('.seg-tab').allInnerTexts()).length === 0 || (await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes' || await page.locator('.cmdbar .seg').isHidden(), 'without birdc the BGP tab is not offered (a single tab is not drawn)');
 mock.status.bird = true;
 mock.status.routes.push(...Array.from({ length: 500 }, (_, i) => ({ ...clone(rich.routes[2]), prefix: `172.20.${i >> 8}.${i & 255}/32`, len: 32 })));
 await refresh();
@@ -258,6 +261,14 @@ await page.emulateMedia({ colorScheme: 'dark' });
 await page.waitForTimeout(300);
 await shot('dark');
 await page.emulateMedia({ colorScheme: 'light' });
+
+console.log('\n== from the lookup to the Toolbox ==');
+await lookup('1.1.1.1');
+check(await page.locator('.rt-result .rt-try button').allInnerTexts().then(t => t.map(x => x.trim()).join()) === 'Ping,Traceroute', 'a forwarded answer offers Ping and Traceroute');
+await page.locator('.rt-result .rt-try button', { hasText: 'Traceroute' }).click();
+await page.waitForSelector('.rt-diag', { timeout: 10000 });
+check(page.url().endsWith('#toolbox') && (await page.locator('.nav-pane a.active').innerText()).trim() === 'Toolbox' && await page.locator('.rt-diag input.mono').first().inputValue() === '1.1.1.1' && await page.locator('.rt-seg .seg-tab.active').innerText() === 'Traceroute', 'the button opens the Toolbox with the tool chosen and the destination filled in');
+check(mock.diagStarts.length === 1 && mock.diagStarts[0].tool === 'traceroute' && mock.diagStarts[0].host === '1.1.1.1', 'and starts it (the mock refuses it, so nothing runs on the router)', JSON.stringify(mock.diagStarts));
 //#endregion
 
 check(mock.writes.length === 0, 'nothing was written to the router', mock.writes.join());

@@ -75,6 +75,17 @@ function Copy-ToRouter {
 #region Cleanup script (also run before Deploy so it is idempotent)
 $cleanup = @'
 set -e
+# Diagnostics still running from the Diagnostics tab are ended first; a pid is only killed when it is one of the tools or
+# the shell of one of the job scripts.
+for p in /tmp/flab-diag/*/pid; do
+  [ -f "$p" ] || continue
+  pid=$(cat "$p"); c=$(cat "/proc/$pid/comm" 2>/dev/null || true)
+  case "$c" in
+    timeout|ping|ping6|traceroute|traceroute6|nslookup|dig|kdig|drill) kill "$pid" 2>/dev/null || true ;;
+    sh) if tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'job\.sh'; then kill "$pid" 2>/dev/null || true; fi ;;
+  esac
+done
+rm -rf /tmp/flab-diag /tmp/flab-service.out
 rm -f /www/flab
 rm -rf /tmp/flab
 rm -f /usr/share/rpcd/acl.d/flab*.json
@@ -87,7 +98,7 @@ rm -rf /usr/share/ucode/flab
 switch ($Action) {
     'Cleanup' {
         Invoke-Remote $cleanup
-        Invoke-Remote 'ls -d /www/flab /tmp/flab /usr/share/ucode/flab /usr/share/rpcd/acl.d/flab* /usr/share/rpcd/ucode/flab* 2>&1; true'
+        Invoke-Remote 'ls -d /www/flab /tmp/flab /tmp/flab-diag /usr/share/ucode/flab /usr/share/rpcd/acl.d/flab* /usr/share/rpcd/ucode/flab* 2>&1; true'
         Write-Host 'Router cleaned.'
     }
     'Deploy' {

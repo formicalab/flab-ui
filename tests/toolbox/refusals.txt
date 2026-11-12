@@ -1,0 +1,56 @@
+{"tool":"ping","host":"1.1.1.1; touch /tmp/flab-diag-canary"}
+{"tool":"ping","host":"$(touch /tmp/flab-diag-canary)"}
+{"tool":"ping","host":"`touch /tmp/flab-diag-canary`"}
+{"tool":"ping","host":"1.1.1.1 && touch /tmp/flab-diag-canary"}
+{"tool":"ping","host":"1.1.1.1|touch /tmp/flab-diag-canary"}
+{"tool":"ping","host":"1.1.1.1\ntouch /tmp/flab-diag-canary"}
+{"tool":"ping","host":"1.1.1.1>/tmp/flab-diag-canary"}
+{"tool":"ping","host":"-c1"}
+{"tool":"ping","host":"--help"}
+{"tool":"ping","host":"a b"}
+{"tool":"ping","host":""}
+{"tool":"ping"}
+{"tool":"ping","host":"1.1.1.1","count":0}
+{"tool":"ping","host":"1.1.1.1","count":11}
+{"tool":"ping","host":"1.1.1.1","count":"3;touch /tmp/flab-diag-canary"}
+{"tool":"ping","host":"1.1.1.1","count":1.5}
+{"tool":"ping","host":"1.1.1.1","size":1401}
+{"tool":"ping","host":"1.1.1.1","size":-1}
+{"tool":"ping","host":"1.1.1.1","source":"-f"}
+{"tool":"ping","host":"1.1.1.1","source":"br-lan;touch /tmp/flab-diag-canary"}
+{"tool":"ping","host":"1.1.1.1","source":"a/b"}
+{"tool":"traceroute","host":"1.1.1.1","hops":0}
+{"tool":"traceroute","host":"1.1.1.1","hops":31}
+{"tool":"traceroute","host":"1.1.1.1","probes":4}
+{"tool":"traceroute","host":"1.1.1.1","source":"$(touch /tmp/flab-diag-canary)"}
+{"tool":"traceroute","host":"1.1.1.1","resolve":"1;touch /tmp/flab-diag-canary"}
+{"tool":"traceroute","host":"1.1.1.1","resolve":1}
+{"tool":"traceroute","host":"1.1.1.1","resolve":"true"}
+{"tool":"dns","host":"example.com","type":"ANY"}
+{"tool":"dns","host":"example.com","type":"A;touch /tmp/flab-diag-canary"}
+{"tool":"dns","host":"example.com","server":"-x"}
+{"tool":"dns","host":"example.com","server":"1.1.1.1;touch /tmp/flab-diag-canary"}
+{"tool":"dns","host":"-x"}
+{"tool":"rm","host":"1.1.1.1"}
+{"tool":"","host":"1.1.1.1"}
+{"host":"1.1.1.1"}
+{"tool":"tls","host":"1.1.1.1;touch /tmp/flab-diag-canary"}
+{"tool":"tls","host":"-connect"}
+{"tool":"tls","host":"example.com","port":0}
+{"tool":"tls","host":"example.com","port":65536}
+{"tool":"tls","host":"example.com","port":"443;touch /tmp/flab-diag-canary"}
+{"tool":"tls","host":"example.com","sni":"a;touch /tmp/flab-diag-canary"}
+{"tool":"tls","host":"example.com","sni":"-x"}
+{"tool":"tls","host":"example.com","starttls":"telnet"}
+{"tool":"tls","host":"example.com","starttls":"smtp;touch /tmp/flab-diag-canary"}
+{"tool":"compare","host":"example.com"}
+{"tool":"compare","host":"example.com","servers":[]}
+{"tool":"compare","host":"example.com","servers":"1.1.1.1"}
+{"tool":"compare","host":"example.com","servers":[1]}
+{"tool":"compare","host":"example.com","servers":["-x"]}
+{"tool":"compare","host":"example.com","servers":["1.1.1.1;touch /tmp/flab-diag-canary"]}
+{"tool":"compare","host":"example.com","servers":["1.1.1.1","8.8.8.8","9.9.9.9","4.4.4.4","5.5.5.5","6.6.6.6","7.7.7.7"]}
+{"tool":"compare","host":"example.com","type":"ZZ","servers":["router"]}
+{"tool":"compare","host":"x;touch /tmp/flab-diag-canary","servers":["router"]}
+{"tool":"check","host":"x;touch /tmp/flab-diag-canary"}
+{"tool":"check","host":"-x"}

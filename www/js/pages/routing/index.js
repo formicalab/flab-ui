@@ -1,12 +1,13 @@
 // Routing page (route #routing): the kernel's routing state and, when BIRD is installed, BGP.
 //
-// Two tabs share the page and its command bar:
-//   Routes  the next-hop lookup, the policy rules and routing tables, and the route list (flab.routing, see
-//           rpcd/ucode/flab.routing.uc; the logical interface names come from `network.interface dump`)
-//   BGP     the BIRD state (flab.bgp; the sections are in bgp/): sessions, learned and announced routes
-// Only the open tab is polled. The BGP tab is offered only when the router has birdc.
+// Up to two tabs share the page and its command bar:
+//   Routes       the next-hop lookup, the policy rules and routing tables, and the route list (flab.routing, see
+//                rpcd/ucode/flab.routing.uc; the logical interface names come from `network.interface dump`)
+//   BGP          the BIRD state (flab.bgp; the sections are in bgp/): sessions, learned and announced routes
+// Only the open tab is polled. The BGP tab is offered only when the router has birdc. A forwarded lookup answer offers
+// Ping and Traceroute buttons that open the Toolbox page with the destination filled in.
 //
-// The view state lives here so it survives the redraw on every poll: the open tab, the filters and sorts of both
+// The view state lives here so it survives the redraw on every poll: the open tab, the filters and sorts of the
 // tabs, the lookup form and the lookup that is currently shown (once a query is set, every poll repeats it).
 import { h } from '../../core/dom.js';
 import { AuthError, ubus, optional } from '../../core/ubus.js';
@@ -25,7 +26,7 @@ const state = {
   // whether the whole list is drawn, the lookup form, the active lookup query and the form's error.
   rq: '', family: 'all', table: 'main', rsort: { key: 'prefix', dir: 1 }, all: false,
   form: { dst: '', src: '', iif: '' }, query: null, formError: null,
-  // Set by the command-bar controls: redraw from the cached data, and poll again (used by the lookup form).
+  // Set by the command-bar controls: redraw from the cached data, poll again (used by the lookup form).
   rerender: () => {}, reload: () => {},
 };
 
@@ -139,13 +140,15 @@ export default {
     routesNodes.push(rsearch, family.node, table.node);
     bgpNodes.push(bsearch, peer.node, best);
     show();
+    // The tabs offered: BGP only on a router with BIRD.
+    const tabOptions = () => [['routes', 'Routes'], ...(hasBird ? [['bgp', 'BGP']] : [])];
     return {
       nodes: [tabs.node, rsearch, family.node, table.node, bsearch, peer.node, best, pauseControl(state), refreshControl(reload)],
       update(data) {
+        tabs.setOptions(tabOptions());
         if (data.tab === 'routes') {
-          tabs.setOptions(hasBird ? [['routes', 'Routes'], ['bgp', 'BGP']] : [['routes', 'Routes']]);
           table.setOptions([['all', 'All tables'], ...tablesOf(data.status).map(t => [t.name, tableLabel(t.name, data.status.table_ids)])]);
-        } else {
+        } else if (data.tab === 'bgp') {
           peer.setOptions(peerOptions(data.bgp));
         }
         show();

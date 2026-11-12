@@ -41,7 +41,7 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
 rpcd ---- built-in objects:  session, system, network.interface, service, uci (configuration changes)
    |
    '----- ucode plugins (this repo): flab.wifi, flab.radio, flab.mesh, flab.wireguard, flab.firewall,
-                |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.sensors, flab.system, flab.logs, flab.services
+                |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.diag, flab.traffic, flab.sensors, flab.system, flab.logs, flab.services
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici
@@ -71,7 +71,7 @@ Design principles:
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
-  tests/                     bgp/, dhcp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), routing/, services/, settings/, wifi/,
+  tests/                     bgp/, dhcp/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), routing/, services/, settings/, toolbox/, traffic/, wifi/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -115,6 +115,11 @@ flab-ui/
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
           bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js
+        toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, result views of ping, traceroute and DNS),
+                             diagviews.js (check, comparison and certificate views), diagmodel.js (pure: request checks, output
+                             parsing, the check's verdict)
+        traffic/             Traffic: index.js (page, tabs, state, polling), model.js (pure: interfaces and totals, WAN, findings, entries, NAT,
+                             merging hosts by MAC, protocol rows), live.js, connections.js, usage.js (the three tabs)
         services.js          Re-exports services/index.js (keeps the registry's import path)
         services/            Services: index.js (page), model.js (pure: rows, actions, confirmations, outcomes)
         logs/                index.js, entries.js (pure helpers)
@@ -212,10 +217,14 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   instead of breaking the page. `cpu.js` keeps the sample history and builds the CPU card;
   `temperatures.js` builds the temperature cards. A sensor that gives no reading (a Qualcomm Wi-Fi radio that is
   down) is not reported by the plugin and is ignored by the page.
-- **Routing**: `index.js` owns the page state, the two tabs and the command bar (the tab strip, the filters of each
+- **Routing**: `index.js` owns the page state, the tabs and the command bar (the tab strip, the filters of each
   tab) and loads only the open tab; `model.js` holds the pure parts (address and prefix math, the table overview,
   findings, filtering and sorting, what a lookup answer means, who added a rule); `lookup.js` and `tables.js` build the
-  Routes tab cards. The BGP tab is `bgp/`: `tab.js` composes the sections; `topology.js`, `peer.js`, `routes.js`,
+  Routes tab cards. The Toolbox page (`toolbox/`) is separate: `index.js` is the page and exports `openTool`, which the
+  lookup answer's buttons use; `diag.js` is the form, job polling and the ping, traceroute and DNS views, `diagviews.js`
+  the connectivity check, comparison and certificate views, and `diagmodel.js` the pure parts (the request a form may
+  build, the parsers for every tool's output, the check's verdict).
+  The BGP tab is `bgp/`: `tab.js` composes the sections; `topology.js`, `peer.js`, `routes.js`,
   `announced.js` and `system.js` each export card builders that take the backend data; `util.js` holds the
   per-peer color helpers, AS-path chips and prefix sort key.
 - **Pure models**: `firewall/model.js` (zone matrix), `interfaces/layers.js` (network layers),
@@ -244,9 +253,11 @@ return {
 | `flab.wireguard.uc` | `flab.wireguard` | `status` | uci network (`proto wireguard` interfaces and `wireguard_<if>` peer sections), uci firewall (zone); `wg show <if> public-key/listen-port/peers/endpoints/allowed-ips/latest-handshakes/transfer/persistent-keepalive` (the single-field forms never print the private or pre-shared key); sysfs MTU and counters |
 | `flab.firewall.uc` | `flab.firewall` | `status` | uci firewall (defaults, zones, forwardings, `rule`, `redirect`, `nat`, `include`, `ipset`), uci network (interface names); `nft -j list ruleset` (per-rule hit counters matched through the `!fw4: <name>` comment, reject/drop chain counters per zone, the devices behind each zone, flowtable devices, base chain policies); procfs conntrack count and limit |
 | `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles and port order); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines) |
+| `flab.diag.uc` | `flab.diag` | `status`, `start` (`tool`, `host`, options), `read` (`id`, `from`), `stop` (`id`) | busybox `ping` and `traceroute`, the first of `dig`, `kdig`, `drill`, `nslookup`, and `openssl s_client` / `x509`, run detached under `timeout` with their output in `/tmp/flab-diag/<id>/out`; `ip route get` and `ip route show default` for the connectivity check; `command -v` for the tools, `/sys/class/net` for the interface names, `/tmp/resolv.conf.d/resolv.conf.auto` for the upstream resolvers; every argument validated before a command line is built |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
 | `flab.routing.uc` | `flab.routing` | `status`, `lookup` (`dst`, `src`, `iif`) | `ip -4/-6 route show table all`, `ip -4/-6 rule show`, `/etc/iproute2/rt_tables`, `command -v birdc`, `pidof charon`, uci network (only the `rule` and `rule6` sections, and only their section name, family, priority and lookup table); `lookup` runs `ip route get` and `ip route get ... fibmatch` for a validated address, optional source address and interface name |
+| `flab.traffic.uc` | `flab.traffic` | `status`; `connections` (`q`, `limit`, `sort`, `proto`, `scope`); `usage_periods`; `usage` (`period`, `group`) | procfs `/proc/net/nf_conntrack` and `/proc/sys/net/netfilter/nf_conntrack_{count,max,acct}`; `command -v nlbw`, `pidof nlbwmon`, `nlbw -c list`, `nlbw -c json -g <group> [-t <period>]`; names from uci dhcp (`host` sections), `dhcp ipv4leases`/`ipv6leases` (ubus, odhcpd), `/tmp/dhcp.leases`, `/tmp/hosts/*`, `/etc/ethers`, `/proc/net/arp`, `ip -6 neigh show` (see [Traffic](#traffic-route-traffic)) |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
 | `flab.system.uc` | `flab.system` | `cpu` | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime` |
 | `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
@@ -393,7 +404,7 @@ What Deploy does:
    `rpcd/lib/flab/*` to `/usr/share/ucode/flab/`.
 4. **Restarts rpcd**, which only reads its plugins and ACL fragments at start.
 
-Cleanup removes all of the above and restarts rpcd again. No login or rpcd setting is created or changed.
+Cleanup removes all of the above (and the diagnostics' job directory `/tmp/flab-diag`, ending any diagnostic still running) and restarts rpcd again. No login or rpcd setting is created or changed.
 
 Things to know:
 
@@ -449,9 +460,9 @@ unit test.
 ## Pages
 
 Navigation order: Overview · Wired network · Bridges · Wi-Fi · Mesh · IPsec VPN · WireGuard · Firewall · DHCP ·
-Devices and Interfaces · Routing · Services · Logs, then Settings at the bottom, next to Sign out. The network
+Devices and Interfaces · Routing · Traffic · Services · Toolbox · Logs, then Settings at the bottom, next to Sign out. The network
 pages run from the physical layer up; Devices and Interfaces recaps how they fit together, followed by routing
-(the kernel's routes and BGP), the procd services and the logs.
+(the kernel's routes and BGP), traffic (where the bandwidth goes), the procd services, the toolbox (diagnostic tools) and the logs.
 
 ### Overview (default)
 KPI tiles (uptime, CPU usage, load, memory, CPU temperature, hottest sensor), a CPU load card, a
@@ -699,9 +710,9 @@ last; a device the router does not describe is kept as an unknown device, never 
 - **Tiles**: interfaces up, bridges, VLAN devices, protocol devices, tunnels, radios up, wireless interfaces.
 
 ### Routing (route `#routing`)
-The kernel's routing state and, when the router has BIRD, BGP, in two tabs on one page (the tab strip sits in the
-command bar and shows only when `birdc` is installed, which `flab.routing status` reports as `bird`). Only the open
-tab is polled (every 5 s), and each tab has its own filters in the command bar.
+The kernel's routing state and, when the router has BIRD, BGP, in up to two tabs on one page
+(the tab strip sits in the command bar; the BGP tab shows only when `birdc` is installed, which `flab.routing status`
+reports as `bird`). Only the open tab is polled (every 5 s), and each tab has its own filters in the command bar.
 
 #### Routes tab
 Reads `flab.routing status` (and `network.interface dump` for the logical interface names such as `wan` next to
@@ -794,6 +805,112 @@ Notes:
   prefixes learned from only one peer, import-filter drops, graceful-restart mismatch, peers receiving no
   announcement.
 
+### Traffic (route `#traffic`)
+Where the bandwidth goes, in three tabs on one page (the tab strip sits in the command bar). Connections is offered when
+the router has connection tracking and Usage only when it has `nlbw`; `flab.traffic status` reports which features exist.
+Only the open tab is polled, every 3 s. The connection table and nlbwmon cost the router more than reading a counter, so
+those two tabs reuse their last answer until it is 10 s (Connections) or 30 s (Usage) old, unless the request changed or
+Refresh was pressed. The state (open tab, filters, sorts) lives in the page, so it survives the redraw on every poll.
+
+#### Live tab
+Reads `flab.network status` and netifd's interface dump, the same calls and the same rate tracker as the Wired network page
+(`network/shared.js`, `network/util.js`), so a counter sampled by one page serves the other, and `flab.traffic status` for the
+connection count (optional: without the plugin the tab still works and is the only one). No counter is read a second time.
+- **Interfaces** (`model.deviceRows`): every device `flab.network` reports, once each: Ethernet ports, the CPU conduit of a
+  switch, bridges, their members (wired, Wi-Fi with the SSID, VLAN) and VLAN devices. They come from the router on every
+  poll, with the logical interface names (`wan`, `lan`) from the interface dump. A PPPoE or tunnel device that
+  `flab.network` does not list (`pppoe-wan`, `wg0`, `xfrm0`) has no row of its own; a PPPoE WAN is carried by the VLAN or port it
+  runs on, which is listed.
+- **WAN**: the interfaces that are up and have a default route (IPv4 or IPv6); a router without one falls back to an interface
+  named `wan`. The row that carries it is the L3 device when it is listed, else the device it runs on (`pppoe-wan` runs on
+  `eth1.1036`); links that share a device are listed once and the row is marked WAN and sorts first.
+- **Table**: link state and speed (an unplugged port is neutral gray, not red), download and upload in line units
+  (Mbit/s), a sparkline of both directions (60 samples), the share of the link speed the busier direction uses, and the
+  counters since boot. A bridge, a VLAN device and the CPU conduit repeat what the ports under them carry, so they are
+  dimmed and left out of the totals. A long list draws its first 40 rows with a "Show all" button.
+- **Tiles**: WAN throughput (and which device carries it), all interfaces (ports, Wi-Fi and other members that count; routed
+  traffic is counted on both sides, and the tile says so), the busiest interface, the connection count against the limit
+  (amber from 80%, red from 95%) and what the WAN device moved since boot.
+- **Banner**: the connection table nearly full, and nlbwmon installed but not running.
+
+#### Connections tab
+The connection tracking table (`flab.traffic connections`).
+- **Tiles**: connections against the limit, TCP/UDP/ICMP counts, established, unanswered (never got a reply), translated by
+  NAT, and the busiest source.
+- **Banner**: the table close to its limit; an analysis that did not cover the whole table (see below); a host that holds
+  100 or more connections and at least 40% of the analyzed table, or 3000 of them; unanswered connections (50 or more and a
+  quarter of the table, or 20 or more from one host); packet and byte counters switched off (`nf_conntrack_acct=0`).
+- **Busiest sources and destinations**: the ten hosts with the most connections and the ten with the most traffic, by original
+  source and destination address, with the host name where the router knows one and the number of unanswered connections. A
+  click on a host filters the table to it.
+- **Table**: one row per tracked connection: family and protocol (ICMP types are named), the original endpoints with
+  their ports (IPv6 in brackets and compressed) and the host names below, the **translated** tuple when NAT changed it, the
+  state badges, the remaining life and the packets and bytes of both directions (↑ the original direction, ↓ the replies). SNAT is
+  the masquerade of the LAN behind the WAN address (the source becomes the WAN address and port) and DNAT a port forward
+  (the destination becomes the inside host and port); the badge's tooltip says so. A TCP row shows its state, a UDP flow without
+  a state word shows `assured` or `replied`, a flow nobody answered has `UNREPLIED` and a tinted row, and a flow in the flow
+  table shows `offloaded` with no countdown (the kernel prints no timeout for it). Without byte counters the size cell
+  is a dash and nothing fails. A legend above the table explains these.
+- **Controls** (command bar): filter text (host, name, address, port, protocol, state, flag; every word must match; typing waits
+  for a pause before it asks again), a protocol selector filled from what the table holds, All traffic / Internet traffic /
+  Internal only, the order (most traffic, most packets, longest timeout) and how many rows to fetch (300, 1000, 2000). The page
+  draws the first 100 fetched rows and a "Show all" button for the rest. "Internal" means that all four addresses of the entry
+  (both directions) are private, loopback, link-local, unique-local, multicast or shared (CGNAT) addresses; "Internet" is everything else.
+  A filter the plugin would refuse is not sent: the page shows why.
+
+#### Usage tab
+nlbwmon's counters per host (`flab.traffic usage_periods` and `usage`); the tab exists only when `nlbw` is installed.
+- **Note** above the tiles: the numbers are what nlbwmon has counted since the selected period started, download is what a host
+  received and upload what it sent, nlbwmon must be running (nothing is recorded while it is stopped) and only the networks it
+  lists as `local_network` are counted.
+- **Period selector**: the current period (`nlbw` without `-t`) and the stored periods `nlbw -c list` prints, newest first.
+- **Tiles**: the period total, download, upload, the top host (name and share), the number of hosts and connections. The
+  totals come from the plugin and cover every row, also those left out of the reply.
+- **Hosts**: one row per device: the IPv4 and IPv6 rows nlbwmon keeps for one MAC (it is asked for the group `mac,ip`) are
+  summed, so a device with an IPv6 privacy address is still one row. Traffic with the all-zero MAC has no device behind it, so
+  each of its addresses stays one host. The row shows the name (from DHCP and hosts data, else the address), the MAC, every
+  address, download, upload, total, a share bar and the connections; the columns sort and the filter in the command bar
+  matches name, MAC or address. A long list draws its first 50 rows with a "Show all" button.
+- **Protocols**: the same period grouped by `layer7`: nlbwmon's application name (HTTPS, QUIC, DNS, ...), else the transport and
+  port ("TCP 8443"), else "Other IP"; the twelve largest and the rest summed.
+- **Banner**: nlbwmon installed but not running (the tab then shows only the note and no periods), a period with nothing counted,
+  an error from `nlbw`, rows left out by the plugin's cap.
+
+#### The plugin
+`flab.traffic` is read-only and the ACL fragment (`rpcd/acl.d/flab-traffic.json`) grants its four methods under `read`; there is
+no write access and no generic `file` or exec grant. Live throughput is not here: it is the counters `flab.network` already reads.
+- `status`: `conntrack` (the tracker is loaded: its count file exists), `count`, `max`, `acct`, `nlbw` (`command -v nlbw`),
+  `nlbwmon_running` (`pidof nlbwmon`). It never reads the table itself.
+- `connections` (`q`, `limit`, `sort`, `proto`, `scope`): parses `/proc/net/nf_conntrack` (read through `sysfs_raw`, so the
+  tests can replay it), at most 20000 lines, and stops earlier when the call has used 3 s (a huge table on a small router must not hold
+  up rpcd). `total` is the number of lines, `parsed` the entries analyzed, `truncated` says some were not, `matched` how many pass the
+  filters, `entries` the first `limit` of them sorted, `names` the names of the addresses the reply mentions and `aggregates` the
+  counts per protocol and TCP state, the unanswered and translated entries and the ten busiest sources and destinations by
+  connections and by bytes (and the five sources with the most unanswered connections). The aggregates cover everything analyzed, not
+  only what passed the filters. Each entry has `family`, `proto`, `state`, `timeout` (null for an offloaded flow), `flags`, `src`,
+  `dst`, `sport`, `dport` (the original tuple), `icmp` (the ICMP type), `nat` (the original tuple as the other side of a
+  translation sees it, only when the reply is not the mirror image of the original) and `bytes` / `packets` as [original, reply]
+  (absent without counters). IPv6 addresses (zero-padded in the kernel's file) are compressed the way `ip` prints them; names come
+  from uci dhcp `host` sections, odhcpd's `dhcp ipv4leases` and `ipv6leases`, `/tmp/dhcp.leases`, `/tmp/hosts/*`, `/etc/ethers` and the
+  ARP and IPv6 neighbor tables (a SLAAC address takes the name of its MAC), with the domain removed, never from reverse DNS.
+- `usage_periods`: `present`, `running` and the periods (only plain dates `nlbw -c list` printed, newest first; none while nlbwmon
+  is stopped).
+- `usage` (`period`, `group`): `period` is `current` or a date that `nlbw -c list` printed, `group` one of `fam`, `mac`, `ip`,
+  `mac,ip`, `layer7`, `ip,layer7`, `mac,layer7` (nlbwmon's own columns follow: `family` for `fam`, `proto`, `port` and `layer7` for
+  `layer7`). The reply has `columns`, `rows` (objects, largest total first, at most 3000, with `total_rows` and `truncated`), `totals`
+  over every row and `names` by MAC and by IP. Without nlbw, with nlbwmon stopped, for an unlisted period or when `nlbw` prints no data
+  the reply is `{ ok: false, error }`.
+- **Validation**: every argument is checked before anything is built, and a request that fails comes back as `{ ok: false, error }`
+  without entries. `q`: a string of at most 64 characters from letters, digits and `. : - _ /` and space (a newline is refused too); `limit`: an
+  integer from 1 to 2000 (default 300); `sort`: `bytes`, `packets` or `timeout`; `proto`: `all` or 1 to 12 lowercase letters and digits; `scope`: `all`,
+  `internet` or `internal`; `period` and `group` as above. `connections` never reaches a shell. The only commands the plugin runs are
+  the fixed strings `command -v nlbw`, `pidof nlbwmon`, `ls /tmp/hosts`, `ip -6 neigh show`, `nlbw -c list` and the `nlbw -c json`
+  command, whose group is the allow-list's own string and whose period is the date taken from nlbw's own list, never the request's text; a test
+  reads the plugin's source and fails if any other `run()` call appears or one is built from a template.
+- **Speed**: ucode runs a few hundred thousand operations per second on a small router (5 to 7 s for 20000 entries on a GL-X3000
+  with the time limit off, which is why the limit exists), so the loop cuts each line at its `src=` markers with string functions (regular expressions cost
+  far more), reads TCP and UDP lines by position and builds the full entry only for the lines it returns.
+
 ### Services (route `#services`)
 Refreshed every 5 s. Lists the router's services and starts, stops and restarts them. Two sources are merged by
 name: the init scripts in `/etc/init.d` (`flab.services list`: whether each starts at boot and in which position,
@@ -830,6 +947,81 @@ anything, so the init scripts do the work, as they do for `/etc/init.d/<name> re
   was requested and refreshes a few seconds later.
 - **ACL**: `rpcd/acl.d/flab-services.json` grants `flab.services` `list` (read) and `control` (write) and nothing
   generic such as `file exec`; the `service list` call comes from `flab-base.json`.
+
+### Toolbox (route `#toolbox`)
+Diagnostic tools that run on the router and show their output as it arrives: a connectivity check, ping, traceroute, DNS
+lookups and comparisons and a TLS certificate check. The form has a tool selector, the host, and the options of the tool:
+for ping the count
+(1 to 10), the packet size (0 to 1400), the address family and a source (an interface or an address; the router's interface
+names are offered as suggestions); for traceroute the maximum hops (1 to 30), the probes per hop (1 to 3), UDP or ICMP
+probes, family and source; for DNS the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and an optional
+server; for the comparison the record type and the servers; for the certificate check the port, a server name and a STARTTLS
+protocol. A tool is offered only when the router has what it needs (the certificate check needs `openssl`, the DNS tools
+and the check need a DNS tool). The form is checked in the browser
+first (a host with a space, a leading `-` or shell characters never reaches the router), and the plugin checks everything
+again. The form remembers its values while the page is open; Run is disabled for a login that may not start diagnostics.
+- **Connectivity check:** one click that walks down the stack and says where it breaks: the default route, the next hop
+  (found the way the kernel would route to 1.1.1.1, a PPP peer address when the link has no gateway) and a ping of it, two
+  public addresses (1.1.1.1 and 8.8.8.8), a DNS lookup through the router's resolver and through 1.1.1.1, the IPv6
+  equivalents (skipped when there is no IPv6 default route) and a TLS handshake to the host (`example.com` unless another is
+  given). The steps turn from waiting to done while it runs, and a verdict says what is wrong in the order the problems
+  matter: no default route; a dead next hop; a next hop that answers while the internet does not; a router resolver that
+  fails while a public one answers; no DNS at all (port 53 blocked); a certificate that is not yet valid or expired (the
+  router's clock is the first suspect); an IPv6 route that leads nowhere (a note, not the verdict). A script that cannot run
+  at all (the shell's own message, such as a syntax error) is shown as the result instead of an empty checklist.
+- **Ping:** figures (sent, received, loss, fastest, average, slowest, jitter) that update while it runs, one bar per ping
+  (height is the round-trip time, a lost ping is a red marker: busybox prints nothing for a lost packet, so a gap in the
+  sequence numbers is the sign of it), and a plain sentence for total loss, partial loss and a name that does not resolve.
+- **Traceroute:** one row per hop as it arrives, with the routers that answered (a hop answered by two routers lists
+  both), each probe's round-trip time (`*` for a lost probe), the average with a bar, silent hops marked "no reply", the
+  destination highlighted, and a note when it was not reached within the hop limit. "Host names" can be switched to "look
+  up names": the tool then runs without `-n` and prints `name (address)` for each router, shown as the name with the
+  address beneath it; a router with no reverse record is printed as `address (address)` and shows just the address. The
+  default is addresses only, because every lookup waits for the resolver and a hop without a reverse record can be slow.
+- **DNS lookup:** how it went (the number of answers, NXDOMAIN, SERVFAIL, REFUSED, timeout, or no answer), the server that
+  answered, and the tool's own output. The tool is the first of `dig`, `kdig`, `drill` and `nslookup` that the router has;
+  busybox `nslookup` cannot show MX, TXT, NS, CNAME, SOA, SRV or CAA records in full (it prints "mail exchanger = 0" with no
+  host), so the page says so when only nslookup exists and one of those types is chosen.
+- **DNS compare:** asks the same question of up to six servers in turn: the router's own resolver, the upstream resolvers
+  the router was given (read from `resolv.conf.auto`, loopback left out), Cloudflare, Google and Quad9, and one more of
+  your choice. A row per server shows the result, the addresses, whether the resolver validated the answer with DNSSEC (the
+  AD flag), the time the tool reports and the fastest server. Differing answers are highlighted, with the note that a
+  CDN gives each resolver its own, correct set; a server that does not answer shows "No reply".
+- **TLS certificate:** connects to a host and port (optionally with another server name, or after STARTTLS for SMTP, IMAP,
+  POP3 and FTP) and shows the session (protocol, cipher, key exchange) and every certificate the server sent, from the
+  server certificate to the root: subject, issuer, key and signature algorithm, validity with the days left, names,
+  certificate authority flag, serial, SHA-256 fingerprint, and the PEM text with a copy button. Findings say whether the
+  chain is trusted by the router's CA store, whether the certificate covers the name or address asked for (wildcards match
+  one label), whether it is expired, not yet valid or ends within 14 days, a weak RSA key or a SHA-1 or MD5 signature, a
+  protocol older than TLS 1.2, and why a connection failed (refused, timed out, name not found, or a server that hung up
+  without sending a certificate).
+- **From the Routing page:** a forwarded answer of the next-hop lookup offers Ping and Traceroute buttons that open the
+  Toolbox with the destination filled in and start the job.
+- **Jobs:** each run is a job. `flab.diag start` returns at once with a job id and `read` returns the output so far, which
+  the page asks for every half second until the job ends; `stop` ends it. Nothing blocks rpcd, so the rest of the UI keeps
+  working during a 60 second traceroute. The job and the form live in the page state: leaving the page stops the reading
+  (the job keeps running on the router until it ends or its time limit), and coming back resumes it. The page does not
+  poll (it re-reads what the router has once a minute, and not while the form has focus); Refresh redraws it and the job
+  carries on.
+
+`flab.diag` runs the tools detached (`timeout -k 2 <limit> <tool> ... >out 2>&1 &`, with the exit code written to a file)
+under `/tmp/flab-diag/<id>/`: ping may run 25 seconds, traceroute 60, a DNS lookup 15, a certificate check 25, a comparison
+60 and the connectivity check 75. The check, the comparison and the certificate check are small shell scripts (`job.sh`,
+written with LF line endings only, because BusyBox sh rejects a carriage return) that print their output in blocks
+(`### BEGIN <step> <uptime> <detail>` … `### END <exit code> <uptime>`), which the page
+splits and reads; a block without an END line is still running. Every command in a script runs under its own `timeout`, and
+a TERM sent to the script (Stop) ends the command at once. At most three jobs run at once,
+twelve directories are kept, and a finished job is removed after ten minutes. Everything that reaches the shell is
+validated: the tool, the record type and the STARTTLS protocol come from allow-lists, the host, the server name and the DNS
+servers are made of letters, digits and `. : _ -` and do not start with `-` (they could be taken for an option), the port is
+clamped to 1 to 65535, a comparison takes one to six servers that are each such a name (or `router`), the source is such
+an address or an interface name,
+the numbers are clamped to their ranges (a literal 0 is a number, not "absent"), the name-lookup switch must be a real
+boolean, the argument list is built from those values
+only, the job id is generated from `/dev/urandom` and checked as exactly twelve hex digits whenever it comes back, and `stop`
+only kills a process whose name is one of the tools or the shell running one of its own `job.sh` scripts (so a recycled pid
+is never hit). The ACL fragment
+`rpcd/acl.d/flab-diag.json` grants `status` and `read` (read) and `start` and `stop` (write).
 
 ### Logs (route `#logs`)
 Refreshed every 5 s, from `flab.logs`. The last entries of the **system log** (`logread`, logd's ring buffer
@@ -950,7 +1142,9 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Suite | Command | Covers |
 |---|---|---|
 | BGP | `pwsh -File flab-ui\tests\bgp\run.ps1 [-Browser]` | `flab.bgp` parser and findings, the BGP tab of the Routing page |
-| Routing | `pwsh -File flab-ui\tests\routing\run.ps1 [-Browser]` | The Routing model (addresses, tables, findings, filters, lookup meaning, rule origins); `flab.routing` against a captured and a synthetic router (every route and rule syntax, every lookup answer, refused input); the Routes tab against mocked replies |
+| Routing | `pwsh -File flab-ui\tests\routing\run.ps1 [-Browser]` | The Routing model (addresses, tables, findings, filters, lookup meaning, rule origins); `flab.routing` against a captured and a synthetic router (every route and rule syntax, every lookup answer, refused input); the Routes tab, the lookup and the BGP tab against mocked replies |
+| Toolbox | `pwsh -File flab-ui\tests\toolbox\run.ps1 [-Browser] [-KeepWork]` | The Toolbox model (request checks, the parsers of ping, traceroute, DNS, comparison and certificate output, the connectivity check's verdicts); `flab.diag` running real jobs on the router (streaming, offsets, stop, DNS, traceroute, the router's own certificate, a comparison, a whole connectivity check, every allowed option, 56 refused requests with an injection canary, job-id traversal, the three-job cap, CRLF source); the page against a scripted job engine |
+| Traffic | `pwsh -File flab-ui\tests\traffic\run.ps1 [-Browser]` | The Traffic model (interfaces, WAN, totals, findings, endpoints, NAT, states, merging hosts by MAC, filtering and sorting, protocol rows); `flab.traffic` against a captured and several synthetic routers (every protocol, TCP state, NAT form and IPv6 spelling, a 60000-entry table, nlbwmon periods, no nlbw, no conntrack, no accounting) checked against an independent reference, and every refused argument; the Live, Connections and Usage tabs against mocked replies |
 | IPsec | `pwsh -File flab-ui\tests\ipsec\run.ps1 [-Browser]` | `flab.ipsec`, IPsec page, throughput history |
 | Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
 | Settings | `pwsh -File flab-ui\tests\settings\run.ps1 [-Browser]` | System settings model, option table and zone table; the whole editing flow against a mock router |
@@ -993,7 +1187,61 @@ refused inputs (shell metacharacters in the destination, the source and the inte
 a command that ran would show up as an error). Unlike the BGP plugin, `flab.routing` uses the shared fixture seam
 (`FLAB_FIXTURES`, file names derived from the command line). The browser pass answers `flab.routing`, `flab.bgp` and the
 interface dump from the scenario output and drives the Routes tab, the lookup (including the failover and the polling
-pause), the table and rule cards, the BGP tab and the cases without BIRD, without `ip` and with a long route list.
+pause, and its Ping and Traceroute buttons into the Toolbox, which are answered by a mock so nothing runs), the table and
+rule cards, the BGP tab and the cases without BIRD, without `ip` and with a long route list.
+
+### Toolbox suite
+`pwsh -File flab-ui\tests\toolbox\run.ps1 [-Browser] [-KeepWork]`. `samples.mjs` holds the output busybox ping and traceroute and
+the DNS tools printed on a router (a clean ping, 100% loss, a lost packet, a bad host name, traceroutes with silent hops and
+with IPv6 hops answered by two routers, nslookup, kdig and drill answers and NXDOMAIN) and `samples-tools.mjs` the
+output of the richer tools (a certificate check against the router's own HTTPS port, example.com, and the expired,
+self-signed and hung-up cases of badssl.com, a refused port, a DNS comparison with a silent server, and a connectivity
+check), shared by the unit test (`model.test.mjs`: the request a form may build, the parsers, the check's verdicts, a
+certificate's findings) and the browser test. `flab.diag` is tested for real, not
+against fixtures, because starting, reading, offsets and stopping are what it does: `run.ps1` runs the plugin with CRLF line
+endings, as a Windows checkout deploys it, starts pings, a traceroute
+and DNS lookups against 127.0.0.1 and localhost on the router, reads them while they run and after, reads from the end and
+from an offset, stops one and checks that no process is left, starts every allowed option and compares the command line,
+checks the router's own HTTPS certificate (the fingerprints, serials and dates it printed are compared with what Node
+computes from the PEM text in the same output), a STARTTLS run against a closed port, a comparison of the router
+against 127.0.0.1, and a complete connectivity check (whose script must carry no carriage return; a second one is stopped
+half way, to see that a script job ends and leaves no ping or openssl behind),
+sends the 56 lines of `refusals.txt` (shell metacharacters, leading `-`, out-of-range and non-numeric numbers, bad
+sources, servers, ports, server names, protocols and types; several would create a canary file if a command ran) and checks that all were refused, no job
+appeared and the canary does not exist, tries six job ids that are not the plugin's own (paths, wrong length, empty) on
+`read` and `stop`, and starts four jobs to see the fourth refused. `live.mjs` answers `flab.diag` from a scripted job
+engine (output revealed piece by piece, an endless ping, a refused start, a script that cannot run; the browser clock is held
+at the day the samples were captured so the days left on a certificate do not drift) and drives the page: the navigation
+entry above Logs, the form's checks, a ping
+read while it runs and after, loss, no reply and a bad host, the options sent, stopping, traceroute (partial, not
+reached, IPv6), DNS (answers, NXDOMAIN, the nslookup note), the connectivity check (a healthy router, a broken resolver, a dead
+next hop, a script that fails), the comparison (the choices offered, rows arriving, DNSSEC, the fastest, a silent server), the certificate check (a good chain, the
+PEM copy, expired, self-signed, hung up, refused, STARTTLS, a router without openssl), leaving the page and coming back, a redraw
+in the middle of a job, a login that
+may not run diagnostics, and the dark theme. `-KeepWork` keeps the temporary folder so the browser test can be repeated.
+
+### Traffic scenarios
+`real` (what the router under test reports, replayed from a read-only capture of its connection table, netfilter numbers, DHCP and
+hosts data and `nlbw` output, checked for invariants only: the counts add up, entries are sorted, addresses are canonical, totals are the
+sums of the rows), `rich` (synthetic and deterministic: TCP in every state, UDP, ICMP and ICMPv6, GRE and an unknown protocol,
+masquerade, a port forward with a changed port, an IPv6 translation, offloaded flows without a timeout, entries without counters, an
+unreplied DHCPv6 request, every IPv6 compression case (a single zero group, two equal runs, the all-zero address), one heavy host
+with ten unanswered connections, a garbage line, names from every source, and nlbwmon with three periods), `big` (60000 entries,
+so the 20000-line cap and the speed show, and 3500 usage rows against the 3000-row cap), `noct` (no connection tracking), `noacct`
+(`nf_conntrack_acct=0`, no counters), `nonlbw` and `stopped` (nlbw missing, nlbwmon not running). `mkfx.mjs` writes the fixtures
+(`files.json` for procfs and `/tmp`, one text file per command, one JSON file per ubus call, as `rpcd/lib/flab/util.uc` replays them) and an
+independent JavaScript reference that computes what each connections call must return (the filtered, sorted and cut entries, the
+counts and the top lists); `assert.mjs` compares the plugin's output with it entry by entry, and also checks the plugin source and the ACL.
+The calls cover every sort, protocol and scope, name, IPv6 and port filters, translated tuples, limits and a call without arguments,
+and 25 connections and 14 usage requests that must be refused (shell metacharacters, newline, subshell, wrong types, 65 characters, limits
+0 and 2001, `age`, an unlisted period, a group that is not in the allow-list): each comes back as `{ ok: false }` with its reason and
+no data. A call with a 50 ms time budget shows that a cut table is still the first lines only, sorted and counted. The browser pass
+(`live.mjs`) answers `flab.network`, the interface dump and `flab.traffic` from the scenario outputs (the network's counters grow on
+every poll), and drives the Live tab (WAN, totals, busiest interface, ordering, dimmed rows, findings, a long list, Pause, no plugin), the
+Connections tab (tiles, every kind of entry, the top lists and their click-through, the filter with its debounce, the protocol, scope,
+order and row selectors, invalid filters that are not sent, findings, no counters, no tracking, errors, 2000 rows, the polling cache),
+the Usage tab (periods, note, tiles, merged hosts, names, filter, sort, protocols, another period, 3000 hosts, an empty period, an error,
+nlbwmon stopped and nlbw missing, which also removes the tab) and checks that the page wrote nothing and logged no error.
 
 ### IPsec scenarios
 Captures `swanctl --list-conns|--list-sas|--stats|--version --raw`, `ip -s xfrm state` (key material is

@@ -9,6 +9,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, button, card, kv, mono, muted } from '../../core/ui.js';
+import { openTool } from '../toolbox/index.js';
 import { DROPS, interpret, isAddress, routeText, rulesFor, tableLabel } from './model.js';
 
 // The device name with its logical interface (netifd name) next to it when that differs.
@@ -97,6 +98,11 @@ function answer(data, state, names) {
   }
   if (v.paths > 1) {
     rows.push(['Equal-cost paths', h('span', {}, `${v.paths} next hops share the load: ${route.nexthops.map(n => n.via ?? n.dev).join(', ')}. The kernel picks one per flow; this answer is the one it chose for this packet.`)]);
+  }
+  // A packet that is forwarded can be tried for real: the Toolbox opens with the destination filled in.
+  if (v.verdict === 'forward') {
+    rows.push(['Try it', h('span', { className: 'rt-try' },
+      button('Ping', 'activity', () => openTool('ping', res.dst)), button('Traceroute', 'diagram-3', () => openTool('traceroute', res.dst)))]);
   }
   const q = data.lookup;
   if (q.src || q.iif) rows.push(['Looked up as', h('span', {}, `a packet${q.src ? ` from ${q.src}` : ''}${q.iif ? ` arriving on ${q.iif}` : ''}`)]);
