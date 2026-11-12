@@ -1,8 +1,7 @@
 // Browser test of the DNS page. A real browser opens the deployed UI; flab.dns status is answered with the replies the backend
 // run produced for each scenario (see mkfx.mjs / assert.mjs), so every tile, finding and card can be driven for both engines,
 // for both together, for a stopped and for a missing resolver WITHOUT depending on or touching the router's resolver.
-// flab.diag (the Toolbox the Try it buttons open) is answered by a mock that records the request and runs nothing. Everything
-// else (login, system board) goes to the real router; the page only ever reads.
+// Everything else (login, system board) goes to the real router; the page only ever reads.
 // Usage: node live.mjs <work dir with out/<scenario>.json>   (env: FLAB_SID, FLAB_ACLS, FLAB_URL, FLAB_SHOTS)
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
@@ -24,9 +23,7 @@ let failed = 0;
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
 //#region The mock router
-// The Toolbox status the page needs to draw its form: the tools exist, nothing else.
-const DIAG_STATUS = { generated: 1, tools: { ping: true, traceroute: true, openssl: true }, dns_tool: 'dig', types: ['A', 'AAAA', 'MX'], devices: ['br-lan'], limits: { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75 }, starttls: [], upstream: [], check_host: 'example.com', hosts: [] };
-const mock = { reply: clone(load('unbound')), dnsCalls: 0, dnsMethods: new Set(), writes: [], diagStarts: [], diagOther: [], unknownFlab: [] };
+const mock = { reply: clone(load('unbound')), dnsCalls: 0, dnsMethods: new Set(), writes: [], unknownFlab: [] };
 
 // A stateful mock of rpcd's uci object for the one config the page edits (the current scenario's `config_section`). The
 // committed options are the scenario's plus the changes applied so far; staged edits wait for `apply`; `rollback` restores what
@@ -92,13 +89,7 @@ function answer(body) {
     if (uciMock.engineDown && uciMock.backup && r.engines?.[r.configured]) r.engines[r.configured].running = false;
     return ok(r);
   }
-  if (obj === 'flab.diag') {
-    if (method === 'status') return ok(clone(DIAG_STATUS));
-    if (method === 'start') { mock.diagStarts.push(args); return ok({ ok: false, error: 'Nothing runs in this test.' }); }
-    mock.diagOther.push(method);
-    return ok({ ok: false, error: 'Nothing runs in this test.' });
-  }
-  if (obj.startsWith('flab.') && !['flab.dns', 'flab.diag'].includes(obj)) mock.unknownFlab.push(`${obj}.${method}`);
+  if (obj.startsWith('flab.') && obj !== 'flab.dns') mock.unknownFlab.push(`${obj}.${method}`);
   return null;
 }
 //#endregion
@@ -139,11 +130,8 @@ const show = async (reply, ms) => { mock.reply = clone(reply); uciMock.reset(); 
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `dns-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
 // The browser's span text of core/format.js fmtSpan.
 const span = s => { s = Math.round(s); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : s < 86400 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h`; };
-const zoneRows = () => page.locator('.dns-table tbody tr:not(.dns-zones-row)');
+const zoneRows = () => page.locator('.dns-table tbody tr');
 const filterBox = () => page.locator('input[placeholder^="Filter zones"]');
-const tryInput = () => page.locator('.dns-try input');
-// Opens the DNS page again through the navigation pane.
-const backToDns = async () => { await page.click('.nav-pane a:has-text("DNS")'); await page.waitForSelector('.tile'); };
 
 //#region Unbound
 await page.goto(`${baseUrl}#dns`);
@@ -163,86 +151,99 @@ check(x.value === `${Math.round(T.hits / T.queries * 100)}%` && x.sub === `${num
 x = await tile('Resolution time');
 check(x.value === '51.2 ms' && /^median 32\.1 ms/.test(x.sub), 'resolution time: average and median', `${x.value} | ${x.sub}`);
 x = await tile('Upstream servers');
-check(x.value === '6' && x.sub === '4 default forwarders · 2 from the WAN', 'upstream servers: the default forwarders and the WAN ones', `${x.value} | ${x.sub}`);
+check(x.value === '4' && x.sub === '4 default forwarders · 0 from the WAN', 'upstream servers: the default forwarders; the WAN ones are not among the servers in force', `${x.value} | ${x.sub}`);
 x = await tile('DNSSEC');
 check(x.value === 'Validating' && !/text-warning/.test(x.cls), 'DNSSEC validating');
 let b = await banner();
 check((await bannerClass()).includes('warn') && /3 answers failed DNSSEC validation/.test(b) && /12 queries were dropped by rate limiting \(300 per second and client\)/.test(b) && /1 conditional zone \(proxy\.dsl\.vodafone\.it\) is forwarded in clear text/.test(b), 'findings: bogus answers, rate limiting and the one clear-text public zone', b);
 check(!/clear text to a public resolver/.test(b) && !/SERVFAIL/.test(b), 'the default forwarders over TLS and 1.9% SERVFAIL are not reported', b);
 const heads = await headers();
-check(['Listening and configuration', 'Forwarding', 'Activity', 'Upstream from the WAN', 'Try it'].every((t, i) => heads[i]?.startsWith(t)) && heads.length === 5, 'the five cards in order: Listening and configuration, Forwarding, Activity, Upstream from the WAN, Try it', heads.join(' | '));
+check(['Configuration', 'Forwarding', 'Activity'].every((t, i) => heads[i]?.startsWith(t)) && heads.length === 3 && await page.locator('.dns-try').count() === 0, 'three cards in order: Configuration, Forwarding, Activity; no Upstream from the WAN or Try it card', heads.join(' | '));
 check(Math.abs((await cardOf('Activity').boundingBox()).width - (await cardOf('Forwarding').boundingBox()).width) < 2, 'Activity is as wide as Forwarding');
+check(await cardOf('Activity').locator('details.dns-fold').evaluate(d => !d.open) && !(await cardOf('Activity').locator('table').first().isVisible()) && (await cardOf('Activity').locator('.dns-chevron').evaluate(c => getComputedStyle(c).transform)) === 'none' && /since the resolver started/.test(await text(cardOf('Activity').locator('.card-header'))), 'the Activity card is folded when the page opens: only its header shows (with the age of the counters), the chevron pointing right');
+await cardOf('Activity').locator('summary').click();
+await page.waitForTimeout(400);
+check(await cardOf('Activity').locator('table').first().isVisible() && (await cardOf('Activity').locator('.dns-chevron').evaluate(c => getComputedStyle(c).transform)) !== 'none', 'clicking its header opens it, and the chevron points down');
+await refresh();
+check(await cardOf('Activity').locator('details.dns-fold').evaluate(d => d.open), 'it stays open when the page redraws');
 const actTables = await cardOf('Activity').locator('table').evaluateAll(t => t.map(x => Math.round(x.getBoundingClientRect().x)));
 check(actTables.length === 2 && actTables[1] > actTables[0] + 300, 'the counters and the answer codes sit side by side', actTables.join());
-check(Math.abs((await cardOf('Listening and configuration').boundingBox()).width - (await cardOf('Forwarding').boundingBox()).width) < 2 && (await cardOf('Listening and configuration').boundingBox()).y < (await cardOf('Forwarding').boundingBox()).y, 'the merged card is on top and as wide as Forwarding');
+check(Math.abs((await cardOf('Configuration').boundingBox()).width - (await cardOf('Forwarding').boundingBox()).width) < 2 && (await cardOf('Configuration').boundingBox()).y < (await cardOf('Forwarding').boundingBox()).y, 'the configuration card is on top and as wide as Forwarding');
 
 console.log('\n== Listening on ==');
+check(j(await texts(cardOf('Configuration').locator('.dns-area-title'))) === '["General","Security and privacy","Local names and DHCP","Performance and cache"]' && j(await cardOf('Configuration').locator('.dns-area').evaluateAll(d => d.map(x => x.open))) === '[false,false,false,false]' && await cardOf('Configuration').locator('.dns-part').count() === 0, 'the options are in four collapsible areas, General first and Security and privacy second, all folded when the page opens; no separate "Listening on" part');
+check(!(await page.locator('.dns-sock').first().isVisible()), 'the sockets are inside the folded General area');
+await cardOf('Configuration').locator('.dns-area').first().locator('summary').first().click();
 let chips = await texts(page.locator('.dns-sock'));
 check(chips.length === 2 && chips[0].startsWith('0.0.0.0:53 TCP/UDP') && chips[0].includes('all addresses') && chips[1].startsWith('[::]:53 TCP/UDP') && chips[1].includes('all addresses'), 'one chip per address and port, protocols together, wildcard marked "all addresses"', chips.join(' | '));
-check((await cardOf('Listening and configuration').locator('.dns-legend').first().boundingBox()).y < (await page.locator('.dns-sock').first().boundingBox()).y && (await texts(cardOf('Listening and configuration').locator('.dns-part'))).join().toLowerCase() === 'listening on,configuration', 'the legend sits above the chips; the card has a Listening on and a Configuration part');
+const sectionTitles = await texts(cardOf('Configuration').locator('.dns-area').first().locator('.dns-sec-title'));
+check(sectionTitles.map(t => t.toLowerCase()).join() === 'service and monitoring,listening on,listening and interfaces', 'General holds the sockets as a "Listening on" section between the service options and the listening options', sectionTitles.join(','));
+check((await cardOf('Configuration').locator('.dns-listen .dns-area-legend').boundingBox()).y < (await page.locator('.dns-sock').first().boundingBox()).y, 'the legend sits above the chips');
 
 console.log('\n== Forwarding ==');
 const fwd = cardOf('Forwarding');
 check(/90 forward rules/.test(await text(fwd.locator('.card-header'))), 'the header counts the rules', await text(fwd.locator('.card-header')));
-let defs = await texts(fwd.locator('.blk').first().locator('.dns-server'));
-check(defs.length === 4 && defs.every(d => d.endsWith('TLS')) && defs[2].startsWith('1.1.1.1'), 'the four default forwarders, each marked TLS', defs.join(' | '));
-check(/Conditional zones \(89\)/i.test(await text(fwd)), 'the conditional zones are counted (89)');
-check((await zoneRows().count()) === 4, 'grouped by default: the 86 Azure zones are one line, the others stay single', String(await zoneRows().count()));
+check(await fwd.locator('details.dns-fold').evaluate(d => !d.open) && !(await zoneRows().first().isVisible()) && (await fwd.locator('.dns-chevron').evaluate(c => getComputedStyle(c).transform)) === 'none', 'the card is folded when the page opens: only its header shows, with the chevron pointing right');
+await fwd.locator('summary').click();
+await page.waitForTimeout(400);
+check(await fwd.locator('details.dns-fold').evaluate(d => d.open) && (await fwd.locator('.dns-chevron').evaluate(c => getComputedStyle(c).transform)) !== 'none' && await zoneRows().first().isVisible(), 'clicking the header opens it, and the chevron points down');
+await refresh();
+check(await fwd.locator('details.dns-fold').evaluate(d => d.open), 'it stays open when the page redraws');
+check((await zoneRows().count()) === 90 && await fwd.locator('.dns-more, .dns-toggle, .dns-group').count() === 0 && !/Group by|List every|Show all|Conditional zones/.test(await text(fwd)), 'one flat list: every forwarder (90) is a row; no groups, no "Show all"', String(await zoneRows().count()));
 let rows = await texts(zoneRows());
-check(rows[0].startsWith('86 zones') && rows[0].includes('10.0.252.68') && rows[0].includes('10.1.252.68') && !rows[0].includes('clear text'), 'the group line: "86 zones" with the servers (private, so no clear-text badge)', rows[0]);
-check(rows.some(r => r.startsWith('proxy.dsl.vodafone.it') && r.includes('clear text')) && rows.some(r => r.startsWith('lab.formicalab.casa') && r.includes('not DNSSEC-validated')) && rows.some(r => r.startsWith('flumini.formicalab.casa') && r.includes('192.168.8.1')), 'single zones keep their name, flags and clear-text badge', rows.join(' | '));
-check(await page.locator('.dns-zones-row').count() === 0, 'groups are folded');
-await page.locator('.dns-toggle').first().click();
-check(await page.locator('.dns-zones-row .dns-zones span').count() === 86, 'a group opens to list its 86 zones');
-check((await page.locator('.dns-zones-row').boundingBox()).y > (await page.locator('.dns-group').boundingBox()).y, 'the zones sit under their group line');
-await page.locator('.dns-toggle').first().click();
-check(await page.locator('.dns-zones-row').count() === 0, 'and fold again');
-await page.click('button:has-text("List every zone")');
-check((await zoneRows().count()) === 12 && /Showing the first 12 of 89 zones/.test(await text(fwd.locator('.dns-more'))), 'listing every zone shows the first 12 and says so', String(await zoneRows().count()));
-await page.click('button:has-text("Show all 89")');
-check((await zoneRows().count()) === 89 && await fwd.locator('.dns-more').count() === 0, 'Show all draws every zone');
+check(rows[0].startsWith('. (default: every other name)') && await zoneRows().first().locator('.dns-server').count() === 4 && (await texts(zoneRows().first().locator('.dns-server'))).every(d => d.endsWith('TLS')) && (await zoneRows().first().locator('.dns-server').nth(2).innerText()).startsWith('1.1.1.1'), 'the default forwarders are the first row: the four servers, each marked TLS', rows[0]);
+const names = rows.slice(1).map(r => r.split(' ')[0]);
+check(same(names, [...names].sort((a, b) => a.localeCompare(b))), 'the other rows are sorted by zone');
+check(rows.filter(r => r.includes('10.0.252.68') && r.includes('10.1.252.68') && !r.includes('clear text')).length >= 86, 'the Azure zones are one row each, with both servers and no clear-text badge (private addresses)');
+check(rows.some(r => r.startsWith('proxy.dsl.vodafone.it') && r.includes('clear text')) && rows.some(r => r.startsWith('lab.formicalab.casa') && r.includes('not DNSSEC-validated')) && rows.some(r => r.startsWith('flumini.formicalab.casa') && r.includes('192.168.8.1')), 'a zone keeps its name, flags and clear-text badge');
 await filterBox().fill('vodafone');
-check((await zoneRows().count()) === 1 && (await text(zoneRows())).startsWith('proxy.dsl.vodafone.it'), 'the filter narrows the zones to one');
+check((await zoneRows().count()) === 1 && (await text(zoneRows())).startsWith('proxy.dsl.vodafone.it'), 'the filter narrows the list to one');
 check(await page.evaluate(() => document.activeElement?.placeholder?.startsWith('Filter zones')), 'typing in the filter does not take the focus away');
 await filterBox().fill('10.1.252.68 privatelink');
-check((await zoneRows().count()) === 12 && /Showing the first 12 of 43 zones/.test(await text(fwd.locator('.dns-more'))), 'every word must match: 43 private-link zones on that server', String(await zoneRows().count()));
+check((await zoneRows().count()) === 43, 'every word must match: 43 private-link zones on that server', String(await zoneRows().count()));
 await filterBox().fill('zzz');
-check(/No zone matches the filter/.test(await text(fwd)) && await zoneRows().count() === 0, 'a filter that matches nothing says so');
-await filterBox().fill('');
-await page.click('button:has-text("Group by servers")');
-await filterBox().fill('privatelink');
-check((await zoneRows().count()) === 1 && /^43 zones/.test((await texts(zoneRows()))[0]) && await page.locator('.dns-zones-row .dns-zones span').count() === 43, 'grouped and filtered: one group of 43, opened by the filter', (await texts(zoneRows())).join(' | '));
+check(/No forwarder matches the filter/.test(await text(fwd)) && await zoneRows().count() === 0, 'a filter that matches nothing says so');
 await filterBox().fill('');
 check((await fwd.locator('.dns-legend').first().boundingBox()).y < (await fwd.locator('.dns-table').boundingBox()).y, 'the legend sits above the table');
 const bar = await text(fwd.locator('.dns-fwd-bar'));
 check(/Read only for now\. 2 forwarders are defined in UCI \(zone sections of \/etc\/config\/unbound\)/.test(bar) && /88 only exist in \/etc\/unbound\/unbound_ext\.conf and stay read only here/.test(bar) && await fwd.locator('.dns-fwd-bar button:has-text("Add forwarder")').isDisabled(), 'the card says what can be changed later (2 UCI forwarders, 88 from the extension file) and has a disabled Add button', bar);
-check(/^86 zones/.test(rows[0]) && rows[0].includes('unbound_ext.conf') && !/UCI/.test(rows[0]) && await zoneRows().first().locator('button.dns-act-btn').count() === 0, 'the 86 Azure zones are marked as coming from the extension file and have no edit or remove buttons', rows[0]);
+const fileRows = zoneRows().filter({ hasText: 'unbound_ext.conf' });
+check((await fileRows.count()) === 88 && !/UCI/.test(await text(fileRows.first())) && await fileRows.first().locator('button.dns-act-btn').count() === 0, 'the 88 zones of the extension file are marked as such and have no edit or remove buttons');
 const vod = zoneRows().filter({ hasText: 'proxy.dsl.vodafone.it' });
 check(/UCI/.test(await text(vod)) && await vod.locator('button.dns-act-btn').count() === 2 && await vod.locator('button.dns-act-btn:not([disabled])').count() === 0 && await vod.locator('.fl-badge', { hasText: 'UCI' }).getAttribute('title') === 'The zone section fwd_vodafone of /etc/config/unbound.', 'a UCI zone says so (naming its section) and has disabled Edit and Remove buttons', await text(vod));
-const defBlock = fwd.locator('.blk').first();
-check(await defBlock.locator('.fl-badge', { hasText: 'UCI' }).getAttribute('title') === 'The zone section fwd_cloudflare of /etc/config/unbound.' && await defBlock.locator('button.dns-act-btn').count() === 2 && await fwd.locator('button.dns-act-btn:not([disabled])').count() === 0, 'the default forwarders show their UCI section too; no button of the card is enabled');
-check(same(await fwd.locator('thead th').allInnerTexts(), ['Zones', 'Forwarded to', 'Flags', 'Defined in']), 'the table has a Defined in column');
+const defRow = zoneRows().first();
+check(await defRow.locator('.fl-badge', { hasText: 'UCI' }).getAttribute('title') === 'The zone section fwd_cloudflare of /etc/config/unbound.' && await defRow.locator('button.dns-act-btn').count() === 2 && await fwd.locator('button.dns-act-btn:not([disabled])').count() === 0, 'the default row shows its UCI section too; no button of the card is enabled');
+check(same(await fwd.locator('thead th').allInnerTexts(), ['Zone', 'Forwarded to', 'Flags', 'Defined in']), 'the table has a Defined in column');
+const wanBlk = fwd.locator('.blk').filter({ hasText: 'Resolvers from the WAN' });
+check(same(await texts(wanBlk.locator('.dns-server')), ['192.0.2.53 not used', '2001:db8:53::1 not used']) && /Unbound does not ask them: it sends queries to its own forwarders/.test(await text(wanBlk)) && /WAN resolvers not used/.test(await text(fwd.locator('.card-header'))), 'the WAN resolvers are in the Forwarding card, above the table, each marked "not used" because no forwarder in force lists them; the header says so too', await text(wanBlk));
+check((await wanBlk.boundingBox()).y < (await fwd.locator('.dns-table').boundingBox()).y && Math.abs((await fwd.boundingBox()).width - (await cardOf('Activity').boundingBox()).width) < 2, 'the block sits above the table, in a card as wide as the others');
+{
+  const used = load('unbound');
+  used.forwards.push({ zone: 'wan.example', servers: ['192.0.2.53'], flags: [], tls: false, source: 'file' });
+  await show(used);
+  check(same(await texts(wanBlk.locator('.dns-server')), ['192.0.2.53 in use', '2001:db8:53::1 not used']) && /Unbound asks some of them through a forward zone with option resolv_conf '1', for wan\.example/.test(await text(wanBlk)) && /some WAN resolvers in use/.test(await text(fwd.locator('.card-header'))), 'a WAN resolver that a forward zone lists is "in use", and the zone is named', await text(wanBlk));
+  await show(load('unbound'));
+}
 await shot('unbound');
 
-console.log('\n== Upstream, Activity, Configuration ==');
-check(same(await texts(cardOf('Upstream from the WAN').locator('.dns-server')), ['192.0.2.53', '2001:db8:53::1']), 'the WAN resolvers', (await texts(cardOf('Upstream from the WAN').locator('.dns-server'))).join());
+console.log('\n== Activity, Configuration ==');
 const act = cardOf('Activity');
 const actRows = await texts(act.locator('tbody tr'));
 check(/since the resolver started 3d 4h ago/.test(await text(act.locator('.card-header'))), 'the age of the counters is in the header');
 check(actRows.some(r => r.startsWith('Answered from the cache') && r.includes(num(T.hits)) && r.includes('65%')) && actRows.some(r => r.startsWith('Rate limited') && r.includes('12')) && actRows.some(r => r.startsWith('DNSSEC bogus answers') && r.includes('3')), 'counters with their shares', actRows.join(' | '));
 check(actRows.some(r => r.startsWith('NOERROR') && r.includes(num(44100))) && actRows.some(r => r.startsWith('SERVFAIL') && r.includes('910')) && actRows.some(r => r.startsWith('NXDOMAIN')), 'extended statistics: the answer codes', actRows.join(' | '));
 check((await act.locator('.dns-legend').boundingBox()).y < (await act.locator('table').first().boundingBox()).y, 'the legend sits above the counters');
-const conf = () => cardOf('Listening and configuration');
+const conf = () => cardOf('Configuration');
 const areaTitles = await texts(conf().locator('.dns-area-title'));
 const areaOpen = () => conf().locator('.dns-area').evaluateAll(d => d.map(x => x.open));
-check(j(areaTitles) === '["General","Security and privacy","Local names and DHCP","Performance and cache"]' && j(await areaOpen()) === '[true,false,false,false]', 'the options are in four collapsible areas, General first and open, Security and privacy second and folded', areaTitles.join(' | '));
+check(j(areaTitles) === '["General","Security and privacy","Local names and DHCP","Performance and cache"]' && j(await areaOpen()) === '[true,false,false,false]', 'General stays open once the user opened it, the others are folded', areaTitles.join(' | '));
 const areaSums = await texts(conf().locator('.dns-area-sum'));
 check(areaSums.length === 2 && areaSums[0] === 'port 53 · 3 LAN interfaces · remote control: local host, unencrypted · basic statistics' && areaSums[1] === 'DNSSEC on · rebind protection: block private addresses (rfc 1918 and 4193) · local clients only · 300 queries/s per client', 'a folded area still says how it is set: the port, interfaces and monitoring; the security switches', areaSums.join(' // '));
 check((await texts(conf().locator('.dns-area-count'))).join() === '14 options,11 options,8 options,5 options', 'each area says how many options it holds');
-await conf().locator('.dns-area').nth(1).locator('summary').click();
+await conf().locator('.dns-area').nth(1).locator('summary').first().click();
 await show(load('unbound'));
 check(j(await areaOpen()) === '[true,true,false,false]', 'an area the user opened stays open when the page redraws');
-await conf().locator('.dns-area').nth(1).locator('summary').click();
+await conf().locator('.dns-area').nth(1).locator('summary').first().click();
 check(j(await areaOpen()) === '[true,false,false,false]', 'and folds again');
 await page.evaluate(() => document.querySelectorAll('.dns-area').forEach(d => { d.open = true; }));
 const chev = await conf().locator('.dns-area > summary .dns-chevron').evaluateAll(c => c.map(x => ({ w: x.getBoundingClientRect().width, t: getComputedStyle(x).transform })));
@@ -271,35 +272,15 @@ check(lan.join() === 'lan,lan100,wg0' && await ctl('LAN interfaces').locator('bu
 check(/refuses forged ones/.test(confText) && /DNS rebinding|reach devices on the LAN/.test(confText), 'important options carry a short explanation');
 const secTitles = (await texts(conf().locator('.dns-area').first().locator('.dns-sec-title'))).map(t => t.toLowerCase());
 const secSec = (await texts(conf().locator('.dns-area').nth(1).locator('.dns-sec-title'))).map(t => t.toLowerCase());
-check(j(secTitles) === '["service and monitoring","listening and interfaces"]' && j(secSec) === '["access and abuse","rebind protection","privacy","dnssec"]' && await conf().locator('.dns-area').first().locator('.set-field, .set-check').count() === 14 && await conf().locator('.dns-area').first().locator('.dns-sec', { hasText: 'Remote control' }).count() === 1 && await conf().locator('.dns-area').nth(1).locator('.dns-sec', { hasText: 'DNSSEC validation' }).count() === 1, 'General holds the listening, interface and monitoring options in two sections; Security and privacy the access, rebind, privacy and DNSSEC ones', `${secTitles} // ${secSec}`);
+check(j(secTitles) === '["service and monitoring","listening on","listening and interfaces"]' && j(secSec) === '["access and abuse","rebind protection","privacy","dnssec","rebind exceptions from the files"]' && await conf().locator('.dns-area').first().locator('.set-field, .set-check').count() === 14 && await conf().locator('.dns-area').first().locator('.dns-sec', { hasText: 'Remote control' }).count() === 1 && await conf().locator('.dns-area').nth(1).locator('.dns-sec', { hasText: 'DNSSEC validation' }).count() === 1, 'General holds the monitoring options, where the resolver listens and the listening and interface options; Security and privacy the access, rebind, privacy and DNSSEC ones', `${secTitles} // ${secSec}`);
 const optX = await conf().locator('.dns-area').first().locator('.set-fields').first().locator('> *').evaluateAll(n => [...new Set(n.map(x => Math.round(x.getBoundingClientRect().x)))]);
 check(optX.length >= 3, 'on a wide screen the options of a section flow in several columns', optX.join());
-
-console.log('\n== Try it ==');
-await page.click('.dns-try button:has-text("Look up")');
-check((await page.locator('.dns-try-hint').innerText()).includes('Type a name') && (await page.evaluate(() => location.hash)) === '#dns', 'an empty name is refused with a hint and stays on the page');
-await tryInput().fill('example.org');
-await page.click('.dns-try button:has-text("Look up")');
-await page.waitForSelector('.rt-host input', { timeout: 10000 });
-check((await page.evaluate(() => location.hash)) === '#toolbox' && (await page.locator('.rt-host input').inputValue()) === 'example.org' && /Host or address/.test(await text(page.locator('.rt-host'))), 'Look up opens the Toolbox with the name in the DNS lookup form', await page.evaluate(() => location.hash));
-await page.waitForTimeout(500);
-check(mock.diagStarts.length === 1 && mock.diagStarts[0].tool === 'dns' && mock.diagStarts[0].host === 'example.org', 'and starts the lookup (answered by the mock, nothing ran)', JSON.stringify(mock.diagStarts));
-await page.click('.nav-pane a:has-text("DNS")');
-await page.waitForSelector('.tile');
-check((await tryInput().inputValue()) === 'example.org', 'the name typed is kept when the page is opened again');
-await tryInput().fill('  example.net ');
-await page.click('.dns-try button:has-text("Compare resolvers")');
-await page.waitForSelector('.rt-host input', { timeout: 10000 });
-check((await page.evaluate(() => location.hash)) === '#toolbox' && (await page.locator('.rt-host input').inputValue()) === 'example.net' && /Name to look up/.test(await text(page.locator('.rt-host'))), 'Compare resolvers opens the comparison with the trimmed name', await page.locator('.rt-host input').inputValue());
-await page.waitForTimeout(500);
-check(mock.diagStarts.length === 2 && mock.diagStarts[1].tool === 'compare' && mock.diagStarts[1].host === 'example.net', 'and starts it', JSON.stringify(mock.diagStarts));
-await backToDns();
-// Enter in the box also looks the name up.
-await tryInput().fill('example.com');
-await tryInput().press('Enter');
-await page.waitForSelector('.rt-host input', { timeout: 10000 });
-check((await page.locator('.rt-host input').inputValue()) === 'example.com' && mock.diagStarts.at(-1).tool === 'dns', 'Enter in the box looks the name up');
-await backToDns();
+const priv = conf().locator('.dns-priv-sec');
+check(await priv.count() === 1 && /14 domains may resolve to private addresses although rebind protection is on: 1 generated by UCI for the local names and 13 listed in \/etc\/unbound\/unbound_srv\.conf\. There is no UCI option for this list/.test(await text(priv)) && await priv.locator('details.dns-priv').evaluate(d => !d.open), 'Security and privacy says how many domains are exempt from rebind protection, where they come from, that there is no UCI option for them, and keeps the list folded', await text(priv));
+await priv.locator('summary').click();
+const privNames = await texts(priv.locator('.dns-priv-list span'));
+check(privNames.length === 14 && privNames[0] === 'api.azureml.ms' && privNames.includes('lab.formicalab.casa') && privNames.includes('proxy.dsl.vodafone.it') && await priv.locator('.dns-priv-list span', { hasText: /^lab\.formicalab\.casa$/ }).getAttribute('title') === 'Generated by UCI for the local names' && await priv.locator('.dns-priv-list span', { hasText: /^formicalab\.casa$/ }).getAttribute('title') === 'Listed in /etc/unbound/unbound_srv.conf', 'opened, it lists the domains alphabetically, each saying whether UCI or the file gave it', privNames.slice(0, 4).join());
+await priv.locator('summary').click();
 
 console.log('\n== Polling and focus ==');
 await refresh(300);
@@ -351,12 +332,12 @@ check((await bannerClass()).includes('warn') && /unbound-control is not enabled/
 check((await tile('Queries')).value === '–' && (await tile('Answered from cache')).value === '–' && (await tile('Resolution time')).value === '–' && (await tile('Resolver')).value === 'Unbound', 'the counter tiles show a dash; the resolver is still known');
 check((await tile('DNSSEC')).value === 'Off', 'DNSSEC follows the option');
 check(/The resolver reports no counters/.test(await text(cardOf('Activity'))) && /come from Unbound's generated configuration/.test(await text(fwd)) && /90 forward rules/.test(await text(fwd.locator('.card-header'))), 'the Activity card says so and the forwarders come from the generated configuration');
-check((await cardOf('Forwarding').locator('.dns-server').first().innerText()).includes('2a06:98c1:54::1c:8e39') && await cardOf('Forwarding').locator('.dns-server').filter({ hasText: 'TLS' }).count() === 4, 'TLS is still known for the default forwarders');
+check((await cardOf('Forwarding').locator('.dns-table .dns-server').first().innerText()).includes('2a06:98c1:54::1c:8e39') && await cardOf('Forwarding').locator('.dns-table .dns-server').filter({ hasText: 'TLS' }).count() === 4, 'TLS is still known for the default forwarders');
 
 console.log('\n== many forwarders, many sockets ==');
 await show(load('unbound-many'));
-check(/\(cut\)/.test(await text(cardOf('Forwarding').locator('.card-header'))) && /\(cut\)/.test(await text(cardOf('Listening and configuration').locator('.card-header'))) && await page.locator('.dns-sock').count() === 25, 'cut lists are marked; 60 sockets cut at 50 leave 25 addresses', String(await page.locator('.dns-sock').count()));
-check(/Conditional zones \(499\)/i.test(await text(cardOf('Forwarding'))) && (await zoneRows().count()) === 1 && /^499 zones/.test((await texts(zoneRows()))[0]), 'five hundred identical zones are one group line', (await texts(zoneRows())).join(' | ').slice(0, 100));
+check(/500 forward rules \(cut\)/.test(await text(cardOf('Forwarding').locator('.card-header'))) && /\(cut\)/.test(await text(cardOf('Configuration').locator('.card-header'))) && await page.locator('.dns-sock').count() === 25, 'cut lists are marked; 60 sockets cut at 50 leave 25 addresses', String(await page.locator('.dns-sock').count()));
+check((await zoneRows().count()) === 500, 'every forwarder the router listed is a row, however many (500)', String(await zoneRows().count()));
 //#endregion
 
 //#region dnsmasq
@@ -378,16 +359,16 @@ b = await banner();
 check((await bannerClass()).includes('info') && /no DNSSEC support/.test(b) && /forwarded in clear text to a public resolver \(127\.0\.0\.1#5053, 1\.1\.1\.1\)/.test(b) && !/Rebind/.test(b), 'findings: information only (no DNSSEC in the build, a public server in clear text)', b);
 chips = await texts(page.locator('.dns-sock'));
 check(chips.length === 6 && chips.every(c => c.includes('TCP/UDP')) && chips.some(c => c.startsWith('[fe80::9683:c4ff:fea3:9530]:53')) && chips.some(c => c.startsWith('192.168.8.1:53')), 'six listening addresses (IPv6 in brackets), no DHCP socket', chips.join(' | '));
-defs = await texts(cardOf('Forwarding').locator('.blk').first().locator('.dns-server'));
+const defs = await texts(zoneRows().first().locator('.dns-server'));
 check(defs.length === 2 && defs[0] === '127.0.0.1#5053' && defs[1].startsWith('1.1.1.1') && defs[1].includes('clear text'), 'default forwarders: the local proxy, and a public server marked clear text', defs.join(' | '));
 rows = await texts(zoneRows());
-check(rows.length === 2 && rows[0].startsWith('16 zones') && rows[0].includes('10.0.2.4') && rows[1].startsWith('lab.formicalab.casa') && rows[1].includes('192.168.1.1'), 'conditional zones: sixteen to one server in a group, one to another', rows.join(' | '));
+check(rows.length === 18 && rows.filter(r => r.includes('10.0.2.4')).length === 16 && rows.some(r => r.startsWith('lab.formicalab.casa') && r.includes('192.168.1.1')), 'forwarders: the default row, sixteen zones to one server and one to another, each its own row', rows.join(' | '));
 const dfwd = cardOf('Forwarding');
-check(/Every forwarder is a "server" entry of the dnsmasq section in \/etc\/config\/dhcp/.test(await text(dfwd.locator('.dns-fwd-bar'))) && rows.every(r => r.includes('UCI')) && !(await text(dfwd)).includes('unbound_ext.conf') && await dfwd.locator('button.dns-act-btn').count() === 6 && await dfwd.locator('button.dns-act-btn:not([disabled])').count() === 0 && await dfwd.locator('.fl-badge', { hasText: 'UCI' }).first().getAttribute('title') === 'A server entry of the dnsmasq section in /etc/config/dhcp.', 'dnsmasq: every forwarder is a UCI server entry, each with disabled Edit and Remove buttons; nothing mentions the extension file', rows.join(' | '));
+check(/Every forwarder is a "server" entry of the dnsmasq section in \/etc\/config\/dhcp/.test(await text(dfwd.locator('.dns-fwd-bar'))) && rows.every(r => r.includes('UCI')) && !(await text(dfwd)).includes('unbound_ext.conf') && await dfwd.locator('button.dns-act-btn').count() === 36 && await dfwd.locator('button.dns-act-btn:not([disabled])').count() === 0 && await dfwd.locator('.fl-badge', { hasText: 'UCI' }).first().getAttribute('title') === 'A server entry of the dnsmasq section in /etc/config/dhcp.', 'dnsmasq: every forwarder is a UCI server entry, each with disabled Edit and Remove buttons; nothing mentions the extension file', rows.join(' | '));
 const dact = await texts(cardOf('Activity').locator('tbody tr'));
 check(dact.length === 8 && dact[0].startsWith('Forwarded upstream') && dact[0].includes('568') && dact.some(r => r.startsWith('No answer from upstream') && r.includes('7')) && dact.some(r => r.startsWith('Cache size') && r.includes('1,000')), 'dnsmasq counters: eight rows', dact.join(' | '));
 check(!/NOERROR|extended_stats/.test(await text(cardOf('Activity'))) && /reports neither answer codes nor resolution times/.test(await text(cardOf('Activity'))), 'no answer codes for dnsmasq, and the card says why');
-const dconf = await text(cardOf('Listening and configuration'));
+const dconf = await text(cardOf('Configuration'));
 const cache = await ctl('Cache size \\(names\\)').locator('input').evaluate(i => ({ type: i.type, value: i.value }));
 const exceptions = await ctl('Rebind exceptions').locator('input').evaluateAll(i => i.map(x => x.value));
 check(cache.type === 'number' && cache.value === '1000' && await chk('Ask servers in order').locator('input').isChecked() && /\/etc\/config\/dhcp/.test(dconf) && exceptions[0] === 'lab.formicalab.casa' && exceptions.length === 17 && exceptions[1].startsWith('blob'), 'dnsmasq options: the set ones, and a long list shown in full, one box per value', `${cache.value} ${exceptions.length} ${exceptions.slice(0, 3)}`);
@@ -395,7 +376,8 @@ r = clone(load('dnsmasq')); delete r.config.rebind_protection;
 await show(r);
 check(await chk('Rebind protection').locator('input').isChecked(), 'an option that is not set takes its default (a checked box here)');
 await show(load('dnsmasq'));
-check(same(await texts(cardOf('Upstream from the WAN').locator('.dns-server')), ['10.133.106.38', '10.128.28.16']) && /ignores|asks them/.test(await text(cardOf('Upstream from the WAN'))), 'the WAN resolvers');
+const dwan = cardOf('Forwarding').locator('.blk').filter({ hasText: 'Resolvers from the WAN' });
+check(same(await texts(dwan.locator('.dns-server')), ['10.133.106.38 in use', '10.128.28.16 in use']) && /dnsmasq asks them in addition to its own servers/.test(await text(dwan)) && /WAN resolvers in use/.test(await text(cardOf('Forwarding').locator('.card-header'))), 'dnsmasq: the WAN resolvers are in use (noresolv is not set), and the header says so');
 await shot('dnsmasq');
 r = clone(load('dnsmasq')); r.stats.unanswered = 50;
 await show(r);
@@ -425,15 +407,15 @@ await show(load('stopped'));
 x = await tile('Resolver');
 check(x.value === 'Stopped' && /text-danger/.test(x.cls) && /Unbound is installed but not running/.test(x.sub), 'a stopped resolver', `${x.value} | ${x.sub}`);
 check((await bannerClass()).includes('bad') && /Unbound and dnsmasq are installed but not running/.test(await banner()), 'the banner is critical and names both', await banner());
-check(/No resolver is listening/.test(await text(cardOf('Listening and configuration'))) && (await tile('Queries')).value === '–' && /not running/.test(await text(cardOf('Listening and configuration').locator('.card-header'))), 'no sockets, no counters, the configuration marked "not running"');
-check((await cardOf('Forwarding').count()) === 1 && /These are the settings of Unbound/.test(await text(cardOf('Listening and configuration'))), 'the configured forwarders and options are still shown');
+check(/No resolver is listening/.test(await text(cardOf('Configuration'))) && (await tile('Queries')).value === '–' && /not running/.test(await text(cardOf('Configuration').locator('.card-header'))), 'no sockets, no counters, the configuration marked "not running"');
+check((await cardOf('Forwarding').count()) === 1 && /These are the settings of Unbound/.test(await text(cardOf('Configuration'))), 'the configured forwarders and options are still shown');
 await shot('stopped');
 await show(load('none'));
 x = await tile('Resolver');
 check(x.value === 'None' && /text-danger/.test(x.cls) && (await tile('Upstream servers')).value === '–' && (await tile('DNSSEC')).value === '–', 'no resolver: None and dashes', `${x.value}`);
 check((await bannerClass()).includes('bad') && /No DNS resolver is running or installed/.test(await banner()), 'the banner is critical');
 check((await headers()).join('|').includes('Listening on') && !(await headers()).join('|').includes('configuration') && await cardOf('Forwarding').count() === 0 && await cardOf('Activity').count() === 0 && /No resolver is installed, so there are no counters/.test(await text(page.locator('main'))), 'Forwarding and Activity give way to a sentence, and the card is only Listening on', (await headers()).join(' | '));
-check(same(await texts(cardOf('Upstream from the WAN').locator('.dns-server')), ['192.0.2.53']) && await cardOf('Try it').count() === 1, 'the WAN resolvers and Try it remain');
+check(!/Resolvers from the WAN/.test(await text(page.locator('main'))) && await page.locator('.dns-try').count() === 0, 'without a resolver the WAN resolvers are not shown (they are part of the Forwarding card)');
 await show(ub);
 //#endregion
 
@@ -542,6 +524,7 @@ await show(load('dnsmasq'));
 await openAll();
 uciMock.log.length = 0;
 const cacheIn = () => ctl('Cache size \\(names\\)').locator('input');
+check(await conf().locator('.dns-priv-sec').count() === 0, 'dnsmasq has no private-domain list to show: its exceptions are the editable rebind exceptions option');
 await cacheIn().fill('500');
 await chk('Ask servers in order').locator('input').uncheck();
 await ctl('Local domain').locator('input').fill('lan.example');
@@ -588,7 +571,7 @@ await page.emulateMedia({ colorScheme: 'light' });
 
 check(mock.writes.length === 0, 'the page wrote to no other config than the one it edits (and the mock never reached the router)', mock.writes.join());
 check(uciMock.log.every(c => c.args.config === undefined || ['unbound', 'dhcp'].includes(c.args.config)), 'every uci call named the unbound or the dhcp config', [...new Set(uciMock.log.map(c => c.args.config))].join());
-check([...mock.dnsMethods].join() === 'status' && mock.diagOther.length === 0 && mock.unknownFlab.length === 0, 'the only flab.dns call is status; the Toolbox made no other call than status and the two starts', `${[...mock.dnsMethods]} ${mock.diagOther} ${mock.unknownFlab}`);
+check([...mock.dnsMethods].join() === 'status' && mock.unknownFlab.length === 0, 'the only flab.dns call is status, and no other flab object is called', `${[...mock.dnsMethods]} ${mock.unknownFlab}`);
 check(errors.length === 0, 'no console or page errors', errors.slice(0, 3).join(' | '));
 await browser.close();
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');

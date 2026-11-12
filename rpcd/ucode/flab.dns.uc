@@ -22,8 +22,11 @@ import { run, sysfs_raw, ubus_call, uci_all, num } from 'flab.util';
 const MAX_FORWARDS = 500;
 const MAX_LISTENERS = 50;
 const MAX_LIST = 50;
+const MAX_PRIVATE = 500;
 // The generated Unbound configuration (the forward-zone clauses of UCI and of the user's extension file).
 const UNBOUND_CONFS = ['/var/lib/unbound/unbound.conf', '/var/lib/unbound/unbound_ext.conf'];
+// The user's own options for the server clause (private-domain, domain-insecure, local-data, ...), copied there at start.
+const UNBOUND_SRV = '/var/lib/unbound/unbound_srv.conf';
 // The resolvers netifd learned from the WAN (DHCP, PPP, RA), and the default lease file of dnsmasq.
 const RESOLV_AUTO = '/tmp/resolv.conf.d/resolv.conf.auto';
 const LEASES = '/tmp/dhcp.leases';
@@ -301,9 +304,30 @@ function count_local_names(text) {
 	return length(keys(names));
 }
 
+// The `private-domain:` names of a configuration text, lowercase without quotes or a trailing dot: the domains whose answers may
+// point to private addresses although rebind protection is on.
+function parse_private_domains(text) {
+	let names = [];
+	for (let line in text_lines(text)) {
+		let m = match(trim(line), /^private-domain:[[:space:]]*"?([^"[:space:]]+)"?/);
+		if (m)
+			push(names, norm_zone(m[1]));
+	}
+	return names;
+}
+
 // Everything the page shows about Unbound. `info` is { installed, running }, `section` the UCI section.
 function collect_unbound(info, section, warnings) {
-	let out = { version: null, uptime: null, control: null, stats: null, forwards: [], local_names: null, validating: null };
+	let out = { version: null, uptime: null, control: null, stats: null, forwards: [], local_names: null, validating: null, private_domains: [] };
+	// The rebind-protection exceptions: those UCI generates (the local domain), then those the user lists in the srv file,
+	// each name once.
+	let seen = {};
+	for (let spec in [ [ UNBOUND_CONFS[0], 'uci' ], [ UNBOUND_SRV, 'file' ] ])
+		for (let n in parse_private_domains(sysfs_raw(spec[0])))
+			if (!seen[n]) {
+				seen[n] = true;
+				push(out.private_domains, { name: n, source: spec[1] });
+			}
 	let blocks = [];
 	for (let path in UNBOUND_CONFS)
 		for (let b in parse_forward_blocks(sysfs_raw(path)))
@@ -414,7 +438,7 @@ function unbound_uci_zones(all) {
 	for (let name, sec in all) {
 		if (sec?.['.type'] != 'zone' || sec.zone_type != 'forward_zone')
 			continue;
-		let names = type(sec.zone_name) == 'array' ? slice(sec.zone_name, 0, MAX_LIST) : (sec.zone_name != null ? [sec.zone_name] : []);
+		let names = type(sec.zone_name) == 'array' ? slice(sec.zone_name, 0, MAX_FORWARDS) : (sec.zone_name != null ? [sec.zone_name] : []);
 		let servers = type(sec.server) == 'array' ? slice(sec.server, 0, MAX_LIST) : (sec.server != null ? [sec.server] : []);
 		push(out, { section: name, enabled: sec.enabled == '1', zones: map(names, z => norm_zone(z)), servers, options: pick_options(sec, ZONE_OPTIONS) });
 	}
@@ -620,6 +644,10 @@ function status() {
 		} else
 			f.source = 'file';
 	}
+	let private_domains = configured == 'unbound' ? ub.private_domains : [];
+	let cut_private = length(private_domains) > MAX_PRIVATE;
+	if (cut_private)
+		private_domains = slice(private_domains, 0, MAX_PRIVATE);
 	let forward_uci = configured == 'unbound' ? uci_zones : (configured == 'dnsmasq' ? dnsmasq_uci_servers(sec_dm) : []);
 
 	// The UCI section that holds the described engine's options, so a page can write them: Unbound's `unbound` section of
@@ -660,12 +688,13 @@ function status() {
 		defaults: configured == 'unbound' ? UNBOUND_DEFAULTS : (configured == 'dnsmasq' ? DNSMASQ_DEFAULTS : {}),
 		forwards,
 		forward_uci,
+		private_domains,
 		upstream,
 		// dnsmasq ignores the WAN resolvers when told not to read a resolv file; Unbound's use of them is not known here.
 		upstream_used: configured == 'dnsmasq' ? (sec_dm.noresolv != '1') : null,
 		local_names: engine ? detail.local_names : null,
 		dnssec,
-		truncated: { forwards: cut_forwards, listeners: cut_listeners },
+		truncated: { forwards: cut_forwards, listeners: cut_listeners, private_domains: cut_private },
 		warnings,
 	};
 }

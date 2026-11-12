@@ -111,7 +111,7 @@ flab-ui/
         wireguard/           index.js, iface.js
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js
         dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js
-        dns/                 DNS (read only): index.js (page, state, the editing wiring), schema.js (the options and their areas), edit.js (pure: draft, changes, problems, the UCI plan, the check after a save), model.js (pure: tiles, findings, forwarders, activity, option areas), forwarding.js (the Forwarding card), cards.js (Listening and configuration, Activity, Upstream from the WAN, Try it)
+        dns/                 DNS (read only): index.js (page, state, the editing wiring), schema.js (the options and their areas), edit.js (pure: draft, changes, problems, the UCI plan, the check after a save), model.js (pure: tiles, findings, forwarders, activity, option areas), forwarding.js (the Forwarding card), fold.js (the card that folds down to its header, used by Forwarding and Activity), cards.js (Configuration, Activity)
         interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
@@ -1151,15 +1151,19 @@ pauses while a text box has the focus. Top to bottom:
   **Clear text for Unbound**: `unbound-control list_forwards` does not say whether a forwarder uses TLS (the `+` flags are
   `i`, not DNSSEC-validated, and possibly others), so the plugin reads the `forward-tls-upstream` setting of each `forward-zone`
   clause of Unbound's generated configuration; a zone that is not found there is "unknown" and never accused.
-- **Listening and configuration** (full width, on top): two parts under one header. *Listening on* shows one chip per address and
-  port with its protocols (from `netstat -lntup`, only the resolvers' sockets; Unbound's loopback control port 8953 and dnsmasq's
-  DHCP socket are left out); `0.0.0.0` and `[::]` are marked "all addresses", and the engine is named when both run.
-  *Configuration* shows every option the page knows, in collapsible areas with the same chevron as the folding cards of the DHCP
-  page (right when folded, down when open; an area the user opens stays open across the redraws). **General** comes first and
-  starts open: the service and its monitoring first (enabled, remote control, statistics, log verbosity; for dnsmasq query
-  logging), then listening and interfaces (port, LAN and WAN interfaces, IP protocols, EDNS size, DNS64; for dnsmasq the port,
-  interfaces and upstream servers).
-  **Security and privacy** is second and starts folded: who may ask and the rate limit, rebind protection, query privacy and DNSSEC.
+- **Configuration** (full width, on top): every option the page knows, in collapsible areas with the same chevron as the folding
+  cards of the DHCP page (right when folded, down when open; every area starts folded, and one the user opens stays open across
+  the redraws). The header says the engine, the config file and how many addresses and ports it listens on.
+  **General** comes first: the service and its monitoring first (enabled, remote control, statistics, log verbosity; for dnsmasq query
+  logging), then *Listening on*: one chip per address and port with its protocols (from `netstat -lntup`, only the resolvers'
+  sockets; Unbound's loopback control port 8953 and dnsmasq's DHCP socket are left out), where `0.0.0.0` and `[::]` are marked
+  "all addresses" and the engine is named when both run; then listening and interfaces (port, LAN and WAN interfaces, IP protocols,
+  EDNS size, DNS64; for dnsmasq the port, interfaces and upstream servers). Without a resolver the card is only *Listening on*.
+  **Security and privacy** is second: who may ask and the rate limit, rebind protection, query privacy and DNSSEC.
+  For Unbound it also shows, read only and folded, the domains exempt from rebind protection (`private-domain:`): the ones UCI
+  generates for the local names (the local domain and the router's host name) and those listed in `/etc/unbound/unbound_srv.conf` (on the main router the Azure
+  private-endpoint names). There is no UCI option for that list, so it is changed in the file; the plugin reports it as
+  `private_domains` (`name`, `source` `uci` or `file`).
   The rest follow, folded: Local names and DHCP and Performance and cache (dnsmasq: Local names, Cache, DHCP). Each header gives
   the number of options and, for General and Security and privacy, a line about how they are set (port, interfaces, remote
   control, statistics; DNSSEC, rebind protection, who may ask, rate limit), so a folded area still says something. An "Other
@@ -1182,28 +1186,31 @@ pauses while a text box has the focus. Top to bottom:
   section of `/etc/config/dhcp` (`flab.dns` reports it as `config_section`): a boolean as `1` or `0`, an emptied option is deleted.
   The model for all of this is `dns/edit.js` (pure and unit-tested); `core/editpage.js` takes the config name as a function
   because it depends on the engine. A login without the `uci` write methods sees the settings read only, with a note. Changes
-  already staged in the session are reported and can be discarded first. Without a resolver the card is only the listening part.
-- **Forwarding**: the default forwarders (the `.` zone) with a TLS or clear-text mark, then the conditional zones, which can be about
-  ninety (the main router has 91 plus the two UCI ones, nearly identical). By default zones that share the same servers, flags and TLS setting are
-  one line ("86 zones" with a button that opens the list); "List every zone" switches to one row each, 12 at first with "Show all N";
-  the filter box matches zones, servers and the words of the flags and redraws only the table, so typing is not interrupted. Flags:
+  already staged in the session are reported and can be discarded first. Without a resolver the card is only *Listening on*.
+- **Forwarding**: a card that is folded when the page opens (click its header; the chevron points right when folded and down when
+  open, and the choice survives the redraws). At the top it shows *Resolvers from the WAN* (full width): the resolvers in
+  `/tmp/resolv.conf.d/resolv.conf.auto` (loopback ones left out), each marked *in use* or *not used*, and a sentence that says why. dnsmasq
+  asks them unless its `noresolv` is set. Unbound asks them only through a forward zone with `resolv_conf '1'`, so they count as
+  used when they are among the servers of the forwarders in force (the zones are named); otherwise the sentence says that Unbound
+  uses its own forwarders, or recurses from the root servers, and how to change that. The header repeats the verdict, and the
+  *Upstream servers* tile counts only the WAN resolvers that are used. Below that, one flat table of every forwarder, the default one (the `.` zone) first and
+  then the zones by name, each with its servers (a TLS or clear-text mark), flags and where it is defined; the main router lists
+  93. There is no grouping and no "Show all". The filter box matches zones, servers and the words of the flags and redraws only
+  the table, so typing is not interrupted. Flags:
   `i` is shown as "not DNSSEC-validated" (Unbound's `domain-insecure`); dnsmasq's `/zone/` (answered locally) and `/zone/#` (uses the
-  default servers) are marked too. Each forwarder says where it is defined ("Defined in" column, and a line under the default
-  forwarders): *UCI* (an Unbound zone section, named in the tooltip, or a dnsmasq `server` entry) or *unbound_ext.conf* (zones
-  that only Unbound's extension file defines: on the main router the 89 Azure private-link zones; `lab.formicalab.casa` and `flumini.formicalab.casa` were moved to UCI zone sections `fwd_lab` and `fwd_flumini`). Zones that are defined in different places never
-  share a group. The card is read only for now: a line at the top counts the UCI forwarders and the extension-file ones, an
+  default servers) are marked too. A row without default servers says what happens instead (Unbound recurses from the root servers;
+  dnsmasq asks the WAN's resolvers). Each forwarder says where it is defined ("Defined in" column):
+  *UCI* (an Unbound zone section, named in the tooltip, or a dnsmasq `server` entry) or *unbound_ext.conf* (zones
+  that only Unbound's extension file defines; the main router has none: its 89 Azure private-link zones are the UCI zone section `fwd_azure`, and
+  `lab.formicalab.casa` and `flumini.formicalab.casa` are `fwd_lab` and `fwd_flumini`). The card is read only for now: a line at the top counts the UCI forwarders and the extension-file ones, an
   *Add forwarder* button and an *Edit* and a *Remove* button on every UCI forwarder are drawn disabled, and extension-file zones
   have none (edit that file). To make the list editable, set `canEdit` in `forwarding.js`, open a form for the entry with the fields
   of `ZONE_FIELDS` (`dns/schema.js`; `model.zoneDraft(entry)` builds its values from an entry of the reply's `forward_uci`) drawn
   with the shared controls, and save through UCI as the System settings and DHCP pages do; for dnsmasq an entry is the text of a
   `server` list value (`/zone/zone/address#port`, `/zone/`, `/zone/#` or a plain address).
-- **Activity** (full width): the engine's counters with a share bar where one makes sense, and, for Unbound with extended statistics, the answer
+- **Activity** (full width, folded when the page opens like Forwarding; the header says how long ago the counters started): the engine's counters with a share bar where one makes sense, and, for Unbound with extended statistics, the answer
   codes. A counter the engine does not report (Unbound's extended ones when `extended_stats` is off) is left out, never shown as
   zero, and the card says how to turn them on.
-- **Upstream from the WAN** (beside Try it): the resolvers in `/tmp/resolv.conf.d/resolv.conf.auto`, without loopback ones; dnsmasq's `noresolv`
-  is said to ignore them.
-- **Try it**: a name box with **Look up** and **Compare resolvers**, which call `openTool('dns', name)` and `openTool('compare', name)`
-  of the Toolbox: it opens with the form filled in and the tool started. An empty name is refused with a hint.
 
 #### The plugin
 `flab.dns` itself is read-only (it never writes); the ACL fragment (`rpcd/acl.d/flab-dns.json`) grants its `status` method and, for
@@ -1224,7 +1231,7 @@ missing leaves its part null and adds a warning; it never fails the call, and th
   Unbound the `config zone` sections of type `forward_zone`, enabled or not, as `section`, `enabled`, `zones`, `servers` and `options`
   (`tls_upstream`, `tls_index`, `tls_port`, `port`, `fallback`, `dns_assist`, `resolv_conf`); for dnsmasq the `server` entries as
   written, `index` and `value`), `upstream`,
-  `upstream_used` (dnsmasq: not `noresolv`; null for Unbound), `local_names` (Unbound: the distinct names of `list_local_data` without
+  `upstream_used` (dnsmasq: not `noresolv`; null for Unbound, where the page checks whether the WAN resolvers are among the servers of the forwarders in force), `local_names` (Unbound: the distinct names of `list_local_data` without
   the reverse ones; dnsmasq: the names of the host files and named leases), `dnssec` (`supported`, `enabled`), `truncated`
   (`forwards`, `listeners`) and `warnings`.
 - `stats` for Unbound: `queries`, `cache_hits`, `cache_misses`, `prefetch`, `expired`, `ratelimited`, `timed_out`, `recursion_avg_ms`,
@@ -1293,7 +1300,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
 | Settings | `pwsh -File flab-ui\tests\settings\run.ps1 [-Browser]` | System settings model, option table and zone table; the whole editing flow against a mock router |
 | DHCP | `pwsh -File flab-ui\tests\dhcp\run.ps1 [-Browser]` | DHCP model (address helpers, reading config and leases, validation, change plan); the page against the router's own data, then the whole editing flow against a mock router |
-| DNS | `pwsh -File flab-ui\tests\dns\run.ps1 [-Router ...] [-Url ...] [-Browser]` | The DNS model (tiles, findings, forwarders grouped and filtered, activity, options); `flab.dns` against a captured and several synthetic routers (Unbound with and without extended statistics or `unbound-control`, dnsmasq, both, stopped, none, cut lists) and a call with shell metacharacters as arguments; the page against mocked replies |
+| DNS | `pwsh -File flab-ui\tests\dns\run.ps1 [-Router ...] [-Url ...] [-Browser]` | The DNS model (tiles, findings, forwarders sorted and filtered, activity, options); `flab.dns` against a captured and several synthetic routers (Unbound with and without extended statistics or `unbound-control`, dnsmasq, both, stopped, none, cut lists) and a call with shell metacharacters as arguments; the page against mocked replies |
 | Wi-Fi | `pwsh -File flab-ui\tests\wifi\run.ps1 [-Browser]` | Wi-Fi channel model (blocks of channels, errors and warnings, change plan); the radio cards and pickers against the router's own data, then the whole channel-change flow against a mock router |
 | Services | `pwsh -File flab-ui\tests\services\run.ps1 [-Browser]` | Services model; `flab.services` against fixtures (nothing is executed) and a read-only `list` on the router; the page against the router's own services, then the whole start, stop and restart flow against a mock |
 
@@ -1412,10 +1419,10 @@ used) and the ACL (`flab.dns: [status]` and the staged `uci` methods on the `unb
 outputs, `flab.diag` from a mock that records the request and runs nothing, and rpcd's `uci` object from a stateful mock (staged
 edits, apply, confirm and rollback on the current scenario's section; any write to another config is refused and counted, and none
 of it reaches the router), and drives every tile, finding and card for both
-engines, both together, stopped and none; the forwarders (grouped, listed, "Show all", filter, a filter that keeps the focus); the
+engines, both together, stopped and none; the forwarders (folded card, one flat sorted list, filter, a filter that keeps the focus); the
 configuration with a default marked; the editing of the options (the review banner, the details, a save with its calls in order and
 the values written, an emptied option deleted, warnings, an invalid number that opens its folded area, discarding, a resolver that
-stops and is rolled back, an apply the router refuses, changes already staged, a login that may not write, dnsmasq's section); the Try it buttons into the Toolbox (the hash, the prefilled form, the request the mock saw); the
+stops and is rolled back, an apply the router refuses, changes already staged, a login that may not write, dnsmasq's section); the WAN resolvers of the Forwarding card (in use, not used, partly); the
 polling pause while a box has the focus; the type scale and weights; the dark theme; that nothing was written to another config and no console error
 occurred. `-Router` and `-Url` default to the main router; the browser pass needs the UI deployed on the router it is given.
 

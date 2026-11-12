@@ -16,11 +16,11 @@ import { emptyState, healthBanner, tile, tiles } from '../../core/ui.js';
 import { engineName, findings, subject, summary } from './model.js';
 import { changesOf, checkApplied, draftFrom, engineRunning, isDirty, plan, problems } from './edit.js';
 import { forwardingCard } from './forwarding.js';
-import { activityCard, resolverCard, tryCard, upstreamCard } from './cards.js';
+import { activityCard, resolverCard } from './cards.js';
 
-// The view state that must survive the redraw on every poll: the forwarders' filter text, whether every row is
-// drawn, whether the zones are grouped by server set, which groups are open, and the name typed into Try it.
-const state = { fq: '', fall: false, grouped: true, open: new Set(), host: '' };
+// The view state that must survive the redraw on every poll: the forwarders' filter text and which folding cards are open
+// (Forwarding and Activity start folded).
+const state = { fq: '', folds: {} };
 
 // The config being edited (the resolver's own: unbound or dhcp), known once the status has been read.
 let editing = null;
@@ -65,7 +65,7 @@ export default {
 
   controls: ({ reload }) => ({ nodes: [refreshControl(reload), editor.attach(reload)] }),
 
-  // The nodes of the page for one reply; `rerender` redraws from the cached reply (Show all, the grouping toggle).
+  // The nodes of the page for one reply; `rerender` redraws from the cached reply (used by the editor).
   view(data, rerender) {
     const e = subject(data);
     const canEdit = editor.begin(data, rerender) && Boolean(data.config_section);
@@ -78,11 +78,8 @@ export default {
       tiles(...summary(data).map(t => tile(t.label, t.value, t.sub, t.cls))),
       healthBanner(findings(data), okText),
       resolverCard(data, edit),
-      ...(e ? [forwardingCard(data, state, rerender)] : []),
-      e ? activityCard(data) : emptyState('No resolver is installed, so there are no counters to show.'),
-      h('div', { className: 'row g-3' },
-        h('div', { className: 'col-12 col-xl-5' }, upstreamCard(data)),
-        h('div', { className: 'col-12 col-xl-7' }, tryCard(state))),
+      ...(e ? [forwardingCard(data, state)] : []),
+      e ? activityCard(data, state) : emptyState('No resolver is installed, so there are no counters to show.'),
     ];
     ctx.sync();
     return nodes;

@@ -4,7 +4,7 @@
 Tests the DNS page (the state of the router's resolver, Unbound or dnsmasq) without changing the router.
 
 .DESCRIPTION
-1. Unit tests of the page model (tiles, findings, forwarders grouped and filtered, activity, configuration rows).
+1. Unit tests of the page model (tiles, findings, forwarders sorted and filtered, activity, configuration rows).
 2. Captures what the flab.dns plugin reads from the router (service list, sockets, UCI, unbound-control or dnsmasq
    metrics, all read-only) as the "real" scenario.
 3. Builds synthetic scenarios (Unbound with and without extended statistics, Unbound without its control channel, lists
@@ -12,7 +12,7 @@ Tests the DNS page (the state of the router's resolver, Unbound or dnsmasq) with
    scenario (FLAB_FIXTURES), asserting the JSON. A call with shell metacharacters as arguments must give the same reply
    and create no file.
 4. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1) and drives the DNS
-   page with mocked flab.dns replies: every tile, finding and card, both engines, no resolver, the filter and "Show all"
+   page with mocked flab.dns replies: every tile, finding and card, both engines, no resolver, the folded Forwarding card and its filter
    of the forwarders, and the Try it buttons into the Toolbox. Nothing reaches the router's configuration.
 
 Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (deploy.ps1 -Action Deploy) and

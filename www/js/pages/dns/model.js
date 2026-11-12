@@ -101,14 +101,49 @@ export function defaultForwarders(data) {
   return row && !row.flags.includes('local-only') ? row.servers : [];
 }
 
-// The forwarders of the conditional zones (every row but the default one).
-export const zoneForwards = data => (data.forwards ?? []).filter(f => f.zone !== '.');
+// Whether the resolver really asks the resolvers the WAN handed to the router (resolv.conf.auto): { servers: [{ addr, used }],
+// verdict, zones }. The verdict is 'none' (the WAN gave none), 'used' (all of them), 'partly' or 'unused'; `zones` are the
+// forwarder zones that include one of them (Unbound). dnsmasq asks them unless its option noresolv is set. Unbound asks them
+// only through a forward zone that has `resolv_conf '1'`, so the test is whether they are among the servers in force.
+export function wanResolvers(data) {
+  const wan = data.upstream ?? [];
+  const rows = data.forwards ?? [];
+  const zones = new Set();
+  let servers;
+  if (subject(data) === 'dnsmasq') {
+    const used = data.upstream_used !== false;
+    servers = wan.map(addr => ({ addr, used }));
+  } else {
+    const inForce = new Set();
+    for (const r of rows) for (const s of r.servers) if (wan.includes(serverAddress(s))) { inForce.add(serverAddress(s)); zones.add(r.zone); }
+    servers = wan.map(addr => ({ addr, used: inForce.has(addr) }));
+  }
+  const n = servers.filter(s => s.used).length;
+  return { servers, verdict: !wan.length ? 'none' : n === wan.length ? 'used' : n ? 'partly' : 'unused', zones: [...zones] };
+}
 
-// How many upstream servers the resolver can use: the default forwarders and the ones learned from the WAN (counted once
-// each; dnsmasq told to ignore the WAN's resolvers does not use them).
+// A sentence that says whether the resolver really asks the resolvers from the WAN, and why (see wanResolvers).
+export function wanNote(data) {
+  const w = wanResolvers(data);
+  if (w.verdict === 'none') return 'The WAN connection (DHCP, PPP or router advertisements) gave no resolver, or the router has no WAN lease, so there is nothing to ask.';
+  if (subject(data) === 'dnsmasq') {
+    return w.verdict === 'used'
+      ? 'dnsmasq asks them in addition to its own servers (option noresolv is not set).'
+      : 'dnsmasq ignores them: option noresolv is set, so it asks only its own servers.';
+  }
+  if (w.verdict === 'unused') {
+    return `Unbound does not ask them: ${defaultForwarders(data).length ? 'it sends queries to its own forwarders' : 'it resolves names itself, from the root servers'}. To use them, set option resolv_conf '1' on a forward zone.`;
+  }
+  const names = w.zones.map(z => (z === '.' ? 'every name without a zone of its own' : z));
+  const shown = names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', ');
+  return `Unbound asks ${w.verdict === 'used' ? 'them' : 'some of them'} through a forward zone with option resolv_conf '1', for ${shown}.`;
+}
+
+// How many upstream servers the resolver can use: the default forwarders and the ones learned from the WAN that it really
+// asks (counted once each; see wanResolvers).
 export function upstreamCounts(data) {
   const defaults = defaultForwarders(data);
-  const wan = data.upstream_used === false ? [] : (data.upstream ?? []);
+  const wan = wanResolvers(data).servers.filter(s => s.used).map(s => s.addr);
   const all = new Set([...defaults.map(serverAddress), ...wan]);
   return { defaults: defaults.length, wan: wan.length, total: all.size };
 }
@@ -277,19 +312,8 @@ export const FLAG_WORDS = {
 // The words for a list of flags (an unknown flag is shown as it is).
 export const flagWords = flags => flags.map(f => FLAG_WORDS[f] ?? f);
 
-// The conditional zones grouped by their server set, flags, TLS and where they are defined: [{ key, servers, flags, tls,
-// source, section, zones }], the largest group first (then by the first zone). Zones inside a group keep the order of the
-// reply. Zones of different UCI sections, or one defined in UCI and one in a file, never share a group: they are changed
-// in different places.
-export function groupForwards(rows) {
-  const groups = new Map();
-  for (const r of rows) {
-    const key = JSON.stringify([r.servers, [...r.flags].sort(), r.tls ?? null, r.source ?? null, r.section ?? null]);
-    if (!groups.has(key)) groups.set(key, { key, servers: r.servers, flags: r.flags, tls: r.tls ?? null, source: r.source ?? null, section: r.section ?? null, zones: [] });
-    groups.get(key).zones.push(r.zone);
-  }
-  return [...groups.values()].sort((a, b) => b.zones.length - a.zones.length || a.zones[0].localeCompare(b.zones[0]));
-}
+// The forwarders in the order the table lists them: the default zone (".") first, then the rest by name.
+export const sortForwards = rows => [...rows].sort((a, b) => (a.zone === '.' ? -1 : b.zone === '.' ? 1 : a.zone.localeCompare(b.zone)));
 
 // How many forwarders are defined in UCI (changeable through UCI) and how many only in a file (Unbound's extension file),
 // counting the rows of the reply: { uci, file }. A row without a source (an older plugin) counts as neither.

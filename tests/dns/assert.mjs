@@ -71,6 +71,8 @@ console.log('\n== unbound (extended statistics, ninety forwarders) ==');
   check(r.local_names === facts.localNames, `${facts.localNames} local names (reverse names and repeated records are not counted)`, String(r.local_names));
   check(same(r.dnssec, { supported: true, enabled: true }) && same(r.warnings, []), 'DNSSEC is validating (the validator module is loaded) and nothing was left unread', j([r.dnssec, r.warnings]));
   check(same(r.config_section, { config: 'unbound', name: 'ub_main' }), 'the UCI section that holds the options is named, so a page can write them', j(r.config_section));
+  const pd = r.private_domains;
+  check(pd.length === 14 && same(pd[0], { name: 'lab.formicalab.casa', source: 'uci' }) && same(pd.slice(1, 3), [{ name: 'formicalab.casa', source: 'file' }, { name: 'proxy.dsl.vodafone.it', source: 'file' }]) && pd.filter(x => x.name === 'lab.formicalab.casa').length === 1 && pd.at(-1).name === 'blob.core.windows.net' && pd.every(x => x.name === x.name.toLowerCase() && !/["]|\.$/.test(x.name)) && !pd.some(x => /commented|domain-insecure|openwrt/.test(x.name)) && r.truncated.private_domains === false, 'the rebind-protection exceptions: the one UCI generates, then those of the srv file; once each, lowercase, no quotes or trailing dot, comments and other directives ignored', j(pd));
 }
 
 console.log('\n== unbound-basic (the main router: extended statistics off) ==');
@@ -99,6 +101,8 @@ console.log('\n== unbound-many (the lists are cut) ==');
   const r = out('unbound-many');
   check(r.forwards.length === 500 && r.truncated.forwards === true && r.forwards[0].zone === '.' && r.forwards[1].zone === 'zone000.example.net', 'forwarders are cut at 500, the first ones kept', `${r.forwards.length} ${r.truncated.forwards}`);
   check(r.listeners.length === 50 && r.truncated.listeners === true, `${facts.manyAddrs * 2} sockets are cut at 50`, `${r.listeners.length} ${r.truncated.listeners}`);
+  const mine = r.forwards.filter(f => f.source === 'uci');
+  check(r.forward_uci.length === 1 && r.forward_uci[0].zones.length === 89 && mine.length === 89 && mine.every(f => f.section === 'fwd_many') && r.forwards.find(f => f.zone === 'zone089.example.net').source === 'file', 'a UCI zone section with 89 zones keeps all of them (the 50-value cap of the option lists does not apply to its names): each is marked "uci", the next one "file"', `${r.forward_uci[0]?.zones.length} ${mine.length}`);
 }
 
 console.log('\n== dnsmasq (the GL-X3000) ==');
@@ -118,6 +122,7 @@ console.log('\n== dnsmasq (the GL-X3000) ==');
   check(r.forward_uci.length === facts.dmZones.length + 3 && same(r.forward_uci[0], { index: 0, value: `/*.${facts.dmZones[0]}/10.0.2.4` }) && same(r.forward_uci.at(-1), { index: facts.dmZones.length + 2, value: '1.1.1.1' }) && r.forwards.every(f => f.source === 'uci' && f.section === undefined), 'every server entry is listed as written, with its index, and every forwarder is a UCI one', j(r.forward_uci.slice(0, 1)));
   check(r.local_names === facts.dmNames, `${facts.dmNames} local names from the host files and the named leases`, String(r.local_names));
   check(same(r.dnssec, { supported: false, enabled: false }) && same(r.warnings, []), 'the build says no-DNSSEC, so validation is not supported', j(r.dnssec));
+  check(same(r.private_domains, []), 'dnsmasq has no private-domain list: its exceptions are the rebind_domain option', j(r.private_domains));
   check(same(r.config_section, { config: 'dhcp', name: 'cfg01411c' }), 'dnsmasq\'s options are in the dnsmasq section of the dhcp config', j(r.config_section));
 }
 

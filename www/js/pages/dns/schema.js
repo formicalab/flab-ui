@@ -16,7 +16,7 @@ export const UNBOUND_CONFIG = 'unbound';
 export const DNSMASQ_CONFIG = 'dhcp';
 
 export const UNBOUND_AREAS = [
-  { id: 'general', title: 'General', open: true, legend: 'Where Unbound listens, how it runs and what it reports.',
+  { id: 'general', title: 'General', open: false, legend: 'Where Unbound listens, how it runs and what it reports.',
     sections: [
       { title: 'Service and monitoring', keys: ['enabled', 'manual_conf', 'unbound_control', 'extended_stats', 'verbosity'] },
       { title: 'Listening and interfaces', keys: ['listen_port', 'interface_auto', 'iface_lan', 'iface_wan', 'iface_trig', 'protocol', 'edns_size', 'dns64', 'dns64_prefix'] },
@@ -35,7 +35,7 @@ export const UNBOUND_AREAS = [
 ];
 
 export const DNSMASQ_AREAS = [
-  { id: 'general', title: 'General', open: true, legend: 'Where dnsmasq listens, which servers it asks and what it logs.',
+  { id: 'general', title: 'General', open: false, legend: 'Where dnsmasq listens, which servers it asks and what it logs.',
     sections: [
       { title: 'Monitoring', keys: ['logqueries'] },
       { title: 'Listening', keys: ['port', 'interface', 'ednspacket_max'] },

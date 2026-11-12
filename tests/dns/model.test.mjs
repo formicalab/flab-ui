@@ -58,7 +58,9 @@ check(t[0].value === 'Unbound' && t[0].sub === '1.26.2 · up 1h 0m', 'resolver: 
 check(plain(t[1].value) === '1200' && t[1].sub === 'since start · 20 per minute', 'queries and the average per minute', j(t[1]));
 check(t[2].value === '75%' && plain(t[2].sub) === '900 hits · 300 misses', 'Unbound: cache hits against hits and misses', j(t[2]));
 check(t[3].value === '45.9 ms' && /median 30\.8 ms/.test(t[3].sub), 'resolution time: average and median', j(t[3]));
-check(t[4].value === '3' && t[4].sub === '2 default forwarders · 1 from the WAN', 'upstream: the two default forwarders (the zone rule is not counted) and the WAN server', j(t[4]));
+check(t[4].value === '2' && t[4].sub === '2 default forwarders · 0 from the WAN', 'upstream: the two default forwarders (the zone rule is not counted); the WAN server is not among the servers in force, so it is not counted', j(t[4]));
+const ubWan = clone(ub); ubWan.forwards[1].servers.push('192.0.2.53');
+check(tileOf(ubWan, 'Upstream servers').value === '3' && tileOf(ubWan, 'Upstream servers').sub === '2 default forwarders · 1 from the WAN', 'a WAN server that a forward zone really uses is counted', j(tileOf(ubWan, 'Upstream servers')));
 check(t[5].value === 'Validating' && t[5].cls === '', 'DNSSEC validating');
 t = m.summary(dm);
 check(t[2].label === 'Answered locally' && t[2].value === '59%' && /from the cache and local names/.test(t[2].sub), 'dnsmasq: local answers against local and forwarded', j(t[2]));
@@ -67,6 +69,20 @@ check(t[3].label === 'Forwarded upstream' && t[3].value === '568' && /does not r
 check(t[4].value === '3' && t[5].value === 'Not supported' && /no DNSSEC/.test(t[5].sub), 'upstream servers count the WAN one; DNSSEC not supported by the build', j([t[4], t[5]]));
 const noWan = { ...clone(dm), upstream_used: false };
 check(tileOf(noWan, 'Upstream servers').value === '2', 'WAN resolvers dnsmasq ignores (noresolv) are not counted');
+{
+  const w = d => m.wanResolvers(d);
+  check(w(ub).verdict === 'unused' && w(ub).servers.length === 1 && w(ub).servers[0].used === false && /does not ask them: it sends queries to its own forwarders/.test(m.wanNote(ub)) && /resolv_conf '1'/.test(m.wanNote(ub)), 'Unbound does not ask the WAN resolvers when they are not among the servers in force, and says how to use them', m.wanNote(ub));
+  check(/resolves names itself, from the root servers/.test(m.wanNote({ ...clone(ub), forwards: [] })), 'recursive Unbound says it asks the root servers instead');
+  check(w(ubWan).verdict === 'used' && j(w(ubWan).zones) === '["corp.example"]' && /asks them through a forward zone with option resolv_conf '1', for corp\.example/.test(m.wanNote(ubWan)), 'Unbound asks them when a forward zone lists them, and names the zone', m.wanNote(ubWan));
+  const part = clone(ubWan); part.upstream.push('192.0.2.54');
+  check(w(part).verdict === 'partly' && j(w(part).servers.map(s => s.used)) === '[true,false]' && /asks some of them/.test(m.wanNote(part)), 'some of them used: partly, each marked');
+  const viaDefault = clone(ub); viaDefault.forwards[0].servers.push('192.0.2.53');
+  check(/for every name without a zone of its own/.test(m.wanNote(viaDefault)), 'the default zone is described, not shown as a dot');
+  const many = clone(ubWan); many.forwards.push(...['a', 'b', 'c'].map(z => ({ zone: `${z}.example`, servers: ['192.0.2.53'], flags: [], tls: false })));
+  check(/for corp\.example, a\.example, b\.example and 1 more/.test(m.wanNote(many)), 'more than three zones are cut', m.wanNote(many));
+  check(w(dm).verdict === 'used' && /asks them in addition to its own servers/.test(m.wanNote(dm)) && w(noWan).verdict === 'unused' && /ignores them: option noresolv is set/.test(m.wanNote(noWan)) && w(noWan).servers.every(s => !s.used), 'dnsmasq asks them unless noresolv is set');
+  check(w(none).verdict === 'none' && /gave no resolver/.test(m.wanNote(none)) && w({ ...clone(ub), upstream: [] }).servers.length === 0, 'no WAN resolver: nothing to ask');
+}
 const dup = { ...clone(ub), upstream: ['1.1.1.1'] };
 check(tileOf(dup, 'Upstream servers').value === '2', 'a WAN server that is also a default forwarder is counted once');
 const rec = { ...clone(ub), forwards: [] };
@@ -170,19 +186,15 @@ const rows = [
   { zone: 'c.example', servers: ['10.0.0.1', '10.0.0.2'], flags: ['i'], tls: false }, { zone: 'd.example', servers: ['10.0.0.9'], flags: [], tls: false },
   { zone: 'e.example', servers: ['10.0.0.1', '10.0.0.2'], flags: [], tls: false }, { zone: 'x.corp', servers: ['10.0.0.1', '10.0.0.2'], flags: [], tls: true },
 ];
-const g = m.groupForwards(rows);
-check(g.length === 4 && same(g[0].zones, ['a.example', 'b.example', 'e.example']) && same(g.map(x => x.zones.length), [3, 1, 1, 1]), 'zones with the same servers, flags and TLS are one group, the largest first, zones in reply order', j(g.map(x => x.zones)));
-check(g.some(x => same(x.zones, ['c.example']) && same(x.flags, ['i'])) && g.some(x => same(x.zones, ['x.corp']) && x.tls === true), 'a different flag or TLS setting is a different group');
-check(m.groupForwards([]).length === 0, 'no rows, no groups');
+const sorted = m.sortForwards(rows);
+check(sorted.length === 6 && same(sorted.map(x => x.zone), ['a.example', 'b.example', 'c.example', 'd.example', 'e.example', 'x.corp']) && j(rows.map(x => x.zone)) === j(['a.example', 'b.example', 'c.example', 'd.example', 'e.example', 'x.corp']), 'the table lists every forwarder, by name');
+check(same(m.sortForwards([{ zone: 'z.example' }, { zone: '.' }, { zone: 'a.example' }]).map(x => x.zone), ['.', 'a.example', 'z.example']) && m.sortForwards([]).length === 0, 'the default zone comes first; no rows, no table');
 {
   const src = [
     { zone: 'a.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'uci', section: 'fwd_a' }, { zone: 'b.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'uci', section: 'fwd_a' },
     { zone: 'c.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'uci', section: 'fwd_c' }, { zone: 'd.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'file' },
     { zone: 'e.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'file' },
-  ];
-  const sg = m.groupForwards(src);
-  check(sg.length === 3 && same(sg[0].zones, ['a.example', 'b.example']) && sg[0].source === 'uci' && sg[0].section === 'fwd_a' && sg.some(x => x.source === 'file' && same(x.zones, ['d.example', 'e.example']) && x.section === null), 'zones with the same servers share a group only when they are defined in the same place (one UCI section, or the file)', j(sg.map(x => [x.source, x.section, x.zones])));
-  check(j(m.forwardSources({ forwards: src })) === '{"uci":3,"file":2}' && j(m.forwardSources({ forwards: rows })) === '{"uci":0,"file":0}' && j(m.forwardSources({})) === '{"uci":0,"file":0}', 'forwarders are counted by where they are defined; a row without a source counts as neither');
+  ];  check(j(m.forwardSources({ forwards: src })) === '{"uci":3,"file":2}' && j(m.forwardSources({ forwards: rows })) === '{"uci":0,"file":0}' && j(m.forwardSources({})) === '{"uci":0,"file":0}', 'forwarders are counted by where they are defined; a row without a source counts as neither');
   const cf = { section: 'fwd_cloudflare', enabled: true, zones: ['.'], servers: ['1.1.1.1', '1.0.0.1'], options: { tls_upstream: '1', tls_index: 'cloudflare-dns.com', fallback: '0' } };
   const zd = m.zoneDraft(cf);
   check(zd.enabled === true && j(zd.zone_name) === '["."]' && j(zd.server) === '["1.1.1.1","1.0.0.1"]' && zd.tls_upstream === true && zd.tls_index === 'cloudflare-dns.com' && zd.fallback === false && zd.tls_port === '' && zd.port === '' && zd.dns_assist === '' && zd.resolv_conf === false, 'a UCI zone becomes the values of its form: booleans as booleans (the default when absent), lists, and empty strings for what is not set', j(zd));
@@ -192,7 +204,7 @@ check(m.filterForwards(rows, '').length === 6 && m.filterForwards(rows, '  ').le
 check(m.filterForwards(rows, 'EXAMPLE 0.9').length === 1 && m.filterForwards(rows, 'EXAMPLE 0.9')[0].zone === 'd.example', 'every word must match, ignoring case');
 check(m.filterForwards(rows, '10.0.0.9').length === 1 && m.filterForwards(rows, 'validated').length === 1 && m.filterForwards(rows, 'nothing').length === 0, 'the filter looks at servers and at the words of the flags too');
 check(m.flagWords(['i', 'local-only', 'zz']).join('|') === 'not DNSSEC-validated|answered locally, never forwarded|zz', 'flags in words; an unknown flag as it is');
-check(same(m.defaultForwarders(ub), ['2606:4700:4700::1111', '1.1.1.1']) && m.zoneForwards(ub).length === 1 && m.defaultForwarders(none).length === 0, 'default forwarders and zone rules are told apart');
+check(same(m.defaultForwarders(ub), ['2606:4700:4700::1111', '1.1.1.1']) && m.defaultForwarders(none).length === 0, 'the default forwarders are the servers of the "." row');
 check(m.defaultForwarders({ forwards: [{ zone: '.', servers: [], flags: ['local-only'] }] }).length === 0, 'a "local only" default has no forwarders');
 //#endregion
 
@@ -223,7 +235,7 @@ console.log('\n== configuration fields ==');
 {
 let f = m.configFields(ub);
 const areas = m.configAreas(ub);
-check(areas.map(a => a.id).join() === 'general,security,local,perf' && areas.every(a => a.title && a.legend && a.count > 0 && a.sections.length) && areas[0].open === true && areas.slice(1).every(a => !a.open), 'Unbound\'s options are in four collapsible areas, General first (open) and Security and privacy second (folded)', areas.map(a => `${a.title} ${a.count}`).join(' | '));
+check(areas.map(a => a.id).join() === 'general,security,local,perf' && areas.every(a => a.title && a.legend && a.count > 0 && a.sections.length) && areas[0].open === false && areas.every(a => !a.open), 'Unbound\'s options are in four collapsible areas, General first and Security and privacy second, all folded', areas.map(a => `${a.title} ${a.count}`).join(' | '));
 check(j(areas[0].sections.map(s => s.title)) === '["Service and monitoring","Listening and interfaces"]' && areas[0].sections[0].fields.some(x => x.key === 'unbound_control') && areas[0].sections[1].fields.some(x => x.key === 'iface_lan') && j(areas[1].sections.map(s => s.title)) === '["Access and abuse","Rebind protection","Privacy","DNSSEC"]' && areas[1].sections[3].fields.some(x => x.key === 'validator'), 'General holds the service and monitoring first, then listening and interfaces; Security and privacy holds access, rebind protection, privacy and DNSSEC');
 check(j(f.map(x => x.key).sort()) === j(m.configFields({ ...ub, config: {} }).map(x => x.key).sort()) && new Set(f.map(x => x.key)).size === f.length && f.length === 38, 'every option is in exactly one area', String(f.length));
 const dareas = m.configAreas(dm);

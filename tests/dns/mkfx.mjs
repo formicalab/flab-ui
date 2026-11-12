@@ -98,6 +98,7 @@ server:
   verbosity: 1
   tls-cert-bundle: /etc/ssl/certs/ca-certificates.crt
   interface: 0.0.0.0@53
+  private-domain: lab.formicalab.casa
 
 forward-zone:
   name: .
@@ -115,6 +116,10 @@ remote-control:
   control-enable: yes
   control-interface: 127.0.0.1
 `;
+// The user's server-clause file: the rebind-protection exceptions (two plain, ten quoted Azure names, one repeated from the generated
+// configuration and one in capitals with a trailing dot, which must be listed once and normalized), and lines that are not exceptions.
+const UNBOUND_SRV = ['# private-domain: commented.out', 'private-domain: formicalab.casa', 'private-domain: proxy.dsl.vodafone.it', 'private-domain: lab.formicalab.casa', 'domain-insecure: "lab.formicalab.casa"',
+  'local-data: "openwrt.lab.formicalab.casa. 300 IN A 192.168.1.1"', ...AZURE_ZONES.slice(0, 10).map(z => `private-domain: "${z}"`), 'private-domain: "BLOB.Core.Windows.Net."'].join('\n') + '\n';
 const UNBOUND_EXT = '# Extended user clauses\n' + [...AZURE_ZONES, 'lab.formicalab.casa'].map(z => `forward-zone:\n    name: "${z}."\n${AZURE_SERVERS.map(a => `    forward-addr: ${a}`).join('\n')}\n    forward-first: no\n`).join('\n')
   + '\nforward-zone:\n    name: "flumini.formicalab.casa."\n    forward-addr: 192.168.8.1\n    forward-first: no\n';
 
@@ -210,7 +215,7 @@ scenarios.unbound = {
   },
   uci: { unbound: { ub_main: UB_MAIN, ...UB_ZONES } },
   ubus: { service_list: services({ unbound: { pid: 2201 } }) },
-  files: { '/proc/uptime': UPTIME_FILE, '/var/lib/unbound/unbound.conf': UNBOUND_CONF, '/var/lib/unbound/unbound_ext.conf': UNBOUND_EXT, '/tmp/resolv.conf.d/resolv.conf.auto': '# Interface wan\nsearch isp.example\nnameserver 192.0.2.53\nnameserver 2001:db8:53::1\nnameserver 127.0.0.1\n# Interface wan6\nnameserver 192.0.2.53\n' },
+  files: { '/proc/uptime': UPTIME_FILE, '/var/lib/unbound/unbound.conf': UNBOUND_CONF, '/var/lib/unbound/unbound_ext.conf': UNBOUND_EXT, '/var/lib/unbound/unbound_srv.conf': UNBOUND_SRV, '/tmp/resolv.conf.d/resolv.conf.auto': '# Interface wan\nsearch isp.example\nnameserver 192.0.2.53\nnameserver 2001:db8:53::1\nnameserver 127.0.0.1\n# Interface wan6\nnameserver 192.0.2.53\n' },
 };
 
 // Unbound as the main router runs it: extended statistics off, so only the totals exist; a short forwarder list.
@@ -249,7 +254,7 @@ scenarios['unbound-many'] = {
     'unbound-control list_forwards': `. IN forward 9.9.9.9\n${MANY.map(z => `${z}. IN forward 10.9.9.9`).join('\n')}\n`, 'unbound-control list_local_data': '',
     'netstat -lntup': netstat(MANY_ADDRS.flatMap(a => [sock('tcp', a, 53, '2201/unbound'), sock('udp', a, 53, '2201/unbound')])),
   },
-  uci: { unbound: { ub_main: UB_MAIN } },
+  uci: { unbound: { ub_main: UB_MAIN, fwd_many: section('fwd_many', 'zone', { enabled: '1', zone_type: 'forward_zone', fallback: '0', server: ['10.9.9.9'], zone_name: MANY.slice(0, 89) }) } },
   ubus: { service_list: services({ unbound: { pid: 2201 } }) },
   files: { '/proc/uptime': UPTIME_FILE, '/var/lib/unbound/unbound.conf': '', '/var/lib/unbound/unbound_ext.conf': '', '/tmp/resolv.conf.d/resolv.conf.auto': '' },
 };
