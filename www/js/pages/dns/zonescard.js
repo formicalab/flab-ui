@@ -10,7 +10,7 @@ import { icon } from '../../core/icons.js';
 import { badge, muted, section } from '../../core/ui.js';
 import { fmtNum } from '../../core/format.js';
 import { foldCard } from './fold.js';
-import { defaultForwarders, engineName, flagWords, isPublicIp, serverAddress, subject, wanNote, wanResolvers } from './model.js';
+import { clearTextHint, defaultForwarders, engineName, FLAG_HINTS, flagWords, isPublicIp, serverAddress, subject, wanNote, wanResolvers } from './model.js';
 import { canEditForwarders, forwarderCounts, forwarderItems, matchItem, removeForwarder, restoreForwarder, saveForwarder, typeLabel } from './zones.js';
 import { ZONE_TYPES } from './schema.js';
 import { openZoneDialog } from './zoneform.js';
@@ -23,11 +23,26 @@ function serverChip(addr, tls, engine) {
   const clear = isPublicIp(serverAddress(addr)) && (engine === 'dnsmasq' || tls === false);
   return h('span', { className: 'dns-server' }, h('span', { className: 'mono' }, addr),
     tls === true ? badge('TLS', 'success', 'Queries to this server are encrypted (DNS over TLS).') : null,
-    clear ? badge('clear text', 'warning', 'Queries to this public server are not encrypted.') : null);
+    clear ? badge('clear text', 'warning', clearTextHint(engine)) : null);
 }
 
-// The flags of one row as badges (their meaning is the tooltip).
-const flagBadges = flags => flags.map(f => badge(flagWords([f])[0], 'info'));
+// The flags of one row as badges (the tooltip says what the flag means).
+const flagBadges = flags => flags.map(f => badge(flagWords([f])[0], 'info', FLAG_HINTS[f] ?? ''));
+
+// The legend under the filter box: what the badges of the table mean, one line each, for the engine in use. A folded details,
+// like the legends of the other pages, because the table is the point.
+function labelsLegend(engine) {
+  const row = (badgeNode, text) => [h('dt', {}, badgeNode), h('dd', {}, text)];
+  const unbound = engine === 'unbound';
+  return h('details', { className: 'legend dns-labels' },
+    h('summary', {}, 'What the labels mean'),
+    h('dl', {},
+      row(badge('clear text', 'warning'), clearTextHint(engine)),
+      row(badge('TLS', 'success'), unbound ? 'The zone sends its queries to the server over DNS over TLS, so nobody on the path can read them (option tls_upstream).' : 'Queries to this server are encrypted (DNS over TLS).'),
+      ...(unbound ? row(badge(flagWords(['i'])[0], 'info'), FLAG_HINTS.i) : [...row(badge(flagWords(['local-only'])[0], 'info'), FLAG_HINTS['local-only']), ...row(badge(flagWords(['default-servers'])[0], 'info'), FLAG_HINTS['default-servers'])]),
+      row(badge('disabled', ''), 'Switched off: the zone stays in the configuration but is not used.'),
+      row(badge('new', 'success'), 'Added in this page and not saved yet; likewise edited and removed.')));
+}
 
 // What happens to a query when no default forwarder is set; null when the root zone has servers.
 function noDefaultNote(data, engine) {
@@ -127,6 +142,7 @@ function zoneList(data, state, engine, edit, act) {
   draw();
   return h('div', { className: 'dns-pad' },
     items.length ? h('div', { className: 'dns-toolbar dns-field' }, h('div', { className: 'search' }, icon('search'), input)) : null,
+    items.length ? labelsLegend(engine) : null,
     note ? h('p', { className: 'muted small' }, note) : null, items.length ? holder : muted('No zones.'));
 }
 

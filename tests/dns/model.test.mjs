@@ -188,6 +188,7 @@ console.log('\n== zone drafts and flags ==');
   check(Object.keys(m.zoneDraft({ enabled: false, zones: [], servers: [] })).join() === 'zone_type,enabled,zone_name,server,tls_upstream,tls_index,tls_port,port,fallback,dns_assist,resolv_conf,url_dir' && m.zoneDraft({ enabled: false, zones: [], servers: [] }).fallback === true && m.zoneDraft({ type: 'auth_zone', enabled: true, zones: ['.'], servers: [], options: { url_dir: 'https://x.example/' } }).zone_type === 'auth_zone', 'a zone with no options still has every field; fall back is on unless set off; the type and the URL are read');
 }
 check(m.flagWords(['i', 'local-only', 'zz']).join('|') === 'not DNSSEC-validated|answered locally, never forwarded|zz', 'flags in words; an unknown flag as it is');
+check(Object.keys(m.FLAG_WORDS).every(k => (m.FLAG_HINTS[k] ?? '').length > 40) && /domain_insecure/.test(m.FLAG_HINTS.i) && /public address/.test(m.clearTextHint('unbound')) && /Use TLS/.test(m.clearTextHint('unbound')) && /cannot encrypt/.test(m.clearTextHint('dnsmasq')) && m.clearTextHint('unbound') !== m.clearTextHint('dnsmasq'), 'every flag has an explanation; "clear text" is explained for each engine');
 check(same(m.defaultForwarders(ub), ['2606:4700:4700::1111', '1.1.1.1']) && m.defaultForwarders(none).length === 0, 'the default forwarders are the servers of the "." row');
 check(m.defaultForwarders({ forwards: [{ zone: '.', servers: [], flags: ['local-only'] }] }).length === 0, 'a "local only" default has no forwarders');
 //#endregion

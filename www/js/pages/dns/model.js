@@ -312,6 +312,21 @@ export const FLAG_WORDS = {
 // The words for a list of flags (an unknown flag is shown as it is).
 export const flagWords = flags => flags.map(f => FLAG_WORDS[f] ?? f);
 
+// What each flag means to the person reading the table (the tooltip of its badge and a line of the legend).
+export const FLAG_HINTS = {
+  i: 'Unbound does not check DNSSEC signatures for this zone: its domain is in the list "Domains without DNSSEC" (option domain_insecure of the unbound section; Configuration, Security and privacy). It is needed for a local domain whose servers do not sign their answers; names under it are accepted as the servers give them.',
+  t: 'Unbound asks the servers of this zone over TCP only.',
+  f: 'When the servers of this zone do not answer, Unbound falls back to resolving the name itself (option fallback).',
+  'local-only': 'dnsmasq answers this domain from its local data only and never forwards it (an entry /domain/).',
+  'default-servers': 'dnsmasq sends this domain to its default servers (an entry /domain/#).',
+};
+
+// What "clear text" means, for the tooltip of the badge and the legend. A server counts as public when its address is not private
+// (not 10.x, 172.16 to 31.x, 192.168.x, loopback, link-local, shared 100.64.x or unique-local IPv6).
+export const clearTextHint = engine => (engine === 'dnsmasq'
+  ? 'This server has a public address and dnsmasq sends it the queries unencrypted: everyone on the path (your provider and anyone between) can read every name looked up. dnsmasq cannot encrypt them itself; forward to a local DNS over HTTPS or TLS proxy instead (a server on 127.0.0.1 is not flagged).'
+  : 'This server has a public address and the zone does not use TLS, so the queries are sent unencrypted: everyone on the path (your provider and anyone between) can read every name looked up. Turn on "Use TLS" in the zone (the server must support DNS over TLS). Servers on private addresses are not flagged, because that traffic stays inside your networks.');
+
 // The values a form for one Unbound zone section starts from (the fields are ZONE_FIELDS in schema.js), from an entry of the
 // reply's `forward_uci`: one value per field as core/fields.js reads them. This is the draft an editing page would change.
 export function zoneDraft(entry) {

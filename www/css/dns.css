@@ -27,6 +27,11 @@
 .dns-toggle { white-space: nowrap; }
 .dns-count { margin-top: .25rem; }
 .dns-order { width: 2.5rem; text-align: right; font-variant-numeric: tabular-nums; }
+/* The legend of the labels: a badge, then what it means. */
+.dns-labels { margin-bottom: .75rem; font-size: .8rem; }
+.dns-labels dl { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1rem; align-items: baseline; margin: .6rem 0 0; }
+.dns-labels dt { margin: 0; }
+.dns-labels dd { margin: 0; }
 .dns-row-removed > td:not(.dns-src) { opacity: .55; }
 .dns-row-removed .dns-zone-name, .dns-row-removed .dns-domain { text-decoration: line-through; }
 /* The Forwarding card folds down to its header: the whole header is the toggle, with the same triangle as the areas below. */

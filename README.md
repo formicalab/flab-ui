@@ -1213,7 +1213,8 @@ pauses while a text box has the focus. Top to bottom:
   Flags: `i` is shown as "not DNSSEC-validated": it comes from `list domain_insecure` of the `unbound` section, which makes
   Unbound mark the zone `+i` in `list_forwards`; dnsmasq's `/zone/` (answered locally) and `/zone/#` (uses the default servers) are
   marked too. "Clear text" is worked out by the page: a forward zone without TLS (dnsmasq: always) whose server is a public
-  address. Each zone says where it is defined: *UCI* (the section is named in the tooltip) or *unbound_ext.conf* (forward zones
+  address. Every label has a tooltip that says what it means, and a folded "What the labels mean" legend under the filter box
+  lists them (clear text, TLS, the flags, disabled and the pending states) for the engine in use. Each zone says where it is defined: *UCI* (the section is named in the tooltip) or *unbound_ext.conf* (forward zones
   that only Unbound's extension file defines: read only, with a lock; the main router has none).
   **Add zone**, and **Edit** and **Remove** on every UCI zone, work on the draft of the page; nothing is written until the review
   banner at the top is saved (the same stage, apply with the 30 second rollback, read back, confirm as the options use).
