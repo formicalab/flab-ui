@@ -274,7 +274,7 @@ const legendText = await text(legendBox);
 check(same(await texts(legendBox.locator('dt')), ['clear text', 'TLS', 'not DNSSEC-validated', 'disabled', 'new']) && /public address/.test(legendText) && /Domains without DNSSEC/.test(legendText) && /not saved yet/.test(legendText), 'it explains clear text, TLS, not DNSSEC-validated, disabled and the pending states', legendText.slice(0, 200));
 const searchBox = await zc.locator('.dns-toolbar .search').boundingBox();
 const addBox = await zc.locator('.dns-toolbar button:has-text("Add zone")').boundingBox();
-check(addBox.y < searchBox.y + searchBox.height && addBox.y + addBox.height > searchBox.y && addBox.x > searchBox.x + searchBox.width && await zc.locator('.dns-fwd-bar button').count() === 0, 'Add zone is on the toolbar, on the same line as the filter box and after it, and no longer in the header');
+check(addBox.y < searchBox.y + searchBox.height && addBox.y + addBox.height > searchBox.y && addBox.x > searchBox.x + searchBox.width && addBox.x - (searchBox.x + searchBox.width) < 24 && await zc.locator('.dns-fwd-bar button').count() === 0, 'Add zone is on the toolbar, on the same line as the filter box and right next to it, and no longer in the header');
 rows = await zoneTexts();
 check(rows.some(r => r.startsWith('unbound_ext.conf') && /lab\.formicalab\.casa/.test(r) && /not DNSSEC-validated/.test(r)) && rows.some(r => r.startsWith('unbound_ext.conf') && /flumini\.formicalab\.casa/.test(r) && /192\.168\.8\.1/.test(r)), 'the zones of the extension file keep their flags');
 await filterBox().fill('vodafone');

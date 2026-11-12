@@ -17,7 +17,6 @@
 /* ── Forwarding ── */
 .dns-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-bottom: .75rem; }
 .dns-toolbar .search { flex: 1 1 14rem; max-width: 24rem; }
-.dns-toolbar .dns-add { margin-left: auto; }
 .dns-table td { vertical-align: top; }
 .dns-table td .dns-servers { white-space: normal; }
 /* A zone block: its name and state, then its domains as chips (the first few, a button for the rest). */
