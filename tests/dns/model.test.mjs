@@ -180,29 +180,13 @@ check(m.listenerChips({}).length === 0, 'no listeners, no chips');
 //#endregion
 
 //#region Forwarding
-console.log('\n== forwarding rows ==');
-const rows = [
-  { zone: 'a.example', servers: ['10.0.0.1', '10.0.0.2'], flags: [], tls: false }, { zone: 'b.example', servers: ['10.0.0.1', '10.0.0.2'], flags: [], tls: false },
-  { zone: 'c.example', servers: ['10.0.0.1', '10.0.0.2'], flags: ['i'], tls: false }, { zone: 'd.example', servers: ['10.0.0.9'], flags: [], tls: false },
-  { zone: 'e.example', servers: ['10.0.0.1', '10.0.0.2'], flags: [], tls: false }, { zone: 'x.corp', servers: ['10.0.0.1', '10.0.0.2'], flags: [], tls: true },
-];
-const sorted = m.sortForwards(rows);
-check(sorted.length === 6 && same(sorted.map(x => x.zone), ['a.example', 'b.example', 'c.example', 'd.example', 'e.example', 'x.corp']) && j(rows.map(x => x.zone)) === j(['a.example', 'b.example', 'c.example', 'd.example', 'e.example', 'x.corp']), 'the table lists every forwarder, by name');
-check(same(m.sortForwards([{ zone: 'z.example' }, { zone: '.' }, { zone: 'a.example' }]).map(x => x.zone), ['.', 'a.example', 'z.example']) && m.sortForwards([]).length === 0, 'the default zone comes first; no rows, no table');
+console.log('\n== zone drafts and flags ==');
 {
-  const src = [
-    { zone: 'a.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'uci', section: 'fwd_a' }, { zone: 'b.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'uci', section: 'fwd_a' },
-    { zone: 'c.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'uci', section: 'fwd_c' }, { zone: 'd.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'file' },
-    { zone: 'e.example', servers: ['10.0.0.1'], flags: [], tls: false, source: 'file' },
-  ];  check(j(m.forwardSources({ forwards: src })) === '{"uci":3,"file":2}' && j(m.forwardSources({ forwards: rows })) === '{"uci":0,"file":0}' && j(m.forwardSources({})) === '{"uci":0,"file":0}', 'forwarders are counted by where they are defined; a row without a source counts as neither');
   const cf = { section: 'fwd_cloudflare', enabled: true, zones: ['.'], servers: ['1.1.1.1', '1.0.0.1'], options: { tls_upstream: '1', tls_index: 'cloudflare-dns.com', fallback: '0' } };
   const zd = m.zoneDraft(cf);
   check(zd.enabled === true && j(zd.zone_name) === '["."]' && j(zd.server) === '["1.1.1.1","1.0.0.1"]' && zd.tls_upstream === true && zd.tls_index === 'cloudflare-dns.com' && zd.fallback === false && zd.tls_port === '' && zd.port === '' && zd.dns_assist === '' && zd.resolv_conf === false, 'a UCI zone becomes the values of its form: booleans as booleans (the default when absent), lists, and empty strings for what is not set', j(zd));
-  check(Object.keys(m.zoneDraft({ enabled: false, zones: [], servers: [] })).join() === 'enabled,zone_name,server,tls_upstream,tls_index,tls_port,port,fallback,dns_assist,resolv_conf' && m.zoneDraft({ enabled: false, zones: [], servers: [] }).fallback === true, 'a zone with no options still has every field; fall back is on unless set off');
+  check(Object.keys(m.zoneDraft({ enabled: false, zones: [], servers: [] })).join() === 'zone_type,enabled,zone_name,server,tls_upstream,tls_index,tls_port,port,fallback,dns_assist,resolv_conf,url_dir' && m.zoneDraft({ enabled: false, zones: [], servers: [] }).fallback === true && m.zoneDraft({ type: 'auth_zone', enabled: true, zones: ['.'], servers: [], options: { url_dir: 'https://x.example/' } }).zone_type === 'auth_zone', 'a zone with no options still has every field; fall back is on unless set off; the type and the URL are read');
 }
-check(m.filterForwards(rows, '').length === 6 && m.filterForwards(rows, '  ').length === 6, 'an empty filter keeps everything');
-check(m.filterForwards(rows, 'EXAMPLE 0.9').length === 1 && m.filterForwards(rows, 'EXAMPLE 0.9')[0].zone === 'd.example', 'every word must match, ignoring case');
-check(m.filterForwards(rows, '10.0.0.9').length === 1 && m.filterForwards(rows, 'validated').length === 1 && m.filterForwards(rows, 'nothing').length === 0, 'the filter looks at servers and at the words of the flags too');
 check(m.flagWords(['i', 'local-only', 'zz']).join('|') === 'not DNSSEC-validated|answered locally, never forwarded|zz', 'flags in words; an unknown flag as it is');
 check(same(m.defaultForwarders(ub), ['2606:4700:4700::1111', '1.1.1.1']) && m.defaultForwarders(none).length === 0, 'the default forwarders are the servers of the "." row');
 check(m.defaultForwarders({ forwards: [{ zone: '.', servers: [], flags: ['local-only'] }] }).length === 0, 'a "local only" default has no forwarders');

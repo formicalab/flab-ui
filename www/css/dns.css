@@ -19,6 +19,16 @@
 .dns-toolbar .search { flex: 1 1 14rem; max-width: 24rem; }
 .dns-table td { vertical-align: top; }
 .dns-table td .dns-servers { white-space: normal; }
+/* A zone block: its name and state, then its domains as chips (the first few, a button for the rest). */
+.dns-zone-name { word-break: break-all; }
+.dns-zone-badges { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .25rem; }
+.dns-zone-badges:empty { display: none; }
+.dns-domains { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .9rem; white-space: normal; }
+.dns-toggle { white-space: nowrap; }
+.dns-count { margin-top: .25rem; }
+.dns-order { width: 2.5rem; text-align: right; font-variant-numeric: tabular-nums; }
+.dns-row-removed > td:not(.dns-src) { opacity: .55; }
+.dns-row-removed .dns-zone-name, .dns-row-removed .dns-domain { text-decoration: line-through; }
 /* The Forwarding card folds down to its header: the whole header is the toggle, with the same triangle as the areas below. */
 .dns-fold > summary { display: flex; align-items: center; gap: .5rem; cursor: pointer; list-style: none; }
 .dns-fold > summary::-webkit-details-marker { display: none; }

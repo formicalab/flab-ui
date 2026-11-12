@@ -2,15 +2,18 @@
 // has, what stops a save and what only deserves a warning, the UCI operations that write the change, and the check that it
 // was kept. Pure functions with no DOM and no network, in the shape the editing pages share (see core/editpage.js).
 //
-// Only the options of the resolver's own section can be changed, and only the single-valued ones: a yes/no option, a choice,
-// a number or a name. Lists (the interfaces, the domains) and options the page has no description for are shown but not
-// editable yet, and so are the forwarders.
+// Only the options of the resolver's own section can be changed through the option controls, and only the single-valued
+// ones: a yes/no option, a choice, a number or a name. Lists (the interfaces, the domains) and options the page has no
+// description for are shown but not editable there. The zones (Unbound's `config zone` sections, dnsmasq's `server` entries)
+// have their own part of the draft, `forwarders`, edited in a dialog (see zones.js).
 //
 // The data is the reply of `flab.dns status`: `config` holds the options that are set, `config_section` the UCI section that
 // holds them ({ config, name }), `engines` and `configured` say whether the engine runs.
-// The draft is { values: { <option>: string | boolean | string[] } } for every option the page shows; '' means "not set".
+// The draft is { values: { <option>: string | boolean | string[] } for every option the page shows ('' means "not set"),
+// forwarders: the working copy of the zones }.
 import { differs, errorsOf, flag, normalize, show, valueOf } from '../../core/fields.js';
 import { configDraft, configFields, engineName, subject } from './model.js';
+import { forwarderChanges, forwarderLeftovers, forwarderPlan, forwarderProblems, forwardersDraft, forwardingProblem } from './zones.js';
 
 // The kinds of option that can be changed.
 const EDITABLE = new Set(['bool', 'enum', 'int', 'string']);
@@ -21,8 +24,9 @@ export const isEditable = field => !field.unknown && EDITABLE.has(field.type);
 // The fields that can be changed for the engine this data describes.
 const editableFields = data => configFields(data).filter(isEditable);
 
-// The form's starting values: what the router has (a boolean takes the package's default when the option is absent).
-export const draftFrom = data => ({ values: configDraft(data) });
+// The form's starting values: what the router has (a boolean takes the package's default when the option is absent), and a
+// working copy of its zones.
+export const draftFrom = data => ({ values: configDraft(data), forwarders: forwardersDraft(data) });
 
 // A value in words for the review list: on/off, the words of a choice, the number or text, or "default" when empty.
 function words(field, v) {
@@ -35,7 +39,7 @@ function words(field, v) {
 const currentOf = (field, data) => normalize(field, valueOf(field, data.config?.[field.key]));
 
 // The differences between the router's options and the draft, for the review list: [{ key, label, from, to }].
-export function changesOf(data, draft) {
+function optionChanges(data, draft) {
   const out = [];
   for (const f of editableFields(data)) {
     const from = currentOf(f, data);
@@ -44,6 +48,9 @@ export function changesOf(data, draft) {
   }
   return out;
 }
+
+// Every difference between the router and the draft: the options, then the zones.
+export const changesOf = (data, draft) => [...optionChanges(data, draft), ...forwarderChanges(data, draft)];
 
 // Whether the draft differs from the router.
 export const isDirty = (data, draft) => changesOf(data, draft).length > 0;
@@ -80,12 +87,13 @@ export function problems(data, draft) {
     for (const e of errorsOf(f, draft.values[f.key])) errors.push({ key: f.key, ...e });
   }
   const table = WARNINGS[subject(data)] ?? {};
-  for (const c of changesOf(data, draft)) {
+  for (const c of optionChanges(data, draft)) {
     const f = fields.find(x => x.key === c.key);
     const text = table[c.key]?.(effective(f, draft), data);
     if (text) warnings.push(text);
   }
-  return { errors, warnings };
+  const zones = forwarderProblems(data, draft);
+  return { errors: [...errors, ...zones.errors], warnings: [...warnings, ...zones.warnings] };
 }
 
 // The UCI operations that turn the router's options into the draft, as data (see core/ops.js): one `set` for the options
@@ -95,7 +103,7 @@ export function plan(data, draft) {
   if (!section) return [];
   const set = {};
   const del = [];
-  const changed = new Set(changesOf(data, draft).map(c => c.key));
+  const changed = new Set(optionChanges(data, draft).map(c => c.key));
   for (const f of editableFields(data).filter(x => changed.has(x.key))) {
     const v = normalize(f, draft.values[f.key]);
     if (f.type === 'bool') set[f.key] = flag(v);
@@ -106,7 +114,7 @@ export function plan(data, draft) {
   if (Object.keys(set).length) ops.push({ op: 'set', config: section.config, section: section.name, values: set });
   const existing = del.filter(k => data.config?.[k] !== undefined);
   if (existing.length) ops.push({ op: 'delete', config: section.config, section: section.name, options: existing });
-  return ops;
+  return [...ops, ...forwarderPlan(data, draft)];
 }
 
 // Whether the engine this data describes is running.
@@ -115,8 +123,16 @@ export const engineRunning = data => Boolean(data?.engines?.[data.configured]?.r
 // Throws unless the status read after the change (`after`) holds what the draft asked for and the resolver still runs.
 // `before` is what the draft was made from; turning the Unbound service off is the one change that is meant to stop it.
 export function checkApplied(before, after, draft) {
-  const left = changesOf(after, draft);
-  if (left.length) throw new Error(`${left.map(c => c.label).join(', ')} ${left.length > 1 ? 'were' : 'was'} not saved`);
-  const stops = subject(before) === 'unbound' && draft.values.enabled === false && changesOf(before, draft).some(c => c.key === 'enabled');
+  const left = optionChanges(after, draft);
+  const parts = [];
+  if (left.length) parts.push(`${left.map(c => c.label).join(', ')} ${left.length > 1 ? 'were' : 'was'} not saved`);
+  parts.push(...forwarderLeftovers(before, after, draft));
+  if (parts.length) throw new Error(parts.join('; '));
+  const problem = forwardingProblem(before, after, draft);
+  if (problem) throw new Error(problem);
+  const stops = subject(before) === 'unbound' && draft.values.enabled === false && optionChanges(before, draft).some(c => c.key === 'enabled');
   if (engineRunning(before) && !engineRunning(after) && !stops) throw new Error(`${engineName(before.configured)} is not running after the change`);
 }
+
+// Whether the status read after a save already shows what the zones should look like (the resolver may still be restarting).
+export const zonesReady = (before, after, draft) => !forwarderLeftovers(before, after, draft).length && !forwardingProblem(before, after, draft);

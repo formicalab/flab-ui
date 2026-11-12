@@ -82,7 +82,7 @@ function configPart(data, e, file, edit, chips) {
   return h('div', {},
     legend(edit.canEdit ? [
       `These are the settings of ${engineName(e)} in ${file}. A change is saved and applied at once; if the router does not look right afterwards, or this page is closed before it finishes, the router puts the previous settings back by itself within 30 seconds.`,
-      'A box that is empty, or a drop-down that says "Default", is not set in the file: the default shown applies. Lists, options this page has no description for, and the forwarders can only be changed in the file for now.']
+      'A box that is empty, or a drop-down that says "Default", is not set in the file: the default shown applies. Lists and options this page has no description for can only be changed in the file for now; the zones are changed in the Zones card.']
       : [`Read only: this page shows the settings of ${engineName(e)} but this login cannot change them. Edit ${file} and restart the service to change one.`,
         'A box that is empty, or a drop-down that says "Default", is not set in the file: the default shown applies.']),
     h('div', { className: 'dns-areas' }, configAreas(data).map(area)));

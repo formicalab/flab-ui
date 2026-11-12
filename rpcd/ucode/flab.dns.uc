@@ -39,8 +39,8 @@ const UNBOUND_OPTIONS = ['enabled', 'listen_port', 'validator', 'validator_ntp',
 const DNSMASQ_OPTIONS = ['domain', 'port', 'cachesize', 'min_cache_ttl', 'max_cache_ttl', 'rebind_protection', 'rebind_domain', 'localise_queries',
 	'domainneeded', 'local', 'noresolv', 'resolvfile', 'strictorder', 'allservers', 'dnssec', 'logqueries', 'localservice', 'ednspacket_max',
 	'dnsforwardmax', 'authoritative', 'readethers', 'leasefile', 'interface', 'expandhosts', 'boguspriv', 'filterwin2k', 'sequential_ip', 'rapidcommit'];
-// The options of a UCI forward zone that are reported, besides its name, servers and `enabled`.
-const ZONE_OPTIONS = ['tls_upstream', 'tls_index', 'tls_port', 'port', 'fallback', 'dns_assist', 'resolv_conf'];
+// The options of a UCI zone section that are reported, besides its type, name, servers and `enabled`.
+const ZONE_OPTIONS = ['tls_upstream', 'tls_index', 'tls_port', 'port', 'fallback', 'dns_assist', 'resolv_conf', 'url_dir'];
 // What the engines do when an option is not set (only the defaults that are certain).
 const UNBOUND_DEFAULTS = { listen_port: '53', extended_stats: '0', unbound_control: '0', edns_size: '1232', rate_limit: '0', dns64: '0' };
 const DNSMASQ_DEFAULTS = { port: '53', cachesize: '150', rebind_protection: '1', localservice: '1' };
@@ -430,23 +430,29 @@ function parse_dnsmasq_servers(list) {
 	return [...lead, ...rest];
 }
 
-// The forward zones held in /etc/config/unbound (`config zone` sections of type forward_zone, enabled or not): the ones
-// that can be changed through UCI, as [{ section, enabled, zones, servers, options }]. The zones that only exist in the
-// user's extension file (unbound_ext.conf) are not here.
+// The zones held in /etc/config/unbound (every `config zone` section, enabled or not, of any zone_type: forward_zone,
+// stub_zone or auth_zone): the ones that can be changed through UCI, as [{ section, type, enabled, zones, servers, options }].
+// The zones that only exist in the user's extension file (unbound_ext.conf) are not here.
 function unbound_uci_zones(all) {
 	let out = [];
 	for (let name, sec in all) {
-		if (sec?.['.type'] != 'zone' || sec.zone_type != 'forward_zone')
+		if (sec?.['.type'] != 'zone')
 			continue;
-		let names = type(sec.zone_name) == 'array' ? slice(sec.zone_name, 0, MAX_FORWARDS) : (sec.zone_name != null ? [sec.zone_name] : []);
-		let servers = type(sec.server) == 'array' ? slice(sec.server, 0, MAX_LIST) : (sec.server != null ? [sec.server] : []);
-		push(out, { section: name, enabled: sec.enabled == '1', zones: map(names, z => norm_zone(z)), servers, options: pick_options(sec, ZONE_OPTIONS) });
+		let all_names = type(sec.zone_name) == 'array' ? sec.zone_name : (sec.zone_name != null ? [sec.zone_name] : []);
+		let all_servers = type(sec.server) == 'array' ? sec.server : (sec.server != null ? [sec.server] : []);
+		let names = slice(all_names, 0, MAX_FORWARDS);
+		let servers = slice(all_servers, 0, MAX_LIST);
+		let entry = { section: name, type: sec.zone_type ?? '', enabled: sec.enabled == '1', zones: map(names, z => norm_zone(z)), servers, options: pick_options(sec, ZONE_OPTIONS) };
+		// A section whose lists were cut must not be written back from this copy: the page treats it as read only.
+		if (length(all_names) > MAX_FORWARDS || length(all_servers) > MAX_LIST)
+			entry.cut = true;
+		push(out, entry);
 	}
 	return out;
 }
 
 // The `server` entries of the dnsmasq section as written, [{ index, value }]: each is a forwarder or a zone rule that can be
-// changed through UCI.
+// changed through UCI. At most MAX_FORWARDS are listed; the caller says when the list was longer.
 function dnsmasq_uci_servers(section) {
 	let list = type(section.server) == 'array' ? section.server : (section.server != null ? [section.server] : []);
 	let out = [];
@@ -632,7 +638,7 @@ function status() {
 	let uci_zones = configured == 'unbound' ? unbound_uci_zones(sec_ub_all) : [];
 	let section_of = {};
 	for (let z in uci_zones)
-		if (z.enabled)
+		if (z.enabled && z.type == 'forward_zone')
 			for (let n in z.zones)
 				section_of[n] = z.section;
 	for (let f in forwards) {
@@ -649,6 +655,7 @@ function status() {
 	if (cut_private)
 		private_domains = slice(private_domains, 0, MAX_PRIVATE);
 	let forward_uci = configured == 'unbound' ? uci_zones : (configured == 'dnsmasq' ? dnsmasq_uci_servers(sec_dm) : []);
+	let cut_forward_uci = configured == 'dnsmasq' && type(sec_dm.server) == 'array' && length(sec_dm.server) > MAX_FORWARDS;
 
 	// The UCI section that holds the described engine's options, so a page can write them: Unbound's `unbound` section of
 	// /etc/config/unbound, dnsmasq's section of /etc/config/dhcp. Null when the engine has no such section.
@@ -694,7 +701,7 @@ function status() {
 		upstream_used: configured == 'dnsmasq' ? (sec_dm.noresolv != '1') : null,
 		local_names: engine ? detail.local_names : null,
 		dnssec,
-		truncated: { forwards: cut_forwards, listeners: cut_listeners, private_domains: cut_private },
+		truncated: { forwards: cut_forwards, listeners: cut_listeners, private_domains: cut_private, forward_uci: cut_forward_uci },
 		warnings,
 	};
 }

@@ -1,35 +1,38 @@
 // DNS page (route #dns): the state of the router's DNS resolver, Unbound or dnsmasq (or both), and its settings. It shows what
 // the resolver is doing and how it is configured, and lets the user change the resolver's single-valued options (a yes/no
-// option, a choice, a number, a name); lists and the forwarders are still read only.
+// option, a choice, a number, a name) and its zones: Unbound's `config zone` blocks (forward, stub and authoritative) or
+// dnsmasq's `server` entries, added, edited and removed in a dialog. Lists of options are still read only.
 //
-// Top to bottom: summary tiles, the findings banner, then the cards: Listening and configuration, Forwarding and Activity
-// (each full width), then Upstream from the WAN beside Try it (which hands a name to the Toolbox). Everything comes from one call, flab.dns
-// status (rpcd/ucode/flab.dns.uc), every 10 s; the model (model.js) is pure and unit-tested. Changes go through the editing
-// machinery the System settings and DHCP pages use (core/editpage.js, core/uci.js): stage, apply with the rollback countdown,
-// read the status back to prove the change was kept and the resolver still runs, confirm. What a change is, whether it is
-// valid and which UCI operations write it are in edit.js.
+// Top to bottom: summary tiles, the findings banner, then the cards, each full width: Configuration, Zones (with the resolvers
+// from the WAN) and Activity. Everything comes from one call, flab.dns
+// status (rpcd/ucode/flab.dns.uc), every 10 s; the model (model.js, zones.js) is pure and unit-tested. Changes go through the
+// editing machinery the System settings and DHCP pages use (core/editpage.js, core/uci.js): stage, apply with the rollback
+// countdown, read the status back to prove the change was kept and the resolver still runs, confirm. What a change is, whether
+// it is valid and which UCI operations write it are in edit.js and zones.js.
 import { h } from '../../core/dom.js';
 import { ubus } from '../../core/ubus.js';
 import { refreshControl } from '../../core/controls.js';
 import { createEditor } from '../../core/editpage.js';
 import { emptyState, healthBanner, tile, tiles } from '../../core/ui.js';
 import { engineName, findings, subject, summary } from './model.js';
-import { changesOf, checkApplied, draftFrom, engineRunning, isDirty, plan, problems } from './edit.js';
-import { forwardingCard } from './forwarding.js';
+import { changesOf, checkApplied, draftFrom, engineRunning, isDirty, plan, problems, zonesReady } from './edit.js';
+import { zonesCard } from './zonescard.js';
 import { activityCard, resolverCard } from './cards.js';
 
-// The view state that must survive the redraw on every poll: the forwarders' filter text and which folding cards are open
-// (Forwarding and Activity start folded).
-const state = { fq: '', folds: {} };
+// The view state that must survive the redraw on every poll: the zones' filter text, which folding cards are open (Zones and
+// Activity start folded), which zones show all their domains, and the open dialog, if any.
+const state = { fq: '', folds: {}, expanded: new Set(), dialog: null };
 
 // The config being edited (the resolver's own: unbound or dhcp), known once the status has been read.
 let editing = null;
 
-// Reads the status again after a change, giving a resolver that was running a few seconds to come back from its restart.
+// Reads the status again after a change, giving a resolver that was running a few seconds to come back from its restart, and
+// Unbound a few seconds to list the zones it was told to forward.
 async function readAfter() {
-  const wasRunning = engineRunning(editor.state.base);
+  const { base, draft } = editor.state;
+  const wasRunning = engineRunning(base);
   let after = await ubus('flab.dns', 'status');
-  for (let i = 0; i < 5 && wasRunning && !engineRunning(after); i++) {
+  for (let i = 0; i < 8 && ((wasRunning && !engineRunning(after)) || !zonesReady(base, after, draft)); i++) {
     await new Promise(r => setTimeout(r, 1000));
     after = await ubus('flab.dns', 'status');
   }
@@ -54,8 +57,8 @@ export default {
   icon: 'hdd-network',
   interval: 10000,
   css: ['css/forms.css', 'css/dns.css'],
-  // A redraw would take the focus away from the filter box or the name being typed, or throw away unsaved edits.
-  isPaused: () => editor.paused('.dns-field, .dns-areas'),
+  // A redraw would take the focus away from the filter box or a dialog's form, or throw away unsaved edits.
+  isPaused: () => state.dialog != null || editor.paused('.dns-field, .dns-areas'),
 
   async load() {
     const data = await ubus('flab.dns', 'status');
@@ -72,13 +75,16 @@ export default {
     const ctx = { canEdit, inputs: {}, sync: () => {} };
     ctx.sync = () => editor.markErrors(ctx.inputs, canEdit, reveal);
     const edit = { canEdit, draft: editor.state.draft, inputs: ctx.inputs, touched: editor.touched(ctx), redraw: () => editor.redraw() };
+    // What the Zones card needs: the data the draft was made from and the draft as they are when it asks (a refresh can replace
+    // them), and a call that updates the review banner and redraws after a zone was added, changed or removed.
+    const zonesEdit = { canEdit, getBase: () => editor.state.base, getDraft: () => editor.state.draft, changed: () => { edit.touched(); editor.redraw(); } };
     const okText = data.engine ? `${engineName(data.engine)} is running and answering queries on port 53.` : 'Nothing to report.';
     const nodes = [
       ...editor.notes(data).filter(Boolean),
       tiles(...summary(data).map(t => tile(t.label, t.value, t.sub, t.cls))),
       healthBanner(findings(data), okText),
       resolverCard(data, edit),
-      ...(e ? [forwardingCard(data, state)] : []),
+      ...(e ? [zonesCard(data, state, zonesEdit)] : []),
       e ? activityCard(data, state) : emptyState('No resolver is installed, so there are no counters to show.'),
     ];
     ctx.sync();

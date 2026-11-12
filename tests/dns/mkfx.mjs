@@ -140,7 +140,7 @@ const UB_MAIN = section('ub_main', 'unbound', {
   listen_port: '53', localservice: '1', manual_conf: '0', num_threads: '4', protocol: 'default', rate_limit: '300', rebind_localhost: '1', rebind_protection: '1', recursion: 'default',
   resource: 'default', root_age: '9', ttl_min: '0', ttl_neg_max: '60', unbound_control: '1', validator: '1', verbosity: '1', iface_wan: ['wan'], enabled: '1', iface_lan: ['lan', 'lan100', 'wg0'], iface_trig: ['lan', 'wan'],
 });
-// The UCI zone sections next to it: the plugin reports the forward zones among them, enabled or not (the auth zone is not one).
+// The UCI zone sections next to it: the plugin reports all of them, of any type, enabled or not.
 const UB_ZONES = {
   auth_icann: section('auth_icann', 'zone', { enabled: '0', fallback: '1', zone_type: 'auth_zone', server: ['lax.xfr.dns.icann.org', 'iad.xfr.dns.icann.org'], zone_name: ['.', 'arpa.'] }),
   fwd_cloudflare: section('fwd_cloudflare', 'zone', { enabled: '1', fallback: '0', tls_index: 'cloudflare-dns.com', tls_upstream: '1', zone_type: 'forward_zone', server: CLOUDFLARE, zone_name: ['.'] }),
@@ -254,7 +254,8 @@ scenarios['unbound-many'] = {
     'unbound-control list_forwards': `. IN forward 9.9.9.9\n${MANY.map(z => `${z}. IN forward 10.9.9.9`).join('\n')}\n`, 'unbound-control list_local_data': '',
     'netstat -lntup': netstat(MANY_ADDRS.flatMap(a => [sock('tcp', a, 53, '2201/unbound'), sock('udp', a, 53, '2201/unbound')])),
   },
-  uci: { unbound: { ub_main: UB_MAIN, fwd_many: section('fwd_many', 'zone', { enabled: '1', zone_type: 'forward_zone', fallback: '0', server: ['10.9.9.9'], zone_name: MANY.slice(0, 89) }) } },
+  uci: { unbound: { ub_main: UB_MAIN, fwd_many: section('fwd_many', 'zone', { enabled: '1', zone_type: 'forward_zone', fallback: '0', server: ['10.9.9.9'], zone_name: MANY.slice(0, 89) }),
+    fwd_huge: section('fwd_huge', 'zone', { enabled: '1', zone_type: 'forward_zone', server: ['10.8.8.8'], zone_name: Array.from({ length: 510 }, (_, i) => `huge${i}.example.net`) }) } },
   ubus: { service_list: services({ unbound: { pid: 2201 } }) },
   files: { '/proc/uptime': UPTIME_FILE, '/var/lib/unbound/unbound.conf': '', '/var/lib/unbound/unbound_ext.conf': '', '/tmp/resolv.conf.d/resolv.conf.auto': '' },
 };

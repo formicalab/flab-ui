@@ -156,17 +156,21 @@ export const UNBOUND_FIELDS = [
     hint: 'How much Unbound writes to the log.' },
 ];
 
-// The forwarders that can be changed through UCI. Unbound keeps each in a `config zone` section of /etc/config/unbound
-// (type forward_zone): the fields below, in the format of core/fields.js; `zone_name` and `server` are required lists. dnsmasq
-// keeps them as the entries of the `server` list of its section in /etc/config/dhcp: "/zone/zone/address#port" sends the
+// The zones that can be changed through UCI. Unbound keeps each in a `config zone` section of /etc/config/unbound: a block with
+// one set of servers and settings for a list of domains, of one zone_type (see ZONE_TYPES). The fields are in the format of
+// core/fields.js, described by the OpenWrt Unbound README (net/unbound/files/README.md, "config zone"). dnsmasq keeps its
+// forwarders as the entries of the `server` list of its section in /etc/config/dhcp: "/zone/zone/address#port" sends the
 // zones to the address, "/zone/" answers locally, "/zone/#" uses the default servers, and a plain address is a default forwarder.
 // Zones that only exist in Unbound's extension file (/etc/unbound/unbound_ext.conf) are not UCI sections and stay read only.
 export const ZONE_FIELDS = [
+  { key: 'zone_type', type: 'enum', label: 'Type', options: ['forward_zone', 'stub_zone', 'auth_zone'],
+    labels: { forward_zone: 'Forward zone', stub_zone: 'Stub zone', auth_zone: 'Authoritative zone' },
+    hint: 'What Unbound does for the domains of this block. It cannot be changed once the zone exists.' },
   { key: 'enabled', type: 'bool', default: false, label: 'Enabled', hint: 'Switch the zone on or off without deleting it.' },
-  { key: 'zone_name', type: 'list', label: 'Zones', addLabel: 'Add zone', placeholder: 'e.g. example.com or . for every name',
-    hint: 'The domains this section forwards; "." is the default forwarder for everything else.' },
-  { key: 'server', type: 'list', label: 'Servers', addLabel: 'Add server', placeholder: 'e.g. 192.0.2.53 or 192.0.2.53#853@dns.example.net',
-    hint: 'Addresses, or the full form address#port@certificate-name.' },
+  { key: 'zone_name', type: 'list', label: 'Domains', addLabel: 'Add domain', placeholder: 'e.g. example.com or . for every name',
+    hint: 'The domains this block applies to; "." is the root, every name that no other zone takes.' },
+  { key: 'server', type: 'list', label: 'Servers', addLabel: 'Add server', placeholder: 'e.g. 192.0.2.53 or 192.0.2.153@443#dns.example.net',
+    hint: 'Addresses or host names. The full form is address@port#certificate-name; a stub zone needs addresses.' },
   { key: 'tls_upstream', type: 'bool', default: false, label: 'Use TLS', hint: 'Contact the servers over DNS over TLS.' },
   { key: 'tls_index', type: 'string', label: 'TLS certificate name', placeholder: 'e.g. dns.example.net',
     hint: 'The name the servers\' certificate must carry; without it Unbound encrypts but does not verify the server.' },
@@ -178,7 +182,25 @@ export const ZONE_FIELDS = [
     labels: { none: 'None', bind: 'bind', dnsmasq: 'dnsmasq', 'http-proxy-dns': 'http-proxy-dns', 'ipset-dns': 'ipset-dns', nsd: 'nsd' },
     hint: 'Forwarding to this router itself (127.0.0.0/8 or ::1) is only allowed while the chosen program is installed and enabled.' },
   { key: 'resolv_conf', type: 'bool', default: false, label: 'Also use the WAN resolvers', hint: 'Add the resolvers the WAN connection gave (resolv.conf) to the servers.' },
+  { key: 'url_dir', type: 'string', check: 'uri', label: 'Zone files URL', placeholder: 'e.g. https://www.internic.net/domain/',
+    hint: 'The directory, by http or https, to fetch the zone files from; without it the servers are asked (AXFR).' },
 ];
+
+// The kinds of zone and which fields each one uses (in the order the dialog shows them). The words say what Unbound does.
+export const ZONE_TYPES = {
+  forward_zone: {
+    label: 'Forward', words: 'Sends the queries for its domains to its servers, as dnsmasq does, instead of resolving them itself.',
+    keys: ['enabled', 'zone_name', 'server', 'tls_upstream', 'tls_index', 'tls_port', 'port', 'fallback', 'dns_assist', 'resolv_conf'],
+  },
+  stub_zone: {
+    label: 'Stub', words: 'Asks the authoritative servers it lists (addresses) for its domains directly, without recursion from the root.',
+    keys: ['enabled', 'zone_name', 'server', 'port', 'fallback', 'dns_assist', 'resolv_conf'],
+  },
+  auth_zone: {
+    label: 'Authoritative', words: 'Keeps a copy of whole zones, fetched from a server or a URL, so Unbound can answer them at once.',
+    keys: ['enabled', 'zone_name', 'server', 'url_dir', 'fallback'],
+  },
+};
 
 export const DNSMASQ_FIELDS = [
   { key: 'dnssec', type: 'bool', default: false, label: 'DNSSEC validation',

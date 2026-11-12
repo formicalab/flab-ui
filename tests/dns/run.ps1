@@ -4,7 +4,8 @@
 Tests the DNS page (the state of the router's resolver, Unbound or dnsmasq) without changing the router.
 
 .DESCRIPTION
-1. Unit tests of the page model (tiles, findings, forwarders sorted and filtered, activity, configuration rows).
+1. Unit tests of the page model (tiles, findings, activity, configuration rows) and of the zones (Unbound's zone blocks of every
+   type and dnsmasq's server entries: drafts, changes, validation, the UCI operations, the checks after a save).
 2. Captures what the flab.dns plugin reads from the router (service list, sockets, UCI, unbound-control or dnsmasq
    metrics, all read-only) as the "real" scenario.
 3. Builds synthetic scenarios (Unbound with and without extended statistics, Unbound without its control channel, lists
@@ -12,8 +13,9 @@ Tests the DNS page (the state of the router's resolver, Unbound or dnsmasq) with
    scenario (FLAB_FIXTURES), asserting the JSON. A call with shell metacharacters as arguments must give the same reply
    and create no file.
 4. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1) and drives the DNS
-   page with mocked flab.dns replies: every tile, finding and card, both engines, no resolver, the folded Forwarding card and its filter
-   of the forwarders, and the Try it buttons into the Toolbox. Nothing reaches the router's configuration.
+   page with mocked flab.dns replies: every tile, finding and card, both engines, no resolver, the folded Zones card with its filter,
+   and adding, editing, removing and saving zones in the dialog. The uci object is a stateful mock; nothing reaches the router's
+   configuration.
 
 Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (deploy.ps1 -Action Deploy) and
 installs playwright-core into the temporary work folder. Everything created on the router (/tmp/flab-dns-test) and
@@ -86,6 +88,7 @@ try {
 
     Write-Host '1/4 Unit tests: DNS model'
     Invoke-Native 'node' @((Join-Path $here 'model.test.mjs'))
+    Invoke-Native 'node' @((Join-Path $here 'zones.test.mjs'))
 
     Write-Host '2/4 Capturing the router (read-only: service list, sockets, UCI, unbound-control or dnsmasq metrics)'
     Invoke-Remote "rm -rf $remote; mkdir -p $remote/fx-real"

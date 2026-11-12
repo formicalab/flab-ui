@@ -312,32 +312,11 @@ export const FLAG_WORDS = {
 // The words for a list of flags (an unknown flag is shown as it is).
 export const flagWords = flags => flags.map(f => FLAG_WORDS[f] ?? f);
 
-// The forwarders in the order the table lists them: the default zone (".") first, then the rest by name.
-export const sortForwards = rows => [...rows].sort((a, b) => (a.zone === '.' ? -1 : b.zone === '.' ? 1 : a.zone.localeCompare(b.zone)));
-
-// How many forwarders are defined in UCI (changeable through UCI) and how many only in a file (Unbound's extension file),
-// counting the rows of the reply: { uci, file }. A row without a source (an older plugin) counts as neither.
-export function forwardSources(data) {
-  const rows = data.forwards ?? [];
-  return { uci: rows.filter(r => r.source === 'uci').length, file: rows.filter(r => r.source === 'file').length };
-}
-
-// The values a form for one Unbound forward-zone section starts from (the fields are ZONE_FIELDS in schema.js), from an
-// entry of the reply's `forward_uci`: one value per field as core/fields.js reads them. This is the draft an editing page
-// would change.
+// The values a form for one Unbound zone section starts from (the fields are ZONE_FIELDS in schema.js), from an entry of the
+// reply's `forward_uci`: one value per field as core/fields.js reads them. This is the draft an editing page would change.
 export function zoneDraft(entry) {
-  const raw = { enabled: entry.enabled ? '1' : '0', zone_name: entry.zones, server: entry.servers, ...(entry.options ?? {}) };
+  const raw = { zone_type: entry.type ?? '', enabled: entry.enabled ? '1' : '0', zone_name: entry.zones, server: entry.servers, ...(entry.options ?? {}) };
   return Object.fromEntries(ZONE_FIELDS.map(f => [f.key, valueOf(f, raw[f.key])]));
-}
-
-// The rows (zone, servers, flags) that match a filter text: every word must be in the zone, a server or a flag's words.
-export function filterForwards(rows, text) {
-  const words = String(text ?? '').toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return rows;
-  return rows.filter(r => {
-    const hay = [r.zone, ...r.servers, ...flagWords(r.flags ?? [])].join(' ').toLowerCase();
-    return words.every(w => hay.includes(w));
-  });
 }
 
 //#endregion
