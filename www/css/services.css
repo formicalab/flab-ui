@@ -8,7 +8,7 @@
 .svc-busy { display: inline-flex; align-items: center; gap: .45rem; color: var(--fl-muted); }
 
 /* Status notes above the tiles: the confirmation of a risky action, the outcome of a call, and hints. */
-.svc-note { display: flex; align-items: flex-start; flex-wrap: wrap; gap: .75rem; padding: .7rem .9rem; margin-bottom: 1rem; border-radius: 6px; font-size: .9rem; }
+.svc-note { display: flex; align-items: flex-start; flex-wrap: wrap; gap: .75rem; padding: .7rem .9rem; margin-bottom: 1rem; border-radius: 6px; font-size: .875rem; }
 .svc-note > svg { flex: none; margin-top: .15rem; }
 .svc-note-body { flex: 1 1 20rem; min-width: 0; }
 .svc-note-body p { margin: .2rem 0 0; }

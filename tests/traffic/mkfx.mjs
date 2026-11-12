@@ -11,6 +11,7 @@
 //   big      60000 synthetic entries (the 20000 cap and the speed of a big router) and 3500 usage rows
 //   noct     no connection tracking          noacct   entries without counters (nf_conntrack_acct=0)
 //   nonlbw   nlbw is not installed           stopped  nlbw is installed but nlbwmon is not running
+//   inflated nlbwmon counters that cannot be right (about one byte per packet), as the main router's reported them
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -230,6 +231,20 @@ const NLBW_OLD = {
   'mac,ip': nlbwJson(IP_COLS, [[MAC(10), '192.168.1.10', 300, 70000000, 60000, 9000000, 50000], [MAC(12), '192.168.1.12', 10, 100000, 200, 50000, 100]]),
   layer7: nlbwJson(L7_COLS, [['TCP', 443, 310, 70100000, 60200, 9050000, 50100, 'HTTPS']]),
 };
+// What a router with the nlbwmon counter fault reported (real figures of the main router: about one byte per packet in
+// both directions), next to a normal host and a host that moved few packets.
+const NLBW_INFLATED = {
+  'mac,ip': nlbwJson(IP_COLS, [
+    [MAC(11), '192.168.1.9', 7956, 6741957078881, 6408312050900, 2869885992733, 2860496513949],
+    [MAC(12), '192.168.1.10', 14616, 3182452572044, 3126773491503, 1599895085449, 1584853748557],
+    [MAC(10), '192.168.1.20', 120, 5000000, 4000, 800000, 3000],
+    [MAC(10), '2001:db8:1::20', 30, 2000000, 1500, 300000, 1200],
+    ['00:00:00:00:00:00', '10.133.106.38', 4, 238, 3, 448, 3],
+  ]),
+  layer7: nlbwJson(L7_COLS, [['TCP', 443, 310, 9000000000000, 6000000000000, 4000000000000, 3900000000000, 'HTTPS']]),
+};
+// The nlbwmon configuration with the given database_interval.
+const uciNlbwmon = interval => ({ 'uci_nlbwmon.json': JSON.stringify({ values: { cfg0: { '.type': 'nlbwmon', database_interval: interval } } }) });
 //#endregion
 
 //#region Scenario files
@@ -322,8 +337,9 @@ const big = bigEntries();
 const scenarios = {
   rich: richFiles(rich),
   big: { 'files.json': JSON.stringify(netfilterFiles(big.map(conntrackLine), { count: 59871, max: 65535 })), ...nlbwFiles({ periods: ['2026-11-01'], data: { 'mac,ip': bigUsage() } }) },
-  noct: { 'files.json': '{}', ...nlbwFiles({ data: NLBW_CURRENT }) },
-  noacct: { 'files.json': JSON.stringify(netfilterFiles(rich.slice(0, 12).map(e => conntrackLine({ ...e, by: null, pk: null })), { acct: 0, max: 100 })), ...nlbwFiles({ data: NLBW_CURRENT }) },
+  noct: { 'files.json': '{}', ...nlbwFiles({ data: NLBW_CURRENT }), ...uciNlbwmon('2026-10-15/14') },
+  noacct: { 'files.json': JSON.stringify(netfilterFiles(rich.slice(0, 12).map(e => conntrackLine({ ...e, by: null, pk: null })), { acct: 0, max: 100 })), ...nlbwFiles({ data: NLBW_CURRENT }), ...uciNlbwmon('-2') },
+  inflated: { 'files.json': '{}', ...nlbwFiles({ periods: ['2026-11-01'], data: NLBW_INFLATED }) },
   nonlbw: { 'files.json': JSON.stringify(netfilterFiles([])), ...nlbwFiles({ present: false, running: false }) },
   stopped: { 'files.json': JSON.stringify(netfilterFiles([])), ...nlbwFiles({ running: false, periods: ['2026-10-01'] }) },
 };
@@ -422,6 +438,12 @@ add('rich-usage-nodata', 'rich', 'usage', { period: '2026-09-01', group: 'ip' })
 add('nonlbw-usage', 'nonlbw', 'usage', { group: 'ip' });
 add('stopped-usage', 'stopped', 'usage', { group: 'ip' });
 add('big-usage', 'big', 'usage', { period: 'current', group: 'mac,ip' }, usageReference(bigUsage()));
+// The accounting window under the three kinds of interval (the suite pins today to 2026-11-12), and counters that cannot be right.
+add('noct-usage-window', 'noct', 'usage', { group: 'ip' });
+add('noacct-usage-window', 'noacct', 'usage', { group: 'ip' });
+add('inflated-periods', 'inflated', 'usage_periods');
+add('inflated-usage-mac-ip', 'inflated', 'usage', { group: 'mac,ip' }, usageReference(NLBW_INFLATED['mac,ip']));
+add('inflated-usage-layer7', 'inflated', 'usage', { group: 'layer7' }, usageReference(NLBW_INFLATED.layer7));
 const REFUSED_USAGE = {
   'group-injection': { period: 'current', group: 'ip;reboot' }, 'group-subshell': { period: 'current', group: '$(reboot)' }, 'group-unknown': { period: 'current', group: 'proto' },
   'group-order': { period: 'current', group: 'ip,mac' }, 'group-space': { period: 'current', group: 'ip, mac' }, 'group-empty': { period: 'current', group: '' }, 'group-missing': { period: 'current' },

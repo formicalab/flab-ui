@@ -50,6 +50,8 @@ const FILTER_BAD = /[^A-Za-z0-9.:_\/ -]/;
 // says the table was cut. rpcd runs plugins in its own event loop, so a long call would hold up every other one.
 // Only the tests set the environment variable.
 const BUDGET_MS = getenv('FLAB_TRAFFIC_BUDGET_MS') != null ? +getenv('FLAB_TRAFFIC_BUDGET_MS') : 3000;
+// The date the tests pin "today" to (YYYY-MM-DD) so the length of a period is the same on every run; unset on a router.
+const TODAY = getenv('FLAB_TRAFFIC_TODAY');
 
 //#region Addresses
 
@@ -675,11 +677,108 @@ function periods() {
 	return reverse(sort(out));
 }
 
-// The reply of `usage_periods`: whether nlbw and its daemon exist and the periods available.
+// The length of month `m` (1 to 12) of year `y`, in days.
+function month_len(y, m) {
+	if (m == 2)
+		return ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) ? 29 : 28;
+	return index([ 4, 6, 9, 11 ], m) >= 0 ? 30 : 31;
+}
+
+// The day number (days since 1970-01-01) of a YYYY-MM-DD date, or null when `s` is not a real date.
+function day_of(s) {
+	let m = type(s) == 'string' ? match(s, /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/) : null;
+	if (m == null)
+		return null;
+	let mon = +m[2], d = +m[3];
+	if (mon < 1 || mon > 12 || d < 1 || d > month_len(+m[1], mon))
+		return null;
+	return int(timegm({ year: +m[1], mon, mday: d, hour: 0, min: 0, sec: 0 }) / 86400);
+}
+
+// The YYYY-MM-DD date of a day number.
+function date_of(day) {
+	let t = gmtime(day * 86400);
+	return sprintf('%04d-%02d-%02d', t.year, t.mon, t.mday);
+}
+
+// The day number of today in the router's time zone (the date nlbwmon's periods are counted in).
+function today_day() {
+	let pinned = day_of(TODAY);
+	if (pinned != null)
+		return pinned;
+	let t = localtime(time());
+	return day_of(sprintf('%04d-%02d-%02d', t.year, t.mon, t.mday));
+}
+
+// The accounting interval nlbwmon is configured with (option database_interval); "1", its default, when unset.
+function interval() {
+	for (let name, s in uci_all('nlbwmon'))
+		if (s['.type'] == 'nlbwmon' && s.database_interval != null)
+			return '' + s.database_interval;
+	return '1';
+}
+
+// The day number a monthly period starts on in month `m` of year `y`: day `n` of the month (cut to the month's length),
+// or counted from the end for a negative `n` (-1 is the last day, -2 the one before).
+function month_start(y, m, n) {
+	let len = month_len(y, m);
+	let d = n > 0 ? (n > len ? len : n) : len + n + 1;
+	return day_of(sprintf('%04d-%02d-%02d', y, m, d < 1 ? 1 : d));
+}
+
+// The period that contains day `day` under the interval `spec`: { start, end } as day numbers, `end` being the first day
+// of the next period. The interval is either "YYYY-MM-DD/NN" (a period every NN days from that date) or a day of the
+// month (what nlbwmon's database_interval documents).
+function period_bounds(spec, day) {
+	let m = match(spec, /^([0-9]{4}-[0-9]{2}-[0-9]{2})\/([0-9]+)$/);
+	if (m != null && day_of(m[1]) != null && +m[2] > 0) {
+		let base = day_of(m[1]), n = +m[2];
+		let start = day < base ? base : base + int((day - base) / n) * n;
+		return { start, end: start + n };
+	}
+	let n = match(spec, /^-?[0-9]+$/) != null ? int(spec) : 1;
+	if (n == 0 || n > 31 || n < -31)
+		n = 1;
+	let t = gmtime(day * 86400);
+	let y = t.year, mo = t.mon;
+	let start = month_start(y, mo, n);
+	if (start > day) {
+		mo--;
+		if (mo < 1) {
+			mo = 12;
+			y--;
+		}
+		start = month_start(y, mo, n);
+	}
+	let ny = y, nm = mo + 1;
+	if (nm > 12) {
+		nm = 1;
+		ny++;
+	}
+	return { start, end: month_start(ny, nm, n) };
+}
+
+// The accounting period of a reply: when it starts and ends (the end is the first day of the next period), today, whether
+// it is still running and how many days it covers so far. `period` is "current" or a listed date; null for anything else.
+function period_window(period) {
+	let spec = interval();
+	let now = today_day();
+	let cur = period_bounds(spec, now);
+	let start = period == 'current' ? cur.start : day_of(period);
+	if (start == null)
+		return null;
+	let end = start == cur.start ? cur.end : period_bounds(spec, start).end;
+	let ongoing = end > now;
+	let days = (ongoing ? now : end - 1) - start + 1;
+	return { start: date_of(start), end: date_of(end), today: date_of(now), ongoing, days: days < 1 ? 1 : days };
+}
+
+// The reply of `usage_periods`: whether nlbw and its daemon exist, the periods available and the start of the one that is
+// running now (it is only listed once nlbwmon has committed it to disk).
 function usage_periods() {
 	let present = has_nlbw();
 	let running = present && nlbwmon_running();
-	return { ok: true, generated: time(), present, running, periods: running ? periods() : [] };
+	return { ok: true, generated: time(), present, running, periods: running ? periods() : [], current: period_window('current').start, today: date_of(today_day()) };
 }
 
 // The reply of `usage`: the traffic nlbwmon counted for one period, grouped by one allow-listed group, as
@@ -733,7 +832,7 @@ function usage(args) {
 		if (row.mac != null && names.mac[row.mac] != null)
 			named.mac[row.mac] = names.mac[row.mac];
 	}
-	return { ok: true, generated: time(), period, group: GROUPS[gi], columns: data.columns, rows, total_rows, truncated: total_rows > length(rows), totals, names: named };
+	return { ok: true, generated: time(), period, window: period_window(period), group: GROUPS[gi], columns: data.columns, rows, total_rows, truncated: total_rows > length(rows), totals, names: named };
 }
 
 //#endregion

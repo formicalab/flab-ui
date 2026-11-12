@@ -12,8 +12,8 @@
 .topo-box { position: relative; z-index: 1; display: grid; gap: .15rem; align-content: center; justify-items: center; text-align: center; padding: .55rem .75rem; margin: 0 .25rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
 .topo-box .tb-title { font-weight: 600; }
 .topo-box .tb-title svg { vertical-align: -2px; color: var(--fl-brand); }
-.topo-box .tb-sub { font-size: .72rem; color: var(--fl-muted); line-height: 1.25; }
-.topo-box .tb-live { font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--fl-ok-fg); }
+.topo-box .tb-sub { font-size: .75rem; color: var(--fl-muted); line-height: 1.25; }
+.topo-box .tb-live { font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--fl-ok-fg); }
 .topo-box.mac.on, .topo-box.phy.on { border-color: color-mix(in srgb, var(--fl-ok-fg) 55%, var(--fl-stroke)); }
 .topo-box.chip { border-color: var(--fl-brand); background: color-mix(in srgb, var(--fl-info-bg) 55%, var(--fl-surface)); }
 .topo-legend { margin-bottom: .8rem; display: flex; align-items: center; gap: .35rem; }
@@ -22,21 +22,21 @@
 .vl { position: relative; min-height: 1.9rem; display: flex; align-items: center; justify-content: center; }
 .vl::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--fl-stroke); }
 .vl.on::before { background: var(--fl-ok-fg); }
-.vl .vl-cap { position: absolute; left: calc(50% + .7rem); top: 50%; transform: translateY(-50%); padding: .05rem .4rem; font-size: .7rem; color: var(--fl-muted); background: var(--fl-surface); border-radius: 6px; white-space: nowrap; }
-.vl .swnum { position: relative; z-index: 1; display: grid; place-items: center; min-width: 1.6rem; height: 1.6rem; padding: 0 .3rem; border-radius: 999px; border: 2px solid var(--fl-stroke); background: var(--fl-surface); font-size: .75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.vl .vl-cap { position: absolute; left: calc(50% + .7rem); top: 50%; transform: translateY(-50%); padding: .05rem .4rem; font-size: .75rem; color: var(--fl-muted); background: var(--fl-surface); border-radius: 6px; white-space: nowrap; }
+.vl .swnum { position: relative; z-index: 1; display: grid; place-items: center; min-width: 1.6rem; height: 1.6rem; padding: 0 .3rem; border-radius: 999px; border: 2px solid var(--fl-stroke); background: var(--fl-surface); font-size: .75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .vl.on .swnum { border-color: var(--fl-ok-fg); color: var(--fl-ok-fg); }
 .topo .port { width: auto; }
 
 /* ── Port tile (the jack): link state tints, speed, rates and sparkline ── */
-.port .prole { font-size: .68rem; font-weight: 700; letter-spacing: .08em; color: var(--fl-muted); }
+.port .prole { font-size: .75rem; font-weight: 600; letter-spacing: .05em; color: var(--fl-muted); }
 .port { position: relative; display: grid; gap: .3rem; justify-items: center; text-align: center; width: 176px; padding: .85rem .7rem .75rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: var(--fl-surface-hover); transition: border-color .25s, background .25s; }
 .port .jack { display: grid; place-items: center; width: 52px; height: 40px; border-radius: 8px; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
 .port .pname { font-weight: 600; }
-.port .pspeed { font-size: .95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.port .prate { display: flex; gap: .8rem; font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--fl-muted); }
+.port .pspeed { font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.port .prate { display: flex; gap: .8rem; font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--fl-muted); }
 .port .prate svg { margin-right: .15rem; vertical-align: -1px; }
 .port .spark { width: 100%; height: 26px; }
-.port .spark-empty { font-size: .7rem; }
+.port .spark-empty { font-size: .75rem; }
 .port .ptags { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: center; min-height: 1.4rem; }
 .port.up { border-color: color-mix(in srgb, var(--fl-ok-fg) 55%, var(--fl-stroke)); background: color-mix(in srgb, var(--fl-ok-bg) 40%, var(--fl-surface)); }
 .port.up .jack { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }

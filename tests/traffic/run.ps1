@@ -119,7 +119,7 @@ while read -r name scenario method; do
   [ -f cases/`$name.json ] && args="`$(cat cases/`$name.json)"
   budget=0
   case `$name in budget-*) budget=50;; esac
-  FLAB_TRAFFIC_BUDGET_MS=`$budget FLAB_PLUGIN=$remote/flab.traffic.uc FLAB_FIXTURES=$remote/`$scenario FLAB_METHOD=`$method FLAB_ARGS="`$args" FLAB_TIME_FILE=out/`$name.ms ucode -L "$remote/*.uc" harness.uc > out/`$name.json 2> err.txt || { echo "`$name failed:"; cat err.txt; exit 1; }
+  FLAB_TRAFFIC_TODAY=2026-11-12 FLAB_TRAFFIC_BUDGET_MS=`$budget FLAB_PLUGIN=$remote/flab.traffic.uc FLAB_FIXTURES=$remote/`$scenario FLAB_METHOD=`$method FLAB_ARGS="`$args" FLAB_TIME_FILE=out/`$name.ms ucode -L "$remote/*.uc" harness.uc > out/`$name.json 2> err.txt || { echo "`$name failed:"; cat err.txt; exit 1; }
   if [ -s err.txt ]; then echo "`$name wrote to stderr:"; cat err.txt; exit 1; fi
 done < cases.txt
 "@

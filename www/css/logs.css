@@ -6,7 +6,7 @@
 
 /* The scrollable pane: as tall as the window allows, with the column headings pinned while scrolling. */
 .log-pane { max-height: calc(100vh - 24rem); min-height: 14rem; overflow: auto; }
-.log-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-family: Consolas, "Cascadia Mono", monospace; font-size: .8rem; }
+.log-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-family: var(--fl-mono); font-size: .8rem; }
 .log-table thead th { position: sticky; top: 0; z-index: 1; background: var(--fl-surface); padding: .4rem .6rem; text-align: left; font-family: inherit; font-weight: 600; border-bottom: 1px solid var(--fl-stroke); }
 .log-table td { padding: .18rem .6rem; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 50%, transparent); }
 .log-table th:nth-child(1) { width: 8.5rem; }

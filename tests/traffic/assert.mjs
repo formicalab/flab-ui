@@ -139,6 +139,7 @@ check(r.entries.every((e, i) => i === 0 || (e.bytes[0] + e.bytes[1]) <= (r.entri
 console.log('\n== usage ==');
 let p = out('rich-periods');
 check(p.ok && p.present === true && p.running === true && same(p.periods, ['2026-11-01', '2026-10-01', '2026-09-01']), 'periods: only dates, newest first (junk and blank lines dropped)', j(p));
+check(p.current === '2026-11-01' && p.today === '2026-11-12', 'the running period starts on the first (the default monthly interval) and today is the pinned date', j(p));
 p = out('nonlbw-periods');
 check(p.present === false && p.running === false && p.periods.length === 0, 'without nlbw there are no periods', j(p));
 p = out('stopped-periods');
@@ -161,6 +162,13 @@ for (const c of cases.filter(c => c.name.startsWith('refused-usage-'))) {
   const x = out(c.name);
   check(x.ok === false && /must be/.test(x.error) && x.rows === undefined, `${c.name.slice(14)} is refused (${j(c.args).slice(0, 60)})`, j(x).slice(0, 200));
 }
+for (const [name, w] of [
+  ['rich-usage-mac-ip', { start: '2026-11-01', end: '2026-12-01', today: '2026-11-12', ongoing: true, days: 12 }],
+  ['rich-usage-old', { start: '2026-10-01', end: '2026-11-01', today: '2026-11-12', ongoing: false, days: 31 }],
+  ['noct-usage-window', { start: '2026-11-12', end: '2026-11-26', today: '2026-11-12', ongoing: true, days: 1 }],
+  ['noacct-usage-window', { start: '2026-10-30', end: '2026-11-29', today: '2026-11-12', ongoing: true, days: 14 }],
+]) check(same(out(name).window, w), `${name}: the accounting window ${w.start} to ${w.end} (${w.days} day${w.days === 1 ? '' : 's'}, ${w.ongoing ? 'running' : 'finished'})`, j(out(name).window));
+check(out('inflated-periods').current === '2026-11-01', 'the running period of the inflated router');
 //#endregion
 
 //#region The real router
@@ -194,6 +202,8 @@ if (cases.some(c => c.name === 'real-status')) {
     check(m.rows.every(x => /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(x.mac) && typeof x.ip === 'string') && Object.keys(m.names.mac).every(k => m.rows.some(x => x.mac === k)), 'usage by MAC and IP: the columns the page needs, names only for rows present');
     check(out('real-usage-layer7').rows.every(x => 'proto' in x && 'port' in x && 'layer7' in x), 'usage by protocol has proto, port and layer7');
     check(out('real-usage-fam').rows.every(x => x.family === 4 || x.family === 6), 'usage by family');
+    const win = m.window;
+    check(/^\d{4}-\d{2}-\d{2}$/.test(per.current) && win.start === per.current && win.ongoing === true && win.start <= win.today && win.today < win.end && win.days >= 1, 'the running period has a start, an end after today and at least one day, and the periods reply agrees on the start', j([per.current, win]));
   } else console.log('INFO  nlbwmon is not running on the router: usage checks skipped');
 }
 //#endregion

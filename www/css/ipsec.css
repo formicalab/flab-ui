@@ -13,7 +13,7 @@
 /* ── Header: name, state badges and the overall grade pill ── */
 .vpn-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: 1.2rem 1.25rem .5rem; }
 .vpn-head .name { font-size: 1.2rem; font-weight: 600; }
-.grade { margin-left: auto; padding: .25rem .9rem; border-radius: 999px; font-size: 1.05rem; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); white-space: nowrap; }
+.grade { margin-left: auto; padding: .25rem .9rem; border-radius: 999px; font-size: 1rem; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); white-space: nowrap; }
 .grade small { font-weight: 400; opacity: .8; }
 .grade.success { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
 .grade.info { background: var(--fl-info-bg); color: var(--fl-info-fg); }
@@ -34,7 +34,7 @@
 .vpn-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 1.75rem; padding: 1.1rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
 .traffic { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .9rem; }
 .traffic .rate { display: grid; gap: .3rem; }
-.traffic .rate b { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.traffic .rate b { font-size: 1rem; font-variant-numeric: tabular-nums; }
 .traffic .rate svg { margin-right: .35rem; vertical-align: -2px; color: var(--fl-muted); }
 .traffic .spark { width: 220px; height: 44px; flex: none; }
 

@@ -26,7 +26,7 @@
 /* Node boxes (local router and remote AS) */
 .bgp-node { display: grid; gap: .35rem; justify-items: center; text-align: center; padding: 1rem .9rem; border: 1px solid var(--fl-stroke); border-radius: 14px; background: var(--fl-surface-hover); }
 .bgp-node svg { color: var(--fl-brand); }
-.bgp-node b { font-size: 1.05rem; }
+.bgp-node b { font-size: 1rem; }
 .bgp-node .node-sep { width: 60%; height: 1px; background: var(--fl-stroke); margin: .25rem 0; }
 .bgp-node.router { border-color: color-mix(in srgb, var(--fl-brand) 45%, var(--fl-stroke)); }
 
@@ -52,7 +52,7 @@
 .bgp-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--pc); }
 .bgp-card.is-down::before { background: var(--fl-bad-fg); }
 .bgp-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: 1.2rem 1.25rem .6rem; }
-.bgp-card-head .name { font-size: 1.15rem; font-weight: 600; }
+.bgp-card-head .name { font-size: 1.2rem; font-weight: 600; }
 .bgp-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 1.75rem; padding: .9rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
 .bgp-channels { display: grid; gap: 1.75rem; align-content: start; }
 
@@ -74,13 +74,13 @@
 .routes-table tr.group-more td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--pc) 35%, transparent); }
 .routes-table td.wrap { white-space: normal; }
 .as-path { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .2rem; }
-.as-chip { padding: 0 .4rem; border-radius: 4px; font-size: .78rem; font-weight: 600; background: var(--fl-ok-bg); color: var(--fl-ok-fg); font-variant-numeric: tabular-nums; }
+.as-chip { padding: 0 .4rem; border-radius: 4px; font-size: .8rem; font-weight: 600; background: var(--fl-ok-bg); color: var(--fl-ok-fg); font-variant-numeric: tabular-nums; }
 .as-path.transit .as-chip { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
 .as-sep { color: var(--fl-muted); }
 
 /* ── Announcements, findings, memory: padded sections, health findings, per-peer share bars and memory bars ── */
 .blk-pad { padding: 1rem 0 0; border-top: 1px solid var(--fl-stroke); }
-.blk-pad .sec-title { margin: 0 0 .5rem 1rem; font-size: .78rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-muted); }
+.blk-pad .sec-title { margin: 0 0 .5rem 1rem; font-size: .75rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-muted); }
 /* Health findings list, colored by level (good / info / warn / bad) */
 .findings { list-style: none; margin: 0; padding: .75rem 1rem 1rem; display: grid; gap: .6rem; }
 .findings li { display: flex; gap: .6rem; align-items: flex-start; }
@@ -93,7 +93,7 @@
 
 /* Per-peer share rows (label, bar, value) */
 .share { display: grid; gap: .6rem; padding: 1rem; border-top: 1px solid var(--fl-stroke); }
-.share .sec-title { margin: 0; font-size: .78rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-muted); }
+.share .sec-title { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-muted); }
 .share-row { display: grid; grid-template-columns: 9rem 1fr 4.5rem; align-items: center; gap: .75rem; }
 .share-row .mv { text-align: right; font-variant-numeric: tabular-nums; color: var(--fl-muted); font-size: .8rem; }
 

@@ -5,14 +5,14 @@
 .rt-seg { margin-bottom: 1rem; }
 .rt-diagform { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .75rem 1rem; align-items: end; }
 .rt-diagform .rt-host { grid-column: span 2; }
-.rt-note { display: flex; align-items: center; gap: .5rem; margin-top: .9rem; font-size: .85rem; }
+.rt-note { display: flex; align-items: center; gap: .5rem; margin-top: .9rem; font-size: .8rem; }
 .rt-error.warn { color: var(--fl-warn-fg); }
 .rt-result-slot { display: grid; gap: 1.25rem; }
 .rt-state { margin-left: auto; font-weight: 400; display: inline-flex; align-items: center; }
 .rt-running { display: inline-flex; align-items: center; gap: .5rem; color: var(--fl-muted); }
 .rt-stats { display: flex; flex-wrap: wrap; gap: .75rem; }
 .rt-stat { min-width: 6.5rem; padding: .5rem .9rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface-hover); }
-.rt-stat .v { font-size: 1.35rem; font-weight: 600; line-height: 1.2; }
+.rt-stat .v { font-size: 1.5rem; font-weight: 600; line-height: 1.2; }
 .rt-stat .l { color: var(--fl-muted); font-size: .75rem; }
 .rt-stat.ok .v { color: var(--fl-ok-fg); }
 .rt-stat.warn .v { color: var(--fl-warn-fg); }
@@ -23,7 +23,7 @@
 .rt-bar-lost { background: var(--fl-bad-fg); height: 100%; opacity: .55; }
 .rt-pingbody .rt-error { margin-top: .75rem; }
 .rt-dnshead { display: flex; align-items: center; gap: .75rem; margin-bottom: .6rem; }
-.rt-raw-out { margin: 0; padding: .6rem .8rem; border-radius: 6px; background: var(--fl-surface-hover); font-family: "Cascadia Mono", Consolas, ui-monospace, monospace; font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rt-raw-out { margin: 0; padding: .6rem .8rem; border-radius: 6px; background: var(--fl-surface-hover); font-family: var(--fl-mono); font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rt-trace td { vertical-align: middle; }
 .rt-hops > .rt-router { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
 .rt-rname { font-weight: 600; overflow-wrap: anywhere; }
@@ -68,7 +68,7 @@
 .rt-finding.ok svg { color: var(--fl-ok-fg); }
 .rt-finding.warn svg { color: var(--fl-warn-fg); }
 .rt-finding.bad svg { color: var(--fl-bad-fg); }
-.rt-small { font-size: .95rem !important; overflow-wrap: anywhere; }
+.rt-small { font-size: .875rem !important; overflow-wrap: anywhere; }
 .rt-chain { display: grid; gap: .75rem; margin-top: 1.25rem; }
 .rt-chain h3 { font-size: 1rem; margin: 0; }
 .rt-cert { border: 1px solid var(--fl-stroke); border-radius: 8px; padding: .7rem 1rem; display: grid; gap: .5rem; }
@@ -79,5 +79,5 @@
 .rt-cert-row { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: .75rem; }
 .rt-cert-row .l { color: var(--fl-muted); }
 .rt-cert-row .v { overflow-wrap: anywhere; }
-.rt-fp { font-size: .78rem; }
+.rt-fp { font-size: .8rem; }
 .rt-pem-actions { margin-top: .5rem; }

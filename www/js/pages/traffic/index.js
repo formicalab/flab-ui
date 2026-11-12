@@ -131,7 +131,7 @@ export default {
         if (status?.nlbw) options.push(['usage', 'Usage']);
         tabs.setOptions(options);
         if (data.tab === 'connections' && data.conn?.ok) proto.setOptions(protocolOptions(data.conn.aggregates));
-        if (data.tab === 'usage' && data.periods?.running) period.setOptions(periodOptions(data.periods.periods));
+        if (data.tab === 'usage' && data.periods?.running) period.setOptions(periodOptions(data.periods.periods, data.periods.current));
         show();
         // The open tab can disappear (nlbw removed): the strip fell back to another tab, so show that one.
         if (data.tab !== state.tab) reload();

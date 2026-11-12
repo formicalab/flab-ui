@@ -19,12 +19,12 @@
 .fwm th { font-weight: 600; padding: .35rem .7rem; white-space: nowrap; }
 .fwm thead th { text-align: center; }
 .fwm tbody th { text-align: right; }
-.fwm .fwm-router { color: var(--fl-muted); font-style: italic; font-weight: 500; }
+.fwm .fwm-router { color: var(--fl-muted); font-style: italic; font-weight: 400; }
 .fwm td { border-radius: 8px; padding: .45rem .7rem; text-align: center; min-width: 7rem; }
 .fwm-open { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
 .fwm-partial { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
 .fwm-closed { background: var(--fl-surface-hover); color: var(--fl-muted); }
 .fwm-na { color: var(--fl-muted); }
 .fwm-main { font-weight: 600; }
-.fwm-sub { font-size: .72rem; opacity: .85; }
+.fwm-sub { font-size: .75rem; opacity: .85; }
 .fwm-key { display: inline-block; width: .9rem; height: .9rem; border-radius: 4px; vertical-align: -2px; }

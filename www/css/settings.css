@@ -8,5 +8,5 @@
 .set-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1.25rem 2rem; align-items: start; }
 .set-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 .set-col + .set-col { border-left: 1px solid var(--fl-stroke); padding-left: 2rem; }
-.set-col-title { margin: 0; font-size: .8rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--fl-muted); }
+.set-col-title { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-muted); }
 .set-col .kv { margin-top: 0; }

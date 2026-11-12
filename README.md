@@ -202,6 +202,12 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   fluid content area. Tables use `table-layout: fixed` with percentage column widths where several tables
   must align (`.fixed-grid`, widths must sum to 100).
 - Prefer the `--fl-*` variables over hard-coded colors so both themes keep working.
+- **Type scale:** use these sizes and no others: `.75rem` captions, badges and uppercase labels (letter-spacing `.05em`), `.8rem`
+  secondary text, table headers and monospace, `.875rem` body, `1rem` emphasis (a value or headline inside a card), `1.2rem`
+  names and the page title, `1.5rem` stat values, `1.75rem` KPI tiles. Weights are 400 and 600 only; `base.css` makes `b`,
+  `strong` and the headings 600 (bootstrap's are 700 and 500) and `small` / `.small` `.8rem` (bootstrap's is relative to the
+  parent, so it differed in every container). Monospace text uses `var(--fl-mono)` (also bootstrap's `pre` and `code`); never
+  spell the font stack out again.
 - Shared pieces (status `.dot`, health banner, table helpers) live in `base.css` because page CSS is
   loaded lazily.
 - **Legends and "how to read" notes sit at the top of the card or section they explain**, so the key is read
@@ -860,21 +866,30 @@ The connection tracking table (`flab.traffic connections`).
 
 #### Usage tab
 nlbwmon's counters per host (`flab.traffic usage_periods` and `usage`); the tab exists only when `nlbw` is installed.
-- **Note** above the tiles: the numbers are what nlbwmon has counted since the selected period started, download is what a host
+- **Note** above the tiles, one box: first the accounting period the numbers belong to (its dates, how many days it has run and,
+  for the running period, when it ends and the counters start again from zero; a stored period shows both dates and that it is
+  finished), then what the numbers are: what nlbwmon has counted since the period started, download is what a host
   received and upload what it sent, nlbwmon must be running (nothing is recorded while it is stopped) and only the networks it
-  lists as `local_network` are counted.
-- **Period selector**: the current period (`nlbw` without `-t`) and the stored periods `nlbw -c list` prints, newest first.
-- **Tiles**: the period total, download, upload, the top host (name and share), the number of hosts and connections. The
-  totals come from the plugin and cover every row, also those left out of the reply.
+  lists as `local_network` are counted. The period is worked out from `database_interval` in `/etc/config/nlbwmon` (a day of the
+  month, negative from the end, or `YYYY-MM-DD/NN` for every NN days) and the router's date, because nlbwmon itself does not say
+  when the running period began (it is listed by `nlbw -c list` only once committed to disk).
+- **Period selector**: the running period with its start date (`nlbw` without `-t`; it is not listed a second time as a stored
+  one, whose copy is only as new as the last commit) and the older stored periods `nlbw -c list` prints, newest first.
+- **Tiles**: the period total (with the average per day over the days the period has run), download, upload, the top host (name and
+  share), the number of hosts and connections. The totals come from the plugin and cover every row, also those left out of the reply.
 - **Hosts**: one row per device: the IPv4 and IPv6 rows nlbwmon keeps for one MAC (it is asked for the group `mac,ip`) are
   summed, so a device with an IPv6 privacy address is still one row. Traffic with the all-zero MAC has no device behind it, so
   each of its addresses stays one host. The row shows the name (from DHCP and hosts data, else the address), the MAC, every
   address, download, upload, total, a share bar and the connections; the columns sort and the filter in the command bar
-  matches name, MAC or address. A long list draws its first 50 rows with a "Show all" button.
+  matches name, MAC or address. A long list draws its first 50 rows with a "Show all" button. A device whose counters cannot be right
+  (in a direction with at least 100000 packets, fewer than 28 bytes per packet on average, less than the smallest IP packet) is marked
+  "counters look wrong".
 - **Protocols**: the same period grouped by `layer7`: nlbwmon's application name (HTTPS, QUIC, DNS, ...), else the transport and
   port ("TCP 8443"), else "Other IP"; the twelve largest and the rest summed.
 - **Banner**: nlbwmon installed but not running (the tab then shows only the note and no periods), a period with nothing counted,
-  an error from `nlbw`, rows left out by the plugin's cap.
+  an error from `nlbw`, counters that cannot be right (a warning that says how bad, that totals are inflated and names a known cause,
+  flow offloading, which on the main router fed nlbwmon about one byte per packet and inflated a month to tens of terabytes), rows
+  left out by the plugin's cap.
 
 #### The plugin
 `flab.traffic` is read-only and the ACL fragment (`rpcd/acl.d/flab-traffic.json`) grants its four methods under `read`; there is
@@ -893,12 +908,14 @@ no write access and no generic `file` or exec grant. Live throughput is not here
   (absent without counters). IPv6 addresses (zero-padded in the kernel's file) are compressed the way `ip` prints them; names come
   from uci dhcp `host` sections, odhcpd's `dhcp ipv4leases` and `ipv6leases`, `/tmp/dhcp.leases`, `/tmp/hosts/*`, `/etc/ethers` and the
   ARP and IPv6 neighbor tables (a SLAAC address takes the name of its MAC), with the domain removed, never from reverse DNS.
-- `usage_periods`: `present`, `running` and the periods (only plain dates `nlbw -c list` printed, newest first; none while nlbwmon
-  is stopped).
+- `usage_periods`: `present`, `running`, the periods (only plain dates `nlbw -c list` printed, newest first; none while nlbwmon
+  is stopped), `current` (the start date of the running period) and `today`, both worked out from `database_interval` and the
+  router's date.
 - `usage` (`period`, `group`): `period` is `current` or a date that `nlbw -c list` printed, `group` one of `fam`, `mac`, `ip`,
   `mac,ip`, `layer7`, `ip,layer7`, `mac,layer7` (nlbwmon's own columns follow: `family` for `fam`, `proto`, `port` and `layer7` for
   `layer7`). The reply has `columns`, `rows` (objects, largest total first, at most 3000, with `total_rows` and `truncated`), `totals`
-  over every row and `names` by MAC and by IP. Without nlbw, with nlbwmon stopped, for an unlisted period or when `nlbw` prints no data
+  over every row, `names` by MAC and by IP and `window` (`start`, `end` (the first day of the next period), `today`, `ongoing`, `days`).
+  Without nlbw, with nlbwmon stopped, for an unlisted period or when `nlbw` prints no data
   the reply is `{ ok: false, error }`.
 - **Validation**: every argument is checked before anything is built, and a request that fails comes back as `{ ok: false, error }`
   without entries. `q`: a string of at most 64 characters from letters, digits and `. : - _ /` and space (a newline is refused too); `limit`: an
@@ -1228,7 +1245,9 @@ masquerade, a port forward with a changed port, an IPv6 translation, offloaded f
 unreplied DHCPv6 request, every IPv6 compression case (a single zero group, two equal runs, the all-zero address), one heavy host
 with ten unanswered connections, a garbage line, names from every source, and nlbwmon with three periods), `big` (60000 entries,
 so the 20000-line cap and the speed show, and 3500 usage rows against the 3000-row cap), `noct` (no connection tracking), `noacct`
-(`nf_conntrack_acct=0`, no counters), `nonlbw` and `stopped` (nlbw missing, nlbwmon not running). `mkfx.mjs` writes the fixtures
+(`nf_conntrack_acct=0`, no counters), `nonlbw` and `stopped` (nlbw missing, nlbwmon not running), and `inflated` (nlbwmon counters of about
+one byte per packet, as the main router's reported them). The suite pins today to 2026-11-12 (`FLAB_TRAFFIC_TODAY`), and `noct` and
+`noacct` carry a `database_interval` of `2026-10-15/14` and `-2`, so the accounting window is checked under all three kinds of interval. `mkfx.mjs` writes the fixtures
 (`files.json` for procfs and `/tmp`, one text file per command, one JSON file per ubus call, as `rpcd/lib/flab/util.uc` replays them) and an
 independent JavaScript reference that computes what each connections call must return (the filtered, sorted and cut entries, the
 counts and the top lists); `assert.mjs` compares the plugin's output with it entry by entry, and also checks the plugin source and the ACL.
@@ -1240,7 +1259,7 @@ no data. A call with a 50 ms time budget shows that a cut table is still the fir
 every poll), and drives the Live tab (WAN, totals, busiest interface, ordering, dimmed rows, findings, a long list, Pause, no plugin), the
 Connections tab (tiles, every kind of entry, the top lists and their click-through, the filter with its debounce, the protocol, scope,
 order and row selectors, invalid filters that are not sent, findings, no counters, no tracking, errors, 2000 rows, the polling cache),
-the Usage tab (periods, note, tiles, merged hosts, names, filter, sort, protocols, another period, 3000 hosts, an empty period, an error,
+the Usage tab (periods, the period note and its window under a monthly, a day-count and an end-of-month interval, tiles, merged hosts, names, filter, sort, protocols, another period, counters that cannot be right, 3000 hosts, an empty period, an error,
 nlbwmon stopped and nlbw missing, which also removes the tab) and checks that the page wrote nothing and logged no error.
 
 ### IPsec scenarios

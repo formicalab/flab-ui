@@ -27,6 +27,11 @@ export const HOST_VERY_MANY = 3000;
 export const UNREPLIED_MIN = 50;
 export const UNREPLIED_SHARE = 0.25;
 export const UNREPLIED_HOST = 20;
+// An IP packet is at least this many bytes (an IPv4 ICMP echo or UDP datagram with no payload), so a counter that
+// averages less per packet cannot be right. It is judged only for a host with at least COUNTER_SAMPLE packets in that
+// direction, so a handful of packets is never flagged.
+export const MIN_PACKET_BYTES = 28;
+export const COUNTER_SAMPLE = 100000;
 // The filter the Connections tab sends is limited to this many characters of the alphabet below.
 export const FILTER_MAX = 64;
 const FILTER_OK = /^[A-Za-z0-9.:_/ -]*$/;
@@ -227,13 +232,20 @@ export function liveFindings(status) {
   return out;
 }
 
-// The findings of the Usage tab: nlbwmon not running, a period with nothing counted, rows left out.
+// The findings of the Usage tab: nlbwmon not running, a period with nothing counted, rows left out, counters that cannot be
+// right.
 export function usageFindings(status, hosts) {
   if (status?.nlbw && !status.nlbwmon_running) return [{ level: 'warn', text: 'nlbwmon is installed but not running, so nothing is being counted. Start it on the Services page; the stored periods are listed once it runs.' }];
   if (hosts && hosts.ok === false) return [{ level: 'warn', text: hosts.error }];
   if (hosts && !hosts.rows?.length) return [{ level: 'info', text: 'nlbwmon has not counted any traffic in this period yet.' }];
-  if (hosts?.truncated) return [{ level: 'info', text: `Only the ${fmtNum(hosts.rows.length)} entries with the most traffic of ${fmtNum(hosts.total_rows)} are listed.` }];
-  return [];
+  const out = [];
+  const bad = mergeHosts(hosts?.rows, hosts?.names).filter(x => x.suspect);
+  if (bad.length) {
+    const worst = Math.min(...bad.map(x => Math.min(...[[x.rx, x.rxPkts], [x.tx, x.txPkts]].filter(([, p]) => p >= COUNTER_SAMPLE).map(([b, p]) => b / p))));
+    out.push({ level: 'warn', text: `nlbwmon's counters look wrong: ${bad.length === 1 ? '1 host averages' : `${fmtNum(bad.length)} hosts average`} as little as ${worst < 10 ? worst.toFixed(1) : Math.round(worst)} bytes per packet, and an IP packet is at least ${MIN_PACKET_BYTES} bytes, so the byte totals below are inflated. A known cause is flow offloading (flow_offloading and flow_offloading_hw in /etc/config/firewall), which can feed nlbwmon wrong counts. Treat these numbers as unreliable.` });
+  }
+  if (hosts?.truncated) out.push({ level: 'info', text: `Only the ${fmtNum(hosts.rows.length)} entries with the most traffic of ${fmtNum(hosts.total_rows)} are listed.` });
+  return out;
 }
 
 // Whether a filter text may be sent to the router (see FILTER_MAX); returns the reason when it may not, else null.
@@ -337,10 +349,17 @@ export const stateCount = (aggregates, name) => (aggregates?.states ?? []).find(
 // The addresses of one device ordered IPv4 first, then IPv6, each once.
 const orderAddresses = list => [...new Set(list)].sort((a, b) => (a.includes(':') - b.includes(':')) || natural(a, b));
 
+// Whether the byte and packet counts of one device cannot both be right: in a direction with at least COUNTER_SAMPLE
+// packets, fewer than MIN_PACKET_BYTES bytes per packet on average.
+export function suspectCounters({ rx, rxPkts, tx, txPkts }) {
+  return (rxPkts >= COUNTER_SAMPLE && rx / rxPkts < MIN_PACKET_BYTES) || (txPkts >= COUNTER_SAMPLE && tx / txPkts < MIN_PACKET_BYTES);
+}
+
 // One row per device from nlbwmon rows grouped by MAC and IP (or by IP alone): the rows of one MAC (its IPv4 and IPv6
 // addresses) are summed. Traffic with the all-zero MAC has no device behind it, so each of its addresses stays its own
-// host. A host is { key, mac, ips, name, rx, tx, total, conns }; rx is what the host downloaded and tx what it
-// uploaded. `names` is { ip, mac } from the plugin. Largest total first.
+// host. A host is { key, mac, ips, name, rx, tx, rxPkts, txPkts, total, conns, suspect }; rx is what the host downloaded
+// and tx what it uploaded, and `suspect` says the counters are impossible (see suspectCounters). `names` is { ip, mac }
+// from the plugin. Largest total first.
 export function mergeHosts(rows, names) {
   const hosts = new Map();
   for (const r of rows ?? []) {
@@ -358,7 +377,7 @@ export function mergeHosts(rows, names) {
   return [...hosts.values()].map(h => {
     const ips = orderAddresses(h.ips);
     const name = (h.mac && names?.mac?.[h.mac]) || ips.map(ip => names?.ip?.[ip]).find(Boolean) || null;
-    return { ...h, ips, name, total: h.rx + h.tx };
+    return { ...h, ips, name, total: h.rx + h.tx, suspect: suspectCounters(h) };
   }).sort((a, b) => b.total - a.total || natural(a.key, b.key));
 }
 
@@ -427,9 +446,24 @@ export function protocolRows(rows, max = 12) {
   return kept.map(p => ({ ...p, share: share(p.total, grand) }));
 }
 
-// The options of the period selector: the current one, then the stored periods (newest first, as the plugin lists them).
-export function periodOptions(periods) {
-  return [['current', 'Current period'], ...(periods ?? []).map(p => [p, `Period from ${p}`])];
+// The options of the period selector: the running period (with its start date), then the periods nlbwmon has stored, newest
+// first as the plugin lists them. The running period is stored too once nlbwmon has committed it; it is not listed twice
+// (its stored copy is only as new as the last commit, so the live one is the better of the two).
+export function periodOptions(periods, current = null) {
+  return [['current', current ? `Current period (since ${current})` : 'Current period'],
+    ...(periods ?? []).filter(p => p !== current).map(p => [p, `Period from ${p}`])];
+}
+
+// The words for an accounting window as { title, detail, ongoing }: "2026-11-01 to now · 12 days" with the end of the period
+// underneath for the running one, "2026-10-01 to 2026-11-01 · 31 days" for a finished one. `w` is the plugin's window
+// ({ start, end, today, ongoing, days }), or null when it could not be worked out.
+export function describePeriod(w) {
+  if (!w) return null;
+  const n = `${fmtNum(w.days)} day${w.days === 1 ? '' : 's'}`;
+  const left = Math.max(0, Math.round((Date.parse(`${w.end}T00:00:00Z`) - Date.parse(`${w.today}T00:00:00Z`)) / 86400000));
+  return w.ongoing
+    ? { ongoing: true, title: `${w.start} to now`, days: n, detail: `Counting since ${w.start}. The period ends on ${w.end}, in ${left} day${left === 1 ? '' : 's'}, and counting starts again from zero.` }
+    : { ongoing: false, title: `${w.start} to ${w.end}`, days: n, detail: `A finished period: it ran from ${w.start} up to, not including, ${w.end}.` };
 }
 
 //#endregion

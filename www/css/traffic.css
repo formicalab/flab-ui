@@ -2,10 +2,12 @@
 
 /* ── Shared ── */
 .tr-num { text-align: right; }
-.tr-legend { padding: .75rem 1rem; color: var(--fl-muted); font-size: .85rem; border-bottom: 1px solid var(--fl-stroke); }
-.tr-note { display: flex; gap: .6rem; align-items: flex-start; padding: .7rem 1rem; border-radius: 8px; border: 1px solid var(--fl-stroke); border-left: 4px solid var(--fl-info-fg); background: var(--fl-surface); color: var(--fl-muted); font-size: .85rem; }
+.tr-legend { padding: .75rem 1rem; color: var(--fl-muted); font-size: .8rem; border-bottom: 1px solid var(--fl-stroke); }
+.tr-note { display: flex; gap: .6rem; align-items: flex-start; padding: .7rem 1rem; border-radius: 8px; border: 1px solid var(--fl-stroke); border-left: 4px solid var(--fl-info-fg); background: var(--fl-surface); color: var(--fl-muted); font-size: .8rem; }
 .tr-note > svg { flex: none; margin-top: .15rem; color: var(--fl-info-fg); }
 .tr-note strong { color: var(--fl-text); }
+.tr-note-period { margin-bottom: .35rem; color: var(--fl-text); }
+.tr-suspect { display: flex; align-items: center; gap: .3rem; margin-top: .15rem; color: var(--fl-warn-fg); font-size: .8rem; }
 .tr-more { display: flex; align-items: center; gap: 1rem; padding: .6rem 1rem; border-top: 1px solid var(--fl-stroke); }
 .tr-share { display: flex; align-items: center; gap: .5rem; min-width: 110px; }
 .tr-share .meter { flex: 1; min-width: 60px; }

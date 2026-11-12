@@ -4,7 +4,7 @@
 .sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
 .sensor { display: grid; gap: .45rem; padding: .9rem 1rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
 .sensor-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-.sensor-temp { font-size: 1.9rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.sensor-temp { font-size: 1.75rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .sensor-temp.good { color: var(--fl-ok-fg); }
 .sensor-temp.fair { color: var(--fl-warn-fg); }
 .sensor-temp.weak { color: var(--fl-bad-fg); }
@@ -24,7 +24,7 @@
 /* ── CPU load card: total load, per-state legend, per-core bars and the history sparkline ── */
 .cpu-grid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.2fr) minmax(300px, 1fr); gap: 2rem; align-items: start; }
 .cpu-big { font-size: 2.6rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
-.cpu-big small { margin-left: .5rem; font-size: .85rem; font-weight: 400; color: var(--fl-muted); }
+.cpu-big small { margin-left: .5rem; font-size: .8rem; font-weight: 400; color: var(--fl-muted); }
 .cpu-total { display: grid; gap: .9rem; }
 
 /* Stacked bar: one segment per CPU state, sharing the colors of the legend swatches. */

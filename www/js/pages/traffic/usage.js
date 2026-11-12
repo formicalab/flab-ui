@@ -4,28 +4,35 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { card, emptyState, healthBanner, meter, muted, tile, tiles } from '../../core/ui.js';
 import { fmtBytes, fmtNum } from '../../core/format.js';
-import { filterHosts, fmtPct, mergeHosts, protocolRows, share, sortHosts, usageFindings, usageTotals } from './model.js';
+import { describePeriod, filterHosts, fmtPct, mergeHosts, protocolRows, share, sortHosts, usageFindings, usageTotals } from './model.js';
 
 // The most host rows drawn before "Show all".
 const ROW_LIMIT = 50;
 
-// The note above the tiles: what the numbers are and what they depend on.
-const note = () => h('div', { className: 'tr-note' }, icon('info-circle'),
-  h('div', {},
-    'These are the bytes nlbwmon has counted since the selected period started, per local host. ',
-    h('strong', {}, 'Download'), ' is what a host received and ', h('strong', {}, 'upload'), ' what it sent. ',
-    'nlbwmon must be running to count: nothing is recorded while it is stopped, and only traffic of the networks listed as local_network in /etc/config/nlbwmon is counted. ',
-    'A new period begins on the day set by database_interval there.'));
+// The note above the tiles: the accounting period the numbers belong to (its dates, its length so far and, for the running
+// one, when it ends and the counters start again from zero), then what the numbers are and what they depend on.
+const note = window => {
+  const p = describePeriod(window);
+  return h('div', { className: 'tr-note' }, icon('info-circle'),
+    h('div', {},
+      p ? h('div', { className: 'tr-note-period' }, h('strong', {}, 'Accounting period: '), `${p.title} (${p.days}). ${p.detail}`) : null,
+      h('div', {},
+        'These are the bytes nlbwmon has counted since the selected period started, per local host. ',
+        h('strong', {}, 'Download'), ' is what a host received and ', h('strong', {}, 'upload'), ' what it sent. ',
+        'nlbwmon must be running to count: nothing is recorded while it is stopped, and only traffic of the networks listed as local_network in /etc/config/nlbwmon is counted. ',
+        'A new period begins on the day set by database_interval there.')));
+};
 
 // A share bar with its percentage.
 const shareCell = fraction => h('div', { className: 'tr-share' }, meter(fraction, 1, 'good'), h('span', {}, `${fmtPct(fraction * 100)}%`));
 
-// The summary tiles of a period.
+// The summary tiles of a period. `days` is how many days the period covers so far.
 function summary(usage, hosts) {
   const t = usageTotals(usage);
   const top = hosts[0];
+  const days = usage.window?.days;
   return tiles(
-    tile('Period total', fmtBytes(t.total), 'downloaded and uploaded by local hosts'),
+    tile('Period total', fmtBytes(t.total), days ? `downloaded and uploaded by local hosts · ${fmtBytes(t.total / days)} a day on average` : 'downloaded and uploaded by local hosts'),
     tile('Download', fmtBytes(t.rx), `${fmtPct(share(t.rx, t.total) * 100)}% of the total`),
     tile('Upload', fmtBytes(t.tx), `${fmtPct(share(t.tx, t.total) * 100)}% of the total`),
     tile('Top host', top ? (top.name ?? top.ips[0] ?? top.mac ?? top.key) : '–', top ? `${fmtBytes(top.total)} · ${fmtPct(share(top.total, t.total) * 100)}% of the total` : 'nothing counted'),
@@ -40,11 +47,12 @@ function sortHead(label, key, state, rerender, numeric) {
     label, active ? (state.hsort.dir > 0 ? ' ▲' : ' ▼') : '');
 }
 
-// The host cell: its name above its MAC and addresses.
+// The host cell: its name above its MAC and addresses, with a warning when its counters cannot be right.
 function hostCell(host) {
   return h('div', {},
     h('strong', {}, host.name ?? host.ips[0] ?? host.mac ?? host.key),
-    host.name || host.mac ? h('div', { className: 'mono muted' }, host.mac ?? '') : null);
+    host.name || host.mac ? h('div', { className: 'mono muted' }, host.mac ?? '') : null,
+    host.suspect ? h('div', { className: 'tr-suspect', title: 'In at least one direction this device averages fewer bytes per packet than the smallest IP packet, so nlbwmon\'s counts for it are wrong.' }, icon('exclamation-triangle'), 'counters look wrong') : null);
 }
 
 // The hosts card: one row per device (its IPv4 and IPv6 rows merged by MAC), filtered by the page's filter text,
@@ -102,7 +110,7 @@ export function usageView(data, state, rerender) {
   if (!data.hosts?.ok) return [healthBanner(findings, ''), note()];
   const hosts = mergeHosts(data.hosts.rows, data.hosts.names);
   return [
-    note(),
+    note(data.hosts.window),
     summary(data.hosts, hosts),
     healthBanner(findings, `nlbwmon is counting: ${data.period === 'current' ? 'the current period' : `the period from ${data.period}`} holds traffic of ${fmtNum(hosts.length)} hosts.`),
     hostsCard(data.hosts, hosts, state, rerender),

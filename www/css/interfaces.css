@@ -10,7 +10,7 @@
 .cn .dot { width: 8px; height: 8px; display: inline-block; animation: none; }
 .cn svg { color: var(--fl-muted); }
 .cn-name { font-weight: 600; }
-.cn-sub { color: var(--fl-muted); font-size: .72rem; }
+.cn-sub { color: var(--fl-muted); font-size: .75rem; }
 .cn.k-bridge { border-color: color-mix(in srgb, var(--fl-brand) 50%, var(--fl-stroke)); }
 .cn.k-vlan { border-style: dashed; }
 .cn.k-protocol { border-color: color-mix(in srgb, var(--fl-brand) 35%, var(--fl-stroke)); }
@@ -18,9 +18,9 @@
 .cn-link:hover .cn { border-color: var(--fl-brand); }
 .cn.k-mesh { border-color: color-mix(in srgb, var(--fl-brand) 35%, var(--fl-stroke)); }
 .cn.k-radio { border-style: dotted; }
-.cn-sep { color: var(--fl-muted); font-weight: 700; }
+.cn-sep { color: var(--fl-muted); font-weight: 600; }
 .cn-over { color: var(--fl-muted); }
-.cn-same { display: flex; align-items: center; gap: .35rem; color: var(--fl-muted); font-size: .85rem; }
+.cn-same { display: flex; align-items: center; gap: .35rem; color: var(--fl-muted); font-size: .8rem; }
 .cn-carries { margin-top: .3rem; }
 /* "how to read a row" legend above the table */
 .layers-legend p { margin: 0 0 .4rem; }
