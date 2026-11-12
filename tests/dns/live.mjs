@@ -16,6 +16,7 @@ const shots = process.env.FLAB_SHOTS;
 const load = name => JSON.parse(fs.readFileSync(path.join(work, 'out', `${name}.json`), 'utf8'));
 const facts = JSON.parse(fs.readFileSync(path.join(work, 'facts.json'), 'utf8'));
 const clone = o => JSON.parse(JSON.stringify(o));
+const j = o => JSON.stringify(o);
 const num = n => n.toLocaleString('en-US');
 
 let failed = 0;
@@ -177,6 +178,24 @@ check(actRows.some(r => r.startsWith('Answered from the cache') && r.includes(nu
 check(actRows.some(r => r.startsWith('NOERROR') && r.includes(num(44100))) && actRows.some(r => r.startsWith('SERVFAIL') && r.includes('910')) && actRows.some(r => r.startsWith('NXDOMAIN')), 'extended statistics: the answer codes', actRows.join(' | '));
 check((await act.locator('.dns-legend').boundingBox()).y < (await act.locator('table').first().boundingBox()).y, 'the legend sits above the counters');
 const conf = () => cardOf('Listening and configuration');
+const areaTitles = await texts(conf().locator('.dns-area-title'));
+const areaOpen = () => conf().locator('.dns-area').evaluateAll(d => d.map(x => x.open));
+check(j(areaTitles) === '["General","Security and privacy","Local names and DHCP","Performance and cache"]' && j(await areaOpen()) === '[true,false,false,false]', 'the options are in four collapsible areas, General first and open, Security and privacy second and folded', areaTitles.join(' | '));
+const areaSums = await texts(conf().locator('.dns-area-sum'));
+check(areaSums.length === 2 && areaSums[0] === 'port 53 · 3 LAN interfaces · remote control: local host, unencrypted · basic statistics' && areaSums[1] === 'DNSSEC on · rebind protection: block private addresses (rfc 1918 and 4193) · local clients only · 300 queries/s per client', 'a folded area still says how it is set: the port, interfaces and monitoring; the security switches', areaSums.join(' // '));
+check((await texts(conf().locator('.dns-area-count'))).join() === '14 options,11 options,8 options,5 options', 'each area says how many options it holds');
+await conf().locator('.dns-area').nth(1).locator('summary').click();
+await show(load('unbound'));
+check(j(await areaOpen()) === '[true,true,false,false]', 'an area the user opened stays open when the page redraws');
+await conf().locator('.dns-area').nth(1).locator('summary').click();
+check(j(await areaOpen()) === '[true,false,false,false]', 'and folds again');
+await page.evaluate(() => document.querySelectorAll('.dns-area').forEach(d => { d.open = true; }));
+const chev = await conf().locator('.dns-area > summary .dns-chevron').evaluateAll(c => c.map(x => ({ w: x.getBoundingClientRect().width, t: getComputedStyle(x).transform })));
+check(chev.length === 4 && chev.every(c => c.w > 0 && c.t !== 'none'), 'every area header has the chevron that marks it as collapsible, pointing down when open', JSON.stringify(chev));
+await conf().locator('.dns-area').nth(3).locator('summary').click();
+await page.waitForTimeout(400);
+check((await conf().locator('.dns-area').nth(3).locator('summary .dns-chevron').evaluate(x => getComputedStyle(x).transform)) === 'none', 'and right when folded');
+await conf().locator('.dns-area').nth(3).locator('summary').click();
 const confText = await text(conf());
 check(/Read only for now/.test(confText) && /DNSSEC validation/.test(confText) && /Rate limit \(queries per second\)/.test(confText) && /\/etc\/config\/unbound/.test(confText), 'the configuration is read only, with plain labels', confText.slice(0, 300));
 // A control by its label: the field of a text box, number, drop-down or list, or the checkbox of a yes/no option.
@@ -195,12 +214,11 @@ check(await chk('DNSSEC validation').locator('input').isChecked() && !await chk(
 const lan = await ctl('LAN interfaces').locator('input').evaluateAll(i => i.map(x => `${x.value}${x.disabled ? '' : ' (editable)'}`));
 check(lan.join() === 'lan,lan100,wg0' && await ctl('LAN interfaces').locator('button:not([disabled])').count() === 0 && await ctl('LAN interfaces').locator('button').count() === 4, 'a list shows one disabled box per value, and its add and remove buttons are disabled', lan.join());
 check(/refuses forged ones/.test(confText) && /DNS rebinding|reach devices on the LAN/.test(confText), 'important options carry a short explanation');
-const groupTitles = await texts(conf().locator('.dns-cfg-title'));
-check(groupTitles.length === 6 && groupTitles[0].startsWith('Protection and privacy') && groupTitles[1].startsWith('DNSSEC') && groupTitles[5].startsWith('Service and monitoring') && await conf().locator('.dns-cfg-group .set-fields').count() === 6, 'the options are in six titled groups', groupTitles.join(' | '));
-const confKeys = (await texts(conf().locator('.dns-cfg-group').first().locator('.set-fields > *'))).map(t => t.split(/\s{2,}|\n/)[0]);
-check(/^Local service only/.test(confKeys[0]) && confKeys.length === 7, 'a group lists its options in order', confKeys.join(' | '));
-const optX = await conf().locator('.dns-cfg-group').first().locator('.set-fields > *').evaluateAll(n => [...new Set(n.map(x => Math.round(x.getBoundingClientRect().x)))]);
-check(optX.length >= 3, 'on a wide screen the options of a group flow in several columns', optX.join());
+const secTitles = (await texts(conf().locator('.dns-area').first().locator('.dns-sec-title'))).map(t => t.toLowerCase());
+const secSec = (await texts(conf().locator('.dns-area').nth(1).locator('.dns-sec-title'))).map(t => t.toLowerCase());
+check(j(secTitles) === '["service and monitoring","listening and interfaces"]' && j(secSec) === '["access and abuse","rebind protection","privacy","dnssec"]' && await conf().locator('.dns-area').first().locator('.set-field, .set-check').count() === 14 && await conf().locator('.dns-area').first().locator('.dns-sec', { hasText: 'Remote control' }).count() === 1 && await conf().locator('.dns-area').nth(1).locator('.dns-sec', { hasText: 'DNSSEC validation' }).count() === 1, 'General holds the listening, interface and monitoring options in two sections; Security and privacy the access, rebind, privacy and DNSSEC ones', `${secTitles} // ${secSec}`);
+const optX = await conf().locator('.dns-area').first().locator('.set-fields').first().locator('> *').evaluateAll(n => [...new Set(n.map(x => Math.round(x.getBoundingClientRect().x)))]);
+check(optX.length >= 3, 'on a wide screen the options of a section flow in several columns', optX.join());
 
 console.log('\n== Try it ==');
 await page.click('.dns-try button:has-text("Look up")');

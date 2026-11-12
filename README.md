@@ -111,7 +111,7 @@ flab-ui/
         wireguard/           index.js, iface.js
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js
         dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js
-        dns/                 DNS (read only): index.js (page, state), schema.js (the options and their groups), model.js (pure: tiles, findings, forwarders, activity, option groups), forwarding.js (the Forwarding card), cards.js (Listening and configuration, Activity, Upstream from the WAN, Try it)
+        dns/                 DNS (read only): index.js (page, state), schema.js (the options and their areas), model.js (pure: tiles, findings, forwarders, activity, option areas), forwarding.js (the Forwarding card), cards.js (Listening and configuration, Activity, Upstream from the WAN, Try it)
         interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
@@ -1153,10 +1153,16 @@ pauses while a text box has the focus. Top to bottom:
 - **Listening and configuration** (full width, on top): two parts under one header. *Listening on* shows one chip per address and
   port with its protocols (from `netstat -lntup`, only the resolvers' sockets; Unbound's loopback control port 8953 and dnsmasq's
   DHCP socket are left out); `0.0.0.0` and `[::]` are marked "all addresses", and the engine is named when both run.
-  *Configuration* shows every option the page knows, in titled groups (Unbound: Protection and privacy, DNSSEC, Listening and
-  protocols, Local names and DHCP, Performance and cache, Service and monitoring; dnsmasq: Listening, Upstream servers, Local
-  names, Protection and DNSSEC, Cache, DHCP, Logging), each with a one-line explanation, and an "Other options" group for
-  options of the section the page has no description for. The options are described as data in `dns/schema.js`, in the format
+  *Configuration* shows every option the page knows, in collapsible areas with the same chevron as the folding cards of the DHCP
+  page (right when folded, down when open; an area the user opens stays open across the redraws). **General** comes first and
+  starts open: the service and its monitoring first (enabled, remote control, statistics, log verbosity; for dnsmasq query
+  logging), then listening and interfaces (port, LAN and WAN interfaces, IP protocols, EDNS size, DNS64; for dnsmasq the port,
+  interfaces and upstream servers).
+  **Security and privacy** is second and starts folded: who may ask and the rate limit, rebind protection, query privacy and DNSSEC.
+  The rest follow, folded: Local names and DHCP and Performance and cache (dnsmasq: Local names, Cache, DHCP). Each header gives
+  the number of options and, for General and Security and privacy, a line about how they are set (port, interfaces, remote
+  control, statistics; DNSSEC, rebind protection, who may ask, rate limit), so a folded area still says something. An "Other
+  options" area holds options of the section the page has no description for. The options are described as data in `dns/schema.js`, in the format
   of `core/fields.js`, and drawn with the same controls as the System settings and DHCP pages (`core/forms.js`), disabled
   because the page is read only: a checkbox for a yes/no option, a drop-down for a fixed set of values (rebind protection,
   remote control, local domain type, DHCP server linked, IP protocols, recursion, resource profile, log verbosity, the

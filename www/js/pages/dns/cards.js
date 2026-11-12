@@ -5,7 +5,7 @@ import { badge, card, meter } from '../../core/ui.js';
 import { fmtNum, fmtSpan } from '../../core/format.js';
 import { fieldRow, legend } from '../../core/forms.js';
 import { openTool } from '../toolbox/index.js';
-import { activity, configDraft, configGroups, engineName, fmtPct, listenerChips, subject } from './model.js';
+import { activity, configAreas, configDraft, engineName, fmtPct, listenerChips, subject } from './model.js';
 
 //#region Listening and configuration
 
@@ -47,17 +47,26 @@ function control(f, draft) {
   });
 }
 
-// The resolver's options as the shared controls, in titled groups, each a grid of columns: a checkbox for a yes/no option, a
-// drop-down for a fixed set of values, a number input for a number, a text box for a name and a list for several values.
+// Which areas are open, kept across the redraws of the poll (an area missing here starts as the schema says).
+const opened = new Map();
+
+// The resolver's options as the shared controls, in collapsible areas (General first, then Security and privacy, then the
+// rest), each with its sections: a checkbox for a yes/no option, a drop-down for a fixed set of values, a number input for a
+// number, a text box for a name and a list for several values. A folded area still shows its state in one line.
 function configPart(data, e, file) {
   const draft = configDraft(data);
+  const area = a => h('details', { className: 'dns-area', open: opened.get(a.id) ?? a.open, ontoggle: ev => opened.set(a.id, ev.target.open) },
+    h('summary', {}, h('span', { className: 'dns-chevron' }), h('span', { className: 'dns-area-title' }, a.title), h('span', { className: 'dns-area-count muted' }, `${a.count} options`), a.summary ? h('span', { className: 'dns-area-sum muted' }, a.summary) : null),
+    h('div', { className: 'dns-area-body' },
+      h('p', { className: 'muted small dns-area-legend' }, a.legend),
+      a.sections.map(s => h('section', { className: 'dns-sec' },
+        s.title ? h('h4', { className: 'dns-sec-title' }, s.title) : null,
+        h('div', { className: 'set-fields' }, s.fields.map(f => control(f, draft)))))));
   return h('div', {},
     legend([
       `Read only for now: this page shows the settings of ${engineName(e)} but cannot change them. Edit ${file} and restart the service to change one.`,
       'A box that is empty, or a drop-down that says "Default", is not set in the file: the default shown applies.']),
-    configGroups(data).map(g => h('section', { className: 'dns-cfg-group' },
-      h('h3', { className: 'dns-cfg-title' }, g.title, g.legend ? h('span', { className: 'muted' }, g.legend) : null),
-      h('div', { className: 'set-fields' }, g.fields.map(f => control(f, draft))))));
+    h('div', { className: 'dns-areas' }, configAreas(data).map(area)));
 }
 
 // The full-width card at the top: where the resolver listens and how it is configured. Without a resolver there is

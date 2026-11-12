@@ -47,10 +47,25 @@ td.dns-src > * { margin-right: .35rem; }
 .dns-bar .meter { flex: 1; min-width: 4rem; }
 .dns-bar span { min-width: 2.6rem; text-align: right; font-size: .8rem; color: var(--fl-muted); }
 
-/* ── Configuration groups ── */
-.dns-cfg-group { padding: .9rem 1rem 1.1rem; border-top: 1px solid var(--fl-stroke); }
-.dns-cfg-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .9rem; margin: 0 0 .75rem; font-size: 1rem; }
-.dns-cfg-title .muted { font-size: .8rem; font-weight: 400; }
+/* ── Configuration areas: collapsible blocks, General and Security and privacy first ── */
+.dns-areas { display: flex; flex-direction: column; gap: .6rem; padding: .9rem 1rem 1rem; border-top: 1px solid var(--fl-stroke); }
+.dns-area { border: 1px solid var(--fl-stroke); border-radius: 6px; }
+.dns-area > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .9rem; cursor: pointer; padding: .55rem .8rem; list-style: none; }
+.dns-area > summary::-webkit-details-marker { display: none; }
+.dns-area > summary:hover { background: var(--fl-surface-hover); }
+.dns-area > summary:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
+/* The same triangle as the folding cards of the DHCP page: right when folded, down when open. */
+.dns-chevron { align-self: center; flex: none; width: 0; height: 0; border-left: .6rem solid currentColor; border-top: .36rem solid transparent; border-bottom: .36rem solid transparent; transition: transform .15s; }
+.dns-area[open] > summary .dns-chevron { transform: rotate(90deg); }
+.dns-area[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+.dns-area-title { font-weight: 600; }
+.dns-area-count, .dns-area-sum { font-size: .8rem; }
+.dns-area-body { padding: .7rem .9rem 1rem; display: flex; flex-direction: column; gap: .9rem; }
+.dns-area-legend { margin: 0; }
+.dns-sec-title { margin: 0 0 .5rem; font-size: .75rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-muted); }
+/* A very light line under every option, and the cells stretch to the height of their row, so the lines run unbroken across it. */
+.dns-area .set-fields { align-items: stretch; row-gap: 0; column-gap: 2rem; }
+.dns-area .set-fields > * { padding: .7rem 0; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 55%, transparent); }
 
 /* ── Try it ── */
 .dns-try { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }

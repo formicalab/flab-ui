@@ -6,42 +6,53 @@
 // number a number input, a name a text box and several values a list. Making them editable means a draft, a plan of UCI
 // operations and a save, as the System settings and DHCP pages have; the field tables below are already what those need.
 //
-// The options are shown in groups (UNBOUND_GROUPS, DNSMASQ_GROUPS: a title, a one-line explanation and the keys in the
-// order they appear); an option that is in no group lands in "Other options". A default is the one the package applies
-// when the option is absent (README column "Default"); an option without one has none worth showing.
+// The options are shown in collapsible areas (UNBOUND_AREAS, DNSMASQ_AREAS), each with sections of options: General first
+// (listening, interfaces, the service and its monitoring), then Security and privacy (who may ask, rebind protection, query
+// privacy, DNSSEC), then the rest. An area has a title, a one-line explanation, whether it starts open, and its sections, each
+// a title and the keys in the order they appear; an option that is in no section lands in "Other options". A default is the one the
+// package applies when the option is absent (README column "Default"); an option without one has none worth showing.
 
 export const UNBOUND_CONFIG = 'unbound';
 export const DNSMASQ_CONFIG = 'dhcp';
 
-export const UNBOUND_GROUPS = [
-  { id: 'protect', title: 'Protection and privacy', legend: 'Who may ask, what is refused, and what is kept from the servers asked.',
-    keys: ['localservice', 'rate_limit', 'rebind_protection', 'rebind_localhost', 'hide_binddata', 'query_minimize', 'query_min_strict'] },
-  { id: 'dnssec', title: 'DNSSEC', legend: 'Checking the signatures of answers.',
-    keys: ['validator', 'validator_ntp', 'domain_insecure', 'root_age'] },
-  { id: 'listen', title: 'Listening and protocols', legend: 'The port, the interfaces and the IP versions used.',
-    keys: ['listen_port', 'interface_auto', 'iface_lan', 'iface_wan', 'iface_trig', 'protocol', 'edns_size', 'dns64', 'dns64_prefix'] },
+export const UNBOUND_AREAS = [
+  { id: 'general', title: 'General', open: true, legend: 'Where Unbound listens, how it runs and what it reports.',
+    sections: [
+      { title: 'Service and monitoring', keys: ['enabled', 'manual_conf', 'unbound_control', 'extended_stats', 'verbosity'] },
+      { title: 'Listening and interfaces', keys: ['listen_port', 'interface_auto', 'iface_lan', 'iface_wan', 'iface_trig', 'protocol', 'edns_size', 'dns64', 'dns64_prefix'] },
+    ] },
+  { id: 'security', title: 'Security and privacy', legend: 'Who may ask, what is refused, what is kept from the servers asked, and the checking of signatures.',
+    sections: [
+      { title: 'Access and abuse', keys: ['localservice', 'rate_limit', 'hide_binddata'] },
+      { title: 'Rebind protection', keys: ['rebind_protection', 'rebind_localhost'] },
+      { title: 'Privacy', keys: ['query_minimize', 'query_min_strict'] },
+      { title: 'DNSSEC', keys: ['validator', 'validator_ntp', 'domain_insecure', 'root_age'] },
+    ] },
   { id: 'local', title: 'Local names and DHCP', legend: 'The local domain and how DHCP leases and the router\'s own name become DNS records.',
-    keys: ['domain', 'domain_type', 'dhcp_link', 'dhcp4_slaac6', 'add_extra_dns', 'add_local_fqdn', 'add_wan_fqdn', 'exclude_ipv6_ga'] },
+    sections: [{ title: '', keys: ['domain', 'domain_type', 'dhcp_link', 'dhcp4_slaac6', 'add_extra_dns', 'add_local_fqdn', 'add_wan_fqdn', 'exclude_ipv6_ga'] }] },
   { id: 'perf', title: 'Performance and cache', legend: 'Threads, memory and how long answers are kept.',
-    keys: ['num_threads', 'resource', 'recursion', 'ttl_min', 'ttl_neg_max'] },
-  { id: 'service', title: 'Service and monitoring', legend: 'Starting Unbound, the control channel this page reads, counters and the log.',
-    keys: ['enabled', 'manual_conf', 'unbound_control', 'extended_stats', 'verbosity'] },
+    sections: [{ title: '', keys: ['num_threads', 'resource', 'recursion', 'ttl_min', 'ttl_neg_max'] }] },
 ];
 
-export const DNSMASQ_GROUPS = [
-  { id: 'listen', title: 'Listening', legend: 'The port, the interfaces and who may ask.',
-    keys: ['port', 'interface', 'localservice', 'ednspacket_max'] },
-  { id: 'upstream', title: 'Upstream servers', legend: 'Where queries that are not answered locally go.',
-    keys: ['noresolv', 'resolvfile', 'strictorder', 'allservers', 'dnsforwardmax'] },
+export const DNSMASQ_AREAS = [
+  { id: 'general', title: 'General', open: true, legend: 'Where dnsmasq listens, which servers it asks and what it logs.',
+    sections: [
+      { title: 'Monitoring', keys: ['logqueries'] },
+      { title: 'Listening', keys: ['port', 'interface', 'ednspacket_max'] },
+      { title: 'Upstream servers', keys: ['noresolv', 'resolvfile', 'strictorder', 'allservers', 'dnsforwardmax'] },
+    ] },
+  { id: 'security', title: 'Security and privacy', legend: 'Who may ask, answers that point into the LAN, private reverse lookups and the checking of signatures.',
+    sections: [
+      { title: 'Access', keys: ['localservice', 'boguspriv'] },
+      { title: 'Rebind protection', keys: ['rebind_protection', 'rebind_domain'] },
+      { title: 'DNSSEC', keys: ['dnssec'] },
+    ] },
   { id: 'local', title: 'Local names', legend: 'The local domain and which names stay local.',
-    keys: ['domain', 'local', 'domainneeded', 'expandhosts', 'localise_queries', 'boguspriv', 'filterwin2k'] },
-  { id: 'protect', title: 'Protection and DNSSEC', legend: 'Checking signatures and refusing answers that point into the LAN.',
-    keys: ['dnssec', 'rebind_protection', 'rebind_domain'] },
+    sections: [{ title: '', keys: ['domain', 'local', 'domainneeded', 'expandhosts', 'localise_queries', 'filterwin2k'] }] },
   { id: 'cache', title: 'Cache', legend: 'How many names are kept and for how long.',
-    keys: ['cachesize', 'min_cache_ttl', 'max_cache_ttl'] },
+    sections: [{ title: '', keys: ['cachesize', 'min_cache_ttl', 'max_cache_ttl'] }] },
   { id: 'dhcp', title: 'DHCP', legend: 'The DHCP side of dnsmasq.',
-    keys: ['authoritative', 'readethers', 'leasefile', 'sequential_ip', 'rapidcommit'] },
-  { id: 'log', title: 'Logging', legend: '', keys: ['logqueries'] },
+    sections: [{ title: '', keys: ['authoritative', 'readethers', 'leasefile', 'sequential_ip', 'rapidcommit'] }] },
 ];
 
 // The words of the levels and choices of Unbound's options.

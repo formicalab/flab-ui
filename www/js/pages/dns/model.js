@@ -3,7 +3,7 @@
 // configuration fields are all worked out here; the view only draws them.
 import { fmtNum, fmtSpan } from '../../core/format.js';
 import { valueOf } from '../../core/fields.js';
-import { DNSMASQ_FIELDS, DNSMASQ_GROUPS, UNBOUND_FIELDS, UNBOUND_GROUPS, ZONE_FIELDS } from './schema.js';
+import { DNSMASQ_AREAS, DNSMASQ_FIELDS, UNBOUND_AREAS, UNBOUND_FIELDS, ZONE_FIELDS } from './schema.js';
 
 // Display name of each engine.
 const NAMES = { unbound: 'Unbound', dnsmasq: 'dnsmasq' };
@@ -385,22 +385,51 @@ export function activity(data) {
 // the options of the section that the table does not know last (a list when the router holds several values, otherwise a
 // text box), under their own names.
 export function configFields(data) {
-  return configGroups(data).flatMap(g => g.fields);
+  return configAreas(data).flatMap(a => a.sections.flatMap(s => s.fields));
 }
 
-// The same, grouped: [{ id, title, legend, fields }] for the groups that have options. The options the tables do not
-// know form a last group, "Other options".
-export function configGroups(data) {
+// The same, in areas: [{ id, title, legend, open, sections: [{ title, fields }], count, summary }] for the areas that have
+// options. `count` is how many options an area holds and `summary` a line about its state, for when it is folded. The options
+// the tables do not know form a last area, "Other options".
+export function configAreas(data) {
   const e = subject(data);
   const known = e === 'unbound' ? UNBOUND_FIELDS : e === 'dnsmasq' ? DNSMASQ_FIELDS : [];
-  const groups = (e === 'unbound' ? UNBOUND_GROUPS : e === 'dnsmasq' ? DNSMASQ_GROUPS : [])
-    .map(g => ({ id: g.id, title: g.title, legend: g.legend, fields: g.keys.map(k => known.find(f => f.key === k)).filter(Boolean) }));
-  const grouped = new Set(groups.flatMap(g => g.fields.map(f => f.key)));
-  const strays = known.filter(f => !grouped.has(f.key));
+  const draft = Object.fromEntries(known.map(f => [f.key, valueOf(f, data.config?.[f.key])]));
+  const areas = (e === 'unbound' ? UNBOUND_AREAS : e === 'dnsmasq' ? DNSMASQ_AREAS : []).map(a => {
+    const sections = a.sections.map(s => ({ title: s.title, fields: s.keys.map(k => known.find(f => f.key === k)).filter(Boolean) })).filter(s => s.fields.length);
+    return { id: a.id, title: a.title, legend: a.legend, open: Boolean(a.open), sections, count: sections.reduce((n, s) => n + s.fields.length, 0), summary: areaSummary(e, a.id, known, draft) };
+  });
+  const placed = new Set(areas.flatMap(a => a.sections.flatMap(s => s.fields.map(f => f.key))));
+  const strays = known.filter(f => !placed.has(f.key));
   const unknown = Object.entries(data.config ?? {}).filter(([key]) => !known.some(f => f.key === key))
     .map(([key, value]) => ({ key, type: Array.isArray(value) ? 'list' : 'string', label: key, hint: '' }));
   const rest = [...strays, ...unknown];
-  return [...groups, ...(rest.length ? [{ id: 'other', title: 'Other options', legend: 'Options of this section that the page has no description for.', fields: rest }] : [])];
+  return [...areas, ...(rest.length ? [{ id: 'other', title: 'Other options', legend: 'Options of this section that the page has no description for.', open: false, sections: [{ title: '', fields: rest }], count: rest.length, summary: '' }] : [])];
+}
+
+// A line about the state of an area, shown beside its title so a folded area still says something: the port, the interfaces
+// and the monitoring for General, the switches that matter for Security and privacy, nothing for the others.
+function areaSummary(engine, id, fields, draft) {
+  const field = key => fields.find(f => f.key === key);
+  // The value in force: the one set, else the package's default.
+  const eff = key => (draft[key] === '' ? field(key)?.default : draft[key]);
+  const word = key => { const f = field(key); const v = eff(key); return f?.labels?.[v] ?? String(v ?? ''); };
+  const on = key => (eff(key) ? 'on' : 'off');
+  if (engine === 'unbound' && id === 'general') {
+    const lan = draft.iface_lan?.length ?? 0;
+    return `port ${eff('listen_port')} · ${lan ? `${lan} LAN interface${lan === 1 ? '' : 's'}` : 'LAN interfaces from DHCP'} · remote control: ${word('unbound_control').toLowerCase()} · ${eff('extended_stats') ? 'extended' : 'basic'} statistics`;
+  }
+  if (engine === 'unbound' && id === 'security') {
+    return `DNSSEC ${on('validator')} · rebind protection: ${word('rebind_protection').toLowerCase()} · ${eff('localservice') ? 'local clients only' : 'any client'} · ${Number(eff('rate_limit')) ? `${eff('rate_limit')} queries/s per client` : 'no rate limit'}`;
+  }
+  if (engine === 'dnsmasq' && id === 'general') {
+    const n = draft.interface?.length ?? 0;
+    return `port ${eff('port')} · ${n ? `${n} interface${n === 1 ? '' : 's'}` : 'every interface'} · ${eff('noresolv') ? 'its own servers only' : 'WAN resolvers used'}`;
+  }
+  if (engine === 'dnsmasq' && id === 'security') {
+    return `DNSSEC ${on('dnssec')} · rebind protection ${on('rebind_protection')} · ${eff('localservice') ? 'local clients only' : 'any client'}`;
+  }
+  return '';
 }
 
 // The values the controls start from: one per field, as core/fields.js reads them (a boolean with the package's default
