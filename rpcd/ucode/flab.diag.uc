@@ -68,6 +68,7 @@ const IPERF_PORT = 5201;
 const IPERF_MIN_PORT = 1024;
 // The most hop addresses one traceroute looks up the autonomous system of.
 const MAX_ASN = 30;
+const MAX_WHOIS = 8;
 // The process names of everything a job can run (/proc/<pid>/comm), checked before `stop` sends a kill.
 const OURS = [ 'timeout', 'ping', 'ping6', 'traceroute', 'traceroute6', 'nslookup', 'dig', 'kdig', 'drill', 'mtr', 'mtr-packet', 'iperf3' ];
 
@@ -390,16 +391,27 @@ function rev6(a,   k, head, tail, nh, nt, h, t, i, x, r) {
     if (t ~ /^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$/) { seen[t] = 1; if (!priv4(t)) print t, rev4(t) }
     else if (index(t, ":") && t ~ /^[0-9A-Fa-f:]+$/) { seen[t] = 1; if (t !~ /^(fe[89abAB]|f[cdCD])/ && t != "::1") print t, rev6(t) } } }`;
 
+// The awk program that keeps, of a whois answer, the first object's range, network name, country and first description.
+// It contains no single quote.
+const WHOIS_AWK = `NF == 0 { if (n) exit; next }
+/^%/ { next }
+{ n = 1 }
+/^(inetnum|inet6num|netname|country):/ || (/^descr:/ && !d) { if (/^descr:/) d = 1; print }`;
+
 // The script of a traceroute with AS lookups: the trace itself (its output streams as usual, inside a `trace` block), then
 // for each public address that answered a TXT lookup of its origin record at Team Cymru (`asn` blocks: the AS number, the
-// prefix and the registry), then one lookup per distinct AS number for its name (`asname` blocks). `argv` is the
+// prefix and the registry), for the first MAX_WHOIS of those without an origin (an address no AS announces, such as an
+// operator's own infrastructure range) a whois query to RIPE for the registered network name (`net` blocks), then one
+// lookup per distinct AS number for its name (`asname` blocks). `argv` is the
 // validated traceroute command, `tool` dig or kdig.
 function trace_asn_script(tool, argv) {
 	let s = PRELUDE;
 	s += `set -f\nblk trace\nrun ${LIMITS.traceroute} ${join(' ', map(argv, (w) => `'${w}'`))}\n`;
-	s += `awk '${ASN_AWK}' out > ips.all\nhead -n ${MAX_ASN} ips.all > ips.txt\n: > asns.txt\n`;
+	s += `awk '${ASN_AWK}' out > ips.all\nhead -n ${MAX_ASN} ips.all > ips.txt\n: > asns.txt\nnw=0\n`;
 	s += `while read ip rev; do\n  blk asn "$ip"\n  cap a.out 4 ${tool} +short TXT "$rev"\n  rc=$?\n  cat a.out\n  end $rc\n`;
-	s += `  awk -F'|' 'NR == 1 { gsub(/[^0-9]/, "", $1); if ($1 != "") print $1 }' a.out >> asns.txt\ndone < ips.txt\n`;
+	s += `  awk -F'|' 'NR == 1 { gsub(/[^0-9]/, "", $1); if ($1 != "") print $1 }' a.out >> asns.txt\n`;
+	s += `  if ! grep -q '^"[0-9]' a.out && [ $nw -lt ${MAX_WHOIS} ]; then\n    nw=$((nw + 1))\n    blk net "$ip"\n`;
+	s += `    cap w.out 6 sh -c '(printf "%s\\n" "$0"; sleep 1) | nc -w 4 whois.ripe.net 43' "$ip" </dev/null\n    rc=$?\n    awk '${WHOIS_AWK}' w.out\n    end $rc\n  fi\ndone < ips.txt\n`;
 	s += `for asn in $(sort -u asns.txt); do\n  blk asname "$asn"\n  cap n.out 4 ${tool} +short TXT "AS$asn.asn.cymru.com"\n  rc=$?\n  cat n.out\n  end $rc\ndone\n`;
 	return s;
 }
@@ -586,7 +598,7 @@ function build_traceroute(a) {
 	let tool = asn_tool();
 	if (tool == '')
 		return { error: 'Looking up the networks needs dig or kdig, which this router does not have.' };
-	return { script: trace_asn_script(tool, argv), limit: LIMITS.traceroute + MAX_ASN * 2, display: join(' ', argv) + ' (with AS lookups)' };
+	return { script: trace_asn_script(tool, argv), limit: LIMITS.traceroute + MAX_ASN * 2 + MAX_WHOIS * 6, display: join(' ', argv) + ' (with AS lookups)' };
 }
 
 // The DNS trace: the name, a record type and the address family (4 or 6, default 4). It needs kdig, whose output names the

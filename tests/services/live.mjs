@@ -30,8 +30,17 @@ const running = pid => ({ instances: { instance1: { running: true, pid } } });
 // procd's view: firewall, network and failsvc have no instance; acme is known but idle; ubus has no init script.
 const baseProcd = () => ({ acme: {}, cron: running(1770), dnsmasq: running(1800), dropbear: running(1900), odhcpd: running(2000), rpcd: running(2100), uhttpd: running(2200), wpad: running(2300), ubus: running(300) });
 
+// The listening sockets netstat reports, owned by the pids of baseProcd: dnsmasq on DNS (both families, TCP and UDP), dropbear
+// on ssh, uhttpd on 80 and 443, wpad on a loopback-only port, and a pid that no service has (which must not show anywhere).
+const LISTENING = [
+  { proto: 'tcp', address: '0.0.0.0', port: 53, pid: 1800 }, { proto: 'tcp', address: '::', port: 53, pid: 1800 }, { proto: 'udp', address: '0.0.0.0', port: 53, pid: 1800 },
+  { proto: 'tcp', address: '0.0.0.0', port: 22, pid: 1900 }, { proto: 'tcp', address: '::', port: 22, pid: 1900 },
+  { proto: 'tcp', address: '0.0.0.0', port: 80, pid: 2200 }, { proto: 'tcp', address: '0.0.0.0', port: 443, pid: 2200 },
+  { proto: 'tcp', address: '127.0.0.1', port: 9000, pid: 2300 }, { proto: 'tcp', address: '192.168.1.1', port: 3493, pid: 2300 }, { proto: 'tcp', address: '0.0.0.0', port: 8080, pid: 99999 },
+];
+
 // `calls` records every control call the mock answered, `unsafe` every one that would have reached the real router.
-const mock = { on: false, procd: baseProcd(), calls: [], unsafe: [], delay: 0, expired: false, noPlugin: false, controlError: null, expireAfterDetached: false, nextPid: 5000 };
+const mock = { on: false, procd: baseProcd(), scripts: SCRIPTS.map(s => [...s]), calls: [], unsafe: [], delay: 0, expired: false, noPlugin: false, controlError: null, expireAfterDetached: false, nextPid: 5000 };
 
 // One method of the mock's objects: [ubus status, data], or a JSON-RPC error object.
 async function control(args) {
@@ -42,6 +51,11 @@ async function control(args) {
   // The control result of a successful run of `action` on `name`; `over` replaces fields.
   const reply = (over = {}) => [0, { name, action, ok: true, code: 0, detached: false, output: '', error: null, ...over }];
   if (name === 'failsvc') return reply({ ok: false, code: 1, output: 'failsvc: cannot open /etc/failsvc.conf', error: 'The service script failed with exit code 1.' });
+  if (action === 'enable' || action === 'disable') {
+    const s = mock.scripts.find(x => x[0] === name);
+    if (s) s[1] = action === 'enable' ? 50 : null;
+    return reply();
+  }
   if (['rpcd', 'uhttpd', 'network'].includes(name) && action !== 'start') {
     if (mock.expireAfterDetached && name === 'rpcd') setTimeout(() => { mock.expired = true; }, 800);
     return reply({ code: null, detached: true });
@@ -70,7 +84,7 @@ async function answer(body) {
   }
   if (obj === 'flab.services' && method === 'list') {
     if (mock.noPlugin) return ok([4]);
-    return ok([0, { generated: 1, services: SCRIPTS.map(([name, start, prot]) => ({ name, enabled: start != null, start, protected: prot })) }]);
+    return ok([0, { generated: 1, listening: LISTENING, services: mock.scripts.map(([name, start, prot]) => ({ name, enabled: start != null, start, protected: prot })) }]);
   }
   if (obj === 'service' && method === 'list') return ok([0, mock.procd]);
   return null;
@@ -142,9 +156,9 @@ const union = [...new Set([...real.scripts, ...real.procd])].sort();
 const shown = await names();
 check(real.scripts.length > 3 && shown.length === union.length && shown.join() === union.join(), `every init script and procd service of the router is listed once (${union.length})`, `${shown.length} vs ${union.length}`);
 const controllable = real.scripts.filter(n => !real.protectedNames.includes(n));
-check(await page.locator('.svc-actions').count() === controllable.length && await page.locator('.svc-actions button').count() === controllable.length * 3, 'the router login gets Start, Stop and Restart on every controllable service');
+check(await page.locator('.svc-actions').count() === controllable.length && await page.locator('.svc-actions button').count() === controllable.length * 4, 'the router login gets Start, Stop, Restart and Enable or Disable on every controllable service');
 check(await rowOf('rpcd').count() === 1 && await btn('rpcd', 'restart').isEnabled(), 'rpcd is listed and can be restarted');
-check(await page.locator('.svc-table th').allInnerTexts().then(t => t.map(s => s.trim()).join() === 'Service,State,Start at boot,PID,Actions'), 'the table columns');
+check(await page.locator('.svc-table th').allInnerTexts().then(t => t.map(s => s.trim()).join() === 'Service,State,Start at boot,PID,Listening,Actions'), 'the table columns');
 check(/running: procd reports/.test(await page.locator('.svc-legend').innerText()), 'the meaning of the states is explained above the table');
 await shot('real');
 //#endregion
@@ -166,6 +180,10 @@ await page.fill('.search input', 'dns');
 check((await names()).join() === 'dnsmasq', 'the filter narrows the list', (await names()).join());
 await page.fill('.search input', '');
 check((await names()).length === 14, 'clearing the filter brings the list back');
+// The chips of service `name`, as "proto/port".
+const portsOf = name => rowOf(name).locator('.svc-port').allInnerTexts().then(t => t.map(s => s.trim()).join());
+check(await portsOf('dnsmasq') === 'tcp/53,udp/53' && await portsOf('dropbear') === 'tcp/22' && await portsOf('uhttpd') === 'tcp/80,tcp/443' && await portsOf('cron') === '', 'a service shows the ports its processes listen on (one chip per protocol and port, TCP first); a service with none shows a dash', await portsOf('dnsmasq'));
+check(/every address.*0\.0\.0\.0, ::/.test(await rowOf('dnsmasq').locator('.svc-port').first().getAttribute('title')) && await portsOf('wpad') === 'tcp/3493,tcp/9000' && await rowOf('wpad').locator('.svc-port.local').count() === 1 && await rowOf('wpad').locator('.svc-port.some').count() === 1 && await page.locator('.svc-port', { hasText: '8080' }).count() === 0, 'the tooltip names the addresses; a loopback-only port is dimmed; a socket owned by no listed service shows nowhere', await portsOf('wpad'));
 await shot('mock-base');
 //#endregion
 
@@ -202,6 +220,31 @@ check(await until(async () => await outcomeBox().count() === 1) && await confirm
 check(await until(async () => /no instance/.test(await stateOf('cron'))) && await btn('cron', 'start').isEnabled(), 'the list shows it stopped and offers Start');
 await btn('cron', 'start').click();
 check(await until(async () => /running/.test(await stateOf('cron')) && await btn('cron', 'start').isDisabled()) && /cron started\./.test(await outcomeBox().innerText()), 'Start brings it back');
+
+console.log('\n== enable and disable at boot ==');
+check(await btn('cron', 'disable').isVisible() && await btn('cron', 'enable').count() === 0 && await btn('acme', 'enable').isVisible() && await btn('acme', 'disable').count() === 0 && await rowOf('cron').locator('.svc-actions button').count() === 4, 'a service that starts at boot offers Disable, one that does not offers Enable (four buttons in all)');
+check(await btn('cron', 'disable').getAttribute('title') === 'Do not start cron at boot' && await btn('acme', 'enable').getAttribute('title') === 'Start acme at boot', 'the tooltips say what the button does');
+const bootCallsBefore = mock.calls.length;
+await btn('cron', 'disable').click();
+check(await until(async () => /cron disabled at boot\./.test(await outcomeBox().innerText().catch(() => ''))) && await confirmBox().count() === 0 && mock.calls.length === bootCallsBefore + 1 && JSON.stringify(mock.calls.at(-1)) === JSON.stringify({ name: 'cron', action: 'disable' }), 'an ordinary service is disabled at once, with no question', JSON.stringify(mock.calls.at(-1)));
+check(await until(async () => /disabled/.test(await rowOf('cron').locator('td').nth(2).innerText())) && /running/.test(await stateOf('cron')) && await btn('cron', 'enable').isVisible() && await btn('cron', 'start').isDisabled(), 'the row now says disabled but the service keeps running, and offers Enable');
+await btn('cron', 'enable').click();
+check(await until(async () => /enabled/.test(await rowOf('cron').locator('td').nth(2).innerText()) && await btn('cron', 'disable').count() === 1) && /cron enabled at boot\./.test(await outcomeBox().innerText()), 'Enable puts it back (the boot cell shows enabled again)');
+await btn('dropbear', 'disable').click();
+check(await confirmBox().count() === 1 && /does not start at boot, ssh stops working/.test(await confirmBox().innerText()) && await confirmBox().evaluate(e => e.classList.contains('warning')) && mock.calls.at(-1).name === 'cron', 'disabling dropbear asks first, in plain words (nothing is sent yet)');
+await page.locator('#svc-confirm-no').click();
+for (const [n, level] of [['rpcd', 'danger'], ['uhttpd', 'danger'], ['network', 'danger'], ['firewall', 'danger'], ['wpad', 'warning'], ['dnsmasq', 'warning'], ['odhcpd', 'warning']]) {
+  await btn(n, 'disable').click();
+  check(await confirmBox().count() === 1 && await confirmBox().evaluate((e, l) => e.classList.contains(l), level) && /Disable /.test(await page.locator('#svc-confirm-yes').innerText()), `disabling ${n} asks first (${level})`);
+  await page.locator('#svc-confirm-no').click();
+}
+check(await btn('acme', 'enable').isEnabled() && mock.calls.filter(c => c.action === 'disable' && c.name !== 'cron').length === 0, 'Cancel sent nothing, and enabling never asks');
+await btn('rpcd', 'disable').click();
+await page.locator('#svc-confirm-yes').click();
+check(await until(async () => /rpcd disabled at boot\./.test(await outcomeBox().innerText().catch(() => ''))) && await outcomeBox().evaluate(e => e.classList.contains('ok')) && await page.locator('.login-form').count() === 0, 'disabling rpcd at boot is not detached and does not end the session');
+await btn('rpcd', 'enable').click();
+check(await until(async () => await btn('rpcd', 'disable').count() === 1), 'rpcd can be enabled again');
+await page.locator('#svc-outcome-dismiss').click();
 
 console.log('\n== failures ==');
 await btn('failsvc', 'start').click();
@@ -243,7 +286,7 @@ await page.locator('#svc-outcome-dismiss').click();
 //#region Logins and plugins
 console.log('\n== a login that may not control services ==');
 const ro = await open({ ubus: { system: ['board', 'info'], service: ['list'], 'flab.services': ['list'] } });
-check(/not allowed to start or stop/.test(await ro.locator('main').innerText()) && await ro.locator('.svc-actions').count() === 0 && await ro.locator('.svc-table th').count() === 4, 'the buttons and the Actions column are hidden and the page says why');
+check(/not allowed to start or stop/.test(await ro.locator('main').innerText()) && await ro.locator('.svc-actions').count() === 0 && await ro.locator('.svc-table th').count() === 5, 'the buttons and the Actions column are hidden (the Listening column stays) and the page says why');
 check(await ro.locator('.svc-table tbody tr').count() === 14, 'the services are still listed');
 await ro.close();
 

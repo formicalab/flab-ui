@@ -1,0 +1,2 @@
+{"event":"error","data":"interrupt - the server has terminated by signal Terminated(15)"}
+{"event":"end","data":{}}

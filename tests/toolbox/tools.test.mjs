@@ -65,6 +65,9 @@ const aborted = ip.parseIperf(fixture('iperf-aborted.txt'));
 check(aborted.tests.length === 2 && aborted.tests[0].aborted && aborted.tests[0].error === 'the client has terminated' && aborted.tests[0].intervals.length === 1 && !aborted.tests[1].aborted && aborted.tests[1].done, 'a client that goes away: the test is interrupted with iperf3\'s reason, the repeated last interval is dropped, and the next test is fine', j(aborted.tests.map(x => [x.aborted, x.error, x.intervals.length])));
 const busy = ip.parseIperf(fixture('iperf-portbusy.txt'));
 check(busy.tests.length === 0 && j(busy.errors) === j(['unable to start listener for connections: Address in use']), 'a port that is taken is an error of the server, worded without iperf3\'s prefix', j(busy));
+const term = ip.parseIperf(fixture('iperf-terminated.txt'));
+const termMid = ip.parseIperf(fixture('iperf-tests.txt').split('\n').slice(0, 2).join('\n') + '\n' + fixture('iperf-terminated.txt'));
+check(term.errors.length === 0 && term.terminated && term.tests.length === 0 && termMid.errors.length === 0 && termMid.terminated && termMid.tests[0].aborted && termMid.tests[0].error === null, 'a server ended by a signal (Stop or the end of its time) is not an error, with or without a test running', j([term, termMid.errors]));
 const live = fixture('iperf-tests.txt').split('\n').slice(0, 2).join('\n') + '\n{"event":"interval","data":{"stre';
 const running = ip.parseIperf(live);
 check(running.tests.length === 1 && !running.tests[0].done && !running.tests[0].aborted && running.tests[0].summary === null && running.tests[0].intervals.length === 1, 'a test that is still running has points but no totals, and a half-written last line is ignored', j(running));
@@ -145,6 +148,10 @@ check(j(pm.asName('CLOUDFLARENET - Cloudflare, Inc., US')) === j({ short: 'CLOUD
 const hops = m.parseTraceroute(fixture('traceroute-asn.txt')).hops;
 check(hops.length === 7 && j(pm.asPath(hops, asn).map(p => [p.asn, p.name])) === j([['30722', 'Fastweb SpA'], ['13335', 'Cloudflare, Inc.']]), 'the traceroute inside the script job is still read, and the networks it crosses are listed in order', j(pm.asPath(hops, asn)));
 check(pm.parseAsn(fixture('traceroute-asn.txt').split('### END')[0]).any === false && pm.parseAsn('### BEGIN trace 1.0 \n### END 0 2.0\n### BEGIN asn 2.0 8.8.8.8\n').pending, 'lookups still running are pending');
+const cut = fixture('traceroute-asn-timeout.txt');
+const asn2 = pm.parseAsn(cut);
+check(asn2.byAddr.get('37.179.98.1').asn === '30722' && asn2.byAddr.get('37.179.98.1').net === null && asn2.byAddr.get('185.210.48.132').asn === null && j(asn2.byAddr.get('185.210.48.132').net) === j({ range: '185.210.48.0 - 185.210.48.255', netname: 'VODAFONE-IT', country: 'IT', descr: null }), 'an address no AS announces is described by the registry\'s record of its range (here the router\'s next hop at Fastweb, a trace that hit its time limit with 13 silent hops)', j([...asn2.byAddr.entries()]));
+check(m.parseTraceroute(cut).hops.length === 17 && m.parseTraceroute(cut).hops[3].addrs[0] === '185.210.48.132' && pm.parseAsn(cut.split('### BEGIN net')[0] + '### BEGIN net 1.0 185.210.48.132\n').pending && pm.parseAsn('### BEGIN asn 1.0 8.8.8.8\n\n### END 0 2.0\n### BEGIN net 2.0 8.8.8.8\nnetname:        NON-RIPE-NCC-MANAGED-ADDRESS-BLOCK\n\n### END 0 3.0\n').byAddr.get('8.8.8.8').net === null, 'the trace that was cut by its time limit is still read; a whois answer for a range the registry does not manage says nothing; a running whois is pending');
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nall new-tool checks passed');
 process.exit(failed ? 1 : 0);

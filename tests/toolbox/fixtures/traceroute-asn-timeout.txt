@@ -1,0 +1,38 @@
+### BEGIN trace 600662.31 
+traceroute to www.corriere.it (199.232.197.50), 20 hops max, 46 byte packets
+ 1  37.179.98.1  4.773 ms  4.047 ms
+ 2  *  *
+ 3  *  *
+ 4  185.210.48.132  4.897 ms  6.020 ms
+ 5  *  *
+ 6  *  *
+ 7  *  *
+ 8  *  *
+ 9  *  *
+10  *  *
+11  *  *
+12  *  *
+13  *  *
+14  *  *
+15  *  *
+16  *  *
+17  *Terminated
+
+### END 143 600722.31
+### BEGIN asn 600722.33 37.179.98.1
+"30722 | 37.179.96.0/19 | IT | ripencc | 2012-03-19"
+
+### END 0 600722.34
+### BEGIN asn 600722.35 185.210.48.132
+
+### END 0 600722.64
+### BEGIN net 600722.64 185.210.48.132
+inetnum:        185.210.48.0 - 185.210.48.255
+netname:        VODAFONE-IT
+country:        IT
+
+### END 0 600723.65
+### BEGIN asname 600723.66 30722
+"30722 | IT | ripencc | 2003-11-17 | VODAFONE-IT-ASN - Fastweb SpA, IT"
+
+### END 0 600723.67

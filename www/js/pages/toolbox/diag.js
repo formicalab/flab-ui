@@ -185,11 +185,13 @@ function selectInput(state, key, options, disabled = false) {
   return select;
 }
 
-// The source field: free text with the router's interface names offered as suggestions.
+// The source field: a select of "automatic" and the router's interface names (a value already in the form that is not one of
+// them, such as an address, is kept as an extra choice).
 function sourceInput(state, status, disabled) {
-  const input = textInput(state, 'source', { placeholder: 'interface or address', mono: true, disabled });
-  input.setAttribute('list', 'rt-diag-devices');
-  return [input, h('datalist', { id: 'rt-diag-devices' }, (status.devices ?? []).map(d => h('option', { value: d })))];
+  const devices = status.devices ?? [];
+  const current = state.diag.form.source;
+  const extra = current && !devices.includes(current) ? [current] : [];
+  return selectInput(state, 'source', [['', 'automatic'], ...[...devices, ...extra].map(d => [d, d])], disabled);
 }
 
 // The Run button (`label` reads "Start server" for the iperf3 server); it is disabled for a login that may not start
@@ -251,8 +253,8 @@ function formCard(state, status) {
   if (!tools.some(([t]) => t === f.tool) && tools.length) f.tool = tools[0][0];
   // The address family field, shared by the tools that resolve names.
   const family = () => field('Address family', 'Force IPv4 or IPv6 name resolution', selectInput(state, 'family', [['', 'automatic'], ['4', 'IPv4'], ['6', 'IPv6']], running));
-  // The optional source field (interface or address the probes leave from), shared by ping and traceroute.
-  const source = () => field('From (optional)', 'The interface or address the probes leave from', sourceInput(state, status, running));
+  // The optional source field (the interface the probes leave from), shared by ping and traceroute.
+  const source = () => field('From', 'The interface the probes leave from; automatic lets the routing table decide', sourceInput(state, status, running));
 
   const options = f.tool === 'ping' ? [
     field('Pings', `How many echo requests to send (1 to ${status.max_pings ?? 60}), one a second`, textInput(state, 'count', { type: 'number', disabled: running })),

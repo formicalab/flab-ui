@@ -24,7 +24,7 @@ function serverState(job, parsed, port, bind) {
         muted(bind ? ` at ${bind} only` : ' on every address'), h('span', { className: 'rt-iperf-left' }, `${fmtClock(left)} left`)),
       h('div', { className: 'rt-countdown', title: 'Time until the server stops by itself' }, h('i', { style: `width:${Math.min(100, elapsed / job.limit * 100).toFixed(1)}%` })));
   }
-  const why = job.stopRequested || job.stopped ? 'Stopped.' : job.timedOut ? 'The time was up, so the server stopped by itself.' : parsed.errors.length ? 'The server could not run.' : 'The server stopped.';
+  const why = job.stopRequested || job.stopped ? 'Stopped.' : job.timedOut ? 'The time was up, so the server stopped by itself.' : parsed.errors.length ? 'The server could not run.' : parsed.terminated ? 'The server was stopped.' : 'The server stopped.';
   return h('div', { className: 'rt-iperf-state ended' }, h('div', { className: 'rt-iperf-head' }, icon('check-circle'), h('strong', {}, why)));
 }
 

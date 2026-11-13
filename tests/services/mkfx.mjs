@@ -6,7 +6,7 @@
 // Usage: node mkfx.mjs <output dir>
 import fs from 'node:fs';
 import path from 'node:path';
-import { CASES, INSTALLED, JUNK, LIST_CMD, OUTPUT_CMD, RC, RC_CMD, slug, waitCmd } from './cases.mjs';
+import { CASES, INSTALLED, JUNK, LIST_CMD, NETSTAT, NETSTAT_CMD, OUTPUT_CMD, RANGE_CMD, RC, RC_CMD, slug, waitCmd } from './cases.mjs';
 
 const root = process.argv[2];
 
@@ -28,6 +28,8 @@ function scenario(name, { code, output }) {
   const put = (cmd, text) => fs.writeFileSync(path.join(dir, slug(cmd)), text);
   put(LIST_CMD, [...INSTALLED, ...JUNK].sort().join('\n') + '\n');
   put(RC_CMD, RC.join('\n') + '\n');
+  put(NETSTAT_CMD, NETSTAT);
+  put(RANGE_CMD, '32768\t60999\n');
   put(OUTPUT_CMD, output);
   for (const c of CASES) {
     if (typeof c.args.name === 'string' && typeof c.args.action === 'string') put(waitCmd(c.args.name, c.args.action), code);

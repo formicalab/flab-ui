@@ -64,9 +64,10 @@ const tidy = text => String(text).replace(/^iperf3?: /i, '').replace(/^error - /
 
 // What the output of the server says: the tests so far (the last may still be running), the version, and any errors that
 // belong to no test. A line that is not an event (an error printed in plain text, such as an unavailable port) is an error.
-//   { tests, version, errors }
+// `terminated` is true when the server reported that a signal ended it (a Stop or the end of its time).
+//   { tests, version, errors, terminated }
 export function parseIperf(text) {
-  const out = { tests: [], version: null, errors: [] };
+  const out = { tests: [], version: null, errors: [], terminated: false };
   let cur = null;
   // Ends the current test as broken off (the client went away or a new one started before its `end`).
   const abort = () => { if (cur && !cur.done) cur.aborted = true; };
@@ -97,7 +98,9 @@ export function parseIperf(text) {
       cur.summary = summaryOf(d, cur);
     } else if (ev.event === 'error') {
       const msg = tidy(typeof d === 'string' ? d : (d?.message ?? JSON.stringify(d)));
-      if (cur && !cur.done) { cur.error = msg; cur.aborted = true; } else out.errors.push(msg);
+      // The server ending on a signal (Stop, or the time running out) is how it is meant to end, not an error.
+      if (/^interrupt - the server has terminated by signal/i.test(msg)) { out.terminated = true; abort(); }
+      else if (cur && !cur.done) { cur.error = msg; cur.aborted = true; } else out.errors.push(msg);
     }
   }
   return out;

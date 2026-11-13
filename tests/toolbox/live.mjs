@@ -78,6 +78,7 @@ function script(a) {
     // With the AS lookups on (the default) the job is a script; the plain samples are wrapped in the one block it starts with.
     const wrap = t => a.asn ? `### BEGIN trace 1.0 \n${t}\n### END 0 2.0\n` : t;
     if (h === 'asn.example') return { chunks: reveal(fx('traceroute-asn.txt'), 5), exit: 0 };
+    if (h === 'asn-net.example') return { chunks: reveal(fx('traceroute-asn-timeout.txt'), 4), exit: 0 };
     if (h === 'unreached.example') return { chunks: reveal(wrap(TRACE.split('\n').slice(0, 6).join('\n') + '\n'), 3), exit: 0 };
     if (h === 'v6.example') return { chunks: reveal(wrap(a.resolve ? TRACE6_NAMES : TRACE6), 3), exit: 0 };
     return { chunks: reveal(wrap(a.resolve ? TRACE_NAMES : TRACE), 4), exit: 0 };
@@ -226,7 +227,7 @@ const navItems = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts())
 check(navItems.indexOf('Toolbox') === navItems.indexOf('Logs') - 1 && navItems.indexOf('Toolbox') > 0, 'it sits just above Logs in the navigation', navItems.join(' | '));
 check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,DNS compare,TLS certificate,iperf3 server,Wake-on-LAN', 'the Toolbox offers the connectivity check, ping, traceroute, DNS lookup and comparison, the certificate check and Wake-on-LAN');
 check(await tool('Ping').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Pings').locator('input').inputValue() === '4' && await fieldOf('Size (bytes)').locator('input').inputValue() === '56' && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'ping is the default tool, with its defaults, and nothing is shown before the first run');
-check((await page.locator('#rt-diag-devices option').evaluateAll(o => o.map(x => x.value))).join() === 'br-lan,lo,wan', 'the router\'s interfaces are offered as sources');
+check((await fieldOf('From').locator('option').evaluateAll(o => o.map(x => x.value))).join() === ',br-lan,lo,wan' && await fieldOf('From').locator('select').inputValue() === '', 'the router\'s interfaces are offered as sources in a dropdown, automatic being the default');
 await shot('empty');
 
 console.log('\n== the form refuses bad input before asking the router ==');
@@ -275,7 +276,7 @@ check(/ping failed: bad address 'no-such-host\.invalid'/.test(await resultText()
 console.log('\n== the options of a ping ==');
 await tool('Ping').click(); await host().fill('2606:4700:4700::1111');
 await fieldOf('Pings').locator('input').fill('2'); await fieldOf('Size (bytes)').locator('input').fill('1400');
-await fieldOf('Address family').locator('select').selectOption('6'); await fieldOf('From (optional)').locator('input').fill('br-lan');
+await fieldOf('Address family').locator('select').selectOption('6'); await fieldOf('From').locator('select').selectOption('br-lan');
 await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'ping', host: '2606:4700:4700::1111', count: 2, size: 1400, family: '6', source: 'br-lan' }), 'count, size, family and source are sent when set', j(mock.starts.at(-1)));
 check((await resultText()).includes('Received') && await stat('Received') === '2', 'an IPv6 ping');
@@ -283,7 +284,7 @@ check((await resultText()).includes('Received') && await stat('Received') === '2
 console.log('\n== stopping a ping ==');
 await tool('Ping').click(); await host().fill('slow.example');
 await fieldOf('Pings').locator('input').fill('10'); await fieldOf('Size (bytes)').locator('input').fill('56');
-await fieldOf('Address family').locator('select').selectOption(''); await fieldOf('From (optional)').locator('input').fill('');
+await fieldOf('Address family').locator('select').selectOption(''); await fieldOf('From').locator('select').selectOption('');
 await runBtn().click();
 await page.waitForFunction(() => document.querySelectorAll('.rt-pt').length >= 3, null, { timeout: 15000 });
 check(await page.locator('.rt-running').count() === 1 && await stopBtn().isVisible() && await runBtn().count() === 0 && await host().isDisabled() && await fieldOf('Pings').locator('input').isDisabled(), 'while it runs the form is locked, Stop replaces Run and the status shows it running');
@@ -331,7 +332,7 @@ await fieldOf('Host names').locator('select').selectOption('');
 
 console.log('\n== DNS lookup ==');
 await tool('DNS lookup').click(); await host().fill('example.com');
-check(await fieldOf('Record type').locator('select').inputValue() === 'A' && (await fieldOf('Record type').locator('option').allInnerTexts()).join() === 'A,AAAA,MX,TXT,NS,CNAME,SOA,PTR,SRV,CAA' && await fieldOf('From (optional)').count() === 0 && /Using kdig\./.test(await page.locator('.rt-note').innerText()), 'a lookup has a record type and a server; the tool in use is named');
+check(await fieldOf('Record type').locator('select').inputValue() === 'A' && (await fieldOf('Record type').locator('option').allInnerTexts()).join() === 'A,AAAA,MX,TXT,NS,CNAME,SOA,PTR,SRV,CAA' && await fieldOf('From').count() === 0 && /Using kdig\./.test(await page.locator('.rt-note').innerText()), 'a lookup has a record type and a server; the tool in use is named');
 await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'dns', host: 'example.com', type: 'A' }), 'a lookup asks for the host and the type only', j(mock.starts.at(-1)));
 check(/2 answers/.test(await page.locator('.rt-dnshead').innerText()) && /answered by 127\.0\.0\.1/.test(await page.locator('.rt-dnshead').innerText()) && /ANSWER SECTION/.test(await page.locator('.rt-raw-out').innerText()), 'the answer count and the server, then the tool\'s own output');
@@ -503,6 +504,10 @@ const asnRows = await page.locator('.rt-trace tbody tr').allInnerTexts().then(t 
 check(mock.starts.at(-1).asn === true && /^1 37\.179\.98\.1 AS30722 Fastweb SpA · IT/.test(asnRows[0]) && /^4 185\.210\.48\.76 no AS data/.test(asnRows[3]) && /^7 1\.1\.1\.1 AS13335 Cloudflare, Inc\./.test(asnRows[6]), 'each router that answered is followed by its AS number, organization and country; one with no record says so', asnRows.join(' | '));
 check(/Crosses 2 networks:\s*AS30722 Fastweb SpA\s*→\s*AS13335 Cloudflare, Inc\./.test((await page.locator('.rt-aspath').innerText()).replace(/\s+/g, ' ')), 'the networks the path crosses are listed in order');
 await shot('traceroute-asn');
+await host().fill('asn-net.example'); await runBtn().click(); await waitDone();
+const netRows = await page.locator('.rt-trace tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+check(/^1 37\.179\.98\.1 AS30722 Fastweb SpA · IT/.test(netRows[0]) && /^4 185\.210\.48\.132 not announced · VODAFONE-IT · IT/.test(netRows[3]), 'an address no AS announces is shown with the network name the registry lists it under', netRows.slice(0, 4).join(' | '));
+await host().fill('asn.example');
 await fieldOf('Networks (AS)').locator('select').selectOption(''); await runBtn().click(); await waitDone();
 check(!('asn' in mock.starts.at(-1)) && await page.locator('.rt-asn').count() === 0 && await page.locator('.rt-aspath').count() === 0, 'with the lookups off nothing is asked and no network is shown');
 await fieldOf('Networks (AS)').locator('select').selectOption('1');

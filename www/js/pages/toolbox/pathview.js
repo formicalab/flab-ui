@@ -43,11 +43,13 @@ export function mtrBody(job) {
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 10, className: 'muted' }, job.running ? 'Waiting for the first hop…' : 'No hops'))))));
 }
 
-// The line under a traceroute hop's address that names its network: the AS number with the organization and country, or
-// "no AS data" for an address with no origin record. `asn` is parseAsn's result. Null for an address that was not looked up.
+// The line under a traceroute hop's address that names its network: the AS number with the organization and country; for
+// an address no AS announces, the network name the registry lists it under ("not announced · VODAFONE-IT · IT"), or
+// "no AS data" when even that is unknown. `asn` is parseAsn's result. Null for an address that was not looked up.
 export function asnLine(asn, addr) {
   const e = asn?.byAddr.get(addr);
   if (!e) return asn?.pending ? h('span', { className: 'rt-asn muted' }, 'looking up…') : null;
+  if (!e.asn && e.net) return h('span', { className: 'rt-asn muted', title: `No AS announces this address. The registry lists ${e.net.range ?? 'its range'} as ${e.net.netname}${e.net.descr ? ` (${e.net.descr})` : ''}.` }, 'not announced · ', h('strong', {}, e.net.netname), e.net.country ? ` · ${e.net.country}` : '');
   if (!e.asn) return h('span', { className: 'rt-asn muted' }, 'no AS data');
   const { org, short } = asName(e.name);
   return h('span', { className: 'rt-asn', title: [e.prefix, e.registry, short].filter(Boolean).join(' · ') }, badge(`AS${e.asn}`, 'info'), ' ', org ?? short ?? '', e.country ? h('span', { className: 'muted' }, ` · ${e.country}`) : null);

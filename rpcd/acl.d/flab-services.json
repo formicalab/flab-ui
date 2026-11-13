@@ -1,6 +1,6 @@
 {
   "flab": {
-    "description": "flab-ui Services page: list the init scripts and start, stop or restart one",
+    "description": "flab-ui Services page: list the init scripts and start, stop, restart, enable or disable one",
     "read": {
       "ubus": {
         "flab.services": ["list"]

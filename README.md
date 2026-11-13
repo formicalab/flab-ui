@@ -275,7 +275,7 @@ return {
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
 | `flab.system.uc` | `flab.system` | `cpu` | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime` |
 | `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
-| `flab.services.uc` | `flab.services` | `list`; `control` (`name`, `action`) | `/etc/init.d` (executable files) and `/etc/rc.d` (`S<NN><name>` = starts at boot) for `list`; `control` runs `/etc/init.d/<name> start\|stop\|restart` after strict validation (see [Services](#services-route-services)); its ACL fragment grants `list` under `read` and `control` under `write` |
+| `flab.services.uc` | `flab.services` | `list`; `control` (`name`, `action`) | `/etc/init.d` (executable files) and `/etc/rc.d` (`S<NN><name>` = starts at boot), `netstat -lntup` and `/proc/sys/net/ipv4/ip_local_port_range` (the listening sockets) for `list`; `control` runs `/etc/init.d/<name> start\|stop\|restart` after strict validation (see [Services](#services-route-services)); its ACL fragment grants `list` under `read` and `control` under `write` |
 
 The System settings page needs no plugin: it reads `/etc/config/system` through rpcd's own `uci` object, whose
 calls (on the `system` config only) are granted by `rpcd/acl.d/flab-settings.json`; the DHCP page likewise uses
@@ -948,21 +948,34 @@ anything, so the init scripts do the work, as they do for `/etc/init.d/<name> re
 - **State**: `running` (procd reports every instance running), `idle` (procd knows the service, nothing runs) or
   `no instance` (procd does not list it: stopped, a one-shot service such as `firewall` or `network`, or not managed
   by procd). The legend above the table says so. A procd service without an init script is listed without buttons.
-- **Buttons**: Start (disabled while the service runs), Stop and Restart on every init script. The boot-sequence
+- **Listening**: the TCP and UDP ports the service's processes have open, one chip per protocol and port (TCP first,
+  then by port), matched by PID: `flab.services list` also returns `listening` (from `netstat -lntup`, run as root so every
+  socket has its owner), and a socket belongs to the row whose procd PIDs include its owner. The chip's tooltip names the
+  addresses; a port open on loopback only (`127.0.0.1`, `::1`) is dashed and dimmed, so the ones reachable from the network
+  stand out. UDP sockets in the kernel's ephemeral range (`ip_local_port_range`, 32768 and up: the port picked for an
+  outgoing query) and sockets that no process owns (WireGuard's, which the kernel holds) are left out. A service that
+  procd does not track by PID, or that has no open port, shows a dash.
+- **Buttons**: Start (disabled while the service runs; a disabled button keeps the normal look at reduced opacity, as
+  `base.css` defines the Bootstrap disabled-state variables for `.btn-fl` and `.btn-brand`), Stop and Restart on every
+  init script, then **Disable** for a service that starts at boot or **Enable** for one that does not (the script's own
+  `disable` and `enable`, which remove or add the `S<NN><name>` link in `/etc/rc.d`; the running service is not touched,
+  and the Start at boot column changes once the list refreshes). The boot-sequence
   scripts (`boot`, `done`, `umount`) have none. While a call runs every button is disabled and the row says
   "Restarting…"; afterwards the outcome is shown above the tiles (green when the script exited 0, red with the
   script's own output when it failed, until dismissed) and the list is refreshed. A login that may not call
   `flab.services control` (`can()`) sees no buttons and a note; without the plugin the page is the read-only procd list.
 - **Confirmation** (`model.js`, `riskOf`): stopping or restarting `rpcd`, `uhttpd`, `network`, `dropbear`,
-  `firewall`, `wpad`, `dnsmasq`, `odhcpd` or `log` first shows what will happen, in plain words, with Confirm and
-  Cancel; nothing is sent before Confirm. The notes that can lock the user out are red (restarting `rpcd` signs
-  everyone out, including the user; stopping `uhttpd` or `rpcd` cannot be undone from the page; stopping `network`
-  or `wpad` can cut the connection), the others yellow. Starting never asks.
+  `firewall`, `wpad`, `dnsmasq`, `odhcpd` or `log`, and disabling any of them at boot, first shows what will happen, in
+  plain words, with Confirm and Cancel; nothing is sent before Confirm. The notes that can lock the user out are red
+  (restarting `rpcd` signs everyone out, including the user; stopping `uhttpd` or `rpcd` cannot be undone from the page;
+  stopping `network` or `wpad` can cut the connection; disabling `rpcd`, `uhttpd`, `network` or `firewall` does nothing
+  now but locks the router out or leaves it unprotected after its next restart), the others yellow. Starting and enabling
+  never ask.
 - **Session loss**: `rpcd` keeps the sessions in memory, so after it restarts the next request is refused and the
   shell returns to the sign-in screen with "Session expired"; the outcome note says beforehand that the session ends.
 - **Backend** (`flab.services`): `control` accepts a name that is, as a whole, a plain file name (letter or digit
   first, then letters, digits, `_`, `.` and `-`, at most 64 characters) **and** is in the list of executable files
-  of `/etc/init.d`, an action that is exactly `start`, `stop` or `restart`, and refuses the boot-sequence scripts.
+  of `/etc/init.d`, an action that is exactly `start`, `stop`, `restart`, `enable` or `disable`, and refuses the boot-sequence scripts.
   Only that validated name and action reach the shell command line; nothing else is interpolated. A refused call
   returns `ok: false` and an `error`, and runs nothing. `reload` is not offered because whether a script supports
   it is not known without running it. The reply is `{ name, action, ok, code, detached, output, error }`; `output`
@@ -971,7 +984,8 @@ anything, so the init scripts do the work, as they do for `/etc/init.d/<name> re
   output going to a file, so a daemon that keeps the output open cannot hold the call up. `stop` and `restart`
   of `rpcd`, `uhttpd` and `network`, which carry the reply or the connection, instead run in the background two
   seconds later and return `detached: true` at once; their result cannot be reported, so the page says the action
-  was requested and refreshes a few seconds later.
+  was requested and refreshes a few seconds later. `enable` and `disable` of those services only touch the boot links
+  and run in the foreground like any other call.
 - **ACL**: `rpcd/acl.d/flab-services.json` grants `flab.services` `list` (read) and `control` (write) and nothing
   generic such as `file exec`; the `service list` call comes from `flab-base.json`.
 
@@ -980,8 +994,8 @@ Diagnostic tools that run on the router and show their output as it arrives: a c
 DNS lookups, a DNS trace and comparisons, a TLS certificate check, an iperf3 server and Wake-on-LAN. The form has a tool
 selector, the host, and the options of the tool:
 for ping the count
-(1 to 60), the packet size (0 to 1400), the address family and a source (an interface or an address; the router's interface
-names are offered as suggestions); for traceroute the maximum hops (1 to 30), the probes per hop (1 to 3), UDP or ICMP
+(1 to 60), the packet size (0 to 1400), the address family and the interface to send from (a dropdown of the router's
+interfaces, "automatic" by default; the plugin also accepts an address); for traceroute the maximum hops (1 to 30), the probes per hop (1 to 3), UDP or ICMP
 probes, whether to look up host names and networks, family and source; for MTR the rounds (3 to 60) and ICMP or UDP; for
 DNS the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and an optional
 server; for the DNS trace the record type and the address family; for the comparison the record type and the servers; for
@@ -1015,8 +1029,12 @@ again. The form remembers its values while the page is open; Run is disabled for
   is the first block, then each public address that answered (up to 30; private, loopback, link-local, shared-address and multicast addresses are
   skipped) is looked up through the router's own resolver in Team Cymru's DNS service (`<reversed address>.origin.asn.cymru.com`,
   `origin6` for IPv6, and `AS<n>.asn.cymru.com` for the name). Each router then shows its AS number, the organization
-  and the country beneath the address ("no AS data" when there is no origin record), and a line under the table lists the
-  networks the path crosses in order. The addresses leave the router only inside those DNS queries.
+  and the country beneath the address, and a line under the table lists the
+  networks the path crosses in order. An address that no AS announces (an operator's own infrastructure range, which has no
+  origin record) is looked up in RIPE's whois instead (a TCP query to `whois.ripe.net` port 43, for the first 8 such
+  addresses of a job; `nc` is needed) and shown as "not announced · NETNAME · country", with the registered range in the
+  tooltip; a range RIPE does not manage, or an answer that does not come, leaves "no AS data". The addresses leave the
+  router only inside those DNS queries and the whois queries.
 - **MTR:** `mtr --raw` against the host for the chosen rounds (one probe a second per hop; ICMP or UDP). The table fills as
   the events arrive: per hop the address, loss with a small bar, probes sent, last, average, best, worst, the spread and a
   sparkline of the delay over time; hops after the first repeated address are cut. Findings in words: whether any probe to
@@ -1099,7 +1117,7 @@ again. The form remembers its values while the page is open; Run is disabled for
   carries on.
 
 `flab.diag` runs the tools detached (`timeout -k 2 <limit> <tool> ... >out 2>&1 &`, with the exit code written to a file)
-under `/tmp/flab-diag/<id>/`: a ping may run its count plus 10 seconds, a traceroute 60 (with the AS lookups up to 60 more),
+under `/tmp/flab-diag/<id>/`: a ping may run its count plus 10 seconds, a traceroute 60 (with the AS lookups up to 108 more),
 MTR its rounds plus 15, a DNS trace 60, a DNS lookup 15, a certificate check 25, a comparison
 60, the connectivity check 75 and the iperf3 server the minutes asked for. The check, the comparison, the certificate check,
 the DNS trace and a traceroute with AS lookups are small shell scripts (`job.sh`,
@@ -1622,22 +1640,27 @@ leftovers from an earlier attempt, a login without write access, the dark theme 
 ### Services suite
 Never starts, stops or restarts a service: every control call is either answered by a fixture or by a mock.
 - **Unit tests** (`model.test.mjs`, no router): merging the init scripts with procd's list (states, services
-  without a script, a missing plugin), the filter, the summary, the buttons a row offers, the confirmation table
+  without a script, a missing plugin), the ports of a service's pids (grouping, scope), the filter, the summary, the buttons a row offers, the confirmation table
   (which services ask, the level, that `rpcd` says the session ends) and the outcome texts.
 - **Backend** (`mkfx.mjs`, `harness.uc`, `assert.mjs`; the calls and the expected command lines are in `cases.mjs`):
   `flab.services.uc` runs on the router with `FLAB_FIXTURES`, so it executes nothing: for each call it finds, in
   a fixture file named after the command line it builds, what that command would have printed. Scenarios `ok`
   (exit 0), `fail` (exit 1 with output), `timeout` (exit 124) and `noresult` (no exit code). The test checks the
-  listing (sorted, boot state and position, junk names dropped, protected scripts), the waited calls, the calls
-  that must run in the background, and 25 refused requests (protected scripts, an unknown service, names such as
+  listing (sorted, boot state and position, junk names dropped, protected scripts), the listening sockets (parsed from a
+  real `netstat -lntup` capture: repeated lines, IPv6 wildcard, loopback, a kernel socket, ephemeral UDP ports), the waited calls, the calls
+  that must run in the background, and 32 refused requests (protected scripts, an unknown service, names such as
   `../../bin/sh`, `dropbear; reboot`, `-h`, a name with a line break or longer than 64 characters, wrongly typed
-  or missing arguments, actions `reload`, `restart; reboot`, `RESTART`): each has a fixture that would report
-  success if its command were run, so a refused call that ran anyway shows up as `ok`. The harness refuses any
+  or missing arguments, actions `reload`, `toggle`, `restart; reboot`, `RESTART`, `ENABLE`, `enable; reboot`; enabling or
+  disabling a boot-sequence script or an unknown service): each has a fixture that would report
+  success if its command were run, so a refused call that ran anyway shows up as `ok`. `enable` and `disable` are also
+  checked to run in the foreground for `rpcd`, `uhttpd` and `network`. The harness refuses any
   call but `list` when no fixtures are set. `list` is also run once for real (it only reads) and compared with the
   router's `/etc/init.d` and `/etc/rc.d`.
 - **Browser** (`live.mjs`): the page first lists the router's own services with any `control` call blocked and
-  failing the test, then a mock of `service` and `flab.services` drives the buttons, the confirmation (warning and
-  danger levels, Cancel sends nothing), buttons disabled while a call runs, success, a failing script with its
+  failing the test, then a mock of `service` and `flab.services` drives the ports of each service (chips, loopback-only
+  dimming, tooltips, a socket nobody owns), the buttons, the confirmation (warning and
+  danger levels, Cancel sends nothing), enabling and disabling at boot (the button that swaps, the boot column, the
+  questions for the critical services, no end of the session for `rpcd`), buttons disabled while a call runs, success, a failing script with its
   output, an error from the router, stop and start without a question, a background restart, a login without
   permission, a missing plugin, the dark theme, a session that ends during a call, and `rpcd` restarted from the
   page (back to the sign-in screen).

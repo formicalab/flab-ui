@@ -1,7 +1,8 @@
 // Services page (route #services): the init scripts of /etc/init.d (flab.services list) merged with the daemons
-// procd reports (`service list`), each with Start, Stop and Restart buttons (flab.services control). Stopping or
-// restarting a service that can cut this page or the router's management access asks for confirmation first,
-// and says in plain words what will happen. The outcome of the last action is shown above the list.
+// procd reports (`service list`), each with Start, Stop, Restart and Enable or Disable (at boot) buttons
+// (flab.services control). Stopping, restarting or disabling a service that can cut this page or the router's
+// management access asks for confirmation first, and says in plain words what will happen. The outcome of the last
+// action is shown above the list.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, can, optional, ubus } from '../../core/ubus.js';
@@ -22,7 +23,8 @@ const DETACHED_REFRESH_MS = 4000;
 
 // What each state means, shown above the table.
 const STATE_HELP = 'running: procd reports every instance running. idle: procd knows the service but nothing runs. '
-  + 'no instance: procd does not list it; it is stopped, a one-shot service (such as firewall or network) or not managed by procd.';
+  + 'no instance: procd does not list it; it is stopped, a one-shot service (such as firewall or network) or not managed by procd. '
+  + 'Listening: the TCP and UDP ports the service\'s processes have open (UDP ports the kernel picked for outgoing queries are left out); a dashed port is open on loopback only.';
 
 // Reads procd's services and, when the plugin is installed, the init scripts (a missing plugin only costs the buttons).
 async function load() {
@@ -116,13 +118,23 @@ function actionCell(row, writable) {
   if (!writable) return null;
   if (!row.installed) return muted('no init script');
   if (row.protected) return muted('boot sequence');
-  const icons = { start: 'play-fill', stop: 'x-circle', restart: 'arrow-clockwise' };
+  const icons = { start: 'play-fill', stop: 'x-circle', restart: 'arrow-clockwise', enable: 'toggle-on', disable: 'toggle-off' };
+  const titles = { enable: `Start ${row.name} at boot`, disable: `Do not start ${row.name} at boot` };
   return h('div', { className: 'svc-actions' }, actionsFor(row).map(a =>
     Object.assign(button(LABELS[a.action], icons[a.action], () => request(row.name, a.action)), {
       id: `svc-${row.name}-${a.action}`,
       disabled: a.disabled || Boolean(state.busy),
-      title: `${LABELS[a.action]} ${row.name}`,
+      title: titles[a.action] ?? `${LABELS[a.action]} ${row.name}`,
     })));
+}
+
+// The Listening cell: one chip per protocol and port the service's processes listen on. A port that is only open on
+// loopback is dimmed, and the tooltip names the addresses.
+function portsCell(row) {
+  if (!row.ports.length) return muted('–');
+  const SCOPE = { all: 'every address', local: 'this router only (loopback)', some: 'specific addresses' };
+  return h('div', { className: 'svc-ports' }, row.ports.map(p =>
+    h('span', { className: `chip svc-port ${p.scope}`, title: `${p.proto.toUpperCase()} port ${p.port}, listening on ${SCOPE[p.scope]}: ${p.addresses.join(', ')}` }, `${p.proto}/${p.port}`)));
 }
 
 // One table row per service.
@@ -132,12 +144,13 @@ function row(r, writable) {
     h('td', {}, stateBadge(r)),
     h('td', {}, bootCell(r)),
     h('td', {}, r.pids.length ? r.pids.join(', ') : muted('–')),
+    h('td', {}, portsCell(r)),
     writable ? h('td', {}, actionCell(r, writable)) : null);
 }
 
 // The services table, with the explanation of the states at the top.
 function servicesCard(rows, writable) {
-  const cols = ['Service', 'State', 'Start at boot', 'PID', writable ? 'Actions' : null].filter(Boolean);
+  const cols = ['Service', 'State', 'Start at boot', 'PID', 'Listening', writable ? 'Actions' : null].filter(Boolean);
   return card('Services', [
     h('p', { className: 'svc-legend muted small' }, STATE_HELP),
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover svc-table' },

@@ -43,6 +43,10 @@ check(svc('dropbear').enabled && svc('dropbear').start === 19 && svc('cron').sta
 check(svc('acme').enabled === false && svc('acme').start === null && svc('umount').enabled === false, 'a service without an S link is disabled (a K link alone does not enable it)');
 check(list.services.filter(s => s.protected).map(s => s.name).join() === 'boot,done,umount', 'only the boot-sequence scripts are protected');
 check(typeof list.generated === 'number' && list.services.every(s => Object.keys(s).sort().join() === 'enabled,name,protected,start'), 'the reply has only the whitelisted fields');
+// The listening sockets as "proto address:port pid".
+const socks = list.listening.map(s => `${s.proto} ${s.address}:${s.port} ${s.pid}`);
+check(Object.keys(list).sort().join() === 'generated,listening,services' && list.listening.every(s => Object.keys(s).sort().join() === 'address,pid,port,proto'), 'the sockets are one object each with the protocol, address, port and pid only');
+check(j(socks) === j(['tcp 0.0.0.0:22 2111', 'tcp :::22 2111', 'tcp 0.0.0.0:53 21319', 'tcp :::53 21319', 'udp 0.0.0.0:67 2571', 'udp 0.0.0.0:500 7013', 'udp :::547 2571', 'tcp 192.168.1.1:3493 3196', 'tcp 127.0.0.1:8953 21319', 'tcp ::1:8953 21319', 'udp :::32767 4576']), 'listening sockets sorted by port: a repeated line is listed once, the IPv6 wildcard keeps its colons, loopback and specific addresses are kept; a socket no process owns and UDP ports in the ephemeral range (32768 and up) are left out', j(socks));
 
 console.log('\n== control: scripts that succeed ==');
 for (const [n, a] of RUN) {
@@ -80,6 +84,8 @@ if (fs.existsSync(path.join(dir, 'real.json'))) {
   const starts = Object.fromEntries(rc.map(l => /^S([0-9]+)(.+)$/.exec(l)).filter(Boolean).map(m => [m[2], +m[1]]));
   check(real.services.every(s => s.enabled === (starts[s.name] !== undefined) && s.start === (starts[s.name] ?? null)), 'enabled and position match the S links of /etc/rc.d', j(real.services.filter(s => s.enabled !== (starts[s.name] !== undefined))));
   check(real.services.filter(s => s.protected).every(s => ['boot', 'done', 'umount'].includes(s.name)) && real.services.some(s => s.name === 'rpcd'), 'rpcd is listed and only boot-sequence scripts are protected');
+  check(Array.isArray(real.listening) && real.listening.length > 3 && real.listening.every(s => ['tcp', 'udp'].includes(s.proto) && Number.isInteger(s.port) && s.port > 0 && s.port < 65536 && Number.isInteger(s.pid) && s.pid > 0 && /^[0-9a-f.:]+$/i.test(s.address) && !(s.proto === 'udp' && s.port >= 32768)), 'the router\'s listening sockets are read: protocol, address, port and the owning pid, with no ephemeral UDP port', j(real.listening?.slice(0, 3)));
+  check(real.listening.some(s => s.proto === 'tcp' && s.port === 22) && real.listening.every((s, i, a) => i === 0 || a[i - 1].port <= s.port), 'ssh is among them and the list is sorted by port');
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nall Services backend checks passed');

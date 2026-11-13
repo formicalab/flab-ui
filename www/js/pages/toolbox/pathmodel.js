@@ -102,10 +102,11 @@ function columns(output) {
 }
 
 // What a traceroute with AS lookups found about the routers that answered.
-//   { byAddr: Map(address -> { asn, prefix, country, registry, name }), asns: Map(number -> name), pending, any }
+//   { byAddr: Map(address -> { asn, prefix, country, registry, name, net }), asns: Map(number -> name), pending, any }
 // `asn` blocks give the origin of an address (AS number, prefix, country, registry), `asname` blocks the name of an AS
-// (the last column, "NAME - Organization, CC"). An address with no origin record has an entry with `asn: null`. `pending`
-// is true while lookups are still running, so the page can show that more is coming.
+// (the last column, "NAME - Organization, CC"), `net` blocks the registry's record of an address that has no origin
+// ({ range, netname, country, descr }, null when the registry does not manage the range). An address with no origin record
+// has an entry with `asn: null`. `pending` is true while lookups are still running, so the page can show that more is coming.
 export function parseAsn(text) {
   const blocks = parseBlocks(text);
   const names = new Map();
@@ -113,13 +114,25 @@ export function parseAsn(text) {
     const c = columns(b.output);
     if (c.length >= 5) names.set(b.detail.split(/\s+/)[0], c.slice(4).join(' | '));
   }
+  const nets = new Map();
+  for (const b of blocks.filter(x => x.id === 'net')) nets.set(b.detail.split(/\s+/)[0], netOf(b.output));
   const byAddr = new Map();
   for (const b of blocks.filter(x => x.id === 'asn')) {
     const c = columns(b.output);
+    const addr = b.detail.split(/\s+/)[0];
     const asn = (c[0] ?? '').split(/\s+/).find(x => /^\d+$/.test(x)) ?? null;
-    byAddr.set(b.detail.split(/\s+/)[0], { asn, prefix: asn ? c[1] ?? null : null, country: asn ? c[2] ?? null : null, registry: asn ? c[3] ?? null : null, name: asn ? names.get(asn) ?? null : null });
+    byAddr.set(addr, { asn, prefix: asn ? c[1] ?? null : null, country: asn ? c[2] ?? null : null, registry: asn ? c[3] ?? null : null, name: asn ? names.get(asn) ?? null : null, net: nets.get(addr) ?? null });
   }
-  return { byAddr, asns: names, pending: blocks.some(b => (b.id === 'asn' || b.id === 'asname') && b.running), any: byAddr.size > 0 };
+  return { byAddr, asns: names, pending: blocks.some(b => ['asn', 'net', 'asname'].includes(b.id) && b.running), any: byAddr.size > 0 };
+}
+
+// The registry record in the output of a `net` block (the first whois object: inetnum or inet6num, netname, country,
+// descr), or null when it names nothing or the range is one the registry does not manage (RIPE's "NON-RIPE-NCC-MANAGED").
+function netOf(output) {
+  const get = key => String(output ?? '').split('\n').map(l => l.match(new RegExp(`^${key}:\\s*(.+)$`))?.[1]?.trim()).find(Boolean) ?? null;
+  const netname = get('netname');
+  if (!netname || /^NON-RIPE-NCC-MANAGED/i.test(netname)) return null;
+  return { range: get('inetnum') ?? get('inet6num'), netname, country: get('country'), descr: get('descr') };
 }
 
 // An AS name as "Organization" and the AS's own short name: "CLOUDFLARENET - Cloudflare, Inc., US" gives

@@ -7,6 +7,11 @@
 .svc-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
 .svc-busy { display: inline-flex; align-items: center; gap: .45rem; color: var(--fl-muted); }
 
+/* The ports a service listens on; a port open on loopback only is dimmed. */
+.svc-ports { display: flex; flex-wrap: wrap; gap: .25rem; max-width: 22rem; }
+.svc-ports .chip { margin-right: 0; font-family: var(--fl-mono); color: var(--fl-text); }
+.svc-ports .chip.local { color: var(--fl-muted); border-style: dashed; }
+
 /* Status notes above the tiles: the confirmation of a risky action, the outcome of a call, and hints. */
 .svc-note { display: flex; align-items: flex-start; flex-wrap: wrap; gap: .75rem; padding: .7rem .9rem; margin-bottom: 1rem; border-radius: 6px; font-size: .875rem; }
 .svc-note > svg { flex: none; margin-top: .15rem; }
