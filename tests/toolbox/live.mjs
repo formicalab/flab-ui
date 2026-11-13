@@ -5,6 +5,7 @@
 // reads.
 // Usage: node live.mjs   (env: FLAB_SID, FLAB_ACLS, FLAB_URL, FLAB_SHOTS)
 import { chromium } from 'playwright-core';
+import fs from 'node:fs';
 import path from 'node:path';
 import { DRILL, KDIG, KDIG_NX, NSLOOKUP, PING_DOWN, PING_LOSSY, PING_OK, PING_V6, PING_BAD, TRACE, TRACE6, TRACE6_NAMES, TRACE_NAMES } from './samples.mjs';
 import { CHECK_OK, COMPARE, COMPARE_NX, TLS_EXAMPLE, TLS_EXPIRED, TLS_GAP, TLS_LEAFONLY, TLS_REFUSED, TLS_RESET, TLS_SELFSIGNED } from './samples-tools.mjs';
@@ -15,6 +16,8 @@ const acls = JSON.parse(process.env.FLAB_ACLS);
 const shots = process.env.FLAB_SHOTS;
 // A deep copy of `o`, so each scenario can mutate its own state.
 const clone = o => JSON.parse(JSON.stringify(o));
+// The real capture fixtures/`f` (output of the tools on the router), with LF line endings.
+const fx = f => fs.readFileSync(path.join(import.meta.dirname, 'fixtures', f), 'utf8').replace(/\r/g, '');
 
 let failed = 0;
 // Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
@@ -23,8 +26,10 @@ const j = JSON.stringify;
 
 //#region The mock router
 const HOSTS = [{ mac: '34:c6:dd:35:4d:db', name: 'H7c', ip: '192.168.1.7', dev: 'br-lan', reserved: true }, { mac: 'dc:cd:2f:a8:b1:7a', name: 'Epson', ip: '192.168.1.21', reserved: true }, { mac: 'a4:5e:60:00:00:01', name: 'Tablet', ip: '192.168.1.50', dev: 'br-lan' }, { mac: '02:11:22:33:44:55' }];
+const LIMITS = { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75, trace: 60, mtr: 15 };
+const IPERF_ADDRESSES = [{ iface: 'lan', device: 'br-lan', ip: '192.168.1.1', family: 4, zone: 'lan', input: 'ACCEPT' }, { iface: 'lan6', device: 'br-lan', ip: '2001:db8:1::1', family: 6, zone: 'lan', input: 'ACCEPT' }, { iface: 'wan', device: 'wan', ip: '203.0.113.9', family: 4, zone: 'wan', input: 'REJECT' }];
 // The mock `status` reply: available tools, limits, devices, and hosts, reflecting the current `mock` switches.
-const STATUS = () => ({ generated: 1, tools: { ping: true, traceroute: true, nslookup: true, dig: false, kdig: true, drill: true, openssl: mock.openssl }, dns_tool: mock.dnsTool, types: ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'], devices: ['br-lan', 'lo', 'wan'], limits: { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75 }, starttls: ['smtp', 'imap', 'pop3', 'ftp'], upstream: ['2a01:8d0:601:5002:91:80:35:166', '1.1.1.1'], check_host: 'example.com', wol: mock.wol, hosts: mock.noHosts ? [] : HOSTS });
+const STATUS = () => ({ generated: 1, tools: { ping: true, traceroute: true, nslookup: true, dig: false, kdig: mock.kdig, drill: true, openssl: mock.openssl, mtr: mock.mtr, iperf3: mock.iperf3 }, dns_tool: mock.dnsTool, asn: true, types: ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'], devices: ['br-lan', 'lo', 'wan'], limits: LIMITS, max_pings: 60, mtr_cycles: [3, 60, 10], starttls: ['smtp', 'imap', 'pop3', 'ftp'], upstream: ['2a01:8d0:601:5002:91:80:35:166', '1.1.1.1'], check_host: 'example.com', wol: mock.wol, hosts: mock.noHosts ? [] : HOSTS, iperf: mock.iperf3 ? { minutes: [1, 2, 5, 15, 30], port: 5201, min_port: 1024, addresses: IPERF_ADDRESSES, exposed: mock.exposed ? ['wan'] : [] } : null });
 
 // A block of the connectivity check's output with its body replaced (the END line keeps the given exit code).
 function swapBlock(text, id, body, exit = 1) {
@@ -70,16 +75,28 @@ function script(a) {
     return { chunks: reveal(PING_OK, 4), exit: 0 };
   }
   if (a.tool === 'traceroute') {
-    if (h === 'unreached.example') return { chunks: reveal(TRACE.split('\n').slice(0, 6).join('\n') + '\n', 3), exit: 0 };
-    if (h === 'v6.example') return { chunks: reveal(a.resolve ? TRACE6_NAMES : TRACE6, 3), exit: 0 };
-    return { chunks: reveal(a.resolve ? TRACE_NAMES : TRACE, 4), exit: 0 };
+    // With the AS lookups on (the default) the job is a script; the plain samples are wrapped in the one block it starts with.
+    const wrap = t => a.asn ? `### BEGIN trace 1.0 \n${t}\n### END 0 2.0\n` : t;
+    if (h === 'asn.example') return { chunks: reveal(fx('traceroute-asn.txt'), 5), exit: 0 };
+    if (h === 'unreached.example') return { chunks: reveal(wrap(TRACE.split('\n').slice(0, 6).join('\n') + '\n'), 3), exit: 0 };
+    if (h === 'v6.example') return { chunks: reveal(wrap(a.resolve ? TRACE6_NAMES : TRACE6), 3), exit: 0 };
+    return { chunks: reveal(wrap(a.resolve ? TRACE_NAMES : TRACE), 4), exit: 0 };
+  }
+  if (a.tool === 'mtr') return { chunks: reveal(fx('mtr.txt'), 5), exit: 0 };
+  if (a.tool === 'trace') {
+    const sample = { 'www.ibm.com': 'trace-ibm.txt', 'www.github.com': 'trace-github.txt', 'nope-flab-test.example.com': 'trace-nxdomain.txt' }[h] ?? (a.family === '6' ? 'trace-v6.txt' : 'trace-example.txt');
+    return { chunks: reveal(fx(sample), 6), exit: 0 };
+  }
+  if (a.tool === 'iperf') {
+    // One minute: the server runs out of time after the tests; otherwise it keeps listening until it is stopped.
+    return a.minutes === 1 ? { chunks: reveal(fx('iperf-tests.txt'), 4), exit: 124, timedOut: true } : { chunks: reveal(fx('iperf-tests.txt'), 5), hold: true, exit: 0 };
   }
   if (h === 'no-such-host.invalid') return { chunks: [KDIG_NX], exit: 0 };
   if (mock.dnsTool === 'nslookup') return { chunks: [NSLOOKUP], exit: 0 };
   return { chunks: [a.type === 'MX' ? DRILL : KDIG], exit: 0 };
 }
 
-const mock = { dnsTool: 'kdig', openssl: true, wol: 'etherwake', noHosts: false, wakes: [], jobs: new Map(), starts: [], stops: [], reads: 0, next: 1, writes: [] };
+const mock = { dnsTool: 'kdig', kdig: true, mtr: true, iperf3: true, exposed: false, openssl: true, wol: 'etherwake', noHosts: false, wakes: [], jobs: new Map(), starts: [], stops: [], reads: 0, next: 1, writes: [] };
 
 // The text of an endless job after its current read: the header and one line per read.
 function textOf(job) {
@@ -105,10 +122,13 @@ function answer(body) {
         compare: () => `${mock.dnsTool} ${args.host} ${args.type} @${args.servers.join(' @')}`,
         tls: () => `openssl s_client -connect ${args.host}:${args.port}${args.starttls ? ` -starttls ${args.starttls}` : ''}`,
         check: () => `connectivity check (${args.host ?? 'example.com'})`,
+        mtr: () => `mtr --raw -n -c ${args.cycles} -i 1 -G 2 ${args.host}`,
+        trace: () => `DNS trace ${args.host} ${args.type ?? 'A'}`,
+        iperf: () => `iperf3 -s -p ${args.port ?? 5201}${args.bind ? ` -B ${args.bind}` : ''} (stops after ${args.minutes} minute${args.minutes === 1 ? '' : 's'})`,
       }[args.tool]();
       const s = script(args);
       mock.jobs.set(id, { id, args, script: s, pos: 0, reads: 0, stopped: false });
-      return ok({ ok: true, id, tool: args.tool, command: cmd, limit: { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75 }[args.tool], dns_tool: args.tool === 'dns' ? mock.dnsTool : null, started: 1 });
+      return ok({ ok: true, id, tool: args.tool, command: cmd, limit: args.tool === 'iperf' ? args.minutes * 60 : LIMITS[args.tool], dns_tool: args.tool === 'dns' ? mock.dnsTool : null, started: 1 });
     }
     if (method === 'read') {
       mock.reads++;
@@ -126,10 +146,11 @@ function answer(body) {
         const last = job.script.chunks.length - 1;
         const cur = job.pos;
         text = job.script.chunks[cur];
-        running = !job.stopped && cur < last;
+        running = !job.stopped && (cur < last || job.script.hold === true);
         if (!job.stopped && cur < last) job.pos++;
       }
-      return ok({ ok: true, id: job.id, running, exit: running ? null : job.stopped ? 143 : job.script.exit, size: text.length, text: text.slice(args.from ?? 0), truncated: false, timed_out: false, stopped: job.stopped });
+      const timedOut = !running && !job.stopped && job.script.timedOut === true;
+      return ok({ ok: true, id: job.id, running, exit: running ? null : job.stopped ? (job.script.hold ? 0 : 143) : job.script.exit, size: text.length, text: text.slice(args.from ?? 0), truncated: false, timed_out: timedOut, stopped: job.stopped && !job.script.hold });
     }
     if (method === 'wake') {
       mock.wakes.push(args);
@@ -203,7 +224,7 @@ console.log('== the page and the form ==');
 check((await page.locator('.nav-pane a.active').innerText()).trim() === 'Toolbox' && (await page.locator('.cmdbar h1').innerText()).trim() === 'Toolbox' && await page.locator('.cmdbar .seg-tab').count() === 0, 'the Toolbox is its own page, with no tabs');
 const navItems = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
 check(navItems.indexOf('Toolbox') === navItems.indexOf('Logs') - 1 && navItems.indexOf('Toolbox') > 0, 'it sits just above Logs in the navigation', navItems.join(' | '));
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,DNS compare,TLS certificate,Wake-on-LAN', 'the Toolbox offers the connectivity check, ping, traceroute, DNS lookup and comparison, the certificate check and Wake-on-LAN');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,DNS compare,TLS certificate,iperf3 server,Wake-on-LAN', 'the Toolbox offers the connectivity check, ping, traceroute, DNS lookup and comparison, the certificate check and Wake-on-LAN');
 check(await tool('Ping').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Pings').locator('input').inputValue() === '4' && await fieldOf('Size (bytes)').locator('input').inputValue() === '56' && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'ping is the default tool, with its defaults, and nothing is shown before the first run');
 check((await page.locator('#rt-diag-devices option').evaluateAll(o => o.map(x => x.value))).join() === 'br-lan,lo,wan', 'the router\'s interfaces are offered as sources');
 await shot('empty');
@@ -217,8 +238,8 @@ for (const bad of ['a b', '-c1', '1.1.1.1; reboot', '$(id)']) {
 }
 check(mock.starts.length === 0, 'hosts with spaces, a leading "-" or shell characters never reach the router');
 await host().fill('1.1.1.1');
-await fieldOf('Pings').locator('input').fill('11'); await runBtn().click();
-check(/number of pings must be a whole number from 1 to 10/.test(await page.locator('.rt-error').innerText()) && mock.starts.length === 0, 'a number outside its limits is refused with the limits named');
+await fieldOf('Pings').locator('input').fill('61'); await runBtn().click();
+check(/number of pings must be a whole number from 1 to 60/.test(await page.locator('.rt-error').innerText()) && mock.starts.length === 0, 'a number outside its limits is refused with the limits named');
 await fieldOf('Pings').locator('input').fill('4');
 
 console.log('\n== a ping, live ==');
@@ -234,7 +255,7 @@ check(j(mock.starts.at(-1)) === j({ tool: 'ping', host: '1.1.1.1', count: 4, siz
 check(seen.some(s => s.running && /^[1-3]$/.test(s.received ?? '')) && await page.locator('.rt-running').count() === 0, 'the figures update while the ping runs (a running state with some of the replies), and it ends', j(seen.filter((s, i, a) => i === 0 || s.received !== a[i - 1].received)));
 check(await stat('Sent') === '4' && await stat('Received') === '4' && await stat('Loss') === '0%' && await stat('Fastest') === '3.8 ms' && await stat('Average') === '4.2 ms' && await stat('Slowest') === '4.4 ms', 'sent, received, loss, fastest, average and slowest', [await stat('Sent'), await stat('Loss'), await stat('Average')].join());
 check(/^Finished \d+ s$/.test(await badgeText()) && /Ping · 1\.1\.1\.1\s+ping -c 4 -W 2 -w 20 -s 56 1\.1\.1\.1/.test((await page.locator('.rt-result-slot .card-header').innerText()).replace(/\s+/g, ' ')), 'the header shows the command that ran; the status says Finished and how long it took');
-check(await page.locator('.rt-bars .rt-bar-ok').count() === 4 && await page.locator('.rt-bars .rt-bar-lost').count() === 0 && await stat('Loss').then(async () => (await page.locator('.rt-stat.ok').count()) === 1), 'one bar per ping, none lost, and the loss figure is green');
+check(await page.locator('.rt-chart .rt-pt').count() === 4 && await page.locator('.rt-chart .rt-pt-lost').count() === 0 && await stat('Loss').then(async () => (await page.locator('.rt-stat.ok').count()) === 1), 'one point per ping on the chart, none lost, and the loss figure is green');
 check(await runBtn().isVisible() && await stopBtn().count() === 0 && await page.locator('.rt-diag button:has-text("Clear")').isVisible(), 'afterwards Run and Clear are offered again');
 await page.locator('.rt-raw summary').click();
 check(/round-trip min\/avg\/max = 3\.782\/4\.164\/4\.434 ms/.test(await page.locator('.rt-raw pre').innerText()), 'the raw output is one click away');
@@ -245,9 +266,9 @@ await shot('ping');
 
 console.log('\n== loss, no reply, errors ==');
 await runFor('Ping', 'lossy.example');
-check(await stat('Sent') === '4' && await stat('Received') === '3' && await stat('Loss') === '25%' && await page.locator('.rt-bar-ok').count() === 3 && await page.locator('.rt-bar-lost').count() === 1 && /25% of the pings were lost/.test(await resultText()) && await page.locator('.rt-stat.warn').count() === 1, '25% loss: the lost ping is a red bar, the figure is amber, and the page says so');
+check(await stat('Sent') === '4' && await stat('Received') === '3' && await stat('Loss') === '25%' && await page.locator('.rt-pt').count() === 3 && await page.locator('.rt-pt-lost').count() === 1 && /25% of the pings were lost/.test(await resultText()) && await page.locator('.rt-stat.warn').count() === 1, '25% loss: the lost ping is a red mark on the chart, the figure is amber, and the page says so');
 await runFor('Ping', '192.0.2.77');
-check(await stat('Loss') === '100%' && await page.locator('.rt-bar-lost').count() === 3 && /No reply from 192\.0\.2\.77/.test(await resultText()) && await page.locator('.rt-stat.bad').count() === 1 && await stat('Fastest') === '–', 'no reply at all: 100% loss in red, no statistics, a plain explanation');
+check(await stat('Loss') === '100%' && await page.locator('.rt-chart').count() === 0 && /No reply from 192\.0\.2\.77/.test(await resultText()) && await page.locator('.rt-stat.bad').count() === 1 && await stat('Fastest') === '–', 'no reply at all: 100% loss in red, no statistics and no chart (nothing to plot), a plain explanation');
 await runFor('Ping', 'no-such-host.invalid');
 check(/ping failed: bad address 'no-such-host\.invalid'/.test(await resultText()) && await page.locator('.rt-stats').count() === 0, 'a name that does not resolve is reported as the tool\'s error');
 
@@ -264,7 +285,7 @@ await tool('Ping').click(); await host().fill('slow.example');
 await fieldOf('Pings').locator('input').fill('10'); await fieldOf('Size (bytes)').locator('input').fill('56');
 await fieldOf('Address family').locator('select').selectOption(''); await fieldOf('From (optional)').locator('input').fill('');
 await runBtn().click();
-await page.waitForFunction(() => document.querySelectorAll('.rt-bar-ok').length >= 3, null, { timeout: 15000 });
+await page.waitForFunction(() => document.querySelectorAll('.rt-pt').length >= 3, null, { timeout: 15000 });
 check(await page.locator('.rt-running').count() === 1 && await stopBtn().isVisible() && await runBtn().count() === 0 && await host().isDisabled() && await fieldOf('Pings').locator('input').isDisabled(), 'while it runs the form is locked, Stop replaces Run and the status shows it running');
 const slowId = [...mock.jobs.values()].at(-1).id;
 await stopBtn().click();
@@ -281,7 +302,7 @@ await runBtn().click();
 let sawPartial = false;
 for (let i = 0; i < 60 && !(await page.locator('.rt-state .fl-badge').count()); i++) { if (await page.locator('.rt-trace tbody tr').count() > 0 && await page.locator('.rt-running').count()) sawPartial = true; await page.waitForTimeout(100); }
 await waitDone();
-check(j(mock.starts.at(-1)) === j({ tool: 'traceroute', host: '1.1.1.1', hops: 8, probes: 2, method: 'icmp' }), 'hops, probes and the ICMP method are sent', j(mock.starts.at(-1)));
+check(j(mock.starts.at(-1)) === j({ tool: 'traceroute', host: '1.1.1.1', hops: 8, probes: 2, method: 'icmp', asn: true }), 'hops, probes, the ICMP method and the AS lookups are sent', j(mock.starts.at(-1)));
 check(sawPartial, 'the hops appear one after another while the trace runs');
 const rows = await page.locator('.rt-trace tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 check(rows.length === 7 && /^1 37\.179\.98\.1 4\.9 ms 3\.4 ms 4\.2 ms$/.test(rows[0]) && /^2 no reply \* \* –$/.test(rows[1]) && /^7 1\.1\.1\.1 5\.7 ms 6\.2 ms 5\.9 ms\s+destination$/.test(rows[6]), 'seven hops: the router with its probe times and average, silent hops marked, the destination last', rows.join(' | '));
@@ -299,7 +320,7 @@ check(await page.locator('.rt-rname').count() === 0, 'a numeric trace shows no n
 await tool('Traceroute').click(); await host().fill('1.1.1.1');
 await fieldOf('Host names').locator('select').selectOption('1');
 await runBtn().click(); await waitDone();
-check(j(mock.starts.at(-1)) === j({ tool: 'traceroute', host: '1.1.1.1', hops: 8, probes: 2, method: 'icmp', resolve: true }), 'asking for names sends resolve: true', j(mock.starts.at(-1)));
+check(j(mock.starts.at(-1)) === j({ tool: 'traceroute', host: '1.1.1.1', hops: 8, probes: 2, method: 'icmp', resolve: true, asn: true }), 'asking for names sends resolve: true', j(mock.starts.at(-1)));
 const named = await page.locator('.rt-trace tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 check(named.length === 7 && /^1 net-37-179-98-1\.cust\.vodafonedsl\.it 37\.179\.98\.1 5\.5 ms 16 ms/.test(named[0]) && /^4 185\.210\.48\.76 7\.4 ms 5\.7 ms/.test(named[3]) && /^5 185\.210\.48\.77 \* 5\.4 ms/.test(named[4]) && /^7 one\.one\.one\.one 1\.1\.1\.1 5\.2 ms 4\.4 ms .* destination$/.test(named[6]), 'each router shows its name with the address beneath; a router with no reverse record shows just the address; the destination is still marked', named.join(' | '));
 check(await page.locator('.rt-rname').count() === 2 && await page.locator('.rt-raddr').count() === 2 && await page.locator('.rt-trace tr.rt-hit').count() === 1, 'two routers have names; the destination row is still highlighted');
@@ -384,7 +405,7 @@ check(j(mock.starts.at(-1)) === j({ tool: 'tls', host: 'example.com', port: 443 
 check(await page.locator('.rt-finding.ok').count() === 4 && await page.locator('.rt-finding.bad, .rt-finding.warn').count() === 0 && await page.locator('.rt-result-slot .card-header').innerText().then(t => /TLS certificate · example\.com:443/.test(t.replace(/\s+/g, ' '))), 'a good certificate: trusted, in order, covers the name, valid; the header names host and port');
 check(await page.locator('.rt-chain-missing').count() === 0 && /exactly as the server sent them/.test(await page.locator('.rt-chain-note').innerText()), 'the chain is said to be exactly what the server sent, and a complete one has no missing marker');
 check(await stat('Protocol') === 'TLSv1.3' && await stat('Cipher') === 'TLS_AES_256_GCM_SHA384' && await stat('Key exchange') === 'X25519MLKEM768', 'the protocol, cipher and key exchange');
-check(await page.locator('.rt-cert').count() === 4 && await page.locator('.rt-cert.leaf').count() === 1 && /Certificate chain sent by the server \(4\)/.test(await page.locator('.rt-chain h3').innerText()), 'the chain shows all four certificates, the first one marked');
+check(await page.locator('.rt-cert').count() === 4 && await page.locator('.rt-cert.leaf').count() === 1 && /Certificate chain sent by the server \(4\)/.test(await page.locator('.rt-chain h3:has-text("Certificate chain sent")').innerText()), 'the chain shows all four certificates, the first one marked');
 const leafText = (await page.locator('.rt-cert.leaf').innerText()).replace(/\s+/g, ' ');
 check(/Server certificate CN=example\.com \d+ days left/.test(leafText) && /Issued by C=US, O=SSL Corporation, CN=Cloudflare TLS Issuing ECC CA 3/.test(leafText) && /Key EC prime256v1 · signed with ecdsa-with-SHA256/.test(leafText) && /Valid 2026-09-26 to 2026-12-25/.test(leafText) && /Names example\.com \*\.example\.com/.test(leafText) && /Serial 01EEE6AABB521D5E14FC315FD9985690/.test(leafText) && /SHA-256 85:CA:6A:B0/.test(leafText) && /Certificate authority no/.test(leafText), 'the server certificate: issuer, key, dates, names, serial and fingerprint', leafText);
 check(await page.locator('.rt-cert').nth(1).innerText().then(t => t.replace(/\s+/g, ' ')).then(t => /Intermediate/.test(t) && /Certificate authority yes/.test(t)), 'the issuers are labeled as intermediates and certificate authorities');
@@ -403,7 +424,7 @@ await host().fill('leaf-only.example'); await fieldOf('Server name (optional)').
 check(await page.locator('.rt-cert').count() === 1 && /only its own certificate, without the certificate of its issuer/.test(await page.locator('.rt-finding.warn').innerText()) && /Issuer not sent\. The server sent no certificate for O=Example Lab, CN=Example Lab Issuing CA/.test((await page.locator('.rt-chain-missing').innerText()).replace(/\s+/g, ' ')), 'a server that sends only its own certificate: a warning and a marker where the issuer should be');
 await shot('tls-leaf-only');
 await host().fill('gap.example'); await runBtn().click(); await waitDone();
-check(await page.locator('.rt-cert').count() === 2 && /incomplete or out of order/.test(await page.locator('.rt-finding.warn').innerText()) && await page.locator('.rt-chain > *').evaluateAll(n => n.map(x => x.className.trim()).join()) === ',rt-chain-note,rt-cert leaf,rt-chain-missing,rt-cert', 'a gap in the chain is marked between the two certificates');
+check(await page.locator('.rt-cert').count() === 2 && /incomplete or out of order/.test(await page.locator('.rt-finding.warn').innerText()) && await page.locator('.rt-chain:has(.rt-cert) > *').evaluateAll(n => n.map(x => x.className.trim()).join()) === ',rt-chain-note,rt-cert leaf,rt-chain-missing,rt-cert', 'a gap in the chain is marked between the two certificates');
 await fieldOf('Server name (optional)').locator('input').fill(''); await host().fill('reset.example'); await runBtn().click(); await waitDone();
 check(await page.locator('.rt-cert').count() === 0 && /closed the connection during the handshake/.test(await page.locator('.rt-finding.bad').innerText()), 'a server that hangs up has no chain and a plain explanation');
 await host().fill('closed.example'); await fieldOf('Port').locator('input').fill('9'); await runBtn().click(); await waitDone();
@@ -457,6 +478,107 @@ check(await wolSelect().count() === 0 && await host().isVisible(), 'a router tha
 mock.noHosts = false;
 page = await open();
 
+console.log('\n== ping chart, compare chart, certificate diagram ==');
+await runFor('Ping', 'lossy.example');
+check(await page.locator('.rt-chart').count() === 1 && await page.locator('.rt-chart .rt-ch-line').count() === 1 && await page.locator('.rt-chart .rt-ch-avg').count() === 1, 'the ping chart is a line through the replies with the average marked');
+await shot('ping-chart');
+await tool('DNS compare').click(); await host().fill('example.com'); await runBtn().click(); await waitDone();
+check(await page.locator('.rt-hchart .rt-hrow').count() >= 2 && await page.locator('.rt-hchart .rt-hbar.best').count() === 1 && await page.locator('.rt-hchart .rt-hval').count() >= 2, 'the comparison draws a bar per server with its time, the fastest marked');
+await shot('compare-chart');
+await tool('TLS certificate').click(); await host().fill('example.com'); await runBtn().click(); await waitDone();
+const certs = await page.locator('.rt-cdiagram .rt-cd-node:not(.missing)').count();
+check(certs >= 2 && await page.locator('.rt-timeline .rt-tl-row').count() === certs && await page.locator('.rt-cd-node.leaf').count() === 1 && await page.locator('.rt-tl-now').count() === certs, 'the certificates are drawn as a chain (leaf first) and as bars on a timeline with a mark for today', String(certs));
+await shot('tls-diagram');
+await tool('TLS certificate').click(); await host().fill('expired.example'); await runBtn().click(); await waitDone();
+check(await page.locator('.rt-tl-bar.bad').count() >= 1 && await page.locator('.rt-cd-node.bad').count() >= 1, 'an expired certificate is red in both pictures');
+await tool('TLS certificate').click(); await host().fill('gap.example'); await runBtn().click(); await waitDone();
+check(await page.locator('.rt-cd-node.missing').count() >= 1, 'a certificate the server did not send is drawn as a placeholder in the chain');
+await shot('tls-gap');
+
+console.log('\n== traceroute with the networks of the hops ==');
+await tool('Traceroute').click(); await host().fill('asn.example');
+check(await fieldOf('Networks (AS)').locator('select').inputValue() === '1', 'looking up the networks is on by default');
+await runBtn().click(); await waitDone();
+const asnRows = await page.locator('.rt-trace tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+check(mock.starts.at(-1).asn === true && /^1 37\.179\.98\.1 AS30722 Fastweb SpA · IT/.test(asnRows[0]) && /^4 185\.210\.48\.76 no AS data/.test(asnRows[3]) && /^7 1\.1\.1\.1 AS13335 Cloudflare, Inc\./.test(asnRows[6]), 'each router that answered is followed by its AS number, organization and country; one with no record says so', asnRows.join(' | '));
+check(/Crosses 2 networks:\s*AS30722 Fastweb SpA\s*→\s*AS13335 Cloudflare, Inc\./.test((await page.locator('.rt-aspath').innerText()).replace(/\s+/g, ' ')), 'the networks the path crosses are listed in order');
+await shot('traceroute-asn');
+await fieldOf('Networks (AS)').locator('select').selectOption(''); await runBtn().click(); await waitDone();
+check(!('asn' in mock.starts.at(-1)) && await page.locator('.rt-asn').count() === 0 && await page.locator('.rt-aspath').count() === 0, 'with the lookups off nothing is asked and no network is shown');
+await fieldOf('Networks (AS)').locator('select').selectOption('1');
+
+console.log('\n== mtr ==');
+await tool('MTR').click(); await host().fill('1.1.1.1');
+check(await fieldOf('Rounds').locator('input').inputValue() === '10' && await fieldOf('Method').locator('select').inputValue() === 'icmp', 'mtr offers the number of rounds (10) and ICMP by default');
+await runBtn().click(); await waitDone();
+check(j(mock.starts.at(-1)) === j({ tool: 'mtr', host: '1.1.1.1', cycles: 10 }), 'mtr sends the host and the rounds', j(mock.starts.at(-1)));
+const mrows = await page.locator('.rt-mtrtable tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+check(mrows.length === 7 && /^1 37\.179\.98\.1 0% 6 /.test(mrows[0]) && /^2 no reply no reply 6 /.test(mrows[1]) && /^5 185\.210\.48\.77 33\.3% 6 /.test(mrows[4]) && /^7 1\.1\.1\.1 0% 6 /.test(mrows[6]) && await page.locator('.rt-mtrtable tr.rt-hit').count() === 1, 'seven hops with loss, the silent ones marked and the destination highlighted', mrows.join(' | '));
+check(/No probe to the destination was lost/.test(await page.locator('.rt-findings').innerText()) && /limits its own replies/.test(await page.locator('.rt-findings').innerText()) && await page.locator('.rt-loss').count() === 5, 'the findings say the destination lost nothing and that hop 5 only limits its own replies');
+await shot('mtr');
+await fieldOf('Rounds').locator('input').fill('2'); await runBtn().click();
+check(/rounds must be a whole number from 3 to 60/.test(await page.locator('.rt-error').innerText()), 'a number of rounds outside its limits is refused', await page.locator('.rt-error').innerText());
+await fieldOf('Rounds').locator('input').fill('10');
+
+console.log('\n== DNS trace ==');
+await tool('DNS trace').click(); await host().fill('www.example.com');
+await runBtn().click(); await waitDone();
+check(j(mock.starts.at(-1)) === j({ tool: 'trace', host: 'www.example.com', type: 'A' }), 'the trace asks for the name and the type', j(mock.starts.at(-1)));
+check(await page.locator('.rt-hop').count() === 3 && (await page.locator('.rt-zone').allInnerTexts()).join() === '. (root),com,example.com' && await page.locator('.rt-tseg').count() === 3 && await page.locator('.rt-resolver').count() === 1, 'three servers are asked in turn (root, .com, the zone itself), with a time bar and the router\'s resolver at the end', (await page.locator('.rt-zone').allInnerTexts()).join());
+const dtText = await resultText();
+check(/Signed delegation: DS record for com/.test(dtText) && /a\.root-servers\.net/.test(dtText) && /hera\.ns\.cloudflare\.com/.test(dtText) && /172\.66\.147\.243/.test(dtText), 'each step names the server and what it said: signed delegations, then the answer');
+await shot('dnstrace');
+await host().fill('www.ibm.com'); await runBtn().click(); await waitDone();
+check(await page.locator('.rt-alias').count() === 2 && await page.locator('.rt-hop').count() === 10, 'a name behind two aliases is followed, restarting from the root each time', String(await page.locator('.rt-hop').count()));
+await shot('dnstrace-aliases');
+await host().fill('nope-flab-test.example.com'); await runBtn().click(); await waitDone();
+check(/does not exist/.test(await resultText()), 'a name that does not exist is reported as such');
+await host().fill('www.example.com'); await fieldOf('Address family').locator('select').selectOption('6'); await fieldOf('Record type').locator('select').selectOption('AAAA'); await runBtn().click(); await waitDone();
+check(j(mock.starts.at(-1)) === j({ tool: 'trace', host: 'www.example.com', type: 'AAAA', family: '6' }) && /2001:503:ba3e::2:30/.test(await resultText()), 'over IPv6 the servers are IPv6', j(mock.starts.at(-1)));
+
+console.log('\n== the iperf3 server ==');
+await tool('iperf3 server').click();
+// The Start server button of the iperf3 server's form.
+const startBtn = () => page.locator('.rt-diag button:has-text("Start server")');
+check(await page.locator('.rt-host').count() === 0 && await startBtn().isEnabled() && await fieldOf('Run for').locator('select').inputValue() === '2' && await fieldOf('Port').locator('input').inputValue() === '5201' && (await fieldOf('Run for').locator('option').allInnerTexts()).join() === '1 minute,2 minutes,5 minutes,15 minutes,30 minutes', 'the iperf3 server needs no host: a time (2 minutes by default), a port and an address', [await page.locator('.rt-host').count(), await startBtn().isEnabled(), await fieldOf('Run for').locator('select').inputValue(), await fieldOf('Port').locator('input').inputValue(), (await fieldOf('Run for').locator('option').allInnerTexts()).join()].join(' | '));
+check((await fieldOf('Listen on').locator('option').allInnerTexts()).join() === 'every address,192.168.1.1 (lan, lan),2001:db8:1::1 (lan6, lan),203.0.113.9 (wan, wan)', 'the addresses of the router are offered, with their zone');
+await startBtn().click();
+await page.waitForSelector('.rt-iperf-head');
+check(j(mock.starts.at(-1)) === j({ tool: 'iperf', minutes: 2 }), 'only the time is sent when the rest is default', j(mock.starts.at(-1)));
+check(/Listening on port 5201 on every address/.test((await page.locator('.rt-iperf-head').innerText()).replace(/\s+/g, ' ')) && /left/.test(await page.locator('.rt-iperf-left').innerText()) && await page.locator('.rt-countdown').count() === 1 && await page.locator('.rt-diag button:has-text("Stop server")').isVisible(), 'a running server says where it listens and for how long, and offers Stop server', [await page.locator('.rt-iperf-head').innerText(), await page.locator('.rt-iperf-left').innerText(), await page.locator('.rt-countdown').count(), await page.locator('.rt-diag button:has-text("Stop server")').isVisible()].join(' | '));
+check(/iperf3 -c 192\.168\.1\.1/.test(await page.locator('.rt-connect').innerText()) && /Addresses the firewall blocks \(1\)/.test(await page.locator('.rt-connect').innerText()) && await page.locator('.rt-connect .rt-cmd button').count() >= 1, 'the page tells a client what to type, with a copy button, and sets aside the addresses the firewall blocks');
+await page.waitForFunction(() => document.querySelectorAll('.rt-iperf-history tbody tr').length >= 3, null, { timeout: 20000 });
+check(await page.locator('.rt-iperf-test').count() === 1 && await page.locator('.rt-iperf-history tbody tr').count() === 3 && /UDP/.test(await page.locator('.rt-iperf-test').innerText()), 'the newest test is shown in full and the earlier ones in a table', String(await page.locator('.rt-iperf-history tbody tr').count()));
+await shot('iperf-live');
+await page.locator('.rt-diag button:has-text("Stop server")').click();
+await waitDone(/Stopped/);
+check(mock.stops.length > 0 && await page.locator('.rt-iperf-state.ended').count() === 1 && await page.locator('.rt-iperf-history tbody tr').count() === 3, 'Stop ends the server; the tests it saw stay on the page');
+await shot('iperf-stopped');
+await fieldOf('Run for').locator('select').selectOption('1');
+await fieldOf('Listen on').locator('select').selectOption('192.168.1.1');
+await fieldOf('Port').locator('input').fill('5300');
+await startBtn().click();
+await waitDone(/Time is up/);
+check(j(mock.starts.at(-1)) === j({ tool: 'iperf', minutes: 1, port: 5300, bind: '192.168.1.1' }) && /The time was up/.test(await page.locator('.rt-iperf-state.ended').innerText()), 'a different time, port and address are sent; a server that runs out of time ends with the time-up note', j(mock.starts.at(-1)));
+await fieldOf('Port').locator('input').fill('80'); await startBtn().click();
+check(/port must be a whole number from 1024 to 65535/.test(await page.locator('.rt-error').innerText()), 'a port below 1024 is refused in the form', await page.locator('.rt-error').innerText());
+await fieldOf('Port').locator('input').fill('');
+mock.exposed = true;
+page = await open();
+await tool('iperf3 server').click();
+await startBtn().click();
+await page.waitForSelector('.rt-iperf-head');
+check(/zone wan accepts traffic for the router/.test(await page.locator('.rt-iperf').innerText()), 'a server that the internet could reach is flagged while it runs');
+await page.locator('.rt-diag button:has-text("Stop server")').click(); await waitDone(/Stopped/);
+mock.exposed = false;
+
+console.log('\n== tools the router does not have ==');
+mock.mtr = false; mock.kdig = false; mock.iperf3 = false;
+page = await open();
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,DNS compare,TLS certificate,Wake-on-LAN', 'mtr, the DNS trace and the iperf3 server are not offered without mtr, kdig and iperf3');
+mock.mtr = true; mock.kdig = true; mock.iperf3 = true;
+page = await open();
+
 console.log('\n== a refused start ==');
 await tool('Ping').click(); await host().fill('refused.example'); await runBtn().click();
 await page.locator('.rt-result-slot .rt-error').waitFor({ timeout: 10000 });
@@ -464,7 +586,7 @@ check(/3 diagnostics are already running/.test(await resultText()) && /^Failed \
 
 console.log('\n== leaving the page and coming back ==');
 await runFor('Ping', 'slow.example', false);
-await page.waitForFunction(() => document.querySelectorAll('.rt-bar-ok').length >= 2, null, { timeout: 15000 });
+await page.waitForFunction(() => document.querySelectorAll('.rt-pt').length >= 2, null, { timeout: 15000 });
 await page.locator('.nav-pane a', { hasText: 'Routing' }).click();
 await page.waitForSelector('.rt-lookup button:has-text("Look up")');
 await page.waitForTimeout(800);
@@ -472,16 +594,16 @@ const away = mock.reads; await page.waitForTimeout(1600);
 check(mock.reads === away, 'polling stops while another page is open');
 await page.locator('.nav-pane a', { hasText: 'Toolbox' }).click();
 await page.waitForSelector('.rt-running');
-const back = mock.reads; const barsBefore = await page.locator('.rt-bar-ok').count();
-await page.waitForFunction(n => document.querySelectorAll('.rt-bar-ok').length > n, barsBefore, { timeout: 10000 });
+const back = mock.reads; const barsBefore = await page.locator('.rt-pt').count();
+await page.waitForFunction(n => document.querySelectorAll('.rt-pt').length > n, barsBefore, { timeout: 10000 });
 check(mock.reads > back && /Ping · slow\.example/.test(await resultText()) && await host().inputValue() === 'slow.example' && await stopBtn().isVisible(), 'the job and the form are still there, and the reading resumes');
 
 console.log('\n== a redraw in the middle of a job ==');
 await page.click('button:has-text("Refresh")');
 await page.waitForTimeout(600);
-const mid = await page.locator('.rt-bar-ok').count();
+const mid = await page.locator('.rt-pt').count();
 check(await page.locator('.rt-running').count() === 1 && await stopBtn().isVisible(), 'Refresh redraws the page and the job carries on');
-await page.waitForFunction(n => document.querySelectorAll('.rt-bar-ok').length > n, mid, { timeout: 10000 });
+await page.waitForFunction(n => document.querySelectorAll('.rt-pt').length > n, mid, { timeout: 10000 });
 await stopBtn().click(); await waitDone(/Stopped/);
 
 console.log('\n== a login that may not run diagnostics ==');
@@ -502,11 +624,11 @@ await p3.close();
 console.log('\n== a router without openssl ==');
 mock.openssl = false;
 page = await open();
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,DNS compare,Wake-on-LAN', 'the certificate check is not offered without openssl');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,DNS compare,iperf3 server,Wake-on-LAN', 'the certificate check is not offered without openssl');
 mock.openssl = true;
 mock.wol = '';
 page = await open();
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,DNS compare,TLS certificate', 'Wake-on-LAN is not offered on a router that has neither etherwake nor socat');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,DNS compare,TLS certificate,iperf3 server', 'Wake-on-LAN is not offered on a router that has neither etherwake nor socat');
 mock.wol = 'etherwake';
 mock.openssl = true;
 
@@ -526,6 +648,12 @@ console.log('\n== dark theme ==');
 await page.emulateMedia({ colorScheme: 'dark' });
 await page.waitForTimeout(300);
 await shot('dark');
+await runFor('Ping', 'lossy.example'); await shot('dark-ping');
+await tool('DNS trace').click(); await host().fill('www.example.com'); await runBtn().click(); await waitDone(); await shot('dark-dnstrace');
+await tool('MTR').click(); await host().fill('1.1.1.1'); await runBtn().click(); await waitDone(); await shot('dark-mtr');
+await tool('TLS certificate').click(); await host().fill('example.com'); await runBtn().click(); await waitDone(); await shot('dark-tls');
+await tool('iperf3 server').click(); await page.locator('.rt-diag button:has-text("Start server")').click(); await page.waitForFunction(() => document.querySelectorAll('.rt-iperf-history tbody tr').length >= 3, null, { timeout: 20000 }); await shot('dark-iperf');
+await page.locator('.rt-diag button:has-text("Stop server")').click(); await waitDone(/Stopped/);
 await page.emulateMedia({ colorScheme: 'light' });
 
 check(mock.writes.length === 0, 'nothing was written to the router', mock.writes.join());

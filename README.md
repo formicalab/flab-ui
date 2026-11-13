@@ -96,6 +96,7 @@ flab-ui/
                              healthBanner, muted, mono, GRADE_KIND
         controls.js          Command-bar controls: search, select, pause, toggle, refresh
         format.js            Bytes, line rates, durations, numbers
+        clipboard.js         copyText() and copyButton(): copy text with a button that confirms (Toolbox, certificates)
         ip.js                parseAddress(): IPv4 and IPv6 addresses as BigInt values (Routing and BGP)
         rates.js             Rate tracker: turns cumulative counters into rates/ratios between polls
         icons.js             Inlined Bootstrap Icons path data, icon(name)
@@ -117,9 +118,11 @@ flab-ui/
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
           bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js
-        toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, result views of ping, traceroute and DNS; Wake-on-LAN),
-                             diagviews.js (check, comparison and certificate views), diagmodel.js (pure: request checks, output
-                             parsing, the check's verdict)
+        toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, dispatch of the result views; Wake-on-LAN),
+                             diagviews.js (ping, traceroute, DNS, check, comparison and certificate views), diagmodel.js (pure: request
+                             checks, output parsing, the check's verdict), iperfmodel.js / iperfview.js (the iperf3 server),
+                             dnstracemodel.js / dnstraceview.js (the DNS trace), pathmodel.js / pathview.js (mtr and AS data),
+                             charts.js (SVG ping and throughput charts), tlsdiagram.js (certificate chain and expiry timeline)
         traffic/             Traffic: index.js (page, tabs, state, polling), model.js (pure: interfaces and totals, WAN, findings, entries, NAT,
                              merging hosts by MAC, protocol rows), live.js, connections.js, usage.js (the three tabs)
         services.js          Re-exports services/index.js (keeps the registry's import path)
@@ -229,9 +232,11 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   tab) and loads only the open tab; `model.js` holds the pure parts (address and prefix math, the table overview,
   findings, filtering and sorting, what a lookup answer means, who added a rule); `lookup.js` and `tables.js` build the
   Routes tab cards. The Toolbox page (`toolbox/`) is separate: `index.js` is the page and exports `openTool`, which the
-  lookup answer's buttons use; `diag.js` is the form, job polling and the ping, traceroute and DNS views, `diagviews.js`
-  the connectivity check, comparison and certificate views, and `diagmodel.js` the pure parts (the request a form may
-  build, the parsers for every tool's output, the check's verdict).
+  lookup answer's buttons use; `diag.js` is the form, job polling and the choice of result view, `diagviews.js`
+  the ping, traceroute, DNS, check, comparison and certificate views, `diagmodel.js` the pure parts (the request a form may
+  build, the parsers for the classic tools' output, the check's verdict), and the newer tools have a model and a view each
+  (`iperfmodel.js`/`iperfview.js`, `dnstracemodel.js`/`dnstraceview.js`, `pathmodel.js`/`pathview.js`) plus `charts.js` and
+  `tlsdiagram.js` for the pictures.
   The BGP tab is `bgp/`: `tab.js` composes the sections; `topology.js`, `peer.js`, `routes.js`,
   `announced.js` and `system.js` each export card builders that take the backend data; `util.js` holds the
   per-peer color helpers, AS-path chips and prefix sort key.
@@ -261,7 +266,7 @@ return {
 | `flab.wireguard.uc` | `flab.wireguard` | `status` | uci network (`proto wireguard` interfaces and `wireguard_<if>` peer sections), uci firewall (zone); `wg show <if> public-key/listen-port/peers/endpoints/allowed-ips/latest-handshakes/transfer/persistent-keepalive` (the single-field forms never print the private or pre-shared key); sysfs MTU and counters |
 | `flab.firewall.uc` | `flab.firewall` | `status` | uci firewall (defaults, zones, forwardings, `rule`, `redirect`, `nat`, `include`, `ipset`), uci network (interface names); `nft -j list ruleset` (per-rule hit counters matched through the `!fw4: <name>` comment, reject/drop chain counters per zone, the devices behind each zone, flowtable devices, base chain policies); procfs conntrack count and limit |
 | `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles and port order); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines) |
-| `flab.diag.uc` | `flab.diag` | `status`, `start` (`tool`, `host`, options), `read` (`id`, `from`), `stop` (`id`), `wake` (`mac`, `iface`) | busybox `ping` and `traceroute`, the first of `dig`, `kdig`, `drill`, `nslookup`, and `openssl s_client` / `x509`, run detached under `timeout` with their output in `/tmp/flab-diag/<id>/out`; `ip route get` and `ip route show default` for the connectivity check; `etherwake` or `socat` for Wake-on-LAN, with the host list from uci dhcp hosts, `dhcp ipv4leases`, `/tmp/dhcp.leases`, `/etc/ethers` and `/proc/net/arp`; `command -v` for the tools, `/sys/class/net` for the interface names, `/tmp/resolv.conf.d/resolv.conf.auto` for the upstream resolvers; every argument validated before a command line is built |
+| `flab.diag.uc` | `flab.diag` | `status`, `start` (`tool`, `host`, options), `read` (`id`, `from`), `stop` (`id`), `wake` (`mac`, `iface`) | busybox `ping` and `traceroute`, `mtr --raw`, `iperf3 -s`, `kdig` for the DNS trace, the first of `dig`, `kdig`, `drill`, `nslookup`, and `openssl s_client` / `x509`, run detached under `timeout` with their output in `/tmp/flab-diag/<id>/out`; `ip route get` and `ip route show default` for the connectivity check; `etherwake` or `socat` for Wake-on-LAN, with the host list from uci dhcp hosts, `dhcp ipv4leases`, `/tmp/dhcp.leases`, `/etc/ethers` and `/proc/net/arp`; ubus `network.interface dump` and uci firewall for the iperf3 server's addresses and zones; `command -v` for the tools, `/sys/class/net` for the interface names, `/tmp/resolv.conf.d/resolv.conf.auto` for the upstream resolvers; every argument validated before a command line is built |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
 | `flab.routing.uc` | `flab.routing` | `status`, `lookup` (`dst`, `src`, `iif`) | `ip -4/-6 route show table all`, `ip -4/-6 rule show`, `/etc/iproute2/rt_tables`, `command -v birdc`, `pidof charon`, uci network (only the `rule` and `rule6` sections, and only their section name, family, priority and lookup table); `lookup` runs `ip route get` and `ip route get ... fibmatch` for a validated address, optional source address and interface name |
@@ -971,14 +976,18 @@ anything, so the init scripts do the work, as they do for `/etc/init.d/<name> re
   generic such as `file exec`; the `service list` call comes from `flab-base.json`.
 
 ### Toolbox (route `#toolbox`)
-Diagnostic tools that run on the router and show their output as it arrives: a connectivity check, ping, traceroute, DNS
-lookups and comparisons, a TLS certificate check and Wake-on-LAN. The form has a tool selector, the host, and the options of the tool:
+Diagnostic tools that run on the router and show their output as it arrives: a connectivity check, ping, traceroute, MTR,
+DNS lookups, a DNS trace and comparisons, a TLS certificate check, an iperf3 server and Wake-on-LAN. The form has a tool
+selector, the host, and the options of the tool:
 for ping the count
-(1 to 10), the packet size (0 to 1400), the address family and a source (an interface or an address; the router's interface
+(1 to 60), the packet size (0 to 1400), the address family and a source (an interface or an address; the router's interface
 names are offered as suggestions); for traceroute the maximum hops (1 to 30), the probes per hop (1 to 3), UDP or ICMP
-probes, family and source; for DNS the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and an optional
-server; for the comparison the record type and the servers; for the certificate check the port, a server name and a STARTTLS
-protocol. A tool is offered only when the router has what it needs (the certificate check needs `openssl`, the DNS tools
+probes, whether to look up host names and networks, family and source; for MTR the rounds (3 to 60) and ICMP or UDP; for
+DNS the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and an optional
+server; for the DNS trace the record type and the address family; for the comparison the record type and the servers; for
+the certificate check the port, a server name and a STARTTLS
+protocol; for the iperf3 server the time to run, the port and the address to listen on. A tool is offered only when the router has what it needs (the certificate check needs `openssl`,
+MTR needs `mtr`, the DNS trace needs `kdig`, the iperf3 server needs `iperf3`, the DNS tools
 and the check need a DNS tool). The form is checked in the browser
 first (a host with a space, a leading `-` or shell characters never reaches the router), and the plugin checks everything
 again. The form remembers its values while the page is open; Run is disabled for a login that may not start diagnostics.
@@ -991,28 +1000,61 @@ again. The form remembers its values while the page is open; Run is disabled for
   fails while a public one answers; no DNS at all (port 53 blocked); a certificate that is not yet valid or expired (the
   router's clock is the first suspect); an IPv6 route that leads nowhere (a note, not the verdict). A script that cannot run
   at all (the shell's own message, such as a syntax error) is shown as the result instead of an empty checklist.
-- **Ping:** figures (sent, received, loss, fastest, average, slowest, jitter) that update while it runs, one bar per ping
-  (height is the round-trip time, a lost ping is a red marker: busybox prints nothing for a lost packet, so a gap in the
-  sequence numbers is the sign of it), and a plain sentence for total loss, partial loss and a name that does not resolve.
+- **Ping:** figures (sent, received, loss, fastest, average, slowest, jitter) that update while it runs, and a line chart of
+  the round-trip time of each ping (the average as a dashed line, the range between fastest and slowest as a band, a lost
+  ping as a red cross: busybox prints nothing for a lost packet, so a gap in the
+  sequence numbers is the sign of it; with no reply at all there is nothing to plot and no chart), and a plain sentence for
+  total loss, partial loss and a name that does not resolve.
 - **Traceroute:** one row per hop as it arrives, with the routers that answered (a hop answered by two routers lists
   both), each probe's round-trip time (`*` for a lost probe), the average with a bar, silent hops marked "no reply", the
   destination highlighted, and a note when it was not reached within the hop limit. "Host names" can be switched to "look
   up names": the tool then runs without `-n` and prints `name (address)` for each router, shown as the name with the
   address beneath it; a router with no reverse record is printed as `address (address)` and shows just the address. The
   default is addresses only, because every lookup waits for the resolver and a hop without a reverse record can be slow.
+  "Networks (AS)" (on by default, offered when the router has `dig` or `kdig`) turns the job into a script: the traceroute
+  is the first block, then each public address that answered (up to 30; private, loopback, link-local, shared-address and multicast addresses are
+  skipped) is looked up through the router's own resolver in Team Cymru's DNS service (`<reversed address>.origin.asn.cymru.com`,
+  `origin6` for IPv6, and `AS<n>.asn.cymru.com` for the name). Each router then shows its AS number, the organization
+  and the country beneath the address ("no AS data" when there is no origin record), and a line under the table lists the
+  networks the path crosses in order. The addresses leave the router only inside those DNS queries.
+- **MTR:** `mtr --raw` against the host for the chosen rounds (one probe a second per hop; ICMP or UDP). The table fills as
+  the events arrive: per hop the address, loss with a small bar, probes sent, last, average, best, worst, the spread and a
+  sparkline of the delay over time; hops after the first repeated address are cut. Findings in words: whether any probe to
+  the destination was lost, a middle hop that shows loss while the later hops do not (it only limits its own replies, so the
+  path is fine; shown in green, not as a fault), a destination that never answered, and a jump in delay between two hops. A probe
+  still in flight is not counted as lost while the run goes on.
 - **DNS lookup:** how it went (the number of answers, NXDOMAIN, SERVFAIL, REFUSED, timeout, or no answer), the server that
   answered, and the tool's own output. The tool is the first of `dig`, `kdig`, `drill` and `nslookup` that the router has;
   busybox `nslookup` cannot show MX, TXT, NS, CNAME, SOA, SRV or CAA records in full (it prints "mail exchanger = 0" with no
   host), so the page says so when only nslookup exists and one of those types is chosen.
+- **DNS trace:** the way a resolver finds a name, step by step, as a script that needs `kdig`. It asks a root server
+  (a, c, f or m), then the servers each answer points to, down to the zone's own server, with `+norecurse +dnssec`, one block
+  per step (`step <n> <address> <name> <zone>`), and ends by asking the router's resolver the same question. A name server
+  that came without an address in the referral is looked up through the router's resolver first (`lookup` block); an alias
+  (CNAME) restarts the trace from the root for the new name (up to 4 times, `cname` block). Three servers in a row that
+  do not answer end the trace, and it stops at 18 steps or 60 seconds. The page shows a summary (the outcome, the
+  number of queries, the aliases followed, the time spent waiting), a timing bar with a segment per step, and a ladder of
+  cards: the zone, the server asked and its address, the answer time and what it said (a referral with its name servers
+  and which came with addresses, an alias, the authoritative answer with its records, or the denial of a name or a type).
+  The DNSSEC records of each step are read: a signed delegation (the DS record's key tag, algorithm and digest), an unsigned
+  one where the chain of trust ends, and the signature of the final answer (signer, key tag, expiry), summarized as a chain
+  that is intact, not complete or absent. The last card compares the router's own resolver (whether it validated the answer,
+  the time, the cache age) with the authoritative answer, and says that differences are normal for CDN names. NXDOMAIN
+  answers that Cloudflare-style servers give as NOERROR with an NSEC `NXNAME` record are read as NXDOMAIN.
 - **DNS compare:** asks the same question of up to six servers in turn: the router's own resolver, the upstream resolvers
   the router was given (read from `resolv.conf.auto`, loopback left out), Cloudflare, Google and Quad9, and one more of
-  your choice. A row per server shows the result, the addresses, whether the resolver validated the answer with DNSSEC (the
+  your choice. A bar chart (fastest first, the fastest marked) shows each server's response time, and a row per server
+  shows the result, the addresses, whether the resolver validated the answer with DNSSEC (the
   AD flag), the time the tool reports and the fastest server. Differing answers are highlighted, with the note that a
   CDN gives each resolver its own, correct set; a server that does not answer shows "No reply".
 - **TLS certificate:** connects to a host and port (optionally with another server name, or after STARTTLS for SMTP, IMAP,
   POP3 and FTP) and shows the session (protocol, cipher, key exchange) and the certificates exactly as the server sent
   them, in the order sent: the router's own certificate authorities are never used to add or reorder any (`openssl
-  s_client` lists the certificates received, not the chain it verified). Each shows subject, issuer, key and signature
+  s_client` lists the certificates received, not the chain it verified). A "Chain and expiry" picture comes first: the
+  certificates as boxes from the server's certificate down to the root (a missing issuer is a dashed placeholder; a root
+  the server did not send but the router's store trusts is shown as such), and a timeline with a bar for each certificate's
+  validity and a mark for today. A box or bar is red once expired, amber within 14 days of the end, yellow within 60 days,
+  green otherwise. Each certificate is then listed with subject, issuer, key and signature
   algorithm, validity with the days left, names, certificate authority flag, serial, SHA-256 fingerprint, and the PEM text
   with a copy button. Findings say whether the chain is trusted by the router's CA store, and judge the chain the server
   sent on its own: a server that sends only its own certificate, a gap or wrong order (a certificate that is not the
@@ -1022,6 +1064,21 @@ again. The form remembers its values while the page is open; Run is disabled for
   one label), whether it is expired, not yet valid or ends within 14 days, a weak RSA key or a SHA-1 or MD5 signature, a
   protocol older than TLS 1.2, and why a connection failed (refused, timed out, name not found, or a server that hung up
   without sending a certificate).
+- **iperf3 server:** starts `iperf3 -s` on the router for a chosen time (1, 2, 5, 15 or 30 minutes; 2 is the default) so a
+  computer on the LAN can measure the path to the router. The server prints one JSON event per line (`--json-stream`,
+  flushed as produced) and stops by itself when the time is up (the job's `timeout` ends it, code 124); Stop ends it
+  earlier (iperf3 then exits with 0, so the page records the Stop itself). The port is 5201 unless changed (1024 to
+  65535), and the server listens on every address unless one of the router's own addresses is chosen (`-B`); only one
+  server runs at a time, and it holds one of the three job slots. While it runs the page shows where it listens, a
+  countdown, and "Connect from a computer": the router's addresses (from `network.interface dump`) with the firewall zone of each and
+  what that zone does with traffic for the router, the `iperf3 -c` commands to type (upload, `-R` for download, `-P 4`
+  parallel streams, `-u -b 500M` for UDP), each with a copy button, and the addresses the firewall blocks folded away.
+  A warning appears when a zone that masquerades (the internet side) accepts traffic for the router, because a server on
+  every address could then be reached from outside. Each client test shows as it runs: who connected, TCP or UDP,
+  upload or download, the streams, the rate now, the peak, retransmits (TCP) or jitter and loss (UDP), and a throughput
+  chart; earlier tests are listed in a table with their totals as the receiver (the router) measured them, and an
+  interrupted test says why. A trailing sliver of under a quarter second and the duplicate interval iperf3 prints when a client
+  aborts are left out.
 - **Wake-on-LAN:** sends one magic packet (six `ff` bytes, then the MAC sixteen times) with `flab.diag wake`, which is not a job:
   it answers at once. The host is chosen from a list of the hosts the router knows (static DHCP hosts, odhcpd and dnsmasq
   leases, `/etc/ethers` and the ARP table; the status marks static DHCP hosts `reserved`): the reservations come first, then
@@ -1042,21 +1099,25 @@ again. The form remembers its values while the page is open; Run is disabled for
   carries on.
 
 `flab.diag` runs the tools detached (`timeout -k 2 <limit> <tool> ... >out 2>&1 &`, with the exit code written to a file)
-under `/tmp/flab-diag/<id>/`: ping may run 25 seconds, traceroute 60, a DNS lookup 15, a certificate check 25, a comparison
-60 and the connectivity check 75. The check, the comparison and the certificate check are small shell scripts (`job.sh`,
+under `/tmp/flab-diag/<id>/`: a ping may run its count plus 10 seconds, a traceroute 60 (with the AS lookups up to 60 more),
+MTR its rounds plus 15, a DNS trace 60, a DNS lookup 15, a certificate check 25, a comparison
+60, the connectivity check 75 and the iperf3 server the minutes asked for. The check, the comparison, the certificate check,
+the DNS trace and a traceroute with AS lookups are small shell scripts (`job.sh`,
 written with LF line endings only, because BusyBox sh rejects a carriage return) that print their output in blocks
 (`### BEGIN <step> <uptime> <detail>` … `### END <exit code> <uptime>`), which the page
 splits and reads; a block without an END line is still running. Every command in a script runs under its own `timeout`, and
-a TERM sent to the script (Stop) ends the command at once. At most three jobs run at once,
+a TERM sent to the script (Stop) ends the command at once. `read` returns the output from a byte offset (`from`), cut at the last
+complete line while more is still being written, with `size` for the next call and `truncated` when more is pending, so a long
+iperf3 server's output is fetched in pieces. At most three jobs run at once,
 twelve directories are kept, and a finished job is removed after ten minutes. Everything that reaches the shell is
 validated: the tool, the record type and the STARTTLS protocol come from allow-lists, the host, the server name and the DNS
 servers are made of letters, digits and `. : _ -` and do not start with `-` (they could be taken for an option), the port is
-clamped to 1 to 65535, a comparison takes one to six servers that are each such a name (or `router`), the source is such
-an address or an interface name,
-the numbers are clamped to their ranges (a literal 0 is a number, not "absent"), the name-lookup switch must be a real
-boolean, the argument list is built from those values
+clamped to 1 to 65535 (1024 to 65535 for the iperf3 server), a comparison takes one to six servers that are each such a name (or `router`), the source is such
+an address or an interface name, the iperf3 time must be one of the offered minutes and the address to listen on one of the router's own addresses,
+the numbers are clamped to their ranges (a literal 0 is a number, not "absent"), the name-lookup and network-lookup switches must be real
+booleans, the argument list is built from those values
 only, the job id is generated from `/dev/urandom` and checked as exactly twelve hex digits whenever it comes back, and `stop`
-only kills a process whose name is one of the tools or the shell running one of its own `job.sh` scripts (so a recycled pid
+only kills a process whose name is one of the tools (including `mtr`, `mtr-packet` and `iperf3`) or the shell running one of its own `job.sh` scripts (so a recycled pid
 is never hit). The ACL fragment
 `rpcd/acl.d/flab-diag.json` grants `status` and `read` (read) and `start`, `stop` and `wake` (write).
 
@@ -1349,7 +1410,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 |---|---|---|
 | BGP | `pwsh -File flab-ui\tests\bgp\run.ps1 [-Browser]` | `flab.bgp` parser and findings, the BGP tab of the Routing page |
 | Routing | `pwsh -File flab-ui\tests\routing\run.ps1 [-Browser]` | The Routing model (addresses, tables, findings, filters, lookup meaning, rule origins); `flab.routing` against a captured and a synthetic router (every route and rule syntax, every lookup answer, refused input); the Routes tab, the lookup and the BGP tab against mocked replies |
-| Toolbox | `pwsh -File flab-ui\tests\toolbox\run.ps1 [-Browser] [-KeepWork]` | The Toolbox model (request checks, the parsers of ping, traceroute, DNS, comparison and certificate output, the connectivity check's verdicts, MAC handling); `flab.diag` running real jobs on the router (streaming, offsets, stop, DNS, traceroute, the router's own certificate, a comparison, a whole connectivity check, a Wake-on-LAN packet on loopback, every allowed option, 56 refused tool requests and 18 refused wake requests with an injection canary, job-id traversal, the three-job cap, CRLF source); the page against a scripted job engine |
+| Toolbox | `pwsh -File flab-ui\tests\toolbox\run.ps1 [-Browser] [-KeepWork]` | The Toolbox model (request checks, the parsers of ping, traceroute, DNS, comparison and certificate output, the connectivity check's verdicts, MAC handling) and, from real captures, the parsers of the iperf3 events, the DNS trace and mtr and the AS data of a traceroute; `flab.diag` running real jobs on the router (streaming, offsets, stop, DNS, traceroute, mtr, a DNS trace, an iperf3 server with a loopback client, the router's own certificate, a comparison, a whole connectivity check, a Wake-on-LAN packet on loopback, every allowed option, 83 refused tool requests and 18 refused wake requests with an injection canary, job-id traversal, the three-job cap, CRLF source); the page against a scripted job engine |
 | Traffic | `pwsh -File flab-ui\tests\traffic\run.ps1 [-Browser]` | The Traffic model (interfaces, WAN, totals, findings, endpoints, NAT, states, merging hosts by MAC, filtering and sorting, protocol rows); `flab.traffic` against a captured and several synthetic routers (every protocol, TCP state, NAT form and IPv6 spelling, a 60000-entry table, nlbwmon periods, no nlbw, no conntrack, no accounting) checked against an independent reference, and every refused argument; the Live, Connections and Usage tabs against mocked replies |
 | IPsec | `pwsh -File flab-ui\tests\ipsec\run.ps1 [-Browser]` | `flab.ipsec`, IPsec page, throughput history |
 | Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
@@ -1404,7 +1465,11 @@ with IPv6 hops answered by two routers, nslookup, kdig and drill answers and NXD
 output of the richer tools (a certificate check against the router's own HTTPS port, example.com, and the expired,
 self-signed and hung-up cases of badssl.com, a refused port, a DNS comparison with a silent server, and a connectivity
 check), shared by the unit test (`model.test.mjs`: the request a form may build, the parsers, the check's verdicts, a
-certificate's findings) and the browser test. `flab.diag` is tested for real, not
+certificate's findings) and the browser test. `fixtures/` holds output the tools really printed on the router (iperf3 3.22
+`--json-stream` events of TCP, reverse, UDP, an aborted client and a busy port; the DNS trace script's job output for
+example.com, a name behind two aliases, an in-zone alias, a name that does not exist and an IPv6 trace; `mtr --raw`; a
+traceroute with its AS lookups), read by `tools.test.mjs` (the requests the form builds for mtr, the trace and the iperf3
+server, the iperf3 events, the DNS trace, the mtr table and the findings about it, the AS data) and by the browser test. `flab.diag` is tested for real, not
 against fixtures, because starting, reading, offsets and stopping are what it does: `run.ps1` runs the plugin with CRLF line
 endings, as a Windows checkout deploys it, starts pings, a traceroute
 and DNS lookups against 127.0.0.1 and localhost on the router, reads them while they run and after, reads from the end and
@@ -1412,23 +1477,27 @@ from an offset, stops one and checks that no process is left, starts every allow
 checks the router's own HTTPS certificate (the fingerprints, serials and dates it printed are compared with what Node
 computes from the PEM text in the same output), a STARTTLS run against a closed port, a comparison of the router
 against 127.0.0.1, and a complete connectivity check (whose script must carry no carriage return; a second one is stopped
-half way, to see that a script job ends and leaves no ping or openssl behind),
-sends the 56 lines of `refusals.txt` (shell metacharacters, leading `-`, out-of-range and non-numeric numbers, bad
-sources, servers, ports, server names, protocols and types; several would create a canary file if a command ran) and checks that all were refused, no job
+half way, to see that a script job ends and leaves no ping or openssl behind), an mtr run and a traceroute with AS lookups
+against loopback (no address to look up), a DNS trace of example.com from the real root servers, and an iperf3 server on
+a spare port with an iperf3 client on loopback (the server reports the test, a second server is refused, Stop ends it and
+no iperf3 is left),
+sends the 83 lines of `refusals.txt` (shell metacharacters, leading `-`, out-of-range and non-numeric numbers, bad
+sources, servers, ports, server names, protocols and types, rounds, minutes and addresses to listen on; several would create a canary file if a command ran) and checks that all were refused, no job
 appeared and the canary does not exist, tries six job ids that are not the plugin's own (paths, wrong length, empty) on
 `read` and `stop`, sends a Wake-on-LAN packet out of the loopback device (where nothing hears it) and the 18 lines of
 `wake-refusals.txt` (a bad MAC, injections in the MAC and the interface, an interface that does not exist, wrong types), and starts four jobs to see the fourth refused. `live.mjs` answers `flab.diag` from a scripted job
 engine (output revealed piece by piece, an endless ping, a refused start, a script that cannot run; the browser clock is held
 at the day the samples were captured so the days left on a certificate do not drift) and drives the page: the navigation
 entry above Logs, the form's checks, a ping
-read while it runs and after, loss, no reply and a bad host, the options sent, stopping, traceroute (partial, not
-reached, IPv6), DNS (answers, NXDOMAIN, the nslookup note), the connectivity check (a healthy router, a broken resolver, a dead
-next hop, a script that fails), the comparison (the choices offered, rows arriving, DNSSEC, the fastest, a silent server), the certificate check (a good chain, a server that sends only its own certificate, a gap in the chain, the
+read while it runs and after, loss, no reply and a bad host, the ping chart, the options sent, stopping, traceroute (partial, not
+reached, IPv6, with the networks of the hops), mtr, the DNS trace (a plain trace, two aliases, a name that does not exist, IPv6), DNS (answers, NXDOMAIN, the nslookup note), the connectivity check (a healthy router, a broken resolver, a dead
+next hop, a script that fails), the comparison (the choices offered, rows arriving, DNSSEC, the fastest, the response-time chart, a silent server), the certificate check (a good chain, the chain and expiry pictures, an expired certificate, a server that sends only its own certificate, a gap in the chain, the
 PEM copy, expired, self-signed, hung up, refused, STARTTLS, a router without openssl), Wake-on-LAN (the host list with reservations first, a typed MAC, a bad MAC, a normalized
 MAC, a chosen interface, a host without an address, a refusal from the router, etherwake and socat, the Ping button, a router with
-neither tool, a login without the wake permission), leaving the page and coming back, a redraw
+neither tool, a login without the wake permission), the iperf3 server (the form, the countdown, the connect commands, tests
+arriving, Stop, the time running out, a port below 1024, an exposed zone), a router without mtr, kdig or iperf3, leaving the page and coming back, a redraw
 in the middle of a job, a login that
-may not run diagnostics, and the dark theme. `-KeepWork` keeps the temporary folder so the browser test can be repeated.
+may not run diagnostics, and the dark theme (with the new views). `-KeepWork` keeps the temporary folder so the browser test can be repeated.
 
 ### Traffic scenarios
 `real` (what the router under test reports, replayed from a read-only capture of its connection table, netfilter numbers, DHCP and

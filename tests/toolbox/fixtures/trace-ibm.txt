@@ -1,0 +1,412 @@
+### BEGIN step 575887.56 1 198.41.0.4 a.root-servers.net .
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 43198
+;; Flags: qr; QUERY: 1; ANSWER: 0; AUTHORITY: 15; ADDITIONAL: 27
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; www.ibm.com.        		IN	A
+
+;; AUTHORITY SECTION:
+com.                	172800	IN	NS	l.gtld-servers.net.
+com.                	172800	IN	NS	j.gtld-servers.net.
+com.                	172800	IN	NS	h.gtld-servers.net.
+com.                	172800	IN	NS	d.gtld-servers.net.
+com.                	172800	IN	NS	b.gtld-servers.net.
+com.                	172800	IN	NS	f.gtld-servers.net.
+com.                	172800	IN	NS	k.gtld-servers.net.
+com.                	172800	IN	NS	m.gtld-servers.net.
+com.                	172800	IN	NS	i.gtld-servers.net.
+com.                	172800	IN	NS	g.gtld-servers.net.
+com.                	172800	IN	NS	a.gtld-servers.net.
+com.                	172800	IN	NS	c.gtld-servers.net.
+com.                	172800	IN	NS	e.gtld-servers.net.
+com.                	86400	IN	DS	19718 13 2 8ACBB0CD28F41250A80A491389424D341522D946B0DA0C0291F2D3D771D7805A
+com.                	86400	IN	RRSIG	DS 8 1 86400 20261126050000 20261113040000 8763 . e3CFp+EBiIZD/s7Is0c/Ri63RPXWygW4PeIb7t4+z95d+prbhiRKwDd22QruQ10MSMctQ+bknjUnPkP3YjaCXjN2nkUkj3ErE5dN22AZuEQv9fJ7RRIdXCy8yfPDyn8BHevdzqkjQ2rPZ1GWMj9zqTTw4EVWcPKPu4410XrjQTvedWPLFmjVHCM4SCcsVbxAb+Lu7G6QvI1eNos94ehz3dRNhqCMlRc1kmpxZB0OCamB7KmHhKPv8BH29DRkc6fs7lVm++ECbp5eIwUdrgTtrFkDS7Zb9DVkamlUSvJZY52KGGCqMIYIUW4HQTsQ6puSbaQhU4s1fxitcDyj0Q18RQ==
+
+;; ADDITIONAL SECTION:
+l.gtld-servers.net. 	172800	IN	A	192.41.162.30
+l.gtld-servers.net. 	172800	IN	AAAA	2001:500:d937::30
+j.gtld-servers.net. 	172800	IN	A	192.48.79.30
+j.gtld-servers.net. 	172800	IN	AAAA	2001:502:7094::30
+h.gtld-servers.net. 	172800	IN	A	192.54.112.30
+h.gtld-servers.net. 	172800	IN	AAAA	2001:502:8cc::30
+d.gtld-servers.net. 	172800	IN	A	192.31.80.30
+d.gtld-servers.net. 	172800	IN	AAAA	2001:500:856e::30
+b.gtld-servers.net. 	172800	IN	A	192.33.14.30
+b.gtld-servers.net. 	172800	IN	AAAA	2001:503:231d::2:30
+f.gtld-servers.net. 	172800	IN	A	192.35.51.30
+f.gtld-servers.net. 	172800	IN	AAAA	2001:503:d414::30
+k.gtld-servers.net. 	172800	IN	A	192.52.178.30
+k.gtld-servers.net. 	172800	IN	AAAA	2001:503:d2d::30
+m.gtld-servers.net. 	172800	IN	A	192.55.83.30
+m.gtld-servers.net. 	172800	IN	AAAA	2001:501:b1f9::30
+i.gtld-servers.net. 	172800	IN	A	192.43.172.30
+i.gtld-servers.net. 	172800	IN	AAAA	2001:503:39c1::30
+g.gtld-servers.net. 	172800	IN	A	192.42.93.30
+g.gtld-servers.net. 	172800	IN	AAAA	2001:503:eea3::30
+a.gtld-servers.net. 	172800	IN	A	192.5.6.30
+a.gtld-servers.net. 	172800	IN	AAAA	2001:503:a83e::2:30
+c.gtld-servers.net. 	172800	IN	A	192.26.92.30
+c.gtld-servers.net. 	172800	IN	AAAA	2001:503:83eb::30
+e.gtld-servers.net. 	172800	IN	A	192.12.94.30
+e.gtld-servers.net. 	172800	IN	AAAA	2001:502:1ca1::30
+
+;; Received 1171 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 198.41.0.4@53(UDP) in 18.5 ms
+
+### END 0 575887.59
+### BEGIN step 575887.61 2 192.41.162.30 l.gtld-servers.net. com.
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 30160
+;; Flags: qr; QUERY: 1; ANSWER: 0; AUTHORITY: 8; ADDITIONAL: 1
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; www.ibm.com.        		IN	A
+
+;; AUTHORITY SECTION:
+ibm.com.            	172800	IN	NS	dns1.p05.nsone.net.
+ibm.com.            	172800	IN	NS	dns2.p05.nsone.net.
+ibm.com.            	172800	IN	NS	dns3.p05.nsone.net.
+ibm.com.            	172800	IN	NS	dns4.p05.nsone.net.
+CK0POJMG874LJREF7EFN8430QVIT8BSM.com. 900	IN	NSEC3	1 1 0 - ck0q35hrs4h76g6chnb9414cjn6s5upl NS SOA RRSIG DNSKEY NSEC3PARAM
+CK0POJMG874LJREF7EFN8430QVIT8BSM.com. 900	IN	RRSIG	NSEC3 13 2 900 20261118002605 20261110231605 65344 com. ZlJH4zBTd8732a1sdMrM1t1uuJ5HV9bhZ2nkKH/fObF0lZ4F2Xq3/iVyjLN99usMe6ipC1s+h7vgkJN6UzsdYA==
+M11M0PEDL1LOBTSQ7OT839BL2G4NTS5E.com. 900	IN	NSEC3	1 1 0 - m11mt5br37338s8m7su7rdq8kiitqo3o NS DS RRSIG
+M11M0PEDL1LOBTSQ7OT839BL2G4NTS5E.com. 900	IN	RRSIG	NSEC3 13 2 900 20261117034542 20261110023542 65344 com. zNvAt4xaT9dp6PivLm78J/lqFilafCUOakZnSfy0m1U8IHlKjP3Q4wDUlaex+L+n5pfrJy+IXBsNGVojfySAWw==
+
+;; Received 486 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 192.41.162.30@53(UDP) in 18.9 ms
+
+### END 0 575887.64
+### BEGIN lookup 575887.65 dns1.p05.nsone.net. ibm.com.
+198.51.44.5
+
+### END 0 575887.67
+### BEGIN step 575887.67 3 198.51.44.5 dns1.p05.nsone.net. ibm.com.
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 20959
+;; Flags: qr aa; QUERY: 1; ANSWER: 1; AUTHORITY: 0; ADDITIONAL: 1
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 1232 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; www.ibm.com.        		IN	A
+
+;; ANSWER SECTION:
+www.ibm.com.        	3600	IN	CNAME	outer-global-dual.ibmcom-tls12.edgekey.net.
+
+;; Received 96 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 198.51.44.5@53(UDP) in 29.7 ms
+
+### END 0 575887.71
+### BEGIN cname 575887.72 outer-global-dual.ibmcom-tls12.edgekey.net.
+
+### END 0 575887.73
+### BEGIN step 575887.73 4 198.41.0.4 a.root-servers.net .
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 12890
+;; Flags: qr; QUERY: 1; ANSWER: 0; AUTHORITY: 15; ADDITIONAL: 27
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; outer-global-dual.ibmcom-tls12.edgekey.net. 	IN	A
+
+;; AUTHORITY SECTION:
+net.                	172800	IN	NS	m.gtld-servers.net.
+net.                	172800	IN	NS	k.gtld-servers.net.
+net.                	172800	IN	NS	b.gtld-servers.net.
+net.                	172800	IN	NS	f.gtld-servers.net.
+net.                	172800	IN	NS	d.gtld-servers.net.
+net.                	172800	IN	NS	h.gtld-servers.net.
+net.                	172800	IN	NS	j.gtld-servers.net.
+net.                	172800	IN	NS	l.gtld-servers.net.
+net.                	172800	IN	NS	a.gtld-servers.net.
+net.                	172800	IN	NS	e.gtld-servers.net.
+net.                	172800	IN	NS	c.gtld-servers.net.
+net.                	172800	IN	NS	g.gtld-servers.net.
+net.                	172800	IN	NS	i.gtld-servers.net.
+net.                	86400	IN	DS	37331 13 2 2F0BEC2D6F79DFBD1D08FD21A3AF92D0E39A4B9EF1E3F4111FFF282490DA453B
+net.                	86400	IN	RRSIG	DS 8 1 86400 20261126050000 20261113040000 8763 . YKo9E0xoa4wbycvjg8NXB53Oc9CBwuo1IX8MwtoiRCE5cCl2Lw5r9/9H241d2ZqqLrbtR78QXXnpdWSqt/32invxnBkuTai75GN6b2Fg01Mad660dJrBk8Gg4yJ3IN7rgFWrpagOqtk5TAI2Yulp8AggyyCS0HpJETEW6hcoWDcbgtAoDIc3I03q4O2wwAeQstPCtrLPv8IRigDdG3EeaPElUYmTRWfmovVdj8krzn+ELLwt5bzZqa2cb+IhasS9yN0cxFGDn8eCsd88GLyCZT9rTRPx1nthjIIDZsWItp75zGbhLHRxxvVewq+2vdFk18/FIsHrcGsanh5a5yxQhw==
+
+;; ADDITIONAL SECTION:
+m.gtld-servers.net. 	172800	IN	A	192.55.83.30
+m.gtld-servers.net. 	172800	IN	AAAA	2001:501:b1f9::30
+k.gtld-servers.net. 	172800	IN	A	192.52.178.30
+k.gtld-servers.net. 	172800	IN	AAAA	2001:503:d2d::30
+b.gtld-servers.net. 	172800	IN	A	192.33.14.30
+b.gtld-servers.net. 	172800	IN	AAAA	2001:503:231d::2:30
+f.gtld-servers.net. 	172800	IN	A	192.35.51.30
+f.gtld-servers.net. 	172800	IN	AAAA	2001:503:d414::30
+d.gtld-servers.net. 	172800	IN	A	192.31.80.30
+d.gtld-servers.net. 	172800	IN	AAAA	2001:500:856e::30
+h.gtld-servers.net. 	172800	IN	A	192.54.112.30
+h.gtld-servers.net. 	172800	IN	AAAA	2001:502:8cc::30
+j.gtld-servers.net. 	172800	IN	A	192.48.79.30
+j.gtld-servers.net. 	172800	IN	AAAA	2001:502:7094::30
+l.gtld-servers.net. 	172800	IN	A	192.41.162.30
+l.gtld-servers.net. 	172800	IN	AAAA	2001:500:d937::30
+a.gtld-servers.net. 	172800	IN	A	192.5.6.30
+a.gtld-servers.net. 	172800	IN	AAAA	2001:503:a83e::2:30
+e.gtld-servers.net. 	172800	IN	A	192.12.94.30
+e.gtld-servers.net. 	172800	IN	AAAA	2001:502:1ca1::30
+c.gtld-servers.net. 	172800	IN	A	192.26.92.30
+c.gtld-servers.net. 	172800	IN	AAAA	2001:503:83eb::30
+g.gtld-servers.net. 	172800	IN	A	192.42.93.30
+g.gtld-servers.net. 	172800	IN	AAAA	2001:503:eea3::30
+i.gtld-servers.net. 	172800	IN	A	192.43.172.30
+i.gtld-servers.net. 	172800	IN	AAAA	2001:503:39c1::30
+
+;; Received 1199 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 198.41.0.4@53(UDP) in 19.2 ms
+
+### END 0 575887.76
+### BEGIN step 575887.78 5 192.55.83.30 m.gtld-servers.net. net.
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 53434
+;; Flags: qr; QUERY: 1; ANSWER: 0; AUTHORITY: 12; ADDITIONAL: 17
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; outer-global-dual.ibmcom-tls12.edgekey.net. 	IN	A
+
+;; AUTHORITY SECTION:
+edgekey.net.        	172800	IN	NS	a6-65.akam.net.
+edgekey.net.        	172800	IN	NS	a12-65.akam.net.
+edgekey.net.        	172800	IN	NS	a7-64.akam.net.
+edgekey.net.        	172800	IN	NS	a16-65.akam.net.
+edgekey.net.        	172800	IN	NS	a18-65.akam.net.
+edgekey.net.        	172800	IN	NS	a1-66.akam.net.
+edgekey.net.        	172800	IN	NS	a28-65.akam.net.
+edgekey.net.        	172800	IN	NS	a10-66.akam.net.
+A1RT98BS5QGC9NFI51S9HCI47ULJG6JH.net. 900	IN	NSEC3	1 1 0 - a1rtlnpgulogn7b9a62shje1u3ttp8dr NS SOA RRSIG DNSKEY NSEC3PARAM
+A1RT98BS5QGC9NFI51S9HCI47ULJG6JH.net. 900	IN	RRSIG	NSEC3 13 2 900 20261118040246 20261111025246 3840 net. LwkC9Lt9lVYnml/aJ9iUH4++kY+TXiO1mulnnJQ1zso1sOnfWJkHVRpJbZJLK3z80nWxa5ex5NfB1fzuhtgatg==
+2A0963GVLTDDOGKCJI3EUJGINNCDIME3.net. 900	IN	NSEC3	1 1 0 - 2a0b33723vqhr0vln2pdhhi1bdoi49qp NS DS RRSIG
+2A0963GVLTDDOGKCJI3EUJGINNCDIME3.net. 900	IN	RRSIG	NSEC3 13 2 900 20261118040918 20261111025918 3840 net. JY29r7tTVg3Xr7rwFToUEvVqAmBs218IxCSsXeKfh4kkG30f75HVWM5cSVc8viAVihz86dUohrsOKJnzb+BsPg==
+
+;; ADDITIONAL SECTION:
+a6-65.akam.net.     	172800	IN	A	23.211.133.65
+a6-65.akam.net.     	172800	IN	AAAA	2600:1401:1::41
+a12-65.akam.net.    	172800	IN	A	184.26.160.65
+a12-65.akam.net.    	172800	IN	AAAA	2600:1480:f000::41
+a7-64.akam.net.     	172800	IN	A	23.61.199.64
+a7-64.akam.net.     	172800	IN	AAAA	2600:1406:32::40
+a16-65.akam.net.    	172800	IN	A	23.211.132.65
+a16-65.akam.net.    	172800	IN	AAAA	2600:1406:1b::41
+a18-65.akam.net.    	172800	IN	AAAA	2600:1480:4800::41
+a18-65.akam.net.    	172800	IN	A	95.101.36.65
+a1-66.akam.net.     	172800	IN	A	193.108.91.66
+a1-66.akam.net.     	172800	IN	AAAA	2600:1401:2::42
+a28-65.akam.net.    	172800	IN	AAAA	2600:1480:d800::41
+a28-65.akam.net.    	172800	IN	A	95.100.173.65
+a10-66.akam.net.    	172800	IN	AAAA	2600:1480:d000::42
+a10-66.akam.net.    	172800	IN	A	96.7.50.66
+
+;; Received 950 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 192.55.83.30@53(UDP) in 22.2 ms
+
+### END 0 575887.82
+### BEGIN step 575887.83 6 23.211.133.65 a6-65.akam.net. edgekey.net.
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 5856
+;; Flags: qr aa; QUERY: 1; ANSWER: 1; AUTHORITY: 0; ADDITIONAL: 1
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; outer-global-dual.ibmcom-tls12.edgekey.net. 	IN	A
+
+;; ANSWER SECTION:
+outer-global-dual.ibmcom-tls12.edgekey.net. 21600	IN	CNAME	e7817.dscx.akamaiedge.net.
+
+;; Received 107 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 23.211.133.65@53(UDP) in 12.9 ms
+
+### END 0 575887.86
+### BEGIN cname 575887.87 e7817.dscx.akamaiedge.net.
+
+### END 0 575887.87
+### BEGIN step 575887.88 7 198.41.0.4 a.root-servers.net .
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 28998
+;; Flags: qr; QUERY: 1; ANSWER: 0; AUTHORITY: 15; ADDITIONAL: 27
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; e7817.dscx.akamaiedge.net.		IN	A
+
+;; AUTHORITY SECTION:
+net.                	172800	IN	NS	m.gtld-servers.net.
+net.                	172800	IN	NS	k.gtld-servers.net.
+net.                	172800	IN	NS	b.gtld-servers.net.
+net.                	172800	IN	NS	f.gtld-servers.net.
+net.                	172800	IN	NS	d.gtld-servers.net.
+net.                	172800	IN	NS	h.gtld-servers.net.
+net.                	172800	IN	NS	j.gtld-servers.net.
+net.                	172800	IN	NS	l.gtld-servers.net.
+net.                	172800	IN	NS	a.gtld-servers.net.
+net.                	172800	IN	NS	e.gtld-servers.net.
+net.                	172800	IN	NS	c.gtld-servers.net.
+net.                	172800	IN	NS	g.gtld-servers.net.
+net.                	172800	IN	NS	i.gtld-servers.net.
+net.                	86400	IN	DS	37331 13 2 2F0BEC2D6F79DFBD1D08FD21A3AF92D0E39A4B9EF1E3F4111FFF282490DA453B
+net.                	86400	IN	RRSIG	DS 8 1 86400 20261126050000 20261113040000 8763 . YKo9E0xoa4wbycvjg8NXB53Oc9CBwuo1IX8MwtoiRCE5cCl2Lw5r9/9H241d2ZqqLrbtR78QXXnpdWSqt/32invxnBkuTai75GN6b2Fg01Mad660dJrBk8Gg4yJ3IN7rgFWrpagOqtk5TAI2Yulp8AggyyCS0HpJETEW6hcoWDcbgtAoDIc3I03q4O2wwAeQstPCtrLPv8IRigDdG3EeaPElUYmTRWfmovVdj8krzn+ELLwt5bzZqa2cb+IhasS9yN0cxFGDn8eCsd88GLyCZT9rTRPx1nthjIIDZsWItp75zGbhLHRxxvVewq+2vdFk18/FIsHrcGsanh5a5yxQhw==
+
+;; ADDITIONAL SECTION:
+m.gtld-servers.net. 	172800	IN	A	192.55.83.30
+m.gtld-servers.net. 	172800	IN	AAAA	2001:501:b1f9::30
+k.gtld-servers.net. 	172800	IN	A	192.52.178.30
+k.gtld-servers.net. 	172800	IN	AAAA	2001:503:d2d::30
+b.gtld-servers.net. 	172800	IN	A	192.33.14.30
+b.gtld-servers.net. 	172800	IN	AAAA	2001:503:231d::2:30
+f.gtld-servers.net. 	172800	IN	A	192.35.51.30
+f.gtld-servers.net. 	172800	IN	AAAA	2001:503:d414::30
+d.gtld-servers.net. 	172800	IN	A	192.31.80.30
+d.gtld-servers.net. 	172800	IN	AAAA	2001:500:856e::30
+h.gtld-servers.net. 	172800	IN	A	192.54.112.30
+h.gtld-servers.net. 	172800	IN	AAAA	2001:502:8cc::30
+j.gtld-servers.net. 	172800	IN	A	192.48.79.30
+j.gtld-servers.net. 	172800	IN	AAAA	2001:502:7094::30
+l.gtld-servers.net. 	172800	IN	A	192.41.162.30
+l.gtld-servers.net. 	172800	IN	AAAA	2001:500:d937::30
+a.gtld-servers.net. 	172800	IN	A	192.5.6.30
+a.gtld-servers.net. 	172800	IN	AAAA	2001:503:a83e::2:30
+e.gtld-servers.net. 	172800	IN	A	192.12.94.30
+e.gtld-servers.net. 	172800	IN	AAAA	2001:502:1ca1::30
+c.gtld-servers.net. 	172800	IN	A	192.26.92.30
+c.gtld-servers.net. 	172800	IN	AAAA	2001:503:83eb::30
+g.gtld-servers.net. 	172800	IN	A	192.42.93.30
+g.gtld-servers.net. 	172800	IN	AAAA	2001:503:eea3::30
+i.gtld-servers.net. 	172800	IN	A	192.43.172.30
+i.gtld-servers.net. 	172800	IN	AAAA	2001:503:39c1::30
+
+;; Received 1182 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 198.41.0.4@53(UDP) in 19.1 ms
+
+### END 0 575887.91
+### BEGIN step 575887.93 8 192.55.83.30 m.gtld-servers.net. net.
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 58660
+;; Flags: qr; QUERY: 1; ANSWER: 0; AUTHORITY: 12; ADDITIONAL: 10
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; e7817.dscx.akamaiedge.net.		IN	A
+
+;; AUTHORITY SECTION:
+akamaiedge.net.     	172800	IN	NS	la1.akamaiedge.net.
+akamaiedge.net.     	172800	IN	NS	la3.akamaiedge.net.
+akamaiedge.net.     	172800	IN	NS	lar2.akamaiedge.net.
+akamaiedge.net.     	172800	IN	NS	ns3-194.akamaiedge.net.
+akamaiedge.net.     	172800	IN	NS	a12-192.akamaiedge.net.
+akamaiedge.net.     	172800	IN	NS	a28-192.akamaiedge.net.
+akamaiedge.net.     	172800	IN	NS	a6-192.akamaiedge.net.
+akamaiedge.net.     	172800	IN	NS	a1-192.akamaiedge.net.
+A1RT98BS5QGC9NFI51S9HCI47ULJG6JH.net. 900	IN	NSEC3	1 1 0 - a1rtlnpgulogn7b9a62shje1u3ttp8dr NS SOA RRSIG DNSKEY NSEC3PARAM
+A1RT98BS5QGC9NFI51S9HCI47ULJG6JH.net. 900	IN	RRSIG	NSEC3 13 2 900 20261118040246 20261111025246 3840 net. LwkC9Lt9lVYnml/aJ9iUH4++kY+TXiO1mulnnJQ1zso1sOnfWJkHVRpJbZJLK3z80nWxa5ex5NfB1fzuhtgatg==
+GCRQBTGLALP4UH4EJ86LRR4FDP2MNIGP.net. 900	IN	NSEC3	1 1 0 - gcrtlvurj6lelqbdj72r6hlm15kttvsi NS DS RRSIG
+GCRQBTGLALP4UH4EJ86LRR4FDP2MNIGP.net. 900	IN	RRSIG	NSEC3 13 2 900 20261119035815 20261112024815 3840 net. zfWttFoJR2Ac/lCuUt/FbcLmsH6gXjnJla6JEBhQWR3yq/5WDlIkgMJOGTl6++mW3ObRV/4G2t8hJwdMrq/XyQ==
+
+;; ADDITIONAL SECTION:
+la1.akamaiedge.net. 	172800	IN	A	184.26.161.192
+la3.akamaiedge.net. 	172800	IN	A	95.101.36.192
+lar2.akamaiedge.net.	172800	IN	A	2.16.40.192
+ns3-194.akamaiedge.net.	172800	IN	A	23.61.199.194
+ns3-194.akamaiedge.net.	172800	IN	AAAA	2600:1406:32::c2
+a12-192.akamaiedge.net.	172800	IN	A	184.26.160.192
+a28-192.akamaiedge.net.	172800	IN	A	95.100.173.192
+a6-192.akamaiedge.net.	172800	IN	A	23.211.133.192
+a1-192.akamaiedge.net.	172800	IN	A	193.108.88.0
+
+;; Received 730 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 192.55.83.30@53(UDP) in 19.0 ms
+
+### END 0 575887.96
+### BEGIN step 575887.98 9 184.26.161.192 la1.akamaiedge.net. akamaiedge.net.
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 32382
+;; Flags: qr; QUERY: 1; ANSWER: 0; AUTHORITY: 8; ADDITIONAL: 10
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; e7817.dscx.akamaiedge.net.		IN	A
+
+;; AUTHORITY SECTION:
+dscx.akamaiedge.net.	4000	IN	NS	n6dscx.akamaiedge.net.
+dscx.akamaiedge.net.	4000	IN	NS	n3dscx.akamaiedge.net.
+dscx.akamaiedge.net.	4000	IN	NS	n1dscx.akamaiedge.net.
+dscx.akamaiedge.net.	4000	IN	NS	n0dscx.akamaiedge.net.
+dscx.akamaiedge.net.	4000	IN	NS	n2dscx.akamaiedge.net.
+dscx.akamaiedge.net.	4000	IN	NS	n7dscx.akamaiedge.net.
+dscx.akamaiedge.net.	4000	IN	NS	n5dscx.akamaiedge.net.
+dscx.akamaiedge.net.	4000	IN	NS	n4dscx.akamaiedge.net.
+
+;; ADDITIONAL SECTION:
+n2dscx.akamaiedge.net.	4000	IN	A	23.36.182.170
+n7dscx.akamaiedge.net.	4000	IN	A	23.210.15.252
+n1dscx.akamaiedge.net.	4000	IN	A	2.22.232.140
+n0dscx.akamaiedge.net.	4000	IN	AAAA	2600:1480:e800::c0
+n3dscx.akamaiedge.net.	4000	IN	A	2.16.181.6
+n4dscx.akamaiedge.net.	4000	IN	A	2.22.232.3
+n0dscx.akamaiedge.net.	4000	IN	A	88.221.81.192
+n5dscx.akamaiedge.net.	4000	IN	A	2.16.181.53
+n6dscx.akamaiedge.net.	4000	IN	A	2.22.232.159
+
+;; Received 378 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 184.26.161.192@53(UDP) in 13.7 ms
+
+### END 0 575888.00
+### BEGIN step 575888.02 10 2.22.232.159 n6dscx.akamaiedge.net. dscx.akamaiedge.net.
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 64953
+;; Flags: qr aa; QUERY: 1; ANSWER: 1; AUTHORITY: 0; ADDITIONAL: 1
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; e7817.dscx.akamaiedge.net.		IN	A
+
+;; ANSWER SECTION:
+e7817.dscx.akamaiedge.net.	20	IN	A	23.60.189.34
+
+;; Received 70 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 2.22.232.159@53(UDP) in 13.8 ms
+
+### END 0 575888.05
+### BEGIN resolver 575888.05 www.ibm.com
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 19487
+;; Flags: qr rd ra; QUERY: 1; ANSWER: 3; AUTHORITY: 0; ADDITIONAL: 1
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 1232 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; www.ibm.com.        		IN	A
+
+;; ANSWER SECTION:
+www.ibm.com.        	3248	IN	CNAME	outer-global-dual.ibmcom-tls12.edgekey.net.
+outer-global-dual.ibmcom-tls12.edgekey.net. 21248	IN	CNAME	e7817.dscx.akamaiedge.net.
+e7817.dscx.akamaiedge.net.	20	IN	A	23.60.189.34
+
+;; Received 148 B
+;; Time 2026-11-13 07:57:31 CET
+;; From 127.0.0.1@53(UDP) in 23.4 ms
+
+### END 0 575888.09

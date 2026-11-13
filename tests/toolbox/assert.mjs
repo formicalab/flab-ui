@@ -7,6 +7,9 @@ import { X509Certificate } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 const m = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/toolbox/diagmodel.js')).href);
+const ip = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/toolbox/iperfmodel.js')).href);
+const dt = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/toolbox/dnstracemodel.js')).href);
+const pm = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/toolbox/pathmodel.js')).href);
 
 const dir = process.argv[2];
 // The path of output file `f` inside the work directory.
@@ -21,7 +24,9 @@ const j = JSON.stringify;
 console.log('== status ==');
 const st = load('out-diag-status.json');
 check(st.tools.ping === true && st.tools.traceroute === true && typeof st.dns_tool === 'string' && st.dns_tool !== '' && Array.isArray(st.devices) && st.devices.includes('lo'), 'the router reports its tools, the DNS tool it would use and its interfaces', j(st).slice(0, 200));
-check(st.types.join() === 'A,AAAA,MX,TXT,NS,CNAME,SOA,PTR,SRV,CAA' && st.limits.ping === 25 && st.limits.traceroute === 60 && st.limits.dns === 15 && st.limits.tls === 25 && st.limits.compare === 60 && st.limits.check === 75, 'the record types and the time limits');
+check(st.types.join() === 'A,AAAA,MX,TXT,NS,CNAME,SOA,PTR,SRV,CAA' && st.limits.ping === 25 && st.limits.traceroute === 60 && st.limits.dns === 15 && st.limits.tls === 25 && st.limits.compare === 60 && st.limits.check === 75 && st.limits.trace === 60 && st.limits.mtr === 15, 'the record types and the time limits');
+check(st.max_pings === 60 && j(st.mtr_cycles) === '[3,60,10]' && typeof st.tools.mtr === 'boolean' && typeof st.tools.iperf3 === 'boolean' && typeof st.asn === 'boolean', 'the status gives the ping and mtr limits and whether mtr, iperf3 and the AS lookup exist', j(st).slice(0, 300));
+check(!st.tools.iperf3 || (j(st.iperf.minutes) === '[1,2,5,15,30]' && st.iperf.port === 5201 && st.iperf.min_port === 1024 && Array.isArray(st.iperf.addresses) && st.iperf.addresses.every(x => m.isAddress(x.ip) && !/^127\./.test(x.ip) && !/^fe[89ab]/i.test(x.ip) && ['ACCEPT', 'REJECT', 'DROP'].includes(x.input)) && Array.isArray(st.iperf.exposed)), 'the iperf3 server\'s times, default port, the router\'s own addresses with what their zone does with traffic, and the zones that face the internet', j(st.iperf).slice(0, 300));
 check(typeof st.tools.openssl === 'boolean' && st.starttls.join() === 'smtp,imap,pop3,ftp' && st.check_host === 'example.com' && Array.isArray(st.upstream) && st.upstream.length <= 4 && st.upstream.every(a => m.isAddress(a) && !/^(127\.|::1$)/.test(a)), 'the status also tells whether openssl exists, the STARTTLS protocols, the default check host and the upstream resolvers (never loopback)', j(st.upstream));
 check(st.devices.every(d => /^[A-Za-z0-9_.:-]+$/.test(d) && !d.startsWith('-')), 'every interface name is a safe word');
 
@@ -36,7 +41,7 @@ check(wakeRefusals.length >= 15 && wakeRefused.every(r => r !== null && r.ok ===
 
 console.log('== a ping, read while it runs and after it ended ==');
 const ps = load('out-diag-ping.start.json');
-check(ps.ok && /^[0-9a-f]{12}$/.test(ps.id) && ps.tool === 'ping' && ps.command === 'ping -c 5 -W 2 -w 20 -s 56 127.0.0.1' && ps.limit === 25, 'start returns a job id and the exact command line', j(ps));
+check(ps.ok && /^[0-9a-f]{12}$/.test(ps.id) && ps.tool === 'ping' && ps.command === 'ping -c 5 -W 2 -w 10 -s 56 127.0.0.1' && ps.limit === 15, 'start returns a job id and the exact command line', j(ps));
 const run = load('out-diag-ping.running.json');
 check(run.ok && run.running === true && run.exit === null && /^PING 127\.0\.0\.1/.test(run.text) && /seq=0/.test(run.text) && !/statistics/.test(run.text), 'read while it runs: the output so far, still running', j(run).slice(0, 200));
 const done = load('out-diag-ping.done.json');
@@ -91,9 +96,34 @@ check(fs.readFileSync(file('out-diag-check.cr'), 'utf8').trim() === '0', 'the sc
 check(c2 && c2.running === false && c2.exit === 143 && c2.stopped === true && /^### BEGIN route4 /.test(c2.text), 'a script job can be stopped: exit 143, reported as stopped, with the blocks it had run');
 check(fs.readFileSync(file('out-diag-check2.procs.txt'), 'utf8').trim() === '0', 'stopping the connectivity check leaves no ping or openssl behind');
 
+console.log('== mtr, traceroute with AS lookups, DNS trace ==');
+const mtrStart = load('out-diag-mtr.start.json'), mtrRead = load('out-diag-mtr.read.json');
+check(mtrStart.ok && mtrStart.command === 'mtr --raw -n -c 3 -i 1 -G 2 127.0.0.1' && mtrStart.limit === 18, 'mtr runs in raw mode with the rounds asked for', j(mtrStart));
+const mtr = pm.parseMtr(mtrRead.text, false);
+check(mtrRead.running === false && mtrRead.exit === 0 && mtr.hops.length === 1 && mtr.hops[0].addr === '127.0.0.1' && mtr.hops[0].sent === 3 && mtr.hops[0].recv === 3 && mtr.reached, 'the path to loopback is one hop that answered all three rounds', j(mtrRead).slice(0, 200));
+const asnStart = load('out-diag-asn.start.json'), asnRead = load('out-diag-asn.read.json');
+check(asnStart.ok && /^traceroute .* 127\.0\.0\.1 \(with AS lookups\)$/.test(asnStart.command), 'a traceroute with AS lookups says so', asnStart.command);
+check(asnRead.running === false && asnRead.exit === 0 && /^### BEGIN trace [\d.]+ \n/.test(asnRead.text) && /\n### END 0 [\d.]+\n/.test(asnRead.text) && !/### BEGIN asn /.test(asnRead.text) && m.parseTraceroute(asnRead.text).hops[0].addrs[0] === '127.0.0.1', 'the traceroute is one block; loopback is private, so no AS lookup is made', asnRead.text.slice(0, 200));
+check(fs.readFileSync(file('out-diag-asn.cr'), 'utf8').trim() === '0' && fs.readFileSync(file('out-diag-dnstrace.cr'), 'utf8').trim() === '0', 'the scripts of both carry no carriage return');
+const dtStart = load('out-diag-dnstrace.start.json'), dtRead = load('out-diag-dnstrace.read.json');
+check(dtStart.ok && dtStart.command === 'DNS trace example.com A' && dtStart.limit === 60 && dtStart.tool === 'trace', 'the DNS trace names itself and its time limit', j(dtStart));
+const dtr = dt.parseDnsTrace(dtRead.text, { name: 'example.com', type: 'A' });
+check(dtRead.running === false && dtRead.exit === 0 && dtr.done && dtr.outcome === 'answer' && dtr.segments[0].steps.length >= 2 && dtr.segments[0].steps[0].zone === '.' && dtr.resolver !== null, 'the trace walks from the root to an answer and ends with the router\'s resolver', j(dtr.segments[0].steps.map(s => [s.kind, s.zone])));
+
+console.log('== the iperf3 server ==');
+const ipStart = load('out-diag-iperf.start.json'), ipRead = load('out-diag-iperf.read.json');
+check(ipStart.ok && ipStart.tool === 'iperf' && ipStart.limit === 60 && /^iperf3 -s -p 5399 \(stops after 1 minute\)$/.test(ipStart.command), 'the server names its port and its time limit', j(ipStart));
+const ipr = ip.parseIperf(ipRead.text);
+check(ipRead.running === true && ipr.tests.length === 1 && ipr.tests[0].client.host === '127.0.0.1' && ipr.tests[0].protocol === 'TCP' && ipr.tests[0].done && ipr.tests[0].summary.bps > 1e6, 'a client on loopback ran a test that the server reported, while it keeps listening', j(ipr.tests).slice(0, 200));
+const ip2 = load('out-diag-iperf.second.json');
+check(ip2.ok === false && /already running/.test(ip2.error), 'a second server is refused while one runs', j(ip2));
+const ipStop = load('out-diag-iperf.stop.json'), ipAfter = load('out-diag-iperf.after.json');
+check(ipStop.ok && ipAfter.running === false && ipAfter.exit === 0 && ipAfter.timed_out === false, 'the server ends cleanly when asked (iperf3 exits 0 on SIGTERM, so the page tracks the stop itself)', j(ipAfter).slice(0, 200));
+check(fs.readFileSync(file('out-diag-iperf.procs.txt'), 'utf8').trim() === '0', 'no iperf3 process is left behind');
+
 console.log('== the options that are allowed ==');
 const v1 = load('out-diag-variant1.json'), v2 = load('out-diag-variant2.json'), v3 = load('out-diag-variant3.json'), v4 = load('out-diag-variant4.json');
-check(v1.ok && v1.command === 'ping -c 1 -W 2 -w 20 -s 100 -4 -I lo 127.0.0.1', 'ping with a size, a family and an interface as source', v1.command);
+check(v1.ok && v1.command === 'ping -c 1 -W 2 -w 6 -s 100 -4 -I lo 127.0.0.1', 'ping with a size, a family and an interface as source', v1.command);
 check(v2.ok && v2.command === 'traceroute -n -w 2 -q 3 -m 5 -I -4 -s 127.0.0.1 127.0.0.1', 'traceroute with ICMP, a family and an address as source', v2.command);
 check(v3.ok && (/-x 127\.0\.0\.1$/.test(v3.command) || /^nslookup -type=PTR 127\.0\.0\.1$/.test(v3.command)), 'a reverse lookup of an address', v3.command);
 check(v4.ok && / (@|)127\.0\.0\.1/.test(v4.command) && /\bMX\b|type=MX/.test(v4.command), 'a lookup of another record type against a named server', v4.command);

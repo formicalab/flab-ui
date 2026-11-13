@@ -74,8 +74,9 @@ try {
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory (Join-Path $work 'out') -Force | Out-Null
 
-    Write-Host '1/3 Unit tests: the Toolbox model'
+    Write-Host '1/3 Unit tests: the Toolbox model and the newer tools'
     Invoke-Native 'node' @((Join-Path $here 'model.test.mjs'))
+    Invoke-Native 'node' @((Join-Path $here 'tools.test.mjs'))
 
     Write-Host '2/3 Running the diagnostics plugin on the router (real jobs against loopback)'
     Invoke-Remote "rm -rf $remote; mkdir -p $remote"
@@ -145,6 +146,26 @@ sleep 1; d stop "{\"id\":\"$(idof < out-diag-check2.start.json)\"}" > /dev/null
 sleep 1; d read "{\"id\":\"$(idof < out-diag-check2.start.json)\",\"from\":0}" > out-diag-check2.read.json
 ps | grep -cE '[o]penssl s_client|[p]ing -4 -c 2' > out-diag-check2.procs.txt || true
 
+# mtr against loopback, a traceroute with AS lookups (loopback has no AS, so none is looked up) and a DNS trace of a real name.
+d start '{"tool":"mtr","host":"127.0.0.1","cycles":3}' > out-diag-mtr.start.json
+id=$(idof < out-diag-mtr.start.json); sleep 7; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-mtr.read.json
+d start '{"tool":"traceroute","host":"127.0.0.1","hops":3,"probes":1,"asn":true}' > out-diag-asn.start.json
+id=$(idof < out-diag-asn.start.json); sleep 4; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-asn.read.json
+grep -c "$(printf '\r')" /tmp/flab-diag/$id/job.sh > out-diag-asn.cr || true
+d start '{"tool":"trace","host":"example.com"}' > out-diag-dnstrace.start.json
+id=$(idof < out-diag-dnstrace.start.json); sleep 20; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-dnstrace.read.json
+grep -c "$(printf '\r')" /tmp/flab-diag/$id/job.sh > out-diag-dnstrace.cr || true
+
+# An iperf3 server on a spare port, a client on loopback, a second server refused, then stopping the first.
+d start '{"tool":"iperf","minutes":1,"port":5399}' > out-diag-iperf.start.json
+id=$(idof < out-diag-iperf.start.json); sleep 1
+iperf3 -c 127.0.0.1 -p 5399 -t 2 > /dev/null || true
+sleep 1; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-iperf.read.json
+d start '{"tool":"iperf","minutes":1,"port":5398}' > out-diag-iperf.second.json
+d stop "{\"id\":\"$id\"}" > out-diag-iperf.stop.json
+sleep 1; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-iperf.after.json
+pidof iperf3 | wc -w > out-diag-iperf.procs.txt || true
+
 # Requests that must be refused: nothing may run, no job may appear, the canary file must not be created.
 before=$(ls /tmp/flab-diag | wc -l)
 i=0
@@ -197,6 +218,7 @@ rm -rf /tmp/flab-diag /tmp/flab-diag-canary
     if ($Browser) {
         Write-Host 'Browser test'
         foreach ($f in 'live.mjs', 'samples.mjs', 'samples-tools.mjs') { Copy-Item (Join-Path $here $f) $work }
+        Copy-Item (Join-Path $here 'fixtures') $work -Recurse
         Push-Location $work
         try {
             Invoke-Native 'npm' @('init', '-y', '--silent')

@@ -1,9 +1,10 @@
 #!/usr/bin/ucode
 //
-// rpcd ucode plugin that runs network diagnostics (ping, traceroute, DNS lookups) as background jobs and streams
-// their output:
+// rpcd ucode plugin that runs network diagnostics (ping, traceroute, mtr, DNS lookups, a DNS trace from the root servers,
+// certificate checks) and an iperf3 server as background jobs and streams their output:
 //   ubus call flab.diag status
 //   ubus call flab.diag start '{"tool":"ping","host":"1.1.1.1","count":4}'
+//   ubus call flab.diag start '{"tool":"iperf","minutes":2}'
 //   ubus call flab.diag read '{"id":"<id from start>","from":0}'
 //   ubus call flab.diag stop '{"id":"<id from start>"}'
 //   ubus call flab.diag wake '{"mac":"aa:bb:cc:dd:ee:ff","iface":"br-lan"}'
@@ -26,14 +27,16 @@
 // The tools are fixed (busybox ping and traceroute, the first of dig, kdig, drill and nslookup that exists, and
 // openssl), the argument list or script is built from validated values only, and the job id is generated here and
 // checked again whenever it comes back from the browser. `timeout` caps every job. The script tools (the TLS check, the
-// DNS comparison and the connectivity check) write a script owned by this plugin into the job directory; the only
-// values in it from the request are the validated words above.
+// DNS comparison, the DNS trace, a traceroute with AS lookups and the connectivity check) write a script owned by this
+// plugin into the job directory; the only values in it from the request are the validated words above. The iperf3 server
+// is the one job that waits for outside clients: its port is at least 1024, the address it listens on must be one of the
+// router's own, only one runs at a time and `timeout` ends it after the minutes chosen.
 
 'use strict';
 
-import { run, safe_ifname, uci_all, ubus_call } from 'flab.util';
+import { run, safe_ifname, uci_all, ubus_call, as_list } from 'flab.util';
 import { connect } from 'ubus';
-import { mkdir, readfile, writefile, lsdir, stat, access } from 'fs';
+import { mkdir, readfile, writefile, lsdir, stat, access, open } from 'fs';
 
 // Where the jobs live (tmpfs): one directory per job with `out` (the output), `pid` and `rc` (the exit code).
 const ROOT = '/tmp/flab-diag';
@@ -44,10 +47,11 @@ const MAX_JOBS = 12;
 const KEEP = 600;
 // The most output `read` returns in one reply.
 const MAX_OUTPUT = 65536;
-// The seconds each tool may run before `timeout` ends it.
-const LIMITS = { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75 };
+// The seconds each tool may run before `timeout` ends it. A ping, an mtr run and an iperf3 server have no fixed limit: it
+// follows from the number of pings, the cycles or the minutes asked for.
+const LIMITS = { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75, trace: 60, mtr: 15 };
 // The tools `start` accepts.
-const TOOLS = [ 'ping', 'traceroute', 'dns', 'tls', 'compare', 'check' ];
+const TOOLS = [ 'ping', 'traceroute', 'dns', 'tls', 'compare', 'check', 'trace', 'mtr', 'iperf' ];
 // The protocols s_client can upgrade to TLS in (STARTTLS), and the most servers one comparison asks.
 const STARTTLS = [ 'smtp', 'imap', 'pop3', 'ftp' ];
 const MAX_SERVERS = 6;
@@ -55,8 +59,17 @@ const MAX_SERVERS = 6;
 const CHECK_HOST = 'example.com';
 // DNS record types the page offers.
 const TYPES = [ 'A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA' ];
+// How many pings one run may send, and the range of mtr cycles (one probe per hop and second each).
+const MAX_PINGS = 60;
+const MTR_CYCLES = [ 3, 60, 10 ];
+// The minutes an iperf3 server may stay up (the page offers these), its default port and the lowest port it may use.
+const IPERF_MINUTES = [ 1, 2, 5, 15, 30 ];
+const IPERF_PORT = 5201;
+const IPERF_MIN_PORT = 1024;
+// The most hop addresses one traceroute looks up the autonomous system of.
+const MAX_ASN = 30;
 // The process names of everything a job can run (/proc/<pid>/comm), checked before `stop` sends a kill.
-const OURS = [ 'timeout', 'ping', 'ping6', 'traceroute', 'traceroute6', 'nslookup', 'dig', 'kdig', 'drill' ];
+const OURS = [ 'timeout', 'ping', 'ping6', 'traceroute', 'traceroute6', 'nslookup', 'dig', 'kdig', 'drill', 'mtr', 'mtr-packet', 'iperf3' ];
 
 //#region Validation
 
@@ -106,14 +119,15 @@ function dns_tool() {
 	return '';
 }
 
-// The argument list of a ping from the request: [ argv ] or { error }.
+// The argument list of a ping from the request: [ argv ] or { error }. The run lasts `count` seconds (one ping a second)
+// plus a margin, so the deadline and the time limit follow the count.
 function build_ping(a) {
-	let count = int_in(a.count, 1, 10, 4), size = int_in(a.size, 0, 1400, 56);
+	let count = int_in(a.count, 1, MAX_PINGS, 4), size = int_in(a.size, 0, 1400, 56);
 	if (count == null)
-		return { error: 'The number of pings must be between 1 and 10.' };
+		return { error: `The number of pings must be between 1 and ${MAX_PINGS}.` };
 	if (size == null)
 		return { error: 'The packet size must be between 0 and 1400 bytes.' };
-	let argv = [ 'ping', '-c', count, '-W', 2, '-w', 20, '-s', size ];
+	let argv = [ 'ping', '-c', count, '-W', 2, '-w', count + 5, '-s', size ];
 	if (a.family == '4' || a.family == '6')
 		push(argv, `-${a.family}`);
 	if (a.source != null && a.source != '') {
@@ -122,37 +136,108 @@ function build_ping(a) {
 		push(argv, '-I', a.source);
 	}
 	push(argv, a.host);
-	return { argv, limit: LIMITS.ping };
+	return { argv, limit: count + 10 };
 }
 
-// The argument list of a traceroute. Output is numeric unless `resolve` is true: busybox then looks up a host name for
-// every router that answers, which can slow a trace down when the resolver is slow or has no reverse records.
-function build_traceroute(a) {
-	let hops = int_in(a.hops, 1, 30, 20), probes = int_in(a.probes, 1, 3, 2);
-	if (hops == null)
-		return { error: 'The maximum number of hops must be between 1 and 30.' };
-	if (probes == null)
-		return { error: 'The number of probes per hop must be between 1 and 3.' };
-	if (a.resolve != null && a.resolve !== true && a.resolve !== false)
-		return { error: 'Resolving names must be true or false.' };
-	let argv = [ 'traceroute', '-w', 2, '-q', probes, '-m', hops ];
-	if (a.resolve !== true)
-		splice(argv, 1, 0, '-n');
-	if (a.method == 'icmp')
-		push(argv, '-I');
+// The argument list of an mtr run: `cycles` rounds of one probe per hop, in raw mode (a line per probe, which the page
+// turns into the live table). Addresses only: a name lookup per hop would slow the first rounds down.
+function build_mtr(a) {
+	let cycles = int_in(a.cycles, MTR_CYCLES[0], MTR_CYCLES[1], MTR_CYCLES[2]);
+	if (cycles == null)
+		return { error: `The number of rounds must be between ${MTR_CYCLES[0]} and ${MTR_CYCLES[1]}.` };
+	if (trim(run('command -v mtr 2>/dev/null') ?? '') == '')
+		return { error: 'The router has no mtr.' };
+	let argv = [ 'mtr', '--raw', '-n', '-c', cycles, '-i', 1, '-G', 2 ];
 	if (a.family == '4' || a.family == '6')
 		push(argv, `-${a.family}`);
-	if (a.source != null && a.source != '') {
-		if (is_address(a.source))
-			push(argv, '-s', a.source);
-		else if (valid_iface(a.source))
-			push(argv, '-i', a.source);
-		else
-			return { error: 'The source must be an address or an interface name.' };
-	}
+	if (a.method == 'udp')
+		push(argv, '-u');
 	push(argv, a.host);
-	return { argv, limit: LIMITS.traceroute };
+	return { argv, limit: cycles + 15 };
 }
+
+//#region iperf3 server
+
+// The router's own addresses with the firewall zone each one is in and what that zone does with traffic addressed to the
+// router: [{ iface, device, ip, family, zone, input }] (`input` is the zone's ACCEPT, REJECT or DROP, the firewall default
+// when the zone sets none; an interface in no zone gets REJECT, which is what fw4 does with it). Loopback and link-local
+// addresses are left out, and so are interfaces that are down.
+function own_addresses() {
+	let dump = ubus_call(connect(), 'network.interface', 'dump', {}) ?? {};
+	let fw = uci_all('firewall');
+	let fallback = 'REJECT';
+	let zones = [];
+	for (let name, s in fw) {
+		if (s['.type'] == 'defaults')
+			fallback = s.input ?? fallback;
+		else if (s['.type'] == 'zone')
+			push(zones, s);
+	}
+	let out = [];
+	for (let i in dump.interface ?? []) {
+		if (i.interface == 'loopback' || !i.up)
+			continue;
+		let zone = null;
+		for (let z in zones)
+			if (index(as_list(z.network), i.interface) >= 0)
+				zone = z;
+		let base = { iface: i.interface, device: i.l3_device ?? i.device, zone: zone?.name, input: zone ? uc(zone.input ?? fallback) : 'REJECT' };
+		for (let a in i['ipv4-address'] ?? [])
+			push(out, { ...base, ip: a.address, family: 4 });
+		for (let a in i['ipv6-address'] ?? [])
+			if (!match(a.address, /^fe[89ab]/i))
+				push(out, { ...base, ip: a.address, family: 6 });
+	}
+	return out;
+}
+
+// The names of the firewall zones that masquerade (the ones facing the internet) and still accept traffic addressed to the
+// router: a server listening on every address would be reachable from outside through them.
+function exposed_zones() {
+	let fw = uci_all('firewall');
+	let fallback = 'REJECT';
+	for (let name, s in fw)
+		if (s['.type'] == 'defaults')
+			fallback = s.input ?? fallback;
+	let out = [];
+	for (let name, s in fw)
+		if (s['.type'] == 'zone' && (s.masq == '1' || s.name == 'wan') && uc(s.input ?? fallback) == 'ACCEPT')
+			push(out, s.name);
+	return out;
+}
+
+// What the page needs to offer an iperf3 server: the minutes it may run, the default port, the addresses clients would
+// connect to, and the zones that would expose it to the internet.
+function iperf_info() {
+	return { minutes: IPERF_MINUTES, port: IPERF_PORT, min_port: IPERF_MIN_PORT, addresses: own_addresses(), exposed: exposed_zones() };
+}
+
+// The argument list of an iperf3 server that stops by itself after the chosen minutes. It prints one JSON event per line
+// (--json-stream: the start of a test, an event per second, the end), flushed as it is produced. `bind` may name one of
+// the router's own addresses to listen on only that one; without it the server listens on every address and the firewall
+// decides who can reach it. Only one server runs at a time.
+function build_iperf(a) {
+	let minutes = int_in(a.minutes, 1, 30, 2);
+	if (minutes == null || index(IPERF_MINUTES, minutes) < 0)
+		return { error: 'The server may run for ' + join(', ', IPERF_MINUTES) + ' minutes.' };
+	let port = int_in(a.port, IPERF_MIN_PORT, 65535, IPERF_PORT);
+	if (port == null)
+		return { error: `The port must be between ${IPERF_MIN_PORT} and 65535.` };
+	if (trim(run('command -v iperf3 2>/dev/null') ?? '') == '')
+		return { error: 'The router has no iperf3.' };
+	let argv = [ 'iperf3', '-s', '-p', port, '--json-stream', '--forceflush' ];
+	if (a.bind != null && a.bind != '') {
+		let own = filter(own_addresses(), (x) => x.ip == a.bind);
+		if (!length(own))
+			return { error: 'The address to listen on must be one of the router\'s own addresses.' };
+		push(argv, '-B', a.bind);
+	}
+	if (trim(run('pidof iperf3 2>/dev/null') ?? '') != '')
+		return { error: 'An iperf3 server is already running on this router. Stop it first.' };
+	return { argv, limit: minutes * 60, display: `iperf3 -s -p ${port}` + (a.bind ? ` -B ${a.bind}` : '') + ` (stops after ${minutes} minute${minutes == 1 ? '' : 's'})` };
+}
+
+//#endregion
 
 // The argument list of a DNS query with `tool` for `host` and record type `type_`, against `server` (null: the router's
 // own resolver). PTR on an address becomes a reverse lookup. The server and host are validated by the callers.
@@ -270,6 +355,151 @@ function tls_script(host, port, sni, starttls) {
 	return s;
 }
 
+// The first of dig and kdig that is installed ('' when neither is): the AS lookups use `+short`, which drill and nslookup
+// do not have.
+function asn_tool() {
+	for (let t in [ 'kdig', 'dig' ])
+		if (trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '')
+			return t;
+	return '';
+}
+
+// The awk program that picks the addresses of a traceroute's output that are worth looking up: every public IPv4 and IPv6
+// address once, each followed by the name of its Team Cymru origin record (the reversed address under
+// origin.asn.cymru.com, or the reversed nibbles under origin6.asn.cymru.com). Private, shared, loopback, link-local and
+// multicast addresses are skipped. It contains no single quote, so the shell can wrap it in single quotes.
+const ASN_AWK = `function priv4(a,   p) { split(a, p, "."); return (p[1] == 10 || p[1] == 127 || p[1] == 0 || p[1] >= 224 || (p[1] == 172 && p[2] >= 16 && p[2] <= 31) || (p[1] == 192 && p[2] == 168) || (p[1] == 169 && p[2] == 254) || (p[1] == 100 && p[2] >= 64 && p[2] <= 127)) }
+function rev4(a,   p) { split(a, p, "."); return p[4] "." p[3] "." p[2] "." p[1] ".origin.asn.cymru.com" }
+function rev6(a,   k, head, tail, nh, nt, h, t, i, x, r) {
+  k = index(a, "::")
+  if (k) { head = substr(a, 1, k - 1); tail = substr(a, k + 2) } else { head = a; tail = "" }
+  nh = (head == "") ? 0 : split(head, h, ":")
+  nt = (tail == "") ? 0 : split(tail, t, ":")
+  x = ""
+  for (i = 1; i <= nh; i++) x = x substr("0000" h[i], length(h[i]) + 1)
+  if (k) for (i = 1; i <= 8 - nh - nt; i++) x = x "0000"
+  for (i = 1; i <= nt; i++) x = x substr("0000" t[i], length(t[i]) + 1)
+  r = ""
+  for (i = 32; i >= 1; i--) r = r substr(x, i, 1) "."
+  return r "origin6.asn.cymru.com"
+}
+/^###/ { next }
+/^traceroute to / { next }
+{ for (i = 1; i <= NF; i++) { t = $i; gsub(/[()]/, "", t)
+    if (t in seen) continue
+    if (t ~ /^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$/) { seen[t] = 1; if (!priv4(t)) print t, rev4(t) }
+    else if (index(t, ":") && t ~ /^[0-9A-Fa-f:]+$/) { seen[t] = 1; if (t !~ /^(fe[89abAB]|f[cdCD])/ && t != "::1") print t, rev6(t) } } }`;
+
+// The script of a traceroute with AS lookups: the trace itself (its output streams as usual, inside a `trace` block), then
+// for each public address that answered a TXT lookup of its origin record at Team Cymru (`asn` blocks: the AS number, the
+// prefix and the registry), then one lookup per distinct AS number for its name (`asname` blocks). `argv` is the
+// validated traceroute command, `tool` dig or kdig.
+function trace_asn_script(tool, argv) {
+	let s = PRELUDE;
+	s += `set -f\nblk trace\nrun ${LIMITS.traceroute} ${join(' ', map(argv, (w) => `'${w}'`))}\n`;
+	s += `awk '${ASN_AWK}' out > ips.all\nhead -n ${MAX_ASN} ips.all > ips.txt\n: > asns.txt\n`;
+	s += `while read ip rev; do\n  blk asn "$ip"\n  cap a.out 4 ${tool} +short TXT "$rev"\n  rc=$?\n  cat a.out\n  end $rc\n`;
+	s += `  awk -F'|' 'NR == 1 { gsub(/[^0-9]/, "", $1); if ($1 != "") print $1 }' a.out >> asns.txt\ndone < ips.txt\n`;
+	s += `for asn in $(sort -u asns.txt); do\n  blk asname "$asn"\n  cap n.out 4 ${tool} +short TXT "AS$asn.asn.cymru.com"\n  rc=$?\n  cat n.out\n  end $rc\ndone\n`;
+	return s;
+}
+
+// The awk program that reads one answer of a DNS query and says what the trace does next, one line per candidate: `done`
+// (an answer, or a negative answer from the authority), `fail <rcode>` (REFUSED, SERVFAIL, ...), `cname <target>` (the
+// answer is an alias to start over for), or the name servers of a referral, those with an address in the additional
+// section first as `next <address> <name> <zone>`, then the others as `lookup <name> <zone>`. `want` is the record type
+// asked for, `fam` the -4 or -6 that picks which glue addresses count. It contains no single quote.
+const TRACE_AWK = `/^;; ->>HEADER<<-/ { st = $0; sub(/.*status: /, "", st); sub(/;.*/, "", st); next }
+/^;; ANSWER SECTION:/ { s = "an"; next }
+/^;; AUTHORITY SECTION:/ { s = "au"; next }
+/^;; ADDITIONAL SECTION:/ { s = "ad"; next }
+/^;/ { s = ""; next }
+NF < 5 { next }
+s == "an" && $4 != "RRSIG" { an++; if ($4 == want) hit = 1; else if ($4 == "CNAME") cn = $5 }
+s == "au" && $4 == "NS" { ns[++nn] = $5; zone = $1 }
+s == "ad" && (($4 == "A" && fam == "-4") || ($4 == "AAAA" && fam == "-6")) { if (!($1 in glue)) glue[$1] = $5 }
+END {
+  if (st == "REFUSED" || st == "SERVFAIL" || st == "FORMERR" || st == "NOTIMP") { print "fail " st; exit }
+  if (hit) { print "done"; exit }
+  if (an && cn) { print "cname " cn; exit }
+  if (an || !nn) { print "done"; exit }
+  for (i = 1; i <= nn; i++) if (ns[i] in glue) print "next " glue[ns[i]] " " ns[i] " " zone
+  for (i = 1; i <= nn; i++) if (!(ns[i] in glue)) print "lookup " ns[i] " " zone
+}`;
+
+// The body of the DNS trace script (the name, the record type and the address family are set in front of it). It asks a
+// root server, then follows the referrals down to the server that answers, one `step` block per query (the raw answer of
+// kdig, which prints who answered and how long it took), a `lookup` block for a name server that came without an address
+// (asked of the router's own resolver), a `cname` block when the answer is an alias and the trace starts over for its
+// target, and at the end a `resolver` block with what the router's own resolver says. A server that does not answer is
+// replaced by the next one of the same referral; three failures in a row end the trace. Names that came from the network
+// are only ever used inside double quotes and never start a command line option.
+const TRACE_BODY = `set -f
+roots() {
+  if [ "$F" = "-6" ]; then
+    { echo "next 2001:503:ba3e::2:30 a.root-servers.net ."; echo "next 2001:500:2::c c.root-servers.net ."; echo "next 2001:500:2f::f f.root-servers.net ."; echo "next 2001:dc3::35 m.root-servers.net ."; } > cand
+  else
+    { echo "next 198.41.0.4 a.root-servers.net ."; echo "next 192.33.4.12 c.root-servers.net ."; echo "next 192.5.5.241 f.root-servers.net ."; echo "next 202.12.27.33 m.root-servers.net ."; } > cand
+  fi
+}
+if [ "$F" = "-6" ]; then RT=AAAA; else RT=A; fi
+n=0; cn=0; fails=0
+roots
+while [ $n -lt 18 ] && [ -s cand ]; do
+  line=$(head -n 1 cand)
+  tail -n +2 cand > cand.t; mv cand.t cand
+  set -- $line
+  if [ "$1" = "lookup" ]; then
+    case "$2" in -*) continue ;; esac
+    blk lookup "$2" "$3"
+    cap l.out 6 kdig +short "$2" $RT
+    rc=$?
+    cat l.out
+    end $rc
+    addr=$(grep -E '^[0-9a-fA-F:.]+$' l.out | head -n 1)
+    if [ -z "$addr" ]; then continue; fi
+    set -- next "$addr" "$2" "$3"
+  fi
+  n=$((n + 1))
+  blk step "$n" "$2" "$3" "$4"
+  cap q.out 6 kdig $F +norecurse +dnssec +time=3 +retry=0 "@$2" "$Q" "$T"
+  rc=$?
+  cat q.out
+  end $rc
+  if [ $rc -ne 0 ]; then
+    fails=$((fails + 1))
+    if [ $fails -ge 3 ]; then break; fi
+    continue
+  fi
+  fails=0
+  awk -v want="$T" -v fam="$F" '${TRACE_AWK}' q.out > dec
+  kind=$(head -n 1 dec | cut -d' ' -f1)
+  case "$kind" in
+    next|lookup) cp dec cand ;;
+    cname)
+      cn=$((cn + 1))
+      if [ $cn -gt 4 ]; then break; fi
+      Q=$(head -n 1 dec | cut -d' ' -f2)
+      case "$Q" in -*) break ;; esac
+      blk cname "$Q"
+      end 0
+      roots ;;
+    *) break ;;
+  esac
+done
+blk resolver "$O"
+cap r.out 8 kdig +dnssec +time=3 +retry=0 "$O" "$T"
+rc=$?
+cat r.out
+end $rc
+`;
+
+// The script of the DNS trace for `name` and record type `type_` (a validated name and an allow-listed type) over IPv4
+// (`fam` is -4) or IPv6 (-6).
+function trace_script(name, type_, fam) {
+	return PRELUDE + `Q='${name}'\nO='${name}'\nT='${type_}'\nF=${fam}\n` + TRACE_BODY;
+}
+
 //#endregion
 
 //#region Request builders for the script tools
@@ -320,6 +550,55 @@ function build_check(a) {
 	if (tool == '')
 		return { error: 'The router has no DNS lookup tool (dig, kdig, drill or nslookup).' };
 	return { script: check_script(tool, a.host), limit: LIMITS.check, tool, display: `connectivity check (${a.host})` };
+}
+
+// The argument list of a traceroute. Output is numeric unless `resolve` is true: busybox then looks up a host name for
+// every router that answers, which can slow a trace down when the resolver is slow or has no reverse records. With
+// `asn` set the tool becomes a script that follows the trace with the AS lookups of the routers that answered.
+function build_traceroute(a) {
+	let hops = int_in(a.hops, 1, 30, 20), probes = int_in(a.probes, 1, 3, 2);
+	if (hops == null)
+		return { error: 'The maximum number of hops must be between 1 and 30.' };
+	if (probes == null)
+		return { error: 'The number of probes per hop must be between 1 and 3.' };
+	if (a.resolve != null && a.resolve !== true && a.resolve !== false)
+		return { error: 'Resolving names must be true or false.' };
+	if (a.asn != null && a.asn !== true && a.asn !== false)
+		return { error: 'Looking up the networks must be true or false.' };
+	let argv = [ 'traceroute', '-w', 2, '-q', probes, '-m', hops ];
+	if (a.resolve !== true)
+		splice(argv, 1, 0, '-n');
+	if (a.method == 'icmp')
+		push(argv, '-I');
+	if (a.family == '4' || a.family == '6')
+		push(argv, `-${a.family}`);
+	if (a.source != null && a.source != '') {
+		if (is_address(a.source))
+			push(argv, '-s', a.source);
+		else if (valid_iface(a.source))
+			push(argv, '-i', a.source);
+		else
+			return { error: 'The source must be an address or an interface name.' };
+	}
+	push(argv, a.host);
+	if (a.asn !== true)
+		return { argv, limit: LIMITS.traceroute };
+	let tool = asn_tool();
+	if (tool == '')
+		return { error: 'Looking up the networks needs dig or kdig, which this router does not have.' };
+	return { script: trace_asn_script(tool, argv), limit: LIMITS.traceroute + MAX_ASN * 2, display: join(' ', argv) + ' (with AS lookups)' };
+}
+
+// The DNS trace: the name, a record type and the address family (4 or 6, default 4). It needs kdig, whose output names the
+// server that answered and the time it took.
+function build_trace(a) {
+	if (trim(run('command -v kdig 2>/dev/null') ?? '') == '')
+		return { error: 'The DNS trace needs kdig (knot-dig), which this router does not have.' };
+	let type_ = a.type == null || a.type == '' ? 'A' : uc(a.type);
+	if (index(TYPES, type_) < 0)
+		return { error: 'The record type is not one of ' + join(', ', TYPES) + '.' };
+	let fam = a.family == '6' ? '-6' : '-4';
+	return { script: trace_script(a.host, type_, fam), limit: LIMITS.trace, tool: 'kdig', display: `DNS trace ${a.host} ${type_}` };
 }
 
 //#endregion
@@ -406,13 +685,13 @@ function start(request) {
 	let tool = a.tool;
 	if (index(TOOLS, tool) < 0)
 		return { ok: false, error: 'The tool must be one of ' + join(', ', TOOLS) + '.' };
-	// The connectivity check has a default host; every other tool needs one.
+	// The connectivity check has a default host; the iperf3 server has none; every other tool needs one.
 	if (tool == 'check' && (a.host == null || a.host == ''))
 		a.host = CHECK_HOST;
-	if (!valid_host(a.host))
+	if (tool != 'iperf' && !valid_host(a.host))
 		return { ok: false, error: 'Enter a host name or an IPv4 or IPv6 address.' };
-	let built = tool == 'ping' ? build_ping(a) : (tool == 'traceroute' ? build_traceroute(a) : (tool == 'dns' ? build_dns(a)
-		: (tool == 'tls' ? build_tls(a) : (tool == 'compare' ? build_compare(a) : build_check(a)))));
+	let builders = { ping: build_ping, traceroute: build_traceroute, dns: build_dns, tls: build_tls, compare: build_compare, check: build_check, trace: build_trace, mtr: build_mtr, iperf: build_iperf };
+	let built = builders[tool](a);
 	if (built.error != null)
 		return { ok: false, error: built.error };
 
@@ -435,18 +714,39 @@ function start(request) {
 	return { ok: true, id, tool, command: built.display ?? command, limit: built.limit, dns_tool: built.tool ?? null, started: time() };
 }
 
-// The reply of `read`: the output of a job from byte offset `from`, and whether it still runs.
+// The reply of `read`: the output of a job from byte offset `from` (at most MAX_OUTPUT bytes, ending at a line break when
+// there is more to come), and whether it still runs. `size` is the offset to ask for next, so a job whose output outgrows
+// one reply (an iperf3 server that stays up for minutes) is read in pieces.
 function read(request) {
 	let id = request?.args?.id;
 	if (!valid_id(id) || stat(`${ROOT}/${id}`) == null)
 		return { ok: false, error: 'There is no such job.' };
-	let from = int_in(request.args.from, 0, 100000000, 0) ?? 0;
-	let text = readfile(`${ROOT}/${id}/out`, MAX_OUTPUT) ?? '';
+	let path = `${ROOT}/${id}/out`;
+	let total = stat(path)?.size ?? 0;
+	let from = int_in(request.args.from, 0, 1000000000, 0) ?? 0;
+	if (from > total)
+		from = total;
+	let text = '';
+	if (from < total) {
+		let f = open(path, 'r');
+		if (f != null) {
+			f.seek(from);
+			text = f.read(MAX_OUTPUT) ?? '';
+			f.close();
+		}
+		// A reply that stops short of the end of the output ends at a line break, so no line (and no multi-byte character)
+		// is split between two replies.
+		if (from + length(text) < total) {
+			let cut = rindex(text, '\n');
+			if (cut >= 0)
+				text = substr(text, 0, cut + 1);
+		}
+	}
 	let s = job_state(id);
 	return {
 		ok: true, id, running: s.running, exit: s.exit,
-		size: length(text), text: from < length(text) ? substr(text, from) : '',
-		truncated: length(text) >= MAX_OUTPUT,
+		size: from + length(text), text,
+		truncated: from + length(text) < total,
 		timed_out: s.exit == 124 || s.exit == 137,
 		stopped: s.exit == 143,
 	};
@@ -611,13 +911,17 @@ function wake(request) {
 //#region Status
 
 // The reply of `status`: which tools exist, which DNS tool is used, the resolvers the router asks upstream, the
-// interface names, how a Wake-on-LAN packet can be sent and the hosts it can be sent to.
+// interface names, how a Wake-on-LAN packet can be sent and the hosts it can be sent to, and (when iperf3 is installed)
+// what an iperf3 server needs to be offered.
 function status() {
 	let tools = {};
-	for (let t in [ 'ping', 'traceroute', 'nslookup', 'dig', 'kdig', 'drill', 'openssl' ])
+	for (let t in [ 'ping', 'traceroute', 'nslookup', 'dig', 'kdig', 'drill', 'openssl', 'mtr', 'iperf3' ])
 		tools[t] = trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '';
 	let devices = sort(filter(lsdir('/sys/class/net') ?? [], valid_iface));
-	return { generated: time(), tools, dns_tool: dns_tool(), types: TYPES, devices, limits: LIMITS, starttls: STARTTLS, upstream: upstream_resolvers(), check_host: CHECK_HOST, wol: wol_method(), hosts: wol_hosts() };
+	return {
+		generated: time(), tools, dns_tool: dns_tool(), asn: asn_tool() != '', types: TYPES, devices, limits: LIMITS, max_pings: MAX_PINGS, mtr_cycles: MTR_CYCLES,
+		starttls: STARTTLS, upstream: upstream_resolvers(), check_host: CHECK_HOST, wol: wol_method(), hosts: wol_hosts(), iperf: tools.iperf3 ? iperf_info() : null,
+	};
 }
 
 //#endregion
@@ -631,7 +935,7 @@ return {
 			},
 		},
 		start: {
-			args: { tool: '', host: '', count: 0, size: 0, hops: 0, probes: 0, resolve: false, family: '', source: '', method: '', type: '', server: '', port: 0, sni: '', starttls: '', servers: [] },
+			args: { tool: '', host: '', count: 0, size: 0, hops: 0, probes: 0, resolve: false, asn: false, family: '', source: '', method: '', type: '', server: '', port: 0, sni: '', starttls: '', servers: [], cycles: 0, minutes: 0, bind: '' },
 			call: function(request) {
 				return start(request);
 			},

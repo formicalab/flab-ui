@@ -4,8 +4,10 @@
 // must show a partial result sensibly (a step still running, a server not asked yet).
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
+import { copyButton } from '../../core/clipboard.js';
 import { badge, button, mono, muted } from '../../core/ui.js';
 import { PUBLIC_RESOLVERS, fmtMs, hostOf, parseCheck, parseCompare, parseTls } from './diagmodel.js';
+import { chainDiagram, expiryTimeline } from './tlsdiagram.js';
 
 // The icon and color class of a check step's state.
 const STATE_ICON = { ok: ['check-circle', 'ok'], warn: ['exclamation-triangle', 'warn'], bad: ['x-circle', 'bad'], skip: ['info-circle', 'skip'], pending: ['hourglass-split', 'pending'] };
@@ -13,22 +15,9 @@ const STATE_ICON = { ok: ['check-circle', 'ok'], warn: ['exclamation-triangle', 
 // A date (milliseconds) as "2026-12-25", or a dash.
 const day = ms => (ms == null ? '–' : new Date(ms).toISOString().slice(0, 10));
 
-// Copies `text` to the clipboard (the async API where the page may use it, a selected textarea otherwise). Resolves to
-// whether it worked.
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const area = h('textarea', { value: text, style: 'position:fixed;opacity:0' });
-    document.body.append(area);
-    area.select();
-    let ok = false;
-    try { ok = document.execCommand('copy'); } catch { /* no clipboard access at all */ }
-    area.remove();
-    return ok;
-  }
-}
+// One figure of a summary row (the ping's sent, received and loss; an iperf3 test's rate): a large value over a small label,
+// colored by `kind` ('ok', 'warn' or 'bad').
+export const stat = (label, value, kind = '') => h('div', { className: `rt-stat ${kind}` }, h('div', { className: 'v' }, value), h('div', { className: 'l' }, label));
 
 //#region Connectivity check
 
@@ -71,7 +60,31 @@ const REPLY = {
   refused: ['danger', 'Refused'], timeout: ['danger', 'No reply'],
 };
 
-// The DNS comparison: a row per server with what it answered and how fast, and whether they agree.
+// The words for a server in the response-time chart: the name of a public resolver with its address, "the router's
+// resolver", or the address.
+function chartLabel(server, upstream) {
+  if (server === 'router') return 'The router\'s resolver';
+  const named = PUBLIC_RESOLVERS.find(([a]) => a === server);
+  return named ? `${named[1]} · ${server}` : upstream.includes(server) ? `${server} · upstream` : server;
+}
+
+// A horizontal bar for each server, fastest first, as long as the time the server took, with the fastest marked and the
+// slower ones in step with the slowest. Servers that gave no answer are listed last without a bar. Null with fewer than two
+// timed servers, where a comparison of times says nothing.
+function responseChart(rows, fastest, upstream) {
+  const timed = rows.filter(r => r.ms != null);
+  if (timed.length < 2) return null;
+  const max = Math.max(...timed.map(r => r.ms));
+  const sorted = [...rows].sort((a, b) => (a.ms ?? Infinity) - (b.ms ?? Infinity));
+  return h('div', { className: 'rt-hchart', role: 'img', 'aria-label': 'Response time of each server' }, sorted.map(r => h('div', { className: 'rt-hrow' },
+    h('div', { className: 'rt-hlabel', title: r.server }, chartLabel(r.server, upstream)),
+    h('div', { className: 'rt-hbar-wrap' }, r.ms == null
+      ? h('span', { className: 'muted' }, r.running ? 'asking…' : 'no reply')
+      : [h('div', { className: `rt-hbar${r.server === fastest ? ' best' : ''}${r.verdict && r.verdict !== 'ok' ? ' bad' : ''}`, style: `width:${Math.max(2, r.ms / max * 85).toFixed(1)}%` }), h('span', { className: 'rt-hval' }, fmtMs(r.ms))]))));
+}
+
+// The DNS comparison: a chart of the response times, then a row per server with what it answered and how fast, and whether
+// they agree.
 export function compareBody(job, status) {
   const c = parseCompare(job.text, job.total);
   const upstream = status?.upstream ?? [];
@@ -92,6 +105,7 @@ export function compareBody(job, status) {
     : c.agree === false ? h('div', { className: 'rt-error warn' }, icon('exclamation-triangle'), 'The servers gave different answers. That is normal for names behind a CDN, which hands each resolver the addresses nearest to it; for a name that should be fixed, it can mean a stale cache or a tampered resolver.')
     : null;
   return h('div', {},
+    responseChart(c.rows, c.fastest, upstream),
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-compare' },
       h('thead', {}, h('tr', {}, ['Server', 'Result', 'Answers', 'Time', ''].map((t, i) => h('th', { className: i === 3 ? 'num' : '' }, t)))),
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 5, className: 'muted' }, 'Waiting for the first answer…'))))),
@@ -131,12 +145,7 @@ function expiryBadge(c) {
 // One certificate of the chain: who it is for and who issued it, its key, its dates, its names and fingerprint, and the
 // PEM text to copy.
 function certCard(c) {
-  const copy = h('button', { type: 'button', className: 'btn btn-fl btn-sm', onclick: async e => {
-    const btn = e.currentTarget;
-    const ok = await copyText(c.pem);
-    btn.textContent = ok ? 'Copied' : 'Copy failed';
-    setTimeout(() => { btn.textContent = 'Copy PEM'; }, 1500);
-  } }, 'Copy PEM');
+  const copy = copyButton(c.pem, 'Copy PEM');
   // One label/value line of the certificate; null (no line) when the value is empty.
   const row = (label, value) => value == null || value === '' ? null : h('div', { className: 'rt-cert-row' }, h('span', { className: 'l' }, label), h('span', { className: 'v' }, value));
   return h('div', { className: `rt-cert ${c.n === 0 ? 'leaf' : ''}` },
@@ -170,6 +179,9 @@ export function tlsBody(job) {
   return h('div', { className: 'rt-tlsbody' },
     h('div', { className: 'rt-findings' }, t.findings.map(f => h('div', { className: `rt-finding ${f.level}` }, icon(kind[f.level]), f.text))),
     session.length ? h('div', { className: 'rt-stats' }, session.map(([l, v]) => h('div', { className: 'rt-stat' }, h('div', { className: 'v rt-small' }, v), h('div', { className: 'l' }, l)))) : null,
+    t.chain.length ? h('div', { className: 'rt-chain' },
+      h('h3', {}, 'Chain and expiry'),
+      h('div', { className: 'rt-tls-visual' }, chainDiagram(t), expiryTimeline(t))) : null,
     t.chain.length ? h('div', { className: 'rt-chain' },
       h('h3', {}, `Certificate chain sent by the server (${t.chain.length})`),
       h('p', { className: 'rt-chain-note' }, 'The certificates exactly as the server sent them, in order. The router\'s own certificate authorities are not used to add any.'),

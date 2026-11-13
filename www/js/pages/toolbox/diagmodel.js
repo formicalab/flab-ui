@@ -22,7 +22,10 @@ export const normMac = text => (isMac(text) ? String(text).toLowerCase().replace
 export const hostOf = (hosts, mac) => (hosts ?? []).find(x => x.mac === normMac(mac)) ?? null;
 
 // The number limits of each field, as the plugin enforces them: [min, max, default].
-const LIMITS = { count: [1, 10, 4], size: [0, 1400, 56], hops: [1, 30, 20], probes: [1, 3, 2], port: [1, 65535, 443] };
+const LIMITS = { count: [1, 60, 4], size: [0, 1400, 56], hops: [1, 30, 20], probes: [1, 3, 2], port: [1, 65535, 443], cycles: [3, 60, 10], iperfPort: [1024, 65535, 5201] };
+
+// The minutes an iperf3 server may run for, as the plugin allows them (the first is the default).
+export const IPERF_MINUTES = [2, 1, 5, 15, 30];
 
 // The DNS record types the page offers.
 export const DNS_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'];
@@ -43,10 +46,12 @@ export const WEAK_NSLOOKUP = ['MX', 'TXT', 'NS', 'CNAME', 'SOA', 'SRV', 'CAA'];
 export const blankForm = () => ({
   tool: 'ping', host: '', family: '', source: '',
   count: String(LIMITS.count[2]), size: String(LIMITS.size[2]),
-  hops: String(LIMITS.hops[2]), probes: String(LIMITS.probes[2]), method: 'udp', resolve: '',
+  hops: String(LIMITS.hops[2]), probes: String(LIMITS.probes[2]), method: 'udp', resolve: '', asn: '1',
+  cycles: String(LIMITS.cycles[2]), mtrMethod: 'icmp',
   type: 'A', server: '',
   port: '', sni: '', starttls: '',
   servers: ['router', '1.1.1.1', '8.8.8.8'], extraServer: '', iface: '', wolOther: false,
+  minutes: String(IPERF_MINUTES[0]), iperfPort: String(LIMITS.iperfPort[2]), bind: '',
 });
 
 // A whole number between the limits of `field`, or null when the text is not one. Empty text is the default.
@@ -73,6 +78,17 @@ export function requestOf(form) {
     if (host && !isHost(host)) return { error: 'Enter a host name, or leave it empty to use the default.' };
     return { args: host ? { tool: 'check', host } : { tool: 'check' } };
   }
+  // The iperf3 server has no host: it listens for a chosen number of minutes on a port, on every address or on one of the
+  // router's own.
+  if (form.tool === 'iperf') {
+    const minutes = +form.minutes;
+    if (!IPERF_MINUTES.includes(minutes)) return { error: `The server may run for ${[...IPERF_MINUTES].sort((a, b) => a - b).join(', ')} minutes.` };
+    const port = numberOf(form.iperfPort, 'iperfPort');
+    if (port == null) return { error: `The port must be a whole number from ${LIMITS.iperfPort[0]} to ${LIMITS.iperfPort[1]}.` };
+    const bind = String(form.bind ?? '').trim();
+    if (bind && !isAddress(bind)) return { error: 'The address to listen on must be an IP address of the router.' };
+    return { args: { tool: 'iperf', minutes, ...(port !== LIMITS.iperfPort[2] ? { port } : {}), ...(bind ? { bind } : {}) } };
+  }
   if (!isHost(host)) return { error: 'Enter a host name or an IPv4 or IPv6 address.' };
   const source = String(form.source ?? '').trim();
   if (source && !isAddress(source) && !/^[A-Za-z0-9_.:-]{1,15}$/.test(source)) return { error: 'The source must be an address or an interface name.' };
@@ -91,6 +107,12 @@ export function requestOf(form) {
     problem = need('hops', 'The maximum number of hops') ?? need('probes', 'The number of probes');
     if (form.method === 'icmp') args.method = 'icmp';
     if (form.resolve === '1') args.resolve = true;
+    if (form.asn === '1') args.asn = true;
+  } else if (form.tool === 'mtr') {
+    problem = need('cycles', 'The number of rounds');
+    if (form.mtrMethod === 'udp') args.method = 'udp';
+  } else if (form.tool === 'trace') {
+    args.type = form.type;
   } else if (form.tool === 'dns') {
     args.type = form.type;
     const server = String(form.server ?? '').trim();
@@ -122,6 +144,7 @@ export function requestOf(form) {
     if (form.family === '4' || form.family === '6') args.family = form.family;
     if (source) args.source = source;
   }
+  if ((form.tool === 'mtr' || form.tool === 'trace') && (form.family === '4' || form.family === '6')) args.family = form.family;
   return { args };
 }
 
@@ -293,11 +316,12 @@ export function outsideBlocks(text) {
   return out;
 }
 
-// What went wrong with a finished script job (the connectivity check, the comparison or the certificate check) in words,
-// or null: the shell's own complaint when the script could not run, or a note that nothing was produced. A job that was
-// stopped or hit its time limit is not a failure of the script.
+// What went wrong with a finished script job (the connectivity check, the comparison, the certificate check, the DNS trace
+// or a traceroute with AS lookups) in words, or null: the shell's own complaint when the script could not run, or a note
+// that nothing was produced. A job that was stopped or hit its time limit is not a failure of the script.
 export function scriptProblem(job) {
-  if (job.running || job.stopped || job.timedOut || !['check', 'compare', 'tls'].includes(job.tool)) return null;
+  const script = ['check', 'compare', 'tls', 'trace'].includes(job.tool) || (job.tool === 'traceroute' && job.asn);
+  if (job.running || job.stopped || job.timedOut || !script) return null;
   const stray = outsideBlocks(job.text);
   if (stray.length) return `The job script could not run: ${stray.slice(0, 3).join(' ')}`;
   if (!parseBlocks(job.text).length && !job.error) return 'The job produced no output.';
@@ -662,11 +686,12 @@ export function parseCheck(text, running, ctx = {}, now = Date.now()) {
 //#region Job state
 
 // How a finished job ended, as text for the status line: { kind: 'ok' | 'stopped' | 'limit' | 'failed', text }.
-// `limit` is the number of seconds the tool was allowed to run.
+// `limit` is the number of seconds the tool was allowed to run. An iperf3 server is meant to run until its time is up (the
+// timeout ends it with code 124) or until the user stops it (it then exits with 0, so the page's own note of the Stop is used).
 export function endOf(job, limit) {
   if (job.error) return { kind: 'failed', text: 'Failed' };
-  if (job.stopped) return { kind: 'stopped', text: 'Stopped' };
-  if (job.timedOut) return { kind: 'limit', text: `Stopped at the ${limit} second limit` };
+  if (job.stopped || job.stopRequested) return { kind: 'stopped', text: 'Stopped' };
+  if (job.timedOut) return job.tool === 'iperf' ? { kind: 'ok', text: 'Time is up' } : { kind: 'limit', text: `Stopped at the ${limit} second limit` };
   if (job.exit === 0 || job.exit === 1) return { kind: 'ok', text: 'Finished' };
   return { kind: 'failed', text: job.exit == null ? 'Ended' : `Failed (exit code ${job.exit})` };
 }

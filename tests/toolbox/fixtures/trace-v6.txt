@@ -1,0 +1,135 @@
+### BEGIN step 575920.88 1 2001:503:ba3e::2:30 a.root-servers.net .
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 41231
+;; Flags: qr; QUERY: 1; ANSWER: 0; AUTHORITY: 15; ADDITIONAL: 27
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; www.example.com.    		IN	AAAA
+
+;; AUTHORITY SECTION:
+com.                	172800	IN	NS	l.gtld-servers.net.
+com.                	172800	IN	NS	j.gtld-servers.net.
+com.                	172800	IN	NS	h.gtld-servers.net.
+com.                	172800	IN	NS	d.gtld-servers.net.
+com.                	172800	IN	NS	b.gtld-servers.net.
+com.                	172800	IN	NS	f.gtld-servers.net.
+com.                	172800	IN	NS	k.gtld-servers.net.
+com.                	172800	IN	NS	m.gtld-servers.net.
+com.                	172800	IN	NS	i.gtld-servers.net.
+com.                	172800	IN	NS	g.gtld-servers.net.
+com.                	172800	IN	NS	a.gtld-servers.net.
+com.                	172800	IN	NS	c.gtld-servers.net.
+com.                	172800	IN	NS	e.gtld-servers.net.
+com.                	86400	IN	DS	19718 13 2 8ACBB0CD28F41250A80A491389424D341522D946B0DA0C0291F2D3D771D7805A
+com.                	86400	IN	RRSIG	DS 8 1 86400 20261126050000 20261113040000 8763 . e3CFp+EBiIZD/s7Is0c/Ri63RPXWygW4PeIb7t4+z95d+prbhiRKwDd22QruQ10MSMctQ+bknjUnPkP3YjaCXjN2nkUkj3ErE5dN22AZuEQv9fJ7RRIdXCy8yfPDyn8BHevdzqkjQ2rPZ1GWMj9zqTTw4EVWcPKPu4410XrjQTvedWPLFmjVHCM4SCcsVbxAb+Lu7G6QvI1eNos94ehz3dRNhqCMlRc1kmpxZB0OCamB7KmHhKPv8BH29DRkc6fs7lVm++ECbp5eIwUdrgTtrFkDS7Zb9DVkamlUSvJZY52KGGCqMIYIUW4HQTsQ6puSbaQhU4s1fxitcDyj0Q18RQ==
+
+;; ADDITIONAL SECTION:
+l.gtld-servers.net. 	172800	IN	A	192.41.162.30
+l.gtld-servers.net. 	172800	IN	AAAA	2001:500:d937::30
+j.gtld-servers.net. 	172800	IN	A	192.48.79.30
+j.gtld-servers.net. 	172800	IN	AAAA	2001:502:7094::30
+h.gtld-servers.net. 	172800	IN	A	192.54.112.30
+h.gtld-servers.net. 	172800	IN	AAAA	2001:502:8cc::30
+d.gtld-servers.net. 	172800	IN	A	192.31.80.30
+d.gtld-servers.net. 	172800	IN	AAAA	2001:500:856e::30
+b.gtld-servers.net. 	172800	IN	A	192.33.14.30
+b.gtld-servers.net. 	172800	IN	AAAA	2001:503:231d::2:30
+f.gtld-servers.net. 	172800	IN	A	192.35.51.30
+f.gtld-servers.net. 	172800	IN	AAAA	2001:503:d414::30
+k.gtld-servers.net. 	172800	IN	A	192.52.178.30
+k.gtld-servers.net. 	172800	IN	AAAA	2001:503:d2d::30
+m.gtld-servers.net. 	172800	IN	A	192.55.83.30
+m.gtld-servers.net. 	172800	IN	AAAA	2001:501:b1f9::30
+i.gtld-servers.net. 	172800	IN	A	192.43.172.30
+i.gtld-servers.net. 	172800	IN	AAAA	2001:503:39c1::30
+g.gtld-servers.net. 	172800	IN	A	192.42.93.30
+g.gtld-servers.net. 	172800	IN	AAAA	2001:503:eea3::30
+a.gtld-servers.net. 	172800	IN	A	192.5.6.30
+a.gtld-servers.net. 	172800	IN	AAAA	2001:503:a83e::2:30
+c.gtld-servers.net. 	172800	IN	A	192.26.92.30
+c.gtld-servers.net. 	172800	IN	AAAA	2001:503:83eb::30
+e.gtld-servers.net. 	172800	IN	A	192.12.94.30
+e.gtld-servers.net. 	172800	IN	AAAA	2001:502:1ca1::30
+
+;; Received 1175 B
+;; Time 2026-11-13 07:58:04 CET
+;; From 2001:503:ba3e::2:30@53(UDP) in 18.7 ms
+
+### END 0 575920.91
+### BEGIN step 575920.93 2 2001:500:d937::30 l.gtld-servers.net. com.
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 35804
+;; Flags: qr; QUERY: 1; ANSWER: 0; AUTHORITY: 4; ADDITIONAL: 13
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 4096 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; www.example.com.    		IN	AAAA
+
+;; AUTHORITY SECTION:
+example.com.        	172800	IN	NS	hera.ns.cloudflare.com.
+example.com.        	172800	IN	NS	elliott.ns.cloudflare.com.
+example.com.        	86400	IN	DS	2371 13 2 C988EC423E3880EB8DD8A46FE06CA230EE23F35B578D64E78B29C3E1C83D245A
+example.com.        	86400	IN	RRSIG	DS 13 2 86400 20261117013420 20261110002420 65344 com. 8s3ywwa8c4aBpP6QCTsRy5ELqNypQBHaZxt58128GCn92m91FCE07IJNqDK/TJyybqxotwh/ghCF484SrQ95Bg==
+
+;; ADDITIONAL SECTION:
+hera.ns.cloudflare.com.	172800	IN	A	108.162.192.162
+hera.ns.cloudflare.com.	172800	IN	A	172.64.32.162
+hera.ns.cloudflare.com.	172800	IN	A	173.245.58.162
+hera.ns.cloudflare.com.	172800	IN	AAAA	2606:4700:50::adf5:3aa2
+hera.ns.cloudflare.com.	172800	IN	AAAA	2803:f800:50::6ca2:c0a2
+hera.ns.cloudflare.com.	172800	IN	AAAA	2a06:98c1:50::ac40:20a2
+elliott.ns.cloudflare.com.	172800	IN	A	108.162.195.228
+elliott.ns.cloudflare.com.	172800	IN	A	162.159.44.228
+elliott.ns.cloudflare.com.	172800	IN	A	172.64.35.228
+elliott.ns.cloudflare.com.	172800	IN	AAAA	2606:4700:58::a29f:2ce4
+elliott.ns.cloudflare.com.	172800	IN	AAAA	2803:f800:50::6ca2:c3e4
+elliott.ns.cloudflare.com.	172800	IN	AAAA	2a06:98c1:50::ac40:23e4
+
+;; Received 510 B
+;; Time 2026-11-13 07:58:04 CET
+;; From 2001:500:d937::30@53(UDP) in 21.1 ms
+
+### END 0 575920.96
+### BEGIN step 575920.98 3 2606:4700:50::adf5:3aa2 hera.ns.cloudflare.com. example.com.
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 60444
+;; Flags: qr aa; QUERY: 1; ANSWER: 3; AUTHORITY: 0; ADDITIONAL: 1
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 1232 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; www.example.com.    		IN	AAAA
+
+;; ANSWER SECTION:
+www.example.com.    	300	IN	AAAA	2606:4700:10::ac42:93f3
+www.example.com.    	300	IN	AAAA	2606:4700:10::6814:179a
+www.example.com.    	300	IN	RRSIG	AAAA 13 3 300 20261114075804 20261112055804 34505 example.com. /UGWsgUPZ/e3DgoeQZRONJwBOtMIwaU2fSV5rLZ8/71PCizebmgYP5ne3Pbe/xoV5/PRaGv0w9bd4kpoJQ3SUg==
+
+;; Received 207 B
+;; Time 2026-11-13 07:58:04 CET
+;; From 2606:4700:50::adf5:3aa2@53(UDP) in 17.3 ms
+
+### END 0 575921.01
+### BEGIN resolver 575921.02 www.example.com
+;; ->>HEADER<<- opcode: QUERY; status: NOERROR; id: 33365
+;; Flags: qr rd ra ad; QUERY: 1; ANSWER: 3; AUTHORITY: 0; ADDITIONAL: 1
+
+;; EDNS PSEUDOSECTION:
+;; Version: 0; flags: do; UDP size: 1232 B; ext-rcode: NOERROR
+
+;; QUESTION SECTION:
+;; www.example.com.    		IN	AAAA
+
+;; ANSWER SECTION:
+www.example.com.    	300	IN	AAAA	2606:4700:10::ac42:93f3
+www.example.com.    	300	IN	AAAA	2606:4700:10::6814:179a
+www.example.com.    	300	IN	RRSIG	AAAA 13 3 300 20261114075804 20261112055804 34505 example.com. QdamMFgHUcuWT62YE4gB5PenIysbkP6Um+DhBVjbxDtbIQU7M2vFiaISDjqyCYqt02RbL8QTE/wfFm50fha+9w==
+
+;; Received 207 B
+;; Time 2026-11-13 07:58:04 CET
+;; From 127.0.0.1@53(UDP) in 19.1 ms
+
+### END 0 575921.05

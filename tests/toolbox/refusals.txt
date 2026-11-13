@@ -11,7 +11,7 @@
 {"tool":"ping","host":""}
 {"tool":"ping"}
 {"tool":"ping","host":"1.1.1.1","count":0}
-{"tool":"ping","host":"1.1.1.1","count":11}
+{"tool":"ping","host":"1.1.1.1","count":61}
 {"tool":"ping","host":"1.1.1.1","count":"3;touch /tmp/flab-diag-canary"}
 {"tool":"ping","host":"1.1.1.1","count":1.5}
 {"tool":"ping","host":"1.1.1.1","size":1401}
@@ -54,3 +54,30 @@
 {"tool":"compare","host":"x;touch /tmp/flab-diag-canary","servers":["router"]}
 {"tool":"check","host":"x;touch /tmp/flab-diag-canary"}
 {"tool":"check","host":"-x"}
+{"tool":"traceroute","host":"1.1.1.1","asn":1}
+{"tool":"traceroute","host":"1.1.1.1","asn":"true;touch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"1.1.1.1","cycles":2}
+{"tool":"mtr","host":"1.1.1.1","cycles":61}
+{"tool":"mtr","host":"1.1.1.1","cycles":"5;touch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"1.1.1.1;touch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"-x"}
+{"tool":"mtr"}
+{"tool":"trace","host":"example.com;touch /tmp/flab-diag-canary"}
+{"tool":"trace","host":"-x"}
+{"tool":"trace","host":"$(touch /tmp/flab-diag-canary)"}
+{"tool":"trace","host":"example.com","type":"ANY"}
+{"tool":"trace","host":"example.com","type":"A;touch /tmp/flab-diag-canary"}
+{"tool":"trace"}
+{"tool":"iperf","minutes":3}
+{"tool":"iperf","minutes":0}
+{"tool":"iperf","minutes":"2;touch /tmp/flab-diag-canary"}
+{"tool":"iperf","minutes":120}
+{"tool":"iperf","minutes":2,"port":80}
+{"tool":"iperf","minutes":2,"port":1023}
+{"tool":"iperf","minutes":2,"port":65536}
+{"tool":"iperf","minutes":2,"port":"5201;touch /tmp/flab-diag-canary"}
+{"tool":"iperf","minutes":2,"bind":"8.8.8.8"}
+{"tool":"iperf","minutes":2,"bind":"lan"}
+{"tool":"iperf","minutes":2,"bind":"-B"}
+{"tool":"iperf","minutes":2,"bind":"127.0.0.1"}
+{"tool":"iperf","minutes":2,"bind":"127.0.0.1;touch /tmp/flab-diag-canary"}
