@@ -4,9 +4,10 @@
 //
 // A page describes its options as a table of fields (see pages/settings/schema.js for the full format):
 //   { key, type: string | text | bool | int | enum | list, label, hint?, default?, check?, min?, max?, options?, labels?,
-//     number?, numbered?, items? }
+//     number?, numbered?, items?, blank? }
 // (`items` is the fixed set of values a list may hold, `labels` gives each value of an enum a description, `numbered` shows the
-// value before it in the drop-down ("1: Block private addresses"; the DNS page uses it for levels that are numbers in the file) and `number`
+// value before it in the drop-down ("1: Block private addresses"; the DNS page uses it for levels that are numbers in the file),
+// `blank` is the text of an enum's empty choice when it has no default (for example "choose a network") and `number`
 // makes an int a number input) and these functions read a field's value from a UCI section, normalize and compare values,
 // describe them for the review list, and validate them. A value in a form is a string ('' = not set), a boolean (a
 // checkbox, with the OpenWrt default when the option is absent) or an array of strings (a list).
@@ -104,6 +105,11 @@ export const CHECKS = {
   path: v => (/^\/\S+$/.test(v) ? null : 'must be an absolute path without spaces'),
   seed: v => (v === '0' || /^\/\S+$/.test(v) ? null : 'must be 0 or an absolute path without spaces'),
   ifname: v => (/^[A-Za-z0-9_.-]+$/.test(v) ? null : 'must be a network interface name (letters, digits, _ . -)'),
+  // The characters ddns-scripts accepts in a host name or DNS server (it also allows "@") and in a domain (which may also hold "*").
+  ddnshost: v => (/^[@A-Za-z0-9.:_-]+$/.test(v) ? null : 'may only contain letters, digits and @ . : _ -'),
+  ddnsdomain: v => (/^[@A-Za-z0-9._*-]+$/.test(v) ? null : 'may only contain letters, digits and @ . _ * -'),
+  // A proxy as [user:password@]host:port, the port being required (an IPv6 host goes in square brackets).
+  proxy: v => (/^([^@\s/]*:[^@\s/]*@)?(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+):\d{1,5}$/.test(v) ? null : 'must be [user:password@]host:port, with the port'),
 };
 
 // The error for one non-empty value of a field, or null.

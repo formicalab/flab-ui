@@ -71,7 +71,8 @@ Design principles:
 flab-ui/
   deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
-  tests/                     bgp/, dhcp/, dns/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), routing/, services/, settings/, toolbox/, traffic/, wifi/,
+  tools/patch-ddns-scripts.sh  Makes the router's ddns-scripts pass every character of a password unchanged (deploy.ps1 runs it)
+  tests/                     bgp/, ddns/, dhcp/, dns/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), routing/, services/, settings/, toolbox/, traffic/, wifi/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -88,7 +89,7 @@ flab-ui/
         uci.js               The one wrapper for rpcd's `uci` object (staged edits, apply with rollback, applyChange())
         ops.js               stageOps(): turns a change plan (set / add / delete operations) into staged uci calls
         fields.js            Pure form-field model: option readers, value checks (IP, MAC, duration, ...), fieldError()
-        forms.js             Form building blocks: legend, note, fieldRow(), the sticky review banner
+        forms.js             Form building blocks: legend, note, fieldRow() (a field with `secret` is a write-only password box; an enum's `blank` is the text of its empty choice), the sticky review banner
         editpage.js          createEditor(): the draft, banner, save/discard and notes every editing page shares
         login.js             Sign-in screen (inline SVG and CSS only)
         dom.js               h() element builder (XSS-safe), byId()
@@ -114,6 +115,7 @@ flab-ui/
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js
         dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js (daemon and pool cards), boot6.js (network boot card)
         dns/                 DNS: index.js (page, state, the editing wiring), schema.js (the options and their areas, ZONE_FIELDS and ZONE_TYPES), edit.js (pure: draft, changes, problems, the UCI plan, the check after a save), zones.js (pure: the zone blocks of Unbound and the server entries of dnsmasq as a draft: items, changes, validation, plan, checks), model.js (pure: tiles, findings, activity, option areas), zonescard.js (the Zones card), zoneform.js (the dialog that adds or edits a zone), fold.js (the card that folds down to its header, used by Zones and Activity), cards.js (Configuration, Activity)
+        ddns/                Dynamic DNS: index.js (page, tiles, the editing wiring), schema.js (the options and their groups), model.js (pure: reading the plugin's status, the draft, validation, the UCI plan, the check after a save, verdicts, intervals, log parsing), cards.js (service cards with status, actions and log; the global card)
         interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
@@ -274,6 +276,7 @@ return {
 | `flab.dns.uc` | `flab.dns` | `status` (no arguments) | procd `service list` (ubus), `pidof unbound`/`pidof dnsmasq`, `command -v unbound`/`dnsmasq`, `netstat -lntup`, `unbound-control status`/`stats_noreset`/`list_forwards`/`list_local_data`, `unbound -V`, the generated `/var/lib/unbound/unbound.conf` and `unbound_ext.conf` (forward-zone clauses), `dnsmasq --version`, ubus `dnsmasq metrics`, uci unbound and uci dhcp (the `unbound` and `dnsmasq` sections), `/tmp/resolv.conf.d/resolv.conf.auto`, `/tmp/hosts/*`, `/tmp/dhcp.leases`, `/proc/<pid>/stat` and `/proc/uptime` (see [DNS](#dns-route-dns)) |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
 | `flab.system.uc` | `flab.system` | `cpu` | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime` |
+| `flab.ddns.uc` | `flab.ddns` | `status` (no arguments); `log` (`section`); `control` (`section`, `action` = `check` or `force`) | uci `ddns` and `network`, procd `service list` (the updater instances), ubus `network.interface dump`, the run files in `ddns_rundir` (`<service>.ip`, `.update`, `.nextcheck`, `.err`) and the logs in `ddns_logdir`, `/proc/uptime`, `/usr/share/ddns/{default,custom}/*.json` (the providers), `/usr/lib/ddns` (provider scripts), `/sys/class/net`, `ip addr`, `/etc/rc.d`; `control` runs `/etc/init.d/ddns stop` and `start` for one enabled service after strict validation (see [Dynamic DNS](#dynamic-dns-route-ddns)); passwords and tokens are never returned |
 | `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
 | `flab.services.uc` | `flab.services` | `list`; `control` (`name`, `action`) | `/etc/init.d` (executable files) and `/etc/rc.d` (`S<NN><name>` = starts at boot), `netstat -lntup` and `/proc/sys/net/ipv4/ip_local_port_range` (the listening sockets) for `list`; `control` runs `/etc/init.d/<name> start\|stop\|restart` after strict validation (see [Services](#services-route-services)); its ACL fragment grants `list` under `read` and `control` under `write` |
 
@@ -418,14 +421,15 @@ What Deploy does:
 2. Copies `www/` to `/tmp/flab` (tmpfs, gone after a reboot) and symlinks `/www/flab` to it.
 3. Copies `rpcd/ucode/*` to `/usr/share/rpcd/ucode/`, `rpcd/acl.d/*` to `/usr/share/rpcd/acl.d/` and
    `rpcd/lib/flab/*` to `/usr/share/ucode/flab/`.
-4. **Restarts rpcd**, which only reads its plugins and ACL fragments at start.
+4. Runs `tools/patch-ddns-scripts.sh apply` on the router (see [Dynamic DNS](#dynamic-dns-route-ddns)): the one change outside flab-ui's own files.
+5. **Restarts rpcd**, which only reads its plugins and ACL fragments at start.
 
-Cleanup removes all of the above (and the diagnostics' job directory `/tmp/flab-diag`, ending any diagnostic still running) and restarts rpcd again. No login or rpcd setting is created or changed.
+Cleanup removes all of the above (and the diagnostics' job directory `/tmp/flab-diag`, ending any diagnostic still running) and restarts rpcd again; it also puts back the ddns-scripts files the patch replaced. No login or rpcd setting is created or changed.
 
 Things to know:
 
 - `rpcd` is **restarted**, so every deploy/cleanup ends the active rpcd sessions (LuCI's and flab-ui's).
-- Flash writes are limited to the rpcd plugin and ACL files and the symlink; Cleanup removes them.
+- Flash writes are limited to the rpcd plugin and ACL files, the symlink, and the two ddns-scripts files the patch replaces (the originals are kept next to them as `*.flab-orig`); Cleanup removes or restores them.
 - `scp -O` is required (dropbear has no sftp-server).
 - After editing a front-end file, a quick iteration is `scp -O <file> root@<router>:/tmp/flab/<path>` and
   Ctrl+F5. Backend changes need the file copied to `/usr/share/rpcd/ucode/` (or `/usr/share/ucode/flab/`) and
@@ -1375,6 +1379,64 @@ missing leaves its part null and adds a warning; it never fails the call, and th
   `cache_live_freed`, `cache_size` (the configured one) and `since`. `dnssec.enabled` for Unbound is whether the `validator` module is
   loaded; for dnsmasq the `dnssec` option, and `supported` is whether the build's compile options say `DNSSEC` (not `no-DNSSEC`).
 
+### Dynamic DNS (route `#ddns`)
+The ddns-scripts client (`/etc/config/ddns`) that keeps a DNS name pointing at the router's changing public address. The page
+shows what each service is doing now and edits the config behind it; it needs `ddns-scripts` (and a provider package or a
+custom update address) on the router, and says so when it is missing.
+- **Tiles**: whether the updater (procd's `ddns` service) runs and how many enabled services it runs, how many services are up
+  to date, when the last update was sent and when the next check is.
+- **One card per service** (click the header to fold it): the verdict in words, the addresses (the router's, where they come from,
+  and the one the provider has registered), the last update and the next check, the check and forced-update intervals as the
+  updater will really use them, and the updater's process. The verdict is one of *Up to date* (registered address equals the
+  router's), *Update pending*, *Problem* (the newest warning or error in the log that no later success has put right), *Not
+  running* (with the fatal error when the updater stopped on one), *Checking* (nothing looked up yet) and *Disabled*.
+- **Actions**: *Check now* restarts the updater of that one service (it reads the address and updates the provider if it
+  differs); *Force update* first forgets the last update, so the address is sent even if unchanged. Both are verified to touch only
+  that instance, are off for a disabled service or a login without the `control` permission, and report the init script's
+  output when it fails. *Log* opens the updater's own log for the service: the lines that matter (warnings, errors, notes), or
+  every line, scrolled to the newest, with secrets masked.
+- **Options**: every option of a service in folding groups (provider and account, detecting the address, custom provider,
+  connection, intervals, logging), from the OpenWrt documentation and the updater's source, with a hint on each. Controls show
+  only when they apply (for example *Update address* only without a provider, *Network* only for the network address source),
+  and a provider's own needs (domain, username, password) are required only when its update address uses them. Options the page
+  has no control for are listed read only. Services can be added (the section name is typed once and cannot be changed:
+  letters, digits and underscores) and removed (until saved, with Undo). The **Global settings** card (folded: the
+  documentation advises leaving them alone) holds the options of the `global` section.
+- **Validation** (errors block Save; warnings do not): characters the updater refuses in host names, domains and addresses, numbers
+  and units, a proxy without a port, an enabled service without a provider or update address, what the provider's update address
+  contains, an address source without its setting; warnings for IPv6 with a provider that does not support it, HTTPS without
+  certificates, a check below the updater's minimum (it is replaced, and the warning says by what), no interface set, a script
+  provider that is not installed, options that need the `host` command on a router without it, and two enabled services for the
+  same name and address family.
+- **The password is write-only.** The page never receives it: it reads the config through the plugin, which leaves out any option
+  that holds a secret (`password`, `*token*`, `*secret*`, `*apikey*`) and reports only whether it is set, and the password in a
+  proxy address is masked. The box starts empty and says that one is stored; typing a value replaces it, empty keeps it. The review
+  banner shows *new value (hidden)*, never the text. Log lines and errors are masked too. The ACL fragment does not grant `uci get`
+  and the page never calls it.
+- **Any character may be used in a password.** ddns-scripts itself mangles some: its `urlencode()` (every provider that puts
+  `[PASSWORD]` in its update address) hands the string to `awk -v`, which reads a backslash as an escape, and indexes it by ASCII
+  only, so an accented letter or the euro sign becomes `%00`; and the Cloudflare script writes the password inside single quotes
+  that it later `eval`s, so a single quote ends the quoting (`$` is not a problem). `tools/patch-ddns-scripts.sh` corrects both:
+  `urlencode()` takes the string from the environment and encodes it byte by byte, and the Cloudflare script escapes quotes for the
+  `eval`. The originals are kept as `<file>.flab-orig`; `apply` does nothing when already patched, `restore` puts them back, and a
+  file that is not the expected version is left alone and reported. `deploy.ps1` applies it (Cleanup restores it). A package
+  upgrade replaces the files, so the plugin reports `password_exact` (the patch markers are present) and the page warns about a
+  single quote, a backslash or a non-ASCII character in a password only while it is false.
+- **Saving** goes through `applyChange()` like the other editing pages (stage, apply with the rollback countdown, read the config
+  back through the plugin, confirm); the check after a save also requires a typed password to be stored. A change the router does
+  not keep is rolled back and the edit stays in the form. Changes already staged in the session are shown with a "Discard them"
+  button. The page does not poll over unsaved edits, a focused control or a running action.
+- **The plugin** (`flab.ddns`): `status` takes no arguments and returns the config without secrets, each service's runtime (from the
+  updater's run files and log: registered address, last update and next check as epoch times, the pid from procd, the problem or
+  fatal error from the log), the providers (name, IPv6 support, what the update address needs, script and whether it is installed;
+  a provider in `/usr/share/ddns/custom` replaces one of the same name), the networks, devices and tools, whether the updater
+  starts at boot, the version and the CA certificates. `log` reads one service's log (the newest 64 KB). `control` accepts only the
+  name of an existing enabled service (letters, digits, underscore; at most 64) and the action `check` or `force`; every command is
+  built from those validated words, and anything else is refused with a reason before a command runs. The ACL fragment
+  (`rpcd/acl.d/flab-ddns.json`) grants `status` and `log` (read), `control` (write), and `uci` on the `ddns` config only.
+- The intervals on a card are the ones the updater really uses: a `force_unit` without a `force_interval` applies the default number
+  (72) in that unit, so `minutes` means a forced update every 72 minutes, and a check below the updater's minimum is replaced.
+
 ### System settings (route `#settings`)
 Changes the router: it shows and edits `/etc/config/system`: every option the OpenWrt wiki
 documents for the `system` section and for its `timeserver` (NTP) section, in four cards that each take the full
@@ -1437,6 +1499,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | DNS | `pwsh -File flab-ui\tests\dns\run.ps1 [-Router ...] [-Url ...] [-Browser]` | The DNS model (tiles, findings, activity, options) and the zones (Unbound's blocks of every type and dnsmasq's entries: drafts, order, changes, validation, the UCI operations, the checks after a save); `flab.dns` against a captured and several synthetic routers (Unbound with and without extended statistics or `unbound-control`, dnsmasq, both, stopped, none, cut lists) and a call with shell metacharacters as arguments; the page against mocked replies, including adding, editing, removing and saving zones |
 | Wi-Fi | `pwsh -File flab-ui\tests\wifi\run.ps1 [-Browser]` | Wi-Fi channel model (blocks of channels, errors and warnings, change plan); the radio cards and pickers against the router's own data, then the whole channel-change flow against a mock router |
 | Services | `pwsh -File flab-ui\tests\services\run.ps1 [-Browser]` | Services model; `flab.services` against fixtures (nothing is executed) and a read-only `list` on the router; the page against the router's own services, then the whole start, stop and restart flow against a mock |
+| Dynamic DNS | `pwsh -File flab-ui\tests\ddns\run.ps1 [-Browser]` | Dynamic DNS model (reading, draft, validation, change plan, check after a save, verdicts, intervals, log parsing); `flab.ddns` against fixtures (nothing is executed) and a read-only `status` and `log` on the router; the page against the router's own services, then the whole editing and action flow against a mock |
 
 `-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
@@ -1664,6 +1727,35 @@ Never starts, stops or restarts a service: every control call is either answered
   output, an error from the router, stop and start without a question, a background restart, a login without
   permission, a missing plugin, the dark theme, a session that ends during a call, and `rpcd` restarted from the
   page (back to the sign-in screen).
+
+### Dynamic DNS suite
+Never changes the router's configuration and never restarts an updater: every write and every `control` call is either answered by a
+fixture or by a mock, and blocked (failing the test) in the phase that talks to the real router.
+- **Unit tests** (`model.test.mjs`, no router): reading the plugin's reply, the draft, which controls apply, the name and value checks,
+  the errors and warnings, the UCI plan (a secret is written only when typed, an unchanged option is not written, a removed option
+  is deleted only when it exists), the check after a save, the verdicts, the intervals as the updater really uses them, and log
+  parsing.
+- **Backend** (`mkfx.mjs`, `harness.uc`, `assert.mjs`; the calls and the expected command lines are in `cases.mjs`): `flab.ddns.uc`
+  runs on the router with `FLAB_FIXTURES`, so it executes nothing. Scenarios `main` (five services: secrets in several places, three
+  address sources, a stopped updater, a custom provider, a log over the size limit, a device named like an option), `fail` (the init
+  script exits 1 with output), `timeout` (exit 124), `noresult` (no exit code) and `empty` (no ddns-scripts). The test checks that no
+  secret appears anywhere in any reply, the run-file times (uptime stamps become epoch times, a stamp from the future is ignored),
+  the problem and fatal-error detection, the address of each source, the providers (a custom one overrides a default, bad lines are
+  ignored), the log (masked, cut at 64 KB), and the refused requests (unknown or disabled services, names such as `home; reboot`,
+  `../../etc` and a name with a line break, wrongly typed or missing arguments, other actions): each has a fixture that would
+  report success if its command were run, so a refused call that ran anyway shows up as `ok`. The harness refuses `control` when no
+  fixtures are set. `status` and every service's `log` are also run once for real (they only read): the reply is compared with
+  the router's config, and the number of times a stored secret appears in it is counted on the router (only the count leaves it).
+  The password patch is tested on a copy of the router's ddns-scripts files (`patch-test.sh`): apply, a second apply, the mode and
+  the other scripts, restore, a file that is not the expected version, `urlencode()` round trips for backslashes, quotes, `$`,
+  backticks, `%`, spaces, accented letters and the euro sign, and the Cloudflare headers for hostile passwords, which must carry
+  the text and run nothing.
+- **Browser** (`live.mjs`): the page first shows the router's own services, with every `uci` write and `control` call blocked and
+  failing the test; then mocked replies and a stateful `uci` mock drive the tiles, the verdict of each kind of service, the actions
+  (busy state, success, a failing init script), the log (filter, every line, scroll), editing (validation, the write-only password
+  and its review text, the provider switch), saving, adding and removing services, a change the router does not keep, staged
+  leftovers, a stopped updater, a missing ddns-scripts or plugin, a login that may not write or run actions, the dark theme and a
+  session that expires. It also checks that the page never calls `uci get`.
 
 ## Implementation notes
 

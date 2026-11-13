@@ -91,6 +91,8 @@ rm -rf /tmp/flab
 rm -f /usr/share/rpcd/acl.d/flab*.json
 rm -f /usr/share/rpcd/ucode/flab.*.uc
 rm -rf /usr/share/ucode/flab
+# The ddns-scripts password patch is undone (the originals it kept are put back).
+for f in /usr/lib/ddns/*.flab-orig; do [ -f "$f" ] && mv -f "$f" "${f%.flab-orig}" || true; done
 /etc/init.d/rpcd restart
 '@
 #endregion
@@ -111,6 +113,10 @@ switch ($Action) {
         Copy-ToRouter -Path @(Get-ChildItem (Join-Path $rpcd 'acl.d') -File | ForEach-Object FullName) -Destination '/usr/share/rpcd/acl.d/'
         Copy-ToRouter -Path @(Get-ChildItem (Join-Path $rpcd 'ucode') -File | ForEach-Object FullName) -Destination '/usr/share/rpcd/ucode/'
         Copy-ToRouter -Path @(Get-ChildItem (Join-Path $rpcd 'lib\flab') -File | ForEach-Object FullName) -Destination '/usr/share/ucode/flab/'
+        # ddns-scripts mangles some characters of a password; the patch makes it pass every character unchanged. A package that is
+        # not the expected version is left alone (the Dynamic DNS page then warns about those characters).
+        Copy-ToRouter -Path (Join-Path $root 'tools\patch-ddns-scripts.sh') -Destination '/tmp/flab-ddns-patch.sh'
+        Invoke-Remote "tr -d '\r' < /tmp/flab-ddns-patch.sh > /tmp/flab-ddns-patch.run; sh /tmp/flab-ddns-patch.run apply || echo 'Warning: ddns-scripts was not patched (see above).'; rm -f /tmp/flab-ddns-patch.sh /tmp/flab-ddns-patch.run"
         # rpcd only reads its plugins and ACL fragments at start.
         Invoke-Remote '/etc/init.d/rpcd restart'
 

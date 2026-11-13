@@ -65,7 +65,7 @@ export function fieldRow(f, io) {
       const words = f.labels?.[v] ?? v;
       return f.numbered && words !== v ? `${v}: ${words}` : words;
     };
-    const options = [['', f.default != null ? `Default (${labelOf(f.default)})` : 'Default'], ...f.options.map(o => [o, labelOf(o)])];
+    const options = [['', f.blank ?? (f.default != null ? `Default (${labelOf(f.default)})` : 'Default')], ...f.options.map(o => [o, labelOf(o)])];
     if (current && !f.options.includes(current)) options.push([current, current]);
     input = h('select', { className: 'form-select form-select-sm', disabled: io.disabled, onchange: e => change(e.target.value) }, options.map(([v, label]) => h('option', { value: v }, label)));
     input.value = current;
@@ -73,6 +73,15 @@ export function fieldRow(f, io) {
   } else if (f.type === 'text') {
     input = h('textarea', { className: 'form-control form-control-sm', rows: 3, value: io.get(), disabled: io.disabled, spellcheck: false, oninput: e => change(e.target.value) });
     io.register(input);
+  } else if (f.secret) {
+    // A write-only secret: masked, never filled in from the router (it is not sent to the browser), with a button that shows
+    // what was typed. The placeholder says whether a value is stored (`f.placeholder`, set by the page).
+    const secretInput = h('input', { className: 'form-control form-control-sm', type: 'password', placeholder: f.placeholder ?? '', value: io.get(), disabled: io.disabled,
+      spellcheck: false, autocomplete: 'new-password', oninput: e => change(e.target.value) });
+    io.register(secretInput);
+    const reveal = h('button', { type: 'button', className: 'btn btn-sm btn-fl', title: 'Show or hide what you typed', 'aria-label': 'Show or hide what you typed',
+      onclick: () => { const show = secretInput.type === 'password'; secretInput.type = show ? 'text' : 'password'; reveal.replaceChildren(icon(show ? 'eye-slash' : 'eye')); } }, icon('eye'));
+    input = h('div', { className: 'set-row' }, secretInput, reveal);
   } else {
     // An `int` field with `number: true` is a number input (spin buttons, the range from min and max); without it the
     // field is a text box that the model validates.

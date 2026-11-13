@@ -216,7 +216,7 @@ await page.goto(`${baseUrl}#dns`);
 await page.waitForSelector('.tile', { timeout: 20000 });
 console.log('== Unbound with extended statistics ==');
 const nav = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
-check(nav.indexOf('DNS') === nav.indexOf('DHCP') + 1 && nav.indexOf('Devices and Interfaces') === nav.indexOf('DNS') + 1 && (await page.locator('.nav-pane a.active').innerText()).trim() === 'DNS', 'DNS is in the navigation after DHCP and before Devices and Interfaces, and active', nav.join(' | '));
+check(nav.indexOf('DNS') === nav.indexOf('DHCP') + 1 && nav.indexOf('Dynamic DNS') === nav.indexOf('DNS') + 1 && (await page.locator('.nav-pane a.active').innerText()).trim() === 'DNS', 'DNS is in the navigation after DHCP and before Dynamic DNS, and active', nav.join(' | '));
 check((await page.locator('.cmdbar h1').innerText()).trim() === 'DNS', 'the page title');
 check((await tileLabels()).join() === 'Resolver,Queries,Answered from cache,Resolution time,Upstream servers,DNSSEC', 'six tiles in order', (await tileLabels()).join());
 const T = facts.ubT;

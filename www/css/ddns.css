@@ -1,0 +1,63 @@
+/* Dynamic DNS page styling (the form controls and the review banner are in forms.css). Loaded on demand by core/app.js when the
+   page is first opened. */
+
+/* The editable cards (the services and the global settings): one card each, full width. */
+.ddns-form { display: flex; flex-direction: column; gap: 1.25rem; }
+.ddns-form .set-fields { align-items: stretch; row-gap: 0; column-gap: 2rem; }
+.ddns-form .set-fields > * { padding: .7rem 0; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 55%, transparent); }
+.ddns-groups { display: flex; flex-direction: column; gap: .8rem; }
+.ddns-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
+.ddns-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
+.ddns-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+.ddns-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
+.ddns-group-body p { margin: 0; }
+
+/* A card folds down to its header: the header is the toggle. The marker is a triangle on the left that points right when folded
+   and down when open. */
+.ddns-fold-header { cursor: pointer; }
+.ddns-fold-header:hover { background: var(--fl-surface-hover); }
+.ddns-fold-header:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
+.ddns-chevron { width: 0; height: 0; border-left: .6rem solid currentColor; border-top: .36rem solid transparent; border-bottom: .36rem solid transparent; transform: rotate(90deg); transition: transform .15s; }
+.ddns-folded > :not(.card-header) { display: none; }
+.ddns-folded > .card-header { border-bottom: 0; }
+.ddns-folded .ddns-chevron { transform: none; }
+
+/* A service that was added in the form, and one that is going to be removed. */
+.ddns-new { border-color: var(--fl-info, var(--fl-stroke)); }
+.ddns-removed > :not(.ddns-service-actions) { opacity: .55; }
+.ddns-service-actions { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.ddns-addbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0; }
+.ddns-extra { border-top: 1px dashed var(--fl-stroke); padding-top: .6rem; margin-top: .2rem; }
+.ddns-extra p { margin: 0 0 .4rem; }
+.ddns-extra .kv { margin: 0; }
+
+/* What the service is doing: the verdict, the addresses and times, and the buttons. */
+.ddns-status { display: flex; flex-direction: column; gap: .8rem; padding: .2rem 0 .4rem; }
+.ddns-status .kv { margin: 0; display: grid; grid-template-columns: 13rem 1fr; gap: .3rem 1rem; }
+.ddns-status .kv dt, .ddns-status .kv dd { margin: 0; }
+.ddns-verdict { display: flex; align-items: flex-start; gap: .7rem; padding: .7rem .9rem; border-radius: 6px; border-left: 4px solid var(--fl-stroke); background: var(--fl-surface-hover); }
+.ddns-verdict > svg { flex: none; margin-top: .15rem; }
+.ddns-verdict.ok { border-left-color: var(--fl-ok-fg); background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
+.ddns-verdict.pending, .ddns-verdict.stopped { border-left-color: var(--fl-warn-fg); background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
+.ddns-verdict.error { border-left-color: var(--fl-bad-fg); background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
+.ddns-verdict.unknown { border-left-color: var(--fl-info-fg); background: var(--fl-info-bg); color: var(--fl-info-fg); }
+.ddns-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.ddns-busy { display: inline-flex; align-items: center; gap: .45rem; color: var(--fl-muted); }
+.ddns-outcome { display: flex; align-items: flex-start; gap: .5rem; padding: .5rem .8rem; border-radius: 6px; font-size: .875rem; }
+.ddns-outcome.ok { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
+.ddns-outcome.bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
+
+/* The log of a service: the lines with their time, colored by level, in a scrollable box. */
+.ddns-log { border: 1px solid var(--fl-stroke); border-radius: 6px; }
+.ddns-log-head { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: .5rem .8rem; border-bottom: 1px solid var(--fl-stroke); }
+.ddns-log-head .ddns-log-all { margin: 0 0 0 auto; display: flex; align-items: center; gap: .5rem; padding-left: 0; }
+.ddns-log-head .ddns-log-all .form-check-input { float: none; margin: 0; }
+.ddns-log > .muted, .ddns-log > .ddns-outcome { margin: .7rem .8rem; display: block; }
+.ddns-logbox { max-height: 22rem; overflow: auto; padding: .4rem 0; font-family: var(--fl-mono); font-size: .8rem; }
+.ddns-logline { display: flex; gap: .8rem; padding: .1rem .8rem; }
+.ddns-logtime { flex: none; color: var(--fl-muted); }
+.ddns-logtext { min-width: 0; overflow-wrap: anywhere; }
+.ddns-logline.error { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
+.ddns-logline.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
+.ddns-logline.note, .ddns-logline.info { color: var(--fl-text); }
+.ddns-logline:not(.error):not(.warn):not(.note):not(.info) { color: var(--fl-muted); }
