@@ -234,12 +234,12 @@ fi
 STAGE="$SDK/tmp/flab-ui-src"
 make package/flab-ui/clean > "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
 if [ '@@FEED@@' = 1 ]; then
-  make package/flab-ui/compile >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
+  make package/flab-ui/compile V=s >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
 else
   rm -rf "$STAGE"
   mkdir -p "$STAGE"
   cp -a "$SRC/www" "$SRC/rpcd" "$SRC/LICENSE" "$STAGE/"
-  make package/flab-ui/compile USE_SOURCE_DIR="$STAGE" >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
+  make package/flab-ui/compile V=s USE_SOURCE_DIR="$STAGE" >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
 fi
 mkdir -p "$OUT"
 APK=$(ls -t bin/packages/*/*/flab-ui-*.apk 2>/dev/null | head -n 1 || true)
