@@ -16,8 +16,8 @@ the ACL fragment `rpcd/acl.d/flab-settings.json`.
 - **Time zone and NTP**: one pane with three columns side by side. *Time zone*: pick an IANA zone. Saving writes
   **both** `zonename` (the name) and `timezone` (its POSIX rule, which is what the system applies, including
   daylight saving time). The router has no zoneinfo files, so `pages/settings/zones.js` carries the table (about
-  419 zones, from the IANA database); regenerate it with `pwsh -File tools/gen-zones.ps1` (it downloads the `tzdata`
-  wheel from PyPI; `-Check` tells whether the file is current; `-WheelPath` uses a wheel you downloaded). "Custom POSIX rule" edits the rule alone and drops `zonename`; a router
+  420 zones, from the IANA database); regenerate it with `python tools/gen-zones.py` (needs `pip install tzdata`;
+  `--check` tells whether it is current). "Custom POSIX rule" edits the rule alone and drops `zonename`; a router
   whose zone name is not in the table (a hand-written rule) is shown that way and left alone unless the zone is
   touched. *NTP client* (`timeserver` section): `enabled`, `use_dhcp`, the ordered `server` list,
   `dhcp_interface`, and what `ntpd` is running with. *NTP server for the network*: `enable_server`, `interface`.

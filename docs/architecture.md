@@ -57,7 +57,7 @@ flab-ui/
   README.md                  What flab-ui is, how to install it
   LICENSE                    MIT license
   docs/                      The documentation (start at docs/README.md); one file per page under docs/pages/
-  tools/gen-zones.ps1        Regenerates pages/settings/zones.js from the IANA time zone database
+  tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
   tools/package.ps1          Builds the OpenWrt package with an SDK (Linux, or WSL on Windows), installs or removes it on the router with apk, and publishes releases (Action Build, Deploy, Remove or Release)
   tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), nlbwedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
