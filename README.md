@@ -36,7 +36,7 @@ on). These are optional: install the ones for the pages you use.
 
 flab-ui is an architecture-independent apk package that depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`
 (`ucode-mod-fs`, `ucode-mod-ubus`, `ucode-mod-uci`), `uhttpd` and `uhttpd-mod-ubus`. It is not in an OpenWrt feed yet.
-Build it with the OpenWrt SDK (see [Package](docs/reference.md#openwrt-package)) and install the result:
+Build it with the OpenWrt SDK (see [Package](docs/package.md)) and install the result:
 
 ```sh
 apk add --allow-untrusted ./flab-ui-<version>.apk
@@ -60,17 +60,17 @@ apk del flab-ui
 - **Secrets stay on the router.** Keys, passwords and tokens are never sent to the browser (only whether they are set),
   and secret-looking values in logs are redacted.
 
-Details are in the [reference](docs/reference.md#security-model).
+Details are in the [security model](docs/architecture.md#security-model).
 
 ## Development
 
-- [docs/reference.md](docs/reference.md) covers the architecture, the frontend and backend, the behavior of every page,
-  how to add a page, the test suites and the coding conventions.
+- [docs/](docs/README.md) covers the architecture, the frontend and backend, the behavior of every page, how to add a
+  page, the test suites and the coding conventions.
 - `tools/apk-deploy.ps1` builds the package from the working tree with the OpenWrt SDK in WSL and installs it on a
   router (`-Action Deploy`) or removes it (`-Action Remove`).
 - Tests live in `tests/` and need Node.js, PowerShell 7 and, for most suites, ssh access to a test router. They use
   fixtures and mocks and do not change the router's configuration; `-Browser` also drives a browser. See
-  [Testing](docs/reference.md#testing).
+  [Testing](docs/testing.md).
 
 ## License
 
