@@ -34,7 +34,7 @@ const scenarios = {
   // other sections that must only be counted, anonymous and named device sections, bridge VLAN sections, a list option, an empty password.
   main: config([
     section('loopback', 'interface', 0, { device: 'lo', proto: 'static', ipaddr: '127.0.0.1', netmask: '255.0.0.0' }),
-    section('globals', 'globals', 1, { ula_prefix: 'fd00:1::/48', dhcp_default_duid: '0004aa' }),
+    section('globals', 'globals', 1, { ula_prefix: 'fd00:1::/48', dhcp_default_duid: '0004aa', packet_steering: '1', netifd_loglevel: '4', tcp_l3mdev: '1', custom_opt: 'x' }),
     section('cfg030f15', 'device', 2, { name: 'br-lan', type: 'bridge', ports: ['lan1', 'lan2'], stp: '1' }, true),
     section('lan', 'interface', 3, { device: 'br-lan', proto: 'static', ipaddr: ['192.168.1.1/24'], dns: ['9.9.9.9', '1.1.1.1'], ip6assign: '60' }),
     section('cfg040f15', 'device', 4, { type: '8021q', ifname: 'eth1', vid: '1036', name: 'eth1.1036', macaddr: '74:36:6D:C0:9B:83' }, true),

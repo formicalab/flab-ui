@@ -1,7 +1,7 @@
-// The editor shared by the Devices and Interfaces page and the Bridges page: both edit /etc/config/network through one draft, so unsaved
-// edits survive a switch between the pages and one Save applies them together. This module owns the editor (core/editpage.js), the load
-// of the data both pages need, the check after a save (which also looks at whether the interfaces that were up still are) and the
-// confirmation shown before a change that can cut the admin's connection. The cards are in cards.js, the rules in model.js.
+// The editor of the Devices and Interfaces page: it edits /etc/config/network through one draft, so unsaved
+// edits survive a switch to another page and one Save applies them together. This module owns the editor (core/editpage.js), the load
+// of the data the page needs, the check after a save (which also looks at whether the interfaces that were up still are) and the
+// confirmation shown before a change that can cut the admin's connection. The editing panels are in panels.js, the rules in model.js.
 //
 // The config is read through the flab.network plugin (`config`), which leaves out the secrets (the PPPoE password): the browser never
 // receives one and the password field is write-only. A network change gets a longer rollback countdown than the default (the network
@@ -77,7 +77,7 @@ export const editor = createEditor({
   confirmSave,
 });
 
-// Loads the wired-network data both pages show plus the editable config, and how many changes are already staged in this session. The config
+// Loads the wired-network data the page shows plus the editable config, and how many changes are already staged in this session. The config
 // is optional: a router without the plugin method, or a login that may not call it, gets the page without the editor.
 export async function loadNetworkEdit() {
   const [wired, reply] = await Promise.all([loadWired(), can('flab.network', 'config') ? optional(ubus('flab.network', 'config')) : null]);
@@ -85,35 +85,33 @@ export async function loadNetworkEdit() {
   return data.cfg.available ? editor.withStaged(data) : { ...data, staged: 0 };
 }
 
-// Starts the editing part of a page view and returns what the cards need (or null when the router gives no config to edit):
+// Starts the editing part of a page view and returns what the panels need (or null when the router gives no config to edit):
 //   base      the data the draft was made from (what validation and the change list compare with)
 //   live      this poll's data, for the state of things now
 //   draft     the form's values
 //   canEdit   whether the login may write and no save is running
-//   inputs    the controls by name, so errors can mark them (filled in while the cards are built)
-//   touched() after every edit; redraw() redraws the page; sync() marks the errors; refresh(fn) registers a function that updates a header
+//   inputs    the controls by name, so errors can mark them (filled in while the panel is built)
+//   touched() after every edit; redraw() redraws the page; sync() marks the errors; refresh(fn) registers a function that runs after every edit
+//   current() (set by the page) returns the page's latest context, for the wizard that outlives a redraw
 export function editContext(data, rerender, shell) {
   if (!data.cfg?.available) return null;
   const canEdit = editor.begin(data, rerender);
   const ctx = { base: editor.state.base, live: data, draft: editor.state.draft, canEdit, inputs: {}, rerender, reload: () => shell.reload(), redraw: () => editor.redraw(), refreshers: [], touched: () => {}, sync: () => {} };
   ctx.refresh = fn => ctx.refreshers.push(fn);
-  // Marks the controls that hold an error and refreshes the banner; a control with an error must not stay hidden in a folded card or a closed group.
+  // Marks the controls that hold an error and refreshes the banner; a control with an error must not stay hidden in a closed Advanced block.
   ctx.sync = () => editor.markErrors(ctx.inputs, canEdit, reveal);
   const touched = editor.touched(ctx);
   ctx.touched = () => { touched(); for (const fn of ctx.refreshers) fn(); };
   return ctx;
 }
 
-// The notes above the editing cards: a read-only login, staged leftovers, or why there is no editor.
+// The notes above the board: a read-only login, staged leftovers, or why there is no editor.
 export function editNotes(data) {
   if (!data.cfg?.available) {
     return [note('info', 'The network settings cannot be edited here: the router does not offer the configuration to this login (the flab.network plugin is out of date or this login may not read it), so only what the router is doing is shown.')];
   }
   return editor.notes(data).filter(Boolean);
 }
-
-// The legend line under a section heading, used by both pages.
-export const sectionLegend = text => h('p', { className: 'muted small ne-legend' }, text);
 
 // A muted line telling how a saved change is protected.
 export const safetyNote = () => muted(`Saving applies the change with an automatic rollback after ${APPLY_SECONDS} seconds unless the page confirms that the router still works.`);

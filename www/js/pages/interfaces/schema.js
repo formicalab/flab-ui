@@ -1,4 +1,4 @@
-// The options of /etc/config/network that the Devices and Interfaces and Bridges pages edit, as tables of fields in the format of
+// The options of /etc/config/network that the Devices and Interfaces page edits, as tables of fields in the format of
 // core/fields.js (read that file first), with the explanations taken from the OpenWrt documentation
 // (https://openwrt.org/docs/guide-user/network/network_configuration, .../ipv4/configuration, .../ipv6/configuration and
 // .../wan/wan_interface_protocols) and from netifd's own device and bridge attributes.
@@ -279,6 +279,31 @@ export const DEVICE_FIELDS = [
     hint: 'A bridge port that cannot send frames to other isolated ports of the same bridge.' },
   { key: 'dadtransmits', type: 'int', number: true, min: 0, max: 100, group: 'ip', label: 'DAD transmits', placeholder: '1',
     hint: 'How many IPv6 duplicate address detection probes to send.' },
+];
+
+//#endregion
+
+//#region Network-wide settings
+
+// The options of the `globals` section the page edits (the other options of the section are shown read only). The hints follow the OpenWrt documentation
+// (network_configuration, section "globals") and netifd's own log levels.
+export const GLOBALS_FIELDS = [
+  { key: 'ula_prefix', type: 'string', verify: 'ula', label: 'IPv6 ULA prefix', placeholder: 'none',
+    hint: 'The unique local IPv6 prefix of this router, a /48 inside fd00::/8 such as fd12:3456:789a::/48, or "auto" to generate one. Interfaces with a delegated prefix length (ip6assign) hand out parts of it, so local IPv6 traffic keeps working without the provider\'s prefix. Changing it renumbers those local addresses.' },
+  { key: 'packet_steering', type: 'enum', options: ['0', '1', '2'], labels: { 0: 'disabled', 1: 'enabled', 2: 'enabled for all CPUs' }, default: '0', label: 'Packet steering',
+    hint: 'Spread the handling of network packets over the CPUs of the router. Helps a fast connection on a multi-core router; 1 uses the CPUs that fit, 2 uses every CPU.' },
+  { key: 'netifd_loglevel', type: 'enum', options: ['0', '1', '2', '3', '4'], labels: { 0: 'critical', 1: 'warning', 2: 'notice', 3: 'info', 4: 'debug' }, default: '2', label: 'netifd log level',
+    hint: 'How much netifd, the network daemon, writes to the system log. Notice is the default; use info or debug only while looking for a problem.' },
+  { key: 'tcp_l3mdev', type: 'bool', default: false, label: 'TCP sockets reachable across VRFs',
+    hint: 'Sets net.ipv4.tcp_l3mdev_accept: a TCP socket outside a VRF accepts connections that arrive in a VRF. Only for setups that use VRFs.' },
+  { key: 'udp_l3mdev', type: 'bool', default: false, label: 'UDP sockets reachable across VRFs',
+    hint: 'Sets net.ipv4.udp_l3mdev_accept: a UDP socket outside a VRF accepts packets that arrive in a VRF. Only for setups that use VRFs.' },
+];
+
+// The options of the `globals` section the page shows but does not edit: the default DHCP DUID is generated on the first boot and identifies the router to
+// its provider, so a mistake could cost the lease.
+export const GLOBALS_READONLY = [
+  { key: 'dhcp_default_duid', label: 'Default DHCP DUID', hint: 'The identifier of this router as a DHCP client and server, generated on the first boot. Some providers refuse a type 4 DUID; remove it in the file to fall back to one made from the MAC address.' },
 ];
 
 //#endregion

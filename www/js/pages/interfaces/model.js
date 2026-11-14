@@ -1,4 +1,4 @@
-// Pure model of the network editor shared by the Devices and Interfaces page and the Bridges page: the config the plugin reports,
+// Pure model of the network editor of the Devices and Interfaces page: the config the plugin reports,
 // the form's draft, the review list, validation, the dangerous changes, the UCI operations a save makes and the check after a
 // save. No DOM and no network, so it is unit-tested on its own (tests/ifedit/model.test.mjs).
 //
@@ -13,7 +13,7 @@ import { differs, errorsOf, flag, normalize, show, valueOf } from '../../core/fi
 import { parseAddress } from '../../core/ip.js';
 import { VERIFY, parseCidr, overlaps, subnetOf, subnetText, contains } from './checks.js';
 import {
-  CONFIG, DEVICE_FIELDS, DEVICE_TYPES, EDITABLE_PROTOS, IFACE_FIELDS, OTHER_PROTOS, PROTOS, deviceFields, deviceType, editableDevice, idOf, ifaceField, ifaceFields,
+  CONFIG, DEVICE_FIELDS, DEVICE_TYPES, EDITABLE_PROTOS, GLOBALS_FIELDS, IFACE_FIELDS, OTHER_PROTOS, PROTOS, deviceFields, deviceType, editableDevice, idOf, ifaceField, ifaceFields,
 } from './schema.js';
 
 export { CONFIG };
@@ -32,7 +32,9 @@ export const PORTS_FIELD = { key: 'ports', type: 'list', label: 'Ports' };
 //#region Reading
 
 // The reply of `flab.network config` as the page's data. `available` is false for a router without the plugin method, a login that
-// may not call it, or an answer of another shape (so the page can tell "cannot edit" from "nothing configured").
+// may not call it, or an answer of another shape (so the page can tell "cannot edit" from "nothing configured"). `globals` is the
+// network-wide section as { section, values, secrets }, null when the router has none, and undefined when the plugin does not report it
+// (an older plugin), so the page can tell "nothing to edit" from "cannot edit".
 export function readNetwork(reply) {
   const available = Array.isArray(reply?.interfaces) && Array.isArray(reply?.devices);
   // The sections of a list as the page keeps them.
@@ -41,6 +43,7 @@ export function readNetwork(reply) {
     available,
     interfaces: available ? sections(reply.interfaces).map(s => ({ ...s, name: s.section })) : [],
     devices: available ? sections(reply.devices).map(s => ({ ...s, name: String(s.values.name ?? ''), type: deviceType(s.values.type) })) : [],
+    globals: available && reply.globals !== undefined ? (reply.globals ? sections([reply.globals])[0] : null) : undefined,
     other: reply?.other ?? {},
     bridgeVlans: reply?.bridge_vlans ?? [],
   };
@@ -83,10 +86,11 @@ const ifaceValues = raw => valuesOf(IFACE_FIELDS, raw, f => ifaceField(f, raw.pr
 const deviceValues = (raw, type) => ({ ...valuesOf(deviceFields(type), raw), ports: valueOf(PORTS_FIELD, raw.ports) });
 
 // The form's starting values: the router's current values. A section added in the form gets an id of its own (`new1`, ...) because its
-// name is typed into the form and may change until it is saved.
+// name is typed into the form and may change until it is saved. `globals` holds the network-wide options, or null when the plugin does not report them.
 export const draftFrom = data => ({
   ifaces: Object.fromEntries(data.cfg.interfaces.map(s => [s.section, ifaceValues(s.values)])),
   devices: Object.fromEntries(data.cfg.devices.map(s => [s.section, deviceValues(s.values, s.type)])),
+  globals: data.cfg.globals === undefined ? null : valuesOf(GLOBALS_FIELDS, data.cfg.globals?.values ?? {}),
   ifaceAdded: [],
   ifaceRemoved: {},
   devAdded: [],
@@ -293,6 +297,23 @@ function diffInterface(s, draft) {
   return { set, del, lines };
 }
 
+// What saving would do to the network-wide section: { set, del, lines } like diffInterface. `lines` carry the key `gl:<option>`. Nothing without a draft of it.
+function diffGlobals(data, draft) {
+  const set = {}, del = [], lines = [];
+  const raw = data.cfg.globals?.values ?? {};
+  if (!draft.globals) return { set, del, lines };
+  for (const f of GLOBALS_FIELDS) {
+    const to = normalize(f, draft.globals[idOf(f)]);
+    const from = normalize(f, valueOf(f, raw[f.key]));
+    if (!differs(f, from, to)) continue;
+    lines.push({ key: `gl:${idOf(f)}`, label: `Network-wide: ${f.label}`, from: show(f, from), to: show(f, to) });
+    if (f.type === 'bool') set[f.key] = flag(to);
+    else if (to.length === 0) { if (raw[f.key] !== undefined) del.push(f.key); }
+    else set[f.key] = to;
+  }
+  return { set, del, lines };
+}
+
 // What saving would do to one device section, like diffInterface. A new section writes its name and type as well.
 function diffDevice(s, draft) {
   const values = draft.devices[s.id];
@@ -328,6 +349,7 @@ export function changesOf(data, draft) {
     else if (s.isNew) out.push({ key: `if:${s.id}`, label: `Add interface ${s.name.trim() || '(unnamed)'}`, from: 'none', to: `new (${draft.ifaces[s.id].proto || 'no protocol'})` }, ...diffInterface(s, draft).lines);
     else if (s.editable) out.push(...diffInterface(s, draft).lines);
   }
+  out.push(...diffGlobals(data, draft).lines);
   return out;
 }
 
@@ -606,6 +628,16 @@ export function problems(data, draft) {
   }
   //#endregion
 
+  //#region Network-wide settings
+  if (draft.globals) {
+    for (const f of GLOBALS_FIELDS) for (const e of fieldErrors(f, draft.globals[idOf(f)], `Network-wide: ${f.label}`)) errors.push({ ...e, key: `gl:${idOf(f)}` });
+    const ula = GLOBALS_FIELDS.find(f => f.key === 'ula_prefix');
+    const was = normalize(ula, valueOf(ula, data.cfg.globals?.values.ula_prefix)), now = normalize(ula, draft.globals.ula_prefix);
+    if (was !== now && was !== '' && now === '') warnings.push('Network-wide: without a ULA prefix, interfaces with a delegated prefix length (ip6assign) have only the prefix the provider delegates, so local IPv6 stops working when the provider\'s prefix is gone.');
+    else if (was !== now && was !== '' && VERIFY.ula(now) === null) warnings.push(`Network-wide: changing the ULA prefix from ${was} to ${now} renumbers the local IPv6 addresses of every interface that takes a part of it; clients get new addresses and anything that used the old ones (firewall rules, DNS records) stops matching.`);
+  }
+  //#endregion
+
   return { errors, warnings: [...warnings, ...risksOf(data, draft)] };
 }
 
@@ -706,6 +738,10 @@ export function plan(data, draft) {
   };
   for (const d of devices.filter(x => !x.isNew && !x.removed && x.editable)) change(d.id, diffDevice(d, draft));
   for (const s of ifaces.filter(x => !x.isNew && !x.removed && x.editable)) change(s.id, diffInterface(s, draft));
+  // The network-wide section: changed in place, or created when the router has none.
+  const globals = diffGlobals(data, draft);
+  if (data.cfg.globals) change(data.cfg.globals.section, globals);
+  else if (Object.keys(globals.set).length) ops.push({ op: 'add', config: CONFIG, type: 'globals', name: 'globals', values: globals.set });
   return ops;
 }
 
@@ -734,6 +770,12 @@ export function checkApplied(after, draft, base) {
     const values = draft.devices[d.id];
     for (const f of [...deviceFields(d.type), ...(d.type === 'bridge' ? [PORTS_FIELD] : [])]) {
       if (differs(f, normalize(f, valueOf(f, found.values[f.key])), normalize(f, values[idOf(f)]))) left.push(`${d.name.trim()}: ${f.label}`);
+    }
+  }
+  if (draft.globals) {
+    const found = cfg.globals?.values ?? {};
+    for (const f of GLOBALS_FIELDS) {
+      if (differs(f, normalize(f, valueOf(f, found[f.key])), normalize(f, draft.globals[idOf(f)]))) left.push(`Network-wide: ${f.label}`);
     }
   }
   if (left.length) throw new Error(`${left.slice(0, 4).join(', ')}${left.length > 4 ? ` and ${left.length - 4} more` : ''} ${left.length > 1 ? 'were' : 'was'} not saved`);

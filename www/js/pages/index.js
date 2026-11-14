@@ -20,7 +20,6 @@
 
 import overview from './overview/index.js';
 import network from './network/index.js';
-import bridges from './bridges/index.js';
 import wifi from './wifi/index.js';
 import mesh from './mesh/index.js';
 import ipsec from './ipsec/index.js';
@@ -37,10 +36,13 @@ import toolbox from './toolbox/index.js';
 import logs from './logs/index.js';
 import settings from './settings/index.js';
 
-// Network pages go from the physical layer up (ports, bridges, radios, tunnels, firewall); DHCP and router
+// Network pages go from the physical layer up (ports, radios, tunnels, firewall); DHCP and router
 // advertisements, a service on top of those, come next, then DNS, the resolver those clients use, and Dynamic DNS, which keeps
-// a name pointing at the router; Devices and Interfaces is the recap that ties them
-// together, followed by routing (the kernel's routes and BGP), traffic (where the bandwidth goes), the services, the toolbox
+// a name pointing at the router; Devices and Interfaces (the network board: ports, bridges, VLANs, interfaces and zones, and where bridges are
+// edited) ties them together, followed by routing (the kernel's routes and BGP), traffic (where the bandwidth goes), the services, the toolbox
 // (diagnostic tools) and the logs.
 // System settings is the only other page that changes the router; it sits at the bottom of the navigation, by Sign out.
-export const pages = [overview, network, bridges, wifi, mesh, ipsec, wireguard, firewall, dhcp, dns, ddns, interfaces, routing, traffic, services, toolbox, logs, settings];
+export const pages = [overview, network, wifi, mesh, ipsec, wireguard, firewall, dhcp, dns, ddns, interfaces, routing, traffic, services, toolbox, logs, settings];
+
+// Routes that were pages once and now open another page: #bridges is part of the Devices and Interfaces board.
+export const aliases = { bridges: 'interfaces' };

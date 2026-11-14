@@ -943,11 +943,13 @@ function sections_of(all, type) {
 }
 
 // Builds the flab.network config reply: the `interface` and `device` sections of /etc/config/network without any secret (they are only
-// reported as set), the number of sections of every other type, and the devices that have `bridge-vlan` sections. Everything the
-// Devices and Interfaces and Bridges pages edit is here; the other sections (routes, rules, WireGuard peers, switch VLANs) are not.
+// reported as set), the `globals` section (its options are network-wide settings, none a secret), the number of sections of every other
+// type, and the devices that have `bridge-vlan` sections. Everything the Devices and Interfaces page edits is here; the other sections
+// (routes, rules, WireGuard peers, switch VLANs) are not.
 function network_config() {
 	let all = uci_all('network');
 	let other = {}, bridge_vlans = [];
+	let globals = sections_of(all, 'globals');
 	for (let name, s in all) {
 		let t = s['.type'];
 		if (t == 'interface' || t == 'device')
@@ -956,7 +958,13 @@ function network_config() {
 		if (t == 'bridge-vlan')
 			push(bridge_vlans, { section: name, device: s.device, vlan: s.vlan });
 	}
-	return { generated: time(), interfaces: sections_of(all, 'interface'), devices: sections_of(all, 'device'), other, bridge_vlans };
+	// The first globals section is the one netifd reads; a second one is only counted.
+	if (length(globals) > 0) {
+		other.globals -= 1;
+		if (!other.globals)
+			delete other.globals;
+	}
+	return { generated: time(), interfaces: sections_of(all, 'interface'), devices: sections_of(all, 'device'), globals: globals[0] ?? null, other, bridge_vlans };
 }
 
 // rpcd registration: ubus object flab.network. `status` takes no arguments; `config` returns the editable part of the network config

@@ -36,7 +36,8 @@ const REPLY = {
     sec('cfg040f15', { type: '8021q', ifname: 'eth1', vid: '1036', name: 'eth1.1036', macaddr: '74:36:6D:C0:9B:83' }, {}, true),
     sec('cfg050f15', { type: '8021q', ifname: 'br-lan', vid: '100', name: 'br-lan.100' }, {}, true),
   ],
-  other: { globals: 1, route: 1, wireguard_wg0: 2 },
+  globals: sec('globals', { ula_prefix: 'fd92:cdf9:fb3f::/48', packet_steering: '2', dhcp_default_duid: '0004abcd', custom_opt: 'x' }),
+  other: { route: 1, wireguard_wg0: 2 },
   bridge_vlans: [],
 };
 // The runtime the pages load next to the config: the plugin's status (ports, bridge, VLAN devices, zones) and netifd's interface dump.
@@ -675,6 +676,84 @@ test('port choices: ports and VLAN devices, no bridge, no CPU link, no Wi-Fi', (
   assert.ok(names.includes('eth1.1036') && !names.includes('br-lan') && !names.includes('eth0') && !names.includes('phy0-ap0'));
   assert.ok(!portChoices(d, draft, 'br-lan').some(c => c.name === 'br-lan.100'), 'a VLAN device on the bridge itself is not one of its ports');
   assert.ok(names.includes('br-lan.100'), 'but it is for another bridge');
+});
+//#endregion
+
+//#region Network-wide settings
+test('the globals section is read into the data and the draft; an older plugin reports none', () => {
+  const { d, draft } = fresh();
+  assert.equal(d.cfg.globals.section, 'globals');
+  assert.equal(d.cfg.globals.values.ula_prefix, 'fd92:cdf9:fb3f::/48');
+  assert.deepEqual(draft.globals, { ula_prefix: 'fd92:cdf9:fb3f::/48', packet_steering: '2', netifd_loglevel: '', tcp_l3mdev: false, udp_l3mdev: false });
+  const old = clone(REPLY); delete old.globals;
+  const o = { cfg: readNetwork(old), net: clone(NET), ifs: clone(IFS) };
+  assert.equal(o.cfg.globals, undefined);
+  assert.equal(draftFrom(o).globals, null);
+  assert.deepEqual(plan(o, draftFrom(o)), []);
+  const none = clone(REPLY); none.globals = null;
+  const n = { cfg: readNetwork(none), net: clone(NET), ifs: clone(IFS) };
+  assert.equal(n.cfg.globals, null);
+  assert.equal(draftFrom(n).globals.ula_prefix, '');
+});
+
+test('the ULA prefix must be auto or a /48 inside fd00::/8', () => {
+  for (const ok of ['auto', 'fd12:3456:789a::/48', 'fdff:0:0::/48']) assert.equal(VERIFY.ula(ok), null, ok);
+  for (const bad of ['fc00::/48', 'fd12:3456:789a::/64', 'fd12:3456:789a::', '2001:db8::/48', '192.168.0.0/24', 'nonsense', 'fe80::/48']) assert.notEqual(VERIFY.ula(bad), null, bad);
+});
+
+test('a change to the globals is a review line and a set operation; an unchanged draft plans nothing', () => {
+  const { d, draft } = fresh();
+  assert.deepEqual(changesOf(d, draft), []);
+  assert.deepEqual(plan(d, draft), []);
+  draft.globals.packet_steering = '1';
+  draft.globals.tcp_l3mdev = true;
+  draft.globals.netifd_loglevel = '3';
+  assert.deepEqual(changesOf(d, draft).map(c => `${c.label}: ${c.from} -> ${c.to}`),
+    ['Network-wide: Packet steering: 2 -> 1', 'Network-wide: netifd log level: default -> 3', 'Network-wide: TCP sockets reachable across VRFs: off -> on']);
+  assert.deepEqual(plan(d, draft), [{ op: 'set', config: 'network', section: 'globals', values: { packet_steering: '1', netifd_loglevel: '3', tcp_l3mdev: '1' } }]);
+  assert.ok(isDirty(d, draft));
+});
+
+test('emptying an option deletes it; the options the page does not edit are left alone', () => {
+  const { d, draft } = fresh();
+  draft.globals.packet_steering = '';
+  draft.globals.ula_prefix = '';
+  assert.deepEqual(plan(d, draft), [{ op: 'delete', config: 'network', section: 'globals', options: ['ula_prefix', 'packet_steering'] }]);
+  assert.ok(!JSON.stringify(plan(d, draft)).includes('dhcp_default_duid') && !JSON.stringify(plan(d, draft)).includes('custom_opt'));
+});
+
+test('a router without a globals section gets one when something is set', () => {
+  const none = clone(REPLY); none.globals = null;
+  const d = { cfg: readNetwork(none), net: clone(NET), ifs: clone(IFS) };
+  const draft = draftFrom(d);
+  assert.deepEqual(plan(d, draft), []);
+  draft.globals.ula_prefix = 'auto';
+  assert.deepEqual(plan(d, draft), [{ op: 'add', config: 'network', type: 'globals', name: 'globals', values: { ula_prefix: 'auto' } }]);
+});
+
+test('globals validation: a bad ULA prefix is an error on its control; changing or removing it warns', () => {
+  const { d, draft } = fresh();
+  draft.globals.ula_prefix = 'fc00::/48';
+  const found = problems(d, draft);
+  assert.ok(found.errors.some(e => e.key === 'gl:ula_prefix' && /Network-wide: IPv6 ULA prefix must be inside fd00::\/8/.test(e.text)));
+  draft.globals.ula_prefix = 'fd11:2222:3333::/48';
+  assert.deepEqual(problems(d, draft).errors, []);
+  assert.ok(problems(d, draft).warnings.some(w => /renumbers the local IPv6 addresses/.test(w)));
+  draft.globals.ula_prefix = '';
+  assert.ok(problems(d, draft).warnings.some(w => /without a ULA prefix/.test(w)));
+  draft.globals.ula_prefix = 'fd92:cdf9:fb3f::/48';
+  assert.deepEqual(problems(d, draft).warnings, []);
+  draft.globals.netifd_loglevel = '9';
+  assert.ok(problems(d, draft).errors.some(e => e.key === 'gl:netifd_loglevel'));
+});
+
+test('the check after a save needs the globals to read back', () => {
+  const { d, draft } = fresh();
+  draft.globals.packet_steering = '1';
+  const after = clone(REPLY);
+  after.globals.values.packet_steering = '1';
+  checkApplied({ cfg: readNetwork(after), ifs: [] }, draft, d);
+  assert.throws(() => checkApplied({ cfg: readNetwork(clone(REPLY)), ifs: [] }, draft, d), /Network-wide: Packet steering was not saved/);
 });
 //#endregion
 

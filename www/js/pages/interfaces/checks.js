@@ -1,4 +1,4 @@
-// Pure value checks and address math for the network editor (Devices and Interfaces, Bridges): an address, a netmask, a prefix,
+// Pure value checks and address math for the network editor (Devices and Interfaces): an address, a netmask, a prefix,
 // a subnet and the other formats /etc/config/network takes. Each `check*` returns an error message that completes the
 // sentence "<label> ...", or null when the value is fine. No DOM and no network.
 import { parseAddress } from '../../core/ip.js';
@@ -104,11 +104,19 @@ export const checkReqPrefix = v => (v === 'auto' || v === 'no' || (/^\d{1,2}$/.t
 // A prefix class name (a name from the upstream interfaces, or local).
 export const checkClass = v => (/^[A-Za-z0-9_.-]+$/.test(v) ? null : 'must be a class name such as local or the name of an upstream interface');
 
+// The IPv6 ULA prefix of the router (`ula_prefix`): `auto` (generate one), or a /48 inside fd00::/8, the locally assigned unique local addresses.
+export function checkUla(v) {
+  if (v === 'auto') return null;
+  const c = parseCidr(v);
+  if (c?.family !== 6 || !c.hasPrefix || c.prefix !== 48) return 'must be auto, or an IPv6 /48 prefix such as fd12:3456:789a::/48';
+  return c.value >> 120n === 0xfdn ? null : 'must be inside fd00::/8 (a locally assigned unique local prefix, which starts with fd)';
+}
+
 // The check functions by the name a schema field gives them.
 export const VERIFY = {
   ip4cidr: checkIp4Cidr, ip6cidr: checkIp6Cidr, ip4: checkIp4, ip6: checkIp6, ip: checkIp, netmask: checkNetmask, mac: checkMac, hexpairs: checkHexPairs,
   hint: checkHint, ifaceid: checkIfaceId, table: checkTable, domain: checkDomain, hostname: checkHostnameOrStar, sendopts: checkSendOpts,
-  reqopts: checkReqOpts, line: checkLine, keepalive: checkKeepalive, reqprefix: checkReqPrefix, class: checkClass,
+  reqopts: checkReqOpts, line: checkLine, keepalive: checkKeepalive, reqprefix: checkReqPrefix, class: checkClass, ula: checkUla,
 };
 
 //#endregion

@@ -6,7 +6,7 @@ import { icon } from './icons.js';
 import { ubus, hasSession, logout, clearSession, AuthError } from './ubus.js';
 import { showLogin } from './login.js';
 import { card } from './ui.js';
-import { pages } from '../pages/index.js';
+import { pages, aliases } from '../pages/index.js';
 
 // Module-level state: the refresh interval of the open page, a function that refreshes the open page (for the
 // tab becoming visible again), the number of the current route (a route that was superseded while it awaited the
@@ -33,6 +33,9 @@ const defaultPageId = pages[0].id;
 // Runs on start and on every hashchange; shows the login form first when there is no session.
 async function route() {
   if (!hasSession()) return showLogin(route);
+  // A route that moved to another page (see `aliases` in pages/index.js): the hash is replaced, which runs this function again.
+  const alias = aliases[location.hash.slice(1)];
+  if (alias) { location.replace(`#${alias}`); return; }
   clearInterval(timer);
   refresh = null;
   const mine = ++routeNo;

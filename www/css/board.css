@@ -1,0 +1,107 @@
+/* The network board of the Devices and Interfaces page: four lanes of cards with connectors between them, the highlighting of a card's chain, the
+   menu of the Device header and the live bridge information shown in the drawer. Loaded on demand by core/app.js when the page is first opened.
+   Everything wraps: the cards are `min-width: 0` grid items, addresses break anywhere, chips never overflow their lane (the shared `.table td`
+   rule that keeps text on one line does not apply, the board has no table). `nb-` is "network board", `bl-` "bridge live". */
+
+.nb-legend { margin: 0; }
+.nb-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem .9rem; }
+
+/* The board: the lanes, with an SVG for the connectors laid under them. The container query stacks the lanes when the board is narrow. */
+.nb { position: relative; container-type: inline-size; }
+.nb-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 0; }
+.nb-lanes {
+  position: relative; z-index: 1; display: grid; align-items: start; column-gap: 2.25rem;
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+}
+@container (max-width: 1000px) { .nb-lanes { column-gap: 1.5rem; } }
+@container (max-width: 760px) {
+  .nb-lanes { grid-template-columns: minmax(0, 1fr); row-gap: 1.5rem; }
+  .nb-svg { display: none; }
+}
+
+.nb-lane { min-width: 0; display: flex; flex-direction: column; gap: .7rem; }
+.nb-lane-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .4rem .6rem; }
+.nb-lane-head > div:first-child { min-width: 0; flex: 1 1 8rem; }
+.nb-lane-head h2 { margin: 0; font-size: 1rem; }
+.nb-links { display: flex; gap: .7rem; }
+.nb-cards { display: flex; flex-direction: column; gap: .55rem; min-width: 0; }
+.nb-group { display: flex; flex-direction: column; gap: .45rem; min-width: 0; }
+.nb-group + .nb-group { margin-top: .6rem; }
+.nb-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .5rem; }
+.nb-none { padding: .4rem 0; }
+
+/* A card: a button that opens its panel. */
+.nb-card {
+  position: relative; display: block; min-width: 0; padding: .55rem .7rem; background: var(--fl-surface); border: 1px solid var(--fl-stroke);
+  border-radius: 8px; box-shadow: var(--fl-shadow); cursor: pointer; overflow-wrap: anywhere; transition: opacity .15s, border-color .15s, background-color .15s;
+}
+.nb-card:hover { background: var(--fl-surface-hover); }
+.nb-card:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: 1px; }
+.nb-card .mono { overflow-wrap: break-word; }
+.nb-line { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .45rem; min-width: 0; }
+.nb-line > svg { flex: none; color: var(--fl-brand); }
+.nb-line .dot, .nb-chip .dot { width: 8px; height: 8px; display: inline-block; animation: none; flex: none; }
+.nb-name { min-width: 0; overflow-wrap: anywhere; }
+.nb-sub { margin-top: .15rem; overflow-wrap: anywhere; }
+.nb-addrs { margin-top: .3rem; display: grid; gap: .05rem; }
+.nb-proto { margin-top: .35rem; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; }
+.nb-pdev { padding: 0 .4rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface-hover); }
+.nb-details { margin-top: .2rem; }
+.nb-details > summary { cursor: pointer; }
+.nb-nets { margin-top: .35rem; display: grid; gap: .3rem; }
+.nb-net { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .4rem; }
+.nb-new { border-style: dashed; border-color: var(--fl-info-fg); }
+.nb-removed { opacity: .65; }
+.nb-removed .nb-name { text-decoration: line-through; }
+
+/* A Wi-Fi or mesh chip (a link to the Wi-Fi or Mesh page) or a radio without interfaces. */
+.nb-card.nb-chip { display: flex; align-items: flex-start; gap: .5rem; text-decoration: none; color: inherit; padding: .4rem .6rem; }
+.nb-chip .dot { margin-top: .35rem; }
+.nb-chip-text { display: flex; flex-direction: column; min-width: 0; }
+
+/* Highlighting: what the hovered or open card is connected to stays bright, everything else steps back. */
+.nb-focus .nb-card:not(.nb-rel) { opacity: .42; }
+.nb-card.nb-rel { border-color: color-mix(in srgb, var(--fl-brand) 70%, var(--fl-stroke)); }
+.nb-card.nb-sel { outline: 2px solid var(--fl-brand); outline-offset: 0; }
+
+/* Connectors. */
+.nb-edge { fill: none; stroke: color-mix(in srgb, var(--fl-muted) 60%, transparent); stroke-width: 1.5; transition: stroke .15s, opacity .15s; }
+.nb-edge-rides, .nb-edge-tunlink { stroke-dasharray: 5 4; }
+.nb-edge-zone { stroke: color-mix(in srgb, var(--fl-muted) 40%, transparent); }
+.nb-end { fill: color-mix(in srgb, var(--fl-muted) 70%, transparent); }
+.nb-focus .nb-edge:not(.nb-hl), .nb-focus .nb-end:not(.nb-hl) { opacity: .2; }
+.nb-edge.nb-hl { stroke: var(--fl-brand); stroke-width: 2.5; }
+.nb-end.nb-hl { fill: var(--fl-brand); }
+
+/* The menu of the Device header. */
+.nb-menu-wrap { position: relative; }
+.nb-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 17rem; padding: .3rem; background: var(--fl-surface);
+  border: 1px solid var(--fl-stroke); border-radius: 8px; box-shadow: var(--fl-shadow);
+}
+.nb-menu[hidden] { display: none; }
+.nb-menu-item { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: .45rem .6rem; border: 0; border-radius: 6px; background: transparent; color: var(--fl-text); text-align: left; }
+.nb-menu-item:hover, .nb-menu-item:focus-visible { background: var(--fl-surface-hover); }
+
+/* The panels the board builds itself. */
+.nb-panel > * + * { margin-top: .9rem; }
+.nb-panel .kv { margin: 0; }
+
+/* The live information of a bridge (bridgelive.js). */
+.bl .blk h3 { margin: 1rem 0 .4rem; font-size: .95rem; }
+.bl-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.bl-stp { display: grid; gap: .6rem; margin-top: .8rem; }
+.bl-node { display: grid; gap: .1rem; justify-items: center; text-align: center; padding: .6rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
+.bl-node svg { color: var(--fl-brand); }
+.bl-node.me { border-color: var(--fl-brand); }
+.bl-node .node-title { font-weight: 600; }
+.bl-link { display: grid; gap: .4rem; text-align: center; }
+.bl-link .line { height: 3px; border-radius: 2px; background: repeating-linear-gradient(90deg, var(--fl-brand) 0 12px, transparent 12px 20px); background-size: 20px 3px; animation: bl-flow 1s linear infinite; }
+.bl-peers { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; }
+.bl-peer { display: flex; align-items: center; gap: .5rem; padding: .4rem .6rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); text-align: left; }
+.bl-peer svg { color: var(--fl-brand); flex: none; }
+.bl-member { padding: .5rem 0; border-top: 1px solid var(--fl-stroke); }
+.bl-member-head, .bl-member-line { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .6rem; }
+.bl-member-head .dot { width: 8px; height: 8px; display: inline-block; animation: none; }
+.bl-member-line { margin-top: .2rem; }
+@keyframes bl-flow { to { background-position: 20px 0; } }

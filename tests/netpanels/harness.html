@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- Harness page of the netpanels browser test (tests/netpanels/live.mjs): it mounts the real side panels and the New network wizard of the
+     Devices and Interfaces page (www/js/pages/interfaces/panels.js) in the real drawer, over the real stylesheets, against a stateful mock of the
+     router's configuration (harness.mjs). It makes no request to a router. -->
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>netpanels harness</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/www/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="/www/css/base.css">
+  <link rel="stylesheet" href="/www/css/forms.css">
+  <link rel="stylesheet" href="/www/css/netedit.css">
+  <link rel="stylesheet" href="/www/css/drawer.css">
+  <style>
+    body { padding: 1rem; }
+    #page { max-width: 40rem; }
+    #review .set-changes { margin: 0; padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <div id="page">
+    <h1 class="fs-5">netpanels harness</h1>
+    <div id="review"></div>
+    <button id="save" class="btn btn-sm btn-brand" type="button">Save and apply</button>
+  </div>
+  <script type="module" src="harness.mjs"></script>
+</body>
+</html>

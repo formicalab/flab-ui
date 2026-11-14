@@ -1,4 +1,4 @@
-// Live-update test for the network-related pages (Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh,
+// Live-update test for the network-related pages (Wired network, Devices and Interfaces with its bridges, Wi-Fi, Mesh,
 // WireGuard, Firewall and Logs). A real browser opens the deployed UI; the status calls of the flab.network,
 // flab.radio, flab.mesh, flab.wireguard, flab.firewall and flab.logs plugins are intercepted and answered with
 // the scenario JSON produced by the backend run, so every page can be driven through link loss, STP changes,
@@ -84,7 +84,7 @@ await page.addInitScript(([id, granted]) => {
 }, [sid, acls]);
 await page.goto(baseUrl);
 await page.waitForSelector('.tile');
-check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wired network', 'Bridges', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: network layers, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces recap, Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
+check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wired network', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: network layers, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces (which holds the bridges), Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
 //#region Wired network page
 await page.click('a[href="#network"]');
 await page.waitForSelector('.port');
@@ -92,7 +92,7 @@ await page.waitForSelector('.port');
 console.log('== live router (pass-through) ==');
 const livePorts = await page.locator('.port').count();
 check(livePorts >= 5, 'port tiles drawn from the live router', String(livePorts));
-check(await page.locator('.br-card').count() === 0 && await page.locator('.layers-table').count() === 0, 'bridges and layers are not on this page any more');
+check(await page.locator('.nb').count() === 0 && await page.locator('.bl').count() === 0, 'the network board and the bridge information are not on this page');
 check(/^\d+ \/ \d+$/.test(await tile(0)), 'ports-linked tile', await tile(0));
 check(await before('.topo-legend', '.topo'), 'the port diagram key is above the diagram');
 const liveLinked = await tile(0);
@@ -281,77 +281,101 @@ check(/^↓ [1-9]/.test(await tile(1)) && !/0 bit/.test((await tile(1)).split('\
 check(/Mbit\/s/.test(await text('.port.up .prate')), 'port tiles show live rates', await text('.port.up .prate'));
 //#endregion
 
-//#region Bridges page
-await page.click('a[href="#bridges"]');
-await page.waitForSelector('.br-card');
+//#region Bridges on the Devices and Interfaces board
+await page.click('a[href="#interfaces"]');
+await page.waitForSelector('.nb-card');
 console.log('\n== bridges: live router (pass-through) ==');
 mock.network = null;
 await refresh();
-check(await page.locator('.br-card').count() >= 1 && await page.locator('.port').count() === 0, 'bridge card drawn, no port tiles on this page');
-check(await page.locator('.br-card tbody tr').count() >= 3, 'member ports listed');
+// The live information of the bridge `name` as the bridge panel builds it (bridgelive.js), made from the status the page gets now (the mocked
+// scenario or the router) and shown in a box at the end of <body>; returns the box.
+const bridgeLive = async name => {
+  await page.evaluate(async n => {
+    document.getElementById('bl-test')?.remove();
+    const id = sessionStorage.getItem('sid');
+    // One ubus call from the page, through the session (the test's route answers it with the scenario).
+    const call = async obj => (await (await fetch('/ubus', { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'call', params: [id, obj, 'status', {}] }) })).json()).result?.[1];
+    const [net, mesh] = await Promise.all([call('flab.network'), call('flab.mesh')]);
+    const { bridgeLive: build } = await import(new URL('js/pages/interfaces/bridgelive.js', document.baseURI));
+    const box = document.createElement('div');
+    box.id = 'bl-test';
+    const node = build(net, mesh, n);
+    if (node) box.append(node);
+    document.body.append(box);
+  }, name);
+  return page.locator('#bl-test');
+};
+// The names of the bridge cards of the devices lane (bridges come first).
+const bridgeCards = () => page.locator('.nb-lane-devices .nb-card:has(.fl-badge:text-is("bridge")) .nb-name').allInnerTexts();
+const lanBridgeName = (await bridgeCards())[0];
+check(await page.locator('.port').count() === 0 && lanBridgeName && await page.locator('.nb-lane-devices .nb-card:has(.fl-badge:text-is("bridge"))').count() >= 1, 'the bridge card is drawn on the board, no port tiles on this page', String(lanBridgeName));
+check(await (await bridgeLive(lanBridgeName)).locator('.bl-member').count() >= 3, 'the bridge information lists the member ports');
+check(await bridgeLive('no-such-bridge').then(b => b.locator('.bl').count()) === 0, 'a bridge the router does not have gives no live information');
 
 await stage('this bridge becomes STP root', 'network', 'n-root');
-check(await page.locator('.br-stp.root').count() === 1 && /spanning-tree root/.test(await text('.br-stp.root')), 'bridge card says it is the root');
-check(await tile(1) === 'Root', 'spanning-tree tile reads Root', await tile(1));
+check(await (await bridgeLive(lanBridgeName)).locator('.bl-stp.root').count() === 1 && /spanning-tree root/.test(await text('#bl-test .bl-stp.root')) && /STP root/.test(await text('#bl-test .bl-head')), 'the bridge information says it is the root');
 await stage('mesh peers from the capture', 'mesh', 'base');
-check(await page.locator('.br-stp.root .br-peer').count() >= 1 && /^([0-9a-f]{2}:){5}[0-9a-f]{2}/.test(await text('.br-stp.root .br-peer')) && /via phy\d+-mesh\d+/.test(await text('.br-stp.root .br-peer')) && /ESTAB/.test(await text('.br-stp.root .br-peer')), 'the root bridge lists the mesh peers that reach the network through it', await text('.br-stp.root'));
-check(/Mesh/.test(await text('.br-card tbody')) && /\d+ peers?/.test(await text('.br-card tbody')), 'a mesh member port is labeled Mesh with its number of peers', await text('.br-card tbody'));
+check(await (await bridgeLive(lanBridgeName)).locator('.bl-stp.root .bl-peer').count() >= 1 && /^([0-9a-f]{2}:){5}[0-9a-f]{2}/.test(await text('#bl-test .bl-stp.root .bl-peer')) && /via phy\d+-mesh\d+/.test(await text('#bl-test .bl-stp.root .bl-peer')) && /ESTAB/.test(await text('#bl-test .bl-stp.root .bl-peer')), 'the root bridge lists the mesh peers that reach the network through it', await text('#bl-test .bl-stp.root'));
+check(/Mesh/.test(await text('#bl-test .bl-member')) && /\d+ peers?/.test(await text('#bl-test .bl-member')), 'a mesh member port is labeled Mesh with its number of peers', await text('#bl-test .bl-member'));
 await stage('back to the live router', 'mesh', null);
 
 await stage('blocked port and topology change', 'network', 'n-blocked');
 check(/blocked by spanning tree/.test(await text('.net-health')), 'health banner reports the blocked port', await text('.net-health'));
-check(/topology change/.test(await text('.br-head')), 'bridge header shows the topology change');
+check(/topology change/.test(await text('.net-health')) && /topology change/.test(await (await bridgeLive(lanBridgeName)).innerText()), 'the topology change is reported in the banner and on the bridge');
 
 await stage('STP switched off', 'network', 'n-nostp');
-check(/STP off/.test(await text('.br-head')) && await page.locator('.br-stp.off').count() === 1, 'bridge shows STP off');
+check(/STP off/.test(await (await bridgeLive(lanBridgeName)).innerText()) && await page.locator('#bl-test .bl-stp.off').count() === 1 && !/STP/.test(await text('.nb-lane-devices .nb-card:has(.fl-badge:text-is("bridge"))')), 'the bridge shows STP off');
 
 await stage('second bridge appears', 'network', 'n-newbridge');
-check(await page.locator('.br-card').count() === 2 && /br-guest/.test(await text('.br-card')), 'a second bridge card appears');
-check(await tile(0) === '2', 'bridges tile counts two', await tile(0));
+check(await bridgeCards().then(n => n.length) === 2 && /br-guest/.test((await bridgeCards()).join()), 'a second bridge card appears on the board');
+check(await tile(1) === '2', 'bridges tile counts two', await tile(1));
 
 await stage('router reports no devices', 'network', 'n-nodevices');
-check(await page.locator('.br-card').count() === 0 && /No bridges are configured/.test(await text('main')), 'empty state when there are no bridges');
+check(await page.locator('.nb-lane-devices .nb-card:has(.fl-badge:text-is("bridge"))').count() === 0 && /No bridge or VLAN devices|does not describe/.test(await text('.nb-lane-devices')), 'no bridges, no bridge cards');
 
 await stage('back to normal', 'network', 'base');
-check(await page.locator('.br-card').count() === 1, 'the bridge is back');
+check(await bridgeCards().then(n => n.length) === 1, 'the bridge is back');
+await page.evaluate(() => document.getElementById('bl-test')?.remove());
 //#endregion
 
-//#region Devices and Interfaces page
-await page.click('a[href="#interfaces"]');
-await page.waitForSelector('.layers-table');
+//#region Devices and Interfaces board
 console.log('\n== interfaces: live router (pass-through) ==');
 mock.network = null;
 await refresh();
-// The row of the layers table whose name (third column) is `n`.
-const layerRow = n => page.locator(`.layers-table tr:has(td:nth-child(3) strong:text-is("${n}"))`);
-check(await page.locator('.port').count() === 0 && await page.locator('.br-card').count() === 0, 'no ports or bridge cards on this page');
-check(await layerRow('lan').count() === 1 && /br-lan/.test(await layerRow('lan').innerText()) && await layerRow('lan').locator('.cn.k-port, .cn.k-wifi, .cn.k-mesh').count() >= 3, 'layers: lan sits on br-lan, which groups ports and Wi-Fi');
-check(await layerRow('lan').locator('.cn.k-wifi .cn-sub').first().innerText().then(t => /radio\d/.test(t)), 'layers: a Wi-Fi interface shows the radio it is on');
-check(await layerRow('lan').locator('.cn.k-mesh').count() >= 1 && await layerRow('lan').locator('a.cn-link[href="#mesh"]').count() >= 1, 'layers: the mesh interface is listed and links to the Mesh page');
+// The board card of the interface `n`.
+const ifCard = n => page.locator(`.nb-lane-interfaces .nb-card:has(.nb-name:text-is("${n}"))`);
+// The board cards of a lane that are highlighted as connected to what the mouse is over.
+const related = lane => page.locator(`.nb-lane-${lane} .nb-card.nb-rel`);
+check(await page.locator('.port').count() === 0 && await page.locator('#bl-test').count() === 0, 'no port tiles on this page');
+await ifCard('lan').hover();
+check(/on br-lan/.test(await ifCard('lan').innerText()) && await related('ports').count() >= 3 && await related('devices').count() >= 1, 'lan sits on br-lan, which groups ports and Wi-Fi: hovering it highlights them');
+check(/radio\d/.test(await text('.nb-lane-ports .nb-group-head')) && await page.locator('.nb-lane-ports .nb-chip').count() >= 1, 'Wi-Fi interfaces are grouped under the radio they are on');
+check(await page.locator('.nb-lane-ports a.nb-chip[href="#mesh"]').count() >= 1 && await page.locator('.nb-lane-ports a.nb-chip[href="#wifi"]').count() >= 1, 'the mesh interface and the Wi-Fi interfaces are chips that link to the Mesh and Wi-Fi pages');
 check(/Radios/.test(await text('.tile')) && /Wireless interfaces/.test(await text('.tile')), 'radio and wireless interface tiles');
-check(/eth1\.1036/.test(await layerRow('wan').innerText()) && /pppoe-wan/.test(await layerRow('wan').innerText()) && /VLAN 1036/.test(await layerRow('wan').innerText()), 'layers: wan is PPPoE over the VLAN on eth1');
-check(/protocol device of wan/.test(await layerRow('wan6').innerText()), 'layers: wan6 is shown riding on the PPPoE session of wan');
-check(/runs over interface\s+wan/.test(await layerRow('xfrm0').innerText()), 'layers: the IPsec interface runs over wan');
+check(/pppoe-wan/.test(await ifCard('wan').innerText()) && /on eth1\.1036/.test(await ifCard('wan').innerText()) && /VLAN 1036 on eth1/.test(await text('.nb-lane-devices')), 'wan is PPPoE over the VLAN on eth1');
+check(/on the PPPoE session of wan/.test(await ifCard('wan6').innerText()) && /shared/.test(await ifCard('wan6').innerText()), 'wan6 is shown riding on the PPPoE session of wan');
+check(/runs over wan/.test(await ifCard('xfrm0').innerText()), 'the IPsec interface runs over wan');
 check(/^\d+ \/ \d+$/.test(await tile(0)), 'interfaces-up tile', await tile(0));
-check(await before('.layers-legend', '.layers-table') && /How to read a row/.test(await text('.layers-legend')) && await page.locator('.layers-foot').count() === 0, 'the "how to read" legend is above the table, not below it');
-check(await layerRow('lan100').locator('.cn-same').count() === 1 && /same \d+ ports and radios as lan/.test(await layerRow('lan100').innerText()) && await layerRow('lan100').locator('.cn.k-port').count() === 0, 'layers: lan100 does not repeat the ports, it says they are the same as lan');
-check(/untagged/.test(await layerRow('lan').innerText()) && /only frames tagged VLAN 100 on br-lan/.test(await layerRow('lan100').innerText()), 'layers: each row says which frames it carries (untagged vs VLAN 100)');
-check(/\blan\b/.test(await layerRow('lan').locator('td:nth-child(6)').innerText()) && /DHCPv4/.test(await layerRow('lan').locator('td:nth-child(6)').innerText()), 'zone and DHCP service of lan');
-check(/\bwan\b/.test(await layerRow('wan').locator('td:nth-child(6)').innerText()) && /NAT/.test(await layerRow('wan').locator('td:nth-child(6)').innerText()), 'the WAN zone is shown with NAT');
-check(/\bvpn\b/.test(await layerRow('xfrm0').locator('td:nth-child(6)').innerText()) && /\bwg\b/.test(await layerRow('wg0').locator('td:nth-child(6)').innerText()), 'tunnel interfaces show their firewall zone');
-check(/route\s+10\.0\.0\.0\/8 via/.test(await layerRow('voip').innerText()) && /route\s+192\.168\.8\.0\/24 on link/.test(await layerRow('wg0').innerText()), 'static routes are listed under their interface (on-link ones say so)');
-check(/prefix\s+[0-9a-f:]+\/60/.test(await layerRow('lan').innerText()), 'delegated prefixes are listed');
+check(await before('.nb-legend', '.nb') && /How to read the board/.test(await text('.nb-legend')), 'the "how to read" legend is above the board');
+await ifCard('lan100').hover();
+check(await related('ports').count() >= 3 && /VLAN 100 on br-lan/.test(await text('.nb-lane-devices .nb-rel')), 'lan100 sits on the same ports through the VLAN 100 device on the bridge');
+await page.mouse.move(0, 0);
+const zoneCard = n => page.locator(`.nb-lane-zones .nb-card:has(.nb-name:text-is("${n}"))`);
+check(/\blan\b/.test(await zoneCard('lan').innerText()) && /DHCP/.test(await zoneCard('lan').innerText()), 'zone and DHCP service of lan');
+check(/\bwan\b/.test(await zoneCard('wan').innerText()) && /NAT/.test(await zoneCard('wan').innerText()), 'the WAN zone is shown with NAT');
+check(/xfrm0/.test(await zoneCard('vpn').innerText()) && /wg0/.test(await zoneCard('wg').innerText()), 'tunnel interfaces are listed in their firewall zone');
+check(/route\s+10\.0\.0\.0\/8 via/.test(await ifCard('voip').textContent()) && /route\s+192\.168\.8\.0\/24 on link/.test(await ifCard('wg0').textContent()), 'static routes are listed under their interface (on-link ones say so)');
+check(/prefix\s+[0-9a-f:]+\/60/.test(await ifCard('lan').textContent()), 'delegated prefixes are listed');
 
 await stage('router reports no devices', 'network', 'n-nodevices');
-check(await layerRow('lan').locator('.cn.k-device').count() === 1, 'an undescribed device is kept as an unknown device, not dropped');
+check(await page.locator('.nb-lane-devices .nb-card:has-text("br-lan")').count() >= 1 && /not present|does not describe/.test(await text('.nb-lane-devices')), 'a device the router no longer reports is kept (marked not present, or as an unknown device), not dropped', await text('.nb-lane-devices'));
 
 await stage('back to normal', 'network', 'base');
 
 await stage('a Wi-Fi interface on a network that does not exist', 'radio', 'r-newssid');
-check(await page.locator('.layers-table tr:has(td:nth-child(3):has-text("not attached"))').count() === 1, 'layers: a wireless interface that reaches no network interface gets its own row');
 check(/guest_2g.*not attached to any network interface/.test(await text('.net-health')), 'findings name the unattached wireless interface', await text('.net-health'));
 await stage('radios back to the live router', 'radio', null);
-check(await page.locator('.layers-table tr:has(td:nth-child(3):has-text("not attached"))').count() === 0, 'the unattached row is gone again');
+check(!/not attached to any network interface/.test(await text('.net-health')), 'the finding is gone again');
 //#endregion
 
 //#region Mesh page

@@ -38,7 +38,8 @@ const read = name => { const text = fs.readFileSync(path.join(out, `${name}.json
   check(iface('loopback').anonymous === false && dev('cfg030f15').anonymous === true && dev('guest_br').anonymous === false, 'anonymous and named sections are told apart');
   check(dev('cfg030f15').values.name === 'br-lan' && dev('cfg030f15').values.ports.join() === 'lan1,lan2' && dev('cfg040f15').values.vid === '1036', 'device options are kept');
   check(cfg.devices.every(s => typeof s.secrets === 'object') && cfg.interfaces.every(s => typeof s.values === 'object'), 'every section has values and secrets');
-  check(cfg.other.globals === 1 && cfg.other.wireguard_wg0 === 2 && cfg.other['bridge-vlan'] === 2 && cfg.other.route === 2 && cfg.other.rule === 1 && Object.keys(cfg.other).length === 5, 'the other sections are only counted, by type', JSON.stringify(cfg.other));
+  check(cfg.other.wireguard_wg0 === 2 && cfg.other['bridge-vlan'] === 2 && cfg.other.route === 2 && cfg.other.rule === 1 && Object.keys(cfg.other).length === 4, 'the other sections are only counted, by type (the globals section has its own entry)', JSON.stringify(cfg.other));
+  check(cfg.globals?.section === 'globals' && cfg.globals.values.ula_prefix === 'fd00:1::/48' && cfg.globals.values.dhcp_default_duid === '0004aa' && cfg.globals.values.packet_steering === '1' && cfg.globals.values.netifd_loglevel === '4' && cfg.globals.values.tcp_l3mdev === '1' && cfg.globals.values.custom_opt === 'x' && Object.keys(cfg.globals.secrets).length === 0, 'the globals section is returned with its options (none a secret)', JSON.stringify(cfg.globals));
   check(!('interface' in cfg.other) && !('device' in cfg.other), 'interfaces and devices are not among the others');
   check(cfg.bridge_vlans.length === 2 && cfg.bridge_vlans[0].device === 'br-lan' && cfg.bridge_vlans.map(v => v.vlan).sort().join() === '10,20', 'the bridge VLAN sections name their device and VLAN', JSON.stringify(cfg.bridge_vlans));
   check(!text.includes('public_key') && !text.includes('allowed_ips'), 'WireGuard peer sections are not part of the reply');
@@ -49,7 +50,7 @@ const read = name => { const text = fs.readFileSync(path.join(out, `${name}.json
 for (const name of ['empty', 'missing']) {
   const { cfg } = read(name);
   console.log(`\n== ${name}: nothing to edit ==`);
-  check(Array.isArray(cfg.interfaces) && cfg.interfaces.length === 0 && Array.isArray(cfg.devices) && cfg.devices.length === 0, 'both lists are empty arrays', JSON.stringify(cfg));
+  check(Array.isArray(cfg.interfaces) && cfg.interfaces.length === 0 && Array.isArray(cfg.devices) && cfg.devices.length === 0 && cfg.globals === null, 'both lists are empty arrays and there is no globals section', JSON.stringify(cfg));
   check(Object.keys(cfg.other).length === 0 && cfg.bridge_vlans.length === 0, 'no other sections and no bridge VLANs');
 }
 //#endregion
@@ -61,6 +62,7 @@ for (const name of ['empty', 'missing']) {
   const leaks = +fs.readFileSync(path.join(out, 'real-leaks.txt'), 'utf8').trim();
   console.log('\n== the real router (read only) ==');
   check(real.cfg.interfaces.length === counts.interface && real.cfg.devices.length === counts.device, `the reply has the router's ${counts.interface} interface and ${counts.device} device sections`, `${real.cfg.interfaces.length}/${real.cfg.devices.length}`);
+  check((real.cfg.globals ? 1 : 0) === Math.min(1, counts.globals) && (!real.cfg.globals || Object.keys(real.cfg.globals.values).length > 0), 'the reply has the router\'s globals section when it has one', JSON.stringify(real.cfg.globals));
   check(real.cfg.interfaces.some(s => s.section === 'lan') && real.cfg.interfaces.every(s => typeof s.values.proto === 'string' || s.values.proto === undefined), 'the interfaces include lan and have their protocols');
   check(leaks === 0, 'none of the router\'s stored secrets (4 characters or more) appears in the reply', `${leaks} occurrence(s)`);
   const secretKeys = real.cfg.interfaces.flatMap(s => Object.keys(s.values)).filter(k => /passw|private_key|preshared|psk|secret|token|^key$/i.test(k));

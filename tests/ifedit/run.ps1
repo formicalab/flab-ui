@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-Tests the Devices and Interfaces and Bridges editors without changing the router.
+Tests the editors of the Devices and Interfaces page (the network board, with the interface, device and port panels) without changing the router.
 
 .DESCRIPTION
 1. Unit tests of the editor's pure model (value checks, the option tables, reading the plugin's reply, the draft, the review list, validation
@@ -11,7 +11,7 @@ Tests the Devices and Interfaces and Bridges editors without changing the router
    options), an empty config and a missing one. It asserts that no secret appears in any reply. It also runs `config` once for real, which
    only reads, compares the reply with the router's config and counts how often a stored secret appears in it (only the count leaves the
    router). The harness refuses every other call.
-3. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1). Both pages are first shown against
+3. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1). The board is first shown against
    the router's own configuration with every write blocked (and failing the test if one is attempted), then driven against a mocked router:
    a stateful mock of rpcd's uci object and mocked flab.network and netifd replies drive the whole editing flow (validation, the write-only
    password, adding and removing interfaces and devices, moving a port between bridges, the warnings and the confirmation before a risky
@@ -90,7 +90,7 @@ for sc in @SCENARIOS@; do
 done
 # The real router: only reads.
 FLAB_PLUGIN=@REMOTE@/p.uc FLAB_CASES=@REMOTE@/fx/cases.json ucode -L "@REMOTE@/*.uc" h.uc > out-real.json
-printf 'interface %s\ndevice %s\n' "$(uci show network 2>/dev/null | grep -c '=interface$')" "$(uci show network 2>/dev/null | grep -c '=device$')" > real-counts.txt
+printf 'interface %s\ndevice %s\nglobals %s\n' "$(uci show network 2>/dev/null | grep -c '=interface$')" "$(uci show network 2>/dev/null | grep -c '=device$')" "$(uci show network 2>/dev/null | grep -c '=globals$')" > real-counts.txt
 # How often a stored secret appears in the reply: only the count leaves the router, never the secret.
 leaks=0
 for v in $(uci show network 2>/dev/null | sed -n "s/^network\.[^=]*\.\(password\|passwd\|private_key\|preshared_key\|psk\|key\|pin\|pincode\)='\(.*\)'$/\2/p"); do

@@ -1,0 +1,30 @@
+/* The side panel of core/drawer.js: Bootstrap's offcanvas on the right edge, full height, sticky header and footer, a scrolling body. It does not dim the page.
+   On wide screens the page makes room for it (the shell gets a right padding) so the content beside it stays visible and usable; on narrower ones it
+   overlays the page. Loaded by the pages that open drawers. */
+.fl-drawer {
+  --bs-offcanvas-width: min(34rem, 100vw);
+  --bs-offcanvas-bg: var(--fl-surface);
+  --bs-offcanvas-color: var(--fl-text);
+  --bs-offcanvas-border-color: var(--fl-stroke);
+  --bs-offcanvas-box-shadow: var(--fl-shadow);
+  --bs-offcanvas-padding-x: 1.25rem;
+  --bs-offcanvas-padding-y: 1rem;
+  top: 0; bottom: 0; height: 100vh; min-width: 0;
+}
+.fl-drawer:focus { outline: none; }
+.fl-drawer-head { align-items: flex-start; gap: .6rem; border-bottom: 1px solid var(--fl-stroke); }
+.fl-drawer-head > svg { flex: none; margin-top: .25rem; color: var(--fl-brand); }
+.fl-drawer-titles { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fl-drawer-title { margin: 0; font-weight: 600; }
+.fl-drawer-head .btn-close { flex: none; margin: .1rem 0 0; }
+.fl-drawer-body { min-width: 0; overflow-x: hidden; overflow-wrap: anywhere; }
+.fl-drawer-foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .75rem 1.25rem;
+  border-top: 1px solid var(--fl-stroke); background: var(--fl-surface);
+}
+.fl-drawer-foot[hidden] { display: none; }
+
+/* Room for the drawer beside the page on wide screens. */
+@media (min-width: 1500px) {
+  body.fl-drawer-open .shell { padding-right: 34rem; }
+}
