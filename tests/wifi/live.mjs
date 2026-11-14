@@ -41,10 +41,12 @@ const RADIOS = () => [
     antennas: { tx: 4, rx: 4 }, standards: ['802.11n', '802.11ac', '802.11ax'], channels: BAND5,
     live: { channel: 104, freq: 5520, width: 160, center: 5570, txpower: 23 }, survey: { freq: 5520, noise: -95, active: 1000, busy: 80, rx: 40, tx: 10 }, hardware: { hardware: 'MediaTek MT7986', hwmodes: 'ax/ac/n' } },
 ];
-// The wireless config as `uci get wireless <radio>` returns it: only the radios' own sections are ever read.
+// The wireless config as the mock holds it: only the radios' own sections (the channel is all the old tests change).
 const baseCfg = () => Object.fromEntries(RADIOS().map(r => [r.name, { '.anonymous': false, '.type': 'wifi-device', '.name': r.name, ...r.config, channel: r.config.channel, band: r.band }]));
+// The modes each mock radio's hardware reports.
+const HTMODES = { radio0: ['HT20', 'HT40', 'HE20', 'HE40'], radio1: ['HT20', 'HT40', 'VHT20', 'VHT40', 'VHT80', 'VHT160', 'HE20', 'HE40', 'HE80', 'HE160'] };
 
-const WRITES = ['set', 'add', 'delete', 'apply', 'confirm', 'rollback', 'revert', 'commit', 'order', 'rename'];
+const WRITES = ['set', 'add', 'delete', 'apply', 'confirm', 'rollback', 'revert', 'commit', 'order', 'rename', 'get'];
 const mock = { on: false, cfg: baseCfg(), staged: [], restage: [], snapshot: null, calls: [], dropWrites: false, confirmFails: false, expired: false, radioDown: false, unsafe: [], radioCalls: 0 };
 
 // Applies the staged edits to the mock's config, the way rpcd's uci apply does.
@@ -97,6 +99,16 @@ function radioStatus() {
   return { radios, regdomain: { country: 'IT', dfs: 'DFS-ETSI' } };
 }
 
+// The flab.radio config reply from the mock config: the radios' options without secrets and the wireless networks of RADIOS().
+function radioConfig() {
+  mock.calls.push('flab.radio.config');
+  const strip = s => Object.fromEntries(Object.entries(s).filter(([k, v]) => !k.startsWith('.') && v != null));
+  const radios = Object.values(mock.cfg).map((r, i) => ({ section: r['.name'], anonymous: false, index: i, type: 'wifi-device', values: strip(r), secrets: {}, phy: r['.name'], htmodes: { source: 'iwinfo', modes: HTMODES[r['.name']] } }));
+  const interfaces = RADIOS().flatMap(r => r.interfaces.map((i, k) => ({ section: i.section, anonymous: false, index: radios.length + k, type: 'wifi-iface', secrets: { key: true },
+    values: { device: r.name, mode: i.mode, ssid: i.ssid, network: 'lan', encryption: i.encryption ?? 'sae-mixed' } })));
+  return { radios, interfaces, others: [], networks: [{ name: 'lan', proto: 'static' }], countries: [], features: {} };
+}
+
 // The flab.wifi reply: the radios with their access points and no clients.
 function clientsReply() {
   const radios = radioStatus().radios;
@@ -118,7 +130,7 @@ function answer(body) {
   }
   if (mock.expired && ['uci', 'flab.radio', 'flab.wifi', 'system', 'session'].includes(obj)) return denied;
   if (obj === 'uci') { mock.calls.push(`uci.${method}${args?.section ? ':' + args.section : ''}`); return ok(uci(method, args)); }
-  if (obj === 'flab.radio') return ok([0, radioStatus()]);
+  if (obj === 'flab.radio') return ok([0, method === 'config' ? radioConfig() : radioStatus()]);
   if (obj === 'flab.wifi') return ok([0, clientsReply()]);
   if (obj === 'system' && method === 'board') return ok([0, { hostname: 'openwrt', model: 'GL.iNet GL-MT6000' }]);
   return null;
@@ -263,8 +275,8 @@ mock.calls = [];
 await saveBtn().click();
 const done = await outcome();
 check(/^Saved/.test(done), 'a successful save says so', done);
-check(/^uci\.changes:?\S*( uci\.set:\S+)+ uci\.apply uci\.get:radio\d( uci\.get:radio\d)* uci\.confirm/.test(mock.calls.join(' ')), 'checked for leftovers, staged, applied, read back the radios\' own sections, confirmed', mock.calls.join(' '));
-check(!mock.calls.includes('uci.get'), 'the whole wireless config (which holds the Wi-Fi keys) is never read', mock.calls.join(' '));
+check(/^uci\.changes( uci\.set:\S+)+ uci\.apply flab\.radio\.config uci\.confirm/.test(mock.calls.join(' ')), 'checked for leftovers, staged, applied, read the config back through the plugin, confirmed', mock.calls.join(' '));
+check(!mock.calls.some(c => c.startsWith('uci.get')), 'the wireless config (which holds the Wi-Fi keys) is never read with uci get', mock.calls.join(' '));
 check(mock.cfg.radio0.channel === '11' && mock.cfg.radio1.channel === '36' && mock.cfg.radio1.htmode === 'HE160', 'only the channels were written, the width and the rest are untouched', JSON.stringify(mock.cfg));
 await page.waitForTimeout(600);
 check(await has(tile('radio1', 36), 'cur') && await bar().locator('.set-outcome.ok').count() === 1 && await saveBtn().isHidden() && await page.locator('button:has-text("Discard edits")').isHidden(), 'the page shows the new running channel and keeps the outcome, without Save and Discard buttons');

@@ -1,11 +1,14 @@
-// Traffic page (route #traffic): where the bandwidth goes. Three tabs share the page and its command bar:
+// The Traffic page (route #traffic): where the bandwidth goes. Four tabs share the page and its command bar:
 //   Live         the rate of every interface with a short history, and the totals (flab.network, the counters the
 //                Wired network page uses, plus flab.traffic status for the connection count)
 //   Connections  the connection tracking table: who talks to whom, NAT, state, size (flab.traffic connections)
 //   Usage        the data each host moved in an nlbwmon accounting period (flab.traffic usage), offered only when the
 //                router has nlbw
-// Only the open tab is polled, every 3 s. The connection table and the usage are heavier to compute, so those tabs reuse
-// their last answer until it is 10 s (connections) or 30 s (usage) old, unless the request changed or Refresh was pressed.
+//   Settings     the accounting settings of nlbwmon (/etc/config/nlbwmon), editable through UCI (settings.js); offered
+//                whenever the plugin answers, and says so when nlbwmon is not installed
+// Only the open tab is polled, every 3 s. The connection table, the usage and the settings are heavier to compute, so those
+// tabs reuse their last answer until it is 10 s (connections, settings) or 30 s (usage) old, unless the request changed or
+// Refresh was pressed.
 //
 // The view state lives here so it survives the redraw on every poll: the open tab and each tab's filters and sorts.
 import { optional, ubus } from '../../core/ubus.js';
@@ -14,6 +17,7 @@ import { loadWired } from '../network/shared.js';
 import { liveView } from './live.js';
 import { connectionsView } from './connections.js';
 import { usageView } from './usage.js';
+import { loadSettings, settingsEditor, settingsView } from './settings.js';
 import { filterError, periodOptions, protocolOptions } from './model.js';
 
 const state = {
@@ -30,7 +34,7 @@ const state = {
 };
 
 // How old the last answer of a tab may be before a poll asks the router again (Live always does).
-const MIN_AGE = { connections: 10000, usage: 30000 };
+const MIN_AGE = { connections: 10000, usage: 30000, settings: 10000 };
 // The last answer of each tab with the request it answered and when it arrived.
 const cache = new Map();
 // Set by the Refresh button so the next poll skips the cache.
@@ -67,10 +71,10 @@ async function load() {
     const [wired, status] = await Promise.all([loadWired(), optional(ubus('flab.traffic', 'status'))]);
     return { tab: 'live', wired, status };
   }
-  const key = state.tab === 'connections' ? JSON.stringify([state.q, state.proto, state.scope, state.sort, state.limit]) : state.period;
+  const key = state.tab === 'connections' ? JSON.stringify([state.q, state.proto, state.scope, state.sort, state.limit]) : state.tab === 'usage' ? state.period : state.tab;
   const hit = cache.get(state.tab);
   if (!force && hit && hit.key === key && Date.now() - hit.at < MIN_AGE[state.tab]) return hit.data;
-  const data = state.tab === 'connections' ? await loadConnections() : await loadUsage();
+  const data = state.tab === 'connections' ? await loadConnections() : state.tab === 'usage' ? await loadUsage() : await loadSettings();
   cache.set(state.tab, { key, at: Date.now(), data });
   return data;
 }
@@ -82,8 +86,8 @@ export default {
   title: 'Traffic',
   icon: 'activity',
   interval: 3000,
-  css: 'css/traffic.css',
-  isPaused: () => state.paused,
+  css: ['css/forms.css', 'css/traffic.css'],
+  isPaused: () => state.paused || (state.tab === 'settings' && settingsEditor.paused('.nlbw-form')),
 
   load,
 
@@ -123,14 +127,17 @@ export default {
     nodes.connections.push(search, proto.node, scope.node, sort.node, limit.node);
     nodes.usage.push(period.node, hosts);
     show();
+    // The review banner of the Settings tab; saving or discarding there must not be answered from the cache.
+    const banner = settingsEditor.attach(() => { cache.delete('settings'); reload(); });
     return {
-      nodes: [tabs.node, ...nodes.connections, ...nodes.usage, pauseControl(state), refreshControl(() => { forced = true; reload(); })],
+      nodes: [tabs.node, ...nodes.connections, ...nodes.usage, pauseControl(state), refreshControl(() => { forced = true; reload(); }), banner],
       // Offers the tabs the router supports and fills the selectors from the last answer.
       update(data) {
         const status = data.status;
         const options = [['live', 'Live']];
         if (status && status.conntrack !== false) options.push(['connections', 'Connections']);
         if (status?.nlbw) options.push(['usage', 'Usage']);
+        if (status) options.push(['settings', 'Settings']);
         tabs.setOptions(options);
         if (data.tab === 'connections' && data.conn?.ok) proto.setOptions(protocolOptions(data.conn.aggregates));
         if (data.tab === 'usage' && data.periods?.running) period.setOptions(periodOptions(data.periods.periods, data.periods.current));
@@ -145,6 +152,7 @@ export default {
   view(data, rerender) {
     if (data.tab === 'live') return liveView(data, state, rerender);
     if (data.tab === 'connections') return connectionsView(data.conn, state, rerender, state.pick);
+    if (data.tab === 'settings') return settingsView(data, rerender);
     return usageView(data, state, rerender);
   },
 };

@@ -10,8 +10,9 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins.
 > (staged edits, apply with rollback) is part of rpcd, not LuCI, and is what configuration changes use.
 
 It is deployed to tmpfs for testing and removed again with one command; nothing is installed permanently. Like
-LuCI, it signs in with the router's own `root` login and creates no login of its own. Every page only reads the
-router except System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), the channel of each radio on the Wi-Fi page (`/etc/config/wireless`) and the Services page, which starts, stops and restarts services; how configuration changes are made safely is described in
+LuCI, it signs in with the router's own `root` login and creates no login of its own. The pages that only
+read the router are Overview, Mesh, IPsec VPN, Routing, Toolbox (which runs diagnostics and sends a Wake-on-LAN packet) and Logs. The others
+edit its configuration through UCI: System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), Dynamic DNS (`/etc/config/ddns`), Wi-Fi (the radios and wireless networks in `/etc/config/wireless`), Wired network (the VLAN sections of `/etc/config/network`), Bridges and Devices and Interfaces (`/etc/config/network`), WireGuard (the WireGuard interfaces and peers in `/etc/config/network`), Firewall (`/etc/config/firewall`) and the Settings tab of Traffic (`/etc/config/nlbwmon`). The Services page starts, stops and restarts services. How configuration changes are made safely is described in
 [Configuration changes](#configuration-changes) and how services are controlled under [Services](#services-route-services).
 
 ## Contents
@@ -69,10 +70,11 @@ Design principles:
 
 ```
 flab-ui/
-  deploy.ps1                 Deploy / Cleanup script (PowerShell 7)
+  deploy.ps1                 Deploy / Cleanup / Sync script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
   tools/patch-ddns-scripts.sh  Makes the router's ddns-scripts pass every character of a password unchanged (deploy.ps1 runs it)
-  tests/                     bgp/, ddns/, dhcp/, dns/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), routing/, services/, settings/, toolbox/, traffic/, wifi/,
+  tools/router-lock.ps1      Reader-writer lock for sharing one test router between several people or agents (Mode Read or Write, -Suite)
+  tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), nlbwedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -80,17 +82,18 @@ flab-ui/
     css/
       base.css               Fluent tokens, app shell, shared component styles, sign-in screen
       <page>.css             Page-specific styles, loaded on first visit
-      forms.css              Shared form, review-banner, dialog and folding-card styles (System settings, DHCP, DNS, Dynamic DNS)
+      forms.css              Shared form, review-banner, dialog and folding-card styles (System settings, DHCP, DNS, Dynamic DNS and the other editing pages)
+      netedit.css            Styles of the network editors (Bridges, Devices and Interfaces)
     js/
       main.js                Entry point: theme + start the app
       core/                  Framework-level modules shared by all pages
         app.js               Shell: nav pane, command bar, hash routing, refresh loop
         ubus.js              ubus JSON-RPC transport, session, AuthError, optional(), can()
-        uci.js               The one wrapper for rpcd's `uci` object (staged edits, apply with rollback, applyChange())
-        ops.js               stageOps(): turns a change plan (set / add / delete operations) into staged uci calls
+        uci.js               The one wrapper for rpcd's `uci` object (staged edits, getByType(), order(), apply with rollback, applyChange())
+        ops.js               stageOps(): turns a change plan (set / add / delete / order operations) into staged uci calls
         fields.js            Pure form-field model: option readers, value checks (IP, MAC, duration, ...), fieldError()
-        forms.js             Form building blocks: legend, note, fieldRow() (a field with `secret` is a write-only password box; an enum's `blank` is the text of its empty choice), the sticky review banner
-        editpage.js          createEditor(): the draft, banner, save/discard and notes every editing page shares
+        forms.js             Form building blocks: legend, note, fieldRow() (a field with `secret` is a write-only password box; an enum's `blank` is the text of its empty choice), the sticky review banner (its countdown text follows the page's rollback seconds)
+        editpage.js          createEditor(): the draft, banner, save/discard and notes every editing page shares; optional `timeoutS`, `settleMs` and `confirmSave` (a question before a risky change is applied)
         fold.js              Cards that fold down to their header: foldable(), chevron(), reveal() (opens what hides an error) (DHCP pools, Dynamic DNS)
         login.js             Sign-in screen (inline SVG and CSS only)
         dom.js               h() element builder (XSS-safe), byId()
@@ -107,18 +110,19 @@ flab-ui/
       pages/
         index.js             Page registry and the page contract (read this first)
         overview/            index.js, cpu.js, temperatures.js
-        network/             Wired network: index.js, shared.js, topology.js, tile.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), util.js
-        bridges/             index.js, card.js
-        wifi/                index.js (clients, and the editor of the channel), radios.js (radio cards), channels.js (pure model of
-                             the channel change), picker.js (the channel picker); mesh interfaces are left to mesh/
+        network/             Wired network: index.js, shared.js, topology.js, tile.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), vlanpage.js (the VLAN editor's wiring), vlanedit.js (the editable VLAN cards), vlanmodel.js (pure: the VLAN sections, tables, draft, validation, UCI operations, check after a save), util.js
+        bridges/             index.js, card.js (the runtime card; the configuration card of a bridge comes from interfaces/cards.js)
+        wifi/                index.js (clients, and the editor of the radios and wireless networks), radios.js (radio cards), editors.js (the
+                             radio settings and the network forms), schema.js (the option tables), model.js (pure: draft, validation, UCI operations,
+                             check after a save), channels.js (pure model of the channel change), picker.js (the channel picker); mesh interfaces are left to mesh/
         mesh/                index.js, node.js
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
-        wireguard/           index.js, iface.js
-        firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js
+        wireguard/           index.js (page, tiles, the editor), iface.js (interface card, peers table, findings), edit.js (interface form, peer editor, key controls, confirmation), device.js (the add-a-device dialog), schema.js (option tables), model.js (pure: draft, validation, UCI plan, check after a save), addr.js (pure: address math), keys.js (pure: key checks, X25519)
+        firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js; the editor: schema.js (option tables), check.js (value checks), edit.js (reading and the draft), validate.js, plan.js (review list, UCI operations, check after a save), view.js (the draft laid over the live state), describe.js (plain words), itemdialog.js, controls.js, defaults.js (global settings), parts.js
         dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js (daemon and pool cards), boot6.js (network boot card)
         dns/                 DNS: index.js (page, state, the editing wiring), schema.js (the options and their areas, ZONE_FIELDS and ZONE_TYPES), edit.js (pure: draft, changes, problems, the UCI plan, the check after a save), zones.js (pure: the zone blocks of Unbound and the server entries of dnsmasq as a draft: items, changes, validation, plan, checks), model.js (pure: tiles, findings, activity, option areas), zonescard.js (the Zones card), zoneform.js (the dialog that adds or edits a zone), fold.js (the card that folds down to its header, used by Zones and Activity), cards.js (Configuration, Activity)
         ddns/                Dynamic DNS: index.js (page, tiles, the editing wiring), schema.js (the options and their groups), model.js (pure: reading the plugin's status, the draft, validation, the UCI plan, the check after a save, verdicts, intervals, log parsing), cards.js (service cards with status, actions and log; the global card)
-        interfaces/          Devices and Interfaces: index.js, layers.js (pure model), table.js
+        interfaces/          Devices and Interfaces: index.js, layers.js (pure model of the layers), table.js; the editor shared with Bridges: editor.js (the draft, banner, confirmation), cards.js (interface, device and bridge cards), schema.js (option tables), model.js (pure: draft, validation, UCI plan, check after a save), checks.js (value checks)
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
           bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js
@@ -128,7 +132,8 @@ flab-ui/
                              dnstracemodel.js / dnstraceview.js (the DNS trace), pathmodel.js / pathview.js (mtr and AS data),
                              charts.js (SVG ping and throughput charts), tlsdiagram.js (certificate chain and expiry timeline)
         traffic/             Traffic: index.js (page, tabs, state, polling), model.js (pure: interfaces and totals, WAN, findings, entries, NAT,
-                             merging hosts by MAC, protocol rows), live.js, connections.js, usage.js (the three tabs)
+                             merging hosts by MAC, protocol rows), live.js, connections.js, usage.js, settings.js (the Settings tab: cards and saving),
+                             settings-schema.js (the nlbwmon option table), settings-model.js (pure: draft, validation, effects, UCI plan, check after a save)
         services.js          Re-exports services/index.js (keeps the registry's import path)
         services/            Services: index.js (page), model.js (pure: rows, actions, confirmations, outcomes)
         logs/                index.js, entries.js (pure helpers)
@@ -244,8 +249,10 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   The BGP tab is `bgp/`: `tab.js` composes the sections; `topology.js`, `peer.js`, `routes.js`,
   `announced.js` and `system.js` each export card builders that take the backend data; `util.js` holds the
   per-peer color helpers, AS-path chips and prefix sort key.
-- **Pure models**: `firewall/model.js` (zone matrix), `interfaces/layers.js` (network layers),
-  `logs/entries.js` (log filtering and formatting), `settings/model.js` and `dhcp/model.js` (validation and the
+- **Pure models**: `firewall/model.js` (zone matrix) and `firewall/edit.js`, `validate.js`, `plan.js`, `view.js`, `check.js`, `describe.js` (the editor),
+  `interfaces/layers.js` (network layers), `interfaces/model.js` and `interfaces/checks.js` (the network editor),
+  `network/vlanmodel.js` (the VLAN editor), `wifi/model.js` and `wifi/channels.js`, `wireguard/model.js`, `wireguard/addr.js` and
+  `wireguard/keys.js`, `traffic/settings-model.js`, `logs/entries.js` (log filtering and formatting), `settings/model.js` and `dhcp/model.js` (validation and the
   UCI change plan) and `core/fields.js` (field checks)
   have no DOM access and are unit-tested on their own.
 
@@ -265,16 +272,16 @@ return {
 | Plugin | ubus object | Method | Sources |
 |---|---|---|---|
 | `flab.wifi.uc` | `flab.wifi` | `clients` | uci wireless/network/dhcp, ubus `network.wireless`, `dhcp`, `hostapd.<if>`; `hostapd_cli all_sta`, `iw station dump`, `/proc/net/arp`, `ip -6 neigh` |
-| `flab.radio.uc` | `flab.radio` | `status` | uci wireless, ubus `network.wireless`, `hostapd.<if>`; `iw dev/phy info`, `iw survey dump`, `iwinfo`, `iw reg get`; sysfs counters |
+| `flab.radio.uc` | `flab.radio` | `status`; `config` | `status`: uci wireless and network, ubus `network.wireless`, `hostapd.<if>`; `iw dev/phy info`, `iw survey dump`, `iw reg get`, `iwinfo <if> info`; sysfs counters. `config` (the editable wireless config): every option of the `wifi-device` and `wifi-iface` sections except secrets, which are only reported as set; `iwinfo <if> htmodelist/countrylist`, `hostapd -v<feature>` (what the installed hostapd can do; see [Wi-Fi](#wi-fi-route-wifi)) |
 | `flab.mesh.uc` | `flab.mesh` | `status` | uci wireless (`wifi-iface mode=mesh`), ubus `network.wireless`; `iw dev/station dump`, `iw mpath dump`, `iw mpp dump`, `iw get mesh_param`; sysfs counters |
-| `flab.wireguard.uc` | `flab.wireguard` | `status` | uci network (`proto wireguard` interfaces and `wireguard_<if>` peer sections), uci firewall (zone); `wg show <if> public-key/listen-port/peers/endpoints/allowed-ips/latest-handshakes/transfer/persistent-keepalive` (the single-field forms never print the private or pre-shared key); sysfs MTU and counters |
-| `flab.firewall.uc` | `flab.firewall` | `status` | uci firewall (defaults, zones, forwardings, `rule`, `redirect`, `nat`, `include`, `ipset`), uci network (interface names); `nft -j list ruleset` (per-rule hit counters matched through the `!fw4: <name>` comment, reject/drop chain counters per zone, the devices behind each zone, flowtable devices, base chain policies); procfs conntrack count and limit |
-| `flab.network.uc` | `flab.network` | `status`; `cable_test` (`port`) | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `ethtool --show-eee` (EEE), `ethtool -m` (optical modules, only for ports that are optical cages), `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles, port order, swconfig switches); `swconfig list` / `dev <switch> help` / `dev <switch> show` (switches that are not DSA); `bridge vlan show` (when iproute2's `bridge` is installed) and uci network `bridge-vlan` sections (the VLAN tables); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines). `cable_test` runs `timeout 30 ethtool --cable-test <port>` on one physical port after strict validation, only when asked (its ACL grant is under `write`; see [Wired network](#wired-network-route-network)) |
+| `flab.wireguard.uc` | `flab.wireguard` | `status` | uci network (`proto wireguard` interfaces and `wireguard_<if>` peer sections: every option except the secret ones, which are only reported as set; the names of the named sections), uci firewall (zone), uci uhttpd and dropbear (the administration ports); `wg show <if> public-key/listen-port/peers/endpoints/allowed-ips/latest-handshakes/transfer/persistent-keepalive` (the single-field forms never print the private or pre-shared key); sysfs MTU and counters; `/lib/netifd/proto/wireguard.sh` (whether netifd has the protocol handler); `/proc/net/tcp` and `/proc/net/tcp6` (established connections to the router's web and SSH ports, see [WireGuard](#wireguard-route-wireguard)) |
+| `flab.firewall.uc` | `flab.firewall` | `status` | uci firewall (defaults, zones, forwardings, `rule`, `redirect`, `nat`, `include`, `ipset`; every rule and port forward carries its section name), uci network (the interfaces and whether each is disabled), ubus `network.interface dump` (the router's addresses on each interface); `nft -j list ruleset` (per-rule hit counters matched through the `!fw4: <name>` comment, reject/drop chain counters per zone, the devices behind each zone, the zones that have an `input_<zone>` chain (`loaded_zones`), flowtable devices, base chain policies); procfs conntrack count and limit. A zone without a policy of its own reports the one of the defaults |
+| `flab.network.uc` | `flab.network` | `status`; `config`; `cable_test` (`port`) | `config` (the editable part of the network config): uci network (the `interface` and `device` sections with every option except secrets, the number of sections of each other type, and the `bridge-vlan` sections' device and VLAN). An option whose name says it is a secret (`password`, `passwd`, `pin`, `pincode`, anything containing `passw`, `secret`, `psk`, `key`, `token` or `credential`: a PPPoE or modem password, a SIM PIN, a WireGuard private or pre-shared key) is never returned, only whether it is set (`secrets`). `status`: ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `ethtool --show-eee` (EEE), `ethtool -m` (optical modules, only for ports that are optical cages), `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles, port order, swconfig switches); `swconfig list` / `dev <switch> help` / `dev <switch> show` (switches that are not DSA); `bridge vlan show` (when iproute2's `bridge` is installed) and uci network `bridge-vlan` sections (the VLAN tables); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines). `cable_test` runs `timeout 30 ethtool --cable-test <port>` on one physical port after strict validation, only when asked (its ACL grant is under `write`; see [Wired network](#wired-network-route-network)) |
 | `flab.diag.uc` | `flab.diag` | `status`, `start` (`tool`, `host`, options), `read` (`id`, `from`), `stop` (`id`), `wake` (`mac`, `iface`) | busybox `ping` and `traceroute`, `mtr --raw`, `iperf3 -s`, `kdig` for the DNS trace, the first of `dig`, `kdig`, `drill`, `nslookup`, and `openssl s_client` / `x509`, run detached under `timeout` with their output in `/tmp/flab-diag/<id>/out`; `ip route get` and `ip route show default` for the connectivity check; `etherwake` or `socat` for Wake-on-LAN, with the host list from uci dhcp hosts, `dhcp ipv4leases`, `/tmp/dhcp.leases`, `/etc/ethers` and `/proc/net/arp`; ubus `network.interface dump` and uci firewall for the iperf3 server's addresses and zones; `command -v` for the tools, `/sys/class/net` for the interface names, `/tmp/resolv.conf.d/resolv.conf.auto` for the upstream resolvers; every argument validated before a command line is built |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
 | `flab.routing.uc` | `flab.routing` | `status`, `lookup` (`dst`, `src`, `iif`) | `ip -4/-6 route show table all`, `ip -4/-6 rule show`, `/etc/iproute2/rt_tables`, `command -v birdc`, `pidof charon`, uci network (only the `rule` and `rule6` sections, and only their section name, family, priority and lookup table); `lookup` runs `ip route get` and `ip route get ... fibmatch` for a validated address, optional source address and interface name |
-| `flab.traffic.uc` | `flab.traffic` | `status`; `connections` (`q`, `limit`, `sort`, `proto`, `scope`); `usage_periods`; `usage` (`period`, `group`) | procfs `/proc/net/nf_conntrack` and `/proc/sys/net/netfilter/nf_conntrack_{count,max,acct}`; `command -v nlbw`, `pidof nlbwmon`, `nlbw -c list`, `nlbw -c json -g <group> [-t <period>]`; names from uci dhcp (`host` sections), `dhcp ipv4leases`/`ipv6leases` (ubus, odhcpd), `/tmp/dhcp.leases`, `/tmp/hosts/*`, `/etc/ethers`, `/proc/net/arp`, `ip -6 neigh show` (see [Traffic](#traffic-route-traffic)) |
+| `flab.traffic.uc` | `flab.traffic` | `status`; `connections` (`q`, `limit`, `sort`, `proto`, `scope`); `usage_periods`; `usage` (`period`, `group`); `nlbwmon_paths` (`dir`, `protocols`) | procfs `/proc/net/nf_conntrack` and `/proc/sys/net/netfilter/nf_conntrack_{count,max,acct}`; `command -v nlbw`, `pidof nlbwmon`, `nlbw -c list`, `nlbw -c json -g <group> [-t <period>]`; names from uci dhcp (`host` sections), `dhcp ipv4leases`/`ipv6leases` (ubus, odhcpd), `/tmp/dhcp.leases`, `/tmp/hosts/*`, `/etc/ethers`, `/proc/net/arp`, `ip -6 neigh show` (see [Traffic](#traffic-route-traffic)); for `nlbwmon_paths` the ucode functions `stat`, `lsdir`, `realpath` and `open` on the database directory and the protocol file, and `/proc/mounts` (never a shell) |
 | `flab.dns.uc` | `flab.dns` | `status` (no arguments) | procd `service list` (ubus), `pidof unbound`/`pidof dnsmasq`, `command -v unbound`/`dnsmasq`, `netstat -lntup`, `unbound-control status`/`stats_noreset`/`list_forwards`/`list_local_data`, `unbound -V`, the generated `/var/lib/unbound/unbound.conf` and `unbound_ext.conf` (forward-zone clauses), `dnsmasq --version`, ubus `dnsmasq metrics`, uci unbound and uci dhcp (the `unbound` and `dnsmasq` sections), `/tmp/resolv.conf.d/resolv.conf.auto`, `/tmp/hosts/*`, `/tmp/dhcp.leases`, `/proc/<pid>/stat` and `/proc/uptime` (see [DNS](#dns-route-dns)) |
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
 | `flab.system.uc` | `flab.system` | `cpu` | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime` |
@@ -282,11 +289,30 @@ return {
 | `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
 | `flab.services.uc` | `flab.services` | `list`; `control` (`name`, `action`) | `/etc/init.d` (executable files) and `/etc/rc.d` (`S<NN><name>` = starts at boot), `netstat -lntup` and `/proc/sys/net/ipv4/ip_local_port_range` (the listening sockets) for `list`; `control` runs `/etc/init.d/<name> start\|stop\|restart\|enable\|disable` after strict validation (see [Services](#services-route-services)); its ACL fragment grants `list` under `read` and `control` under `write` |
 
-The System settings page needs no plugin: it reads `/etc/config/system` through rpcd's own `uci` object, whose
-calls (on the `system` config only) are granted by `rpcd/acl.d/flab-settings.json`; the DHCP page likewise uses
-`rpcd/acl.d/flab-dhcp.json` (ubus `dhcp` methods, `uci` read and write on `dhcp` and `network` (the page reads and
-writes only the `globals` section of the latter, for the server DUID), and reading `/tmp/*.leases` through
-rpcd's `file` object for dnsmasq's lease file).
+The System settings and DHCP pages need no plugin of their own. Pages that edit a configuration through rpcd's own `uci` object need an ACL fragment that grants the `uci` methods on
+the configs they touch (in `rpcd/acl.d/`; the page and plugin sections name them):
+
+| Fragment | `uci` read (`get`, `changes`) and write (`set`, `add`, `delete`, `revert`, `apply`, `confirm`, `rollback`; `order` where noted) on |
+|---|---|
+| `flab-settings.json` | `system` |
+| `flab-dhcp.json` | `dhcp` and `network` (the page reads and writes only the `globals` section of the latter, for the server DUID); also ubus `dhcp` methods and reading `/tmp/*.leases` through rpcd's `file` object for dnsmasq's lease file |
+| `flab-dns.json` | `unbound` and `dhcp` |
+| `flab-firewall.json` | `firewall` (with `order`) |
+| `flab-traffic.json` | `nlbwmon` |
+| `flab-vlan.json` | `network` (with `order`; the VLAN editor of the Wired network page) |
+| `flab-network.json` | `network`: `changes` and the write methods only, no `get` (Bridges, Devices and Interfaces, which read the config through `flab.network config`) |
+| `flab-radio.json` | `wireless`: `changes` and the write methods only, no `get` (the Wi-Fi page reads it through `flab.radio config`) |
+| `flab-wireguard.json` | `network`: `changes` and the write methods only, no `get` (WireGuard reads it through `flab.wireguard status`) |
+| `flab-ddns.json` | `ddns`: `changes` and the write methods only, no `get` (Dynamic DNS reads it through `flab.ddns status`) |
+
+**Secrets.** A config that holds secrets is never read by the browser with `uci get` where the page can avoid it: `wireless` (Wi-Fi keys),
+`network` (PPPoE passwords, WireGuard keys) and `ddns` (passwords and tokens) are read through the plugin of the page, which leaves
+every secret out and reports only whether it is set, and the read-back after a save goes through the same plugin. Their password and key fields are
+write-only: empty keeps the stored value, a typed value replaces it, and the review list shows "new value (hidden)" or nothing. The
+configs a page reads with `uci get` itself (`system`, `dhcp`, `unbound`, `firewall`, `nlbwmon`) hold none. The VLAN editor reads the network config
+with `uci get` filtered by section type (`bridge-vlan`, `device`, `switch`, `switch_vlan`, `switch_port`), never the whole config, and a test checks
+that. rpcd cannot restrict `uci get` to section types, and root holds every fragment, so a root login can still call `uci get network` (through
+`flab-dhcp.json` or `flab-vlan.json`); the pages never do.
 
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
@@ -312,7 +338,9 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 - **Whitelist fields.** Build the response explicitly; never pass a raw dump through. `flab.ipsec`
   parses `ip xfrm state` but only copies algorithm names, sizes, counters and encapsulation; the key hex
   is dropped. `flab.wifi` never copies Wi-Fi keys from `network.wireless status`; `flab.wireguard` only uses
-  `wg show` forms that never print keys.
+    `wg show` forms that never print keys. The plugins that return an editable config (`flab.radio config`,
+    `flab.network config`, `flab.wireguard status`, `flab.ddns status`) return every option except those whose name says
+    it holds a secret, and report only that such an option is set.
 - **Redact free text.** `flab.logs` replaces values after `password`, `psk`, `secret`, `token`, `key` and
   similar names with `<redacted>`, because daemons sometimes log them and the page shows them to anyone who
   can sign in (and they end up in downloaded files).
@@ -337,12 +365,12 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
   ACL and changes no rpcd configuration, so it can never grant itself or anyone else more than root already has,
   and nothing about it persists in `/etc/config/rpcd`.
 - **What protects the router** is therefore the root password, HTTPS, the ACL fragments (each lists exactly the
-  ubus calls and uci configs its page uses; the settings fragment grants `uci` write on `system` only), and the
+  ubus calls and uci configs its page uses; each editing fragment grants `uci` write on the configs of its page only, for example `system` for the settings fragment and `nlbwmon` for the Traffic one), and the
   care the pages take: input is validated before it is staged, changes are applied with an automatic rollback,
   and nothing secret is forwarded or displayed (see [Backend rules](#backend-rules)).
 - **Session.** The session id and the ACLs rpcd returned live in `sessionStorage` (this tab only, gone when it
   closes). The session expires after 900 s without use, and Sign out destroys it on the router.
-- **Known exposure.** The page lists and edits the options of `/etc/config/system` for anyone who can sign in as
+- **Known exposure.** The editing pages list and edit the options of their configs (for example `/etc/config/system`) for anyone who can sign in as
   root; there is no per-option restriction and none is needed. Plugins run inside rpcd with its privileges, which
   is why they whitelist the fields they return.
 - **Controlling services.** `flab.services control` is the one call that runs a program on request. It never
@@ -357,20 +385,21 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 
 ## Configuration changes
 
-System settings, DHCP, DNS and the channel of the Wi-Fi radios change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
+System settings, DHCP, DNS, Dynamic DNS, Wi-Fi, Wired network (VLANs), Bridges, Devices and Interfaces, WireGuard, Firewall and the Traffic settings change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
 page with every control disabled and a note saying why.
 
 **Flow** (all of it is rpcd's `uci` object, wrapped by `www/js/core/uci.js`; pages call `applyChange()`, not the
 single steps):
 
-1. **Stage.** `uci.set`, `uci.add`, `uci.delete` write into the session's staging area; the configuration on
+1. **Stage.** `uci.set`, `uci.add`, `uci.delete` and `uci.order` (the sections of a config in a new order; the firewall rules use it) write into the session's staging area; the configuration on
    flash is untouched. rpcd keeps the staging area **per session**, so a second session never sees it.
+   `uci.get` reads a whole config and `uci.getByType(config, type)` only the sections of one type, for a config that holds secrets elsewhere.
 2. **Review.** `uci.changes()` lists what is staged and `uci.pending()` counts it; `uci.revert()` throws it
    away. `set` takes values as given (rpcd rejects `null`); to remove an option use `uci.delete(config,
    section, [option])`.
 3. **Apply.** `uci.apply()` commits the staged changes, reloads the affected services (procd reload
    triggers, for example `system` and `sysntpd` on a `system` change) and starts a countdown
-   (`APPLY_TIMEOUT_S`, 30 s).
+   (`APPLY_TIMEOUT_S`, 30 s; a page may set its own length through the editor's `timeoutS`, as Devices and Interfaces does with 90 s).
 4. **Verify and confirm.** The page reads the config back (which also proves the router is still reachable) and
    then calls `uci.confirm()` within the countdown. If the check fails the page calls `uci.rollback()` at once;
    if the page is closed or the connection is cut, the countdown runs out and rpcd restores the previous
@@ -388,7 +417,10 @@ happened; the router is on its previous configuration after every failure.
   (`settings/model.js`: the form's draft, validation, the change list, the UCI operations, the read-back check),
   so the page is only controls. Field checks, form rows, the sticky review banner and the draft, save and discard
   logic are shared (`core/fields.js`, `core/forms.js`, `core/ops.js`, `core/editpage.js` and `css/forms.css`): a
-  page creates an editor with `createEditor()`, which also gives it `isPaused` and the notes above the form.
+  page creates an editor with `createEditor()`, which also gives it `isPaused` and the notes above the form. The editor takes `timeoutS` (the
+  countdown, which the review banner repeats), `settleMs` (how long to wait after the apply before verifying) and `confirmSave` (an async question asked before
+  anything is applied; false cancels the save: the Firewall and the network pages use it for a change that may cut the administrator off). A change plan
+  (`core/ops.js`) is a list of `set`, `add`, `delete` and `order` operations; an `add` may carry an `id` that a later `order` uses for the section rpcd named.
 - Validate input in the page before staging; `uci` itself has no schema. Show the effect of the edits (the
   review list) before saving, and disable Save while anything is invalid.
 - Write only what changed, delete an emptied option instead of storing an empty string, and leave options the
@@ -398,12 +430,12 @@ happened; the router is on its previous configuration after every failure.
 - Mirror a change made to the router's configuration into `build/MT6000/etc/config/` in this repository.
 
 **Status.** `core/ubus.js` and `core/uci.js` (including `applyChange`) are unit-tested against a fake transport
-(`tests/network/uci.test.mjs`); the System settings, DHCP, DNS and Wi-Fi suites test their models and drive the whole flow in a
+(`tests/network/uci.test.mjs`); the suites of the editing pages (System settings, DHCP, DNS, Dynamic DNS, Wi-Fi, Wired network VLANs, Bridges and Devices and Interfaces, WireGuard, Firewall and the Traffic settings) test their models and drive the whole flow in a
 browser against a mock router. The real path was exercised against the router with the System settings model and
 `applyChange`,
 restoring the configuration afterwards: a confirmed change (zone, description, log port, NTP servers and
 switch), the removal of options, a custom zone rule, a forced rollback and the countdown rollback of an
-unconfirmed apply.
+unconfirmed apply. The Wi-Fi, Wired network VLAN, Bridges, Devices and Interfaces, WireGuard, Firewall and Traffic settings editors are exercised through their suites against mock routers only; the suites block every write on the real router.
 
 ## Deploy, test, clean up
 
@@ -412,6 +444,9 @@ Requires PowerShell 7, `ssh`/`scp` with key auth to the router (default `root@op
 ```powershell
 # Install. Open https://<router>/flab/ and sign in as root with the router's root password
 pwsh -File flab-ui\deploy.ps1 -Action Deploy
+
+# Copy only www/ over the deployed UI (nothing is removed, rpcd is not restarted, no session ends)
+pwsh -File flab-ui\deploy.ps1 -Action Sync
 
 # Remove every trace from the router
 pwsh -File flab-ui\deploy.ps1 -Action Cleanup
@@ -433,9 +468,15 @@ Things to know:
 - `rpcd` is **restarted**, so every deploy/cleanup ends the active rpcd sessions (LuCI's and flab-ui's).
 - Flash writes are limited to the rpcd plugin and ACL files, the symlink, and the two ddns-scripts files the patch replaces (the originals are kept next to them as `*.flab-orig`); Cleanup removes or restores them.
 - `scp -O` is required (dropbear has no sftp-server).
-- After editing a front-end file, a quick iteration is `scp -O <file> root@<router>:/tmp/flab/<path>` and
-  Ctrl+F5. Backend changes need the file copied to `/usr/share/rpcd/ucode/` (or `/usr/share/ucode/flab/`) and
+- After editing a front-end file, `deploy.ps1 -Action Sync` copies `www/` to the deployed UI without restarting rpcd (the UI must already be
+  deployed; a changed plugin or ACL fragment needs a full Deploy); Ctrl+F5 reloads the page. For a single file, `scp -O <file> root@<router>:/tmp/flab/<path>` does the same. Backend changes need the file copied to `/usr/share/rpcd/ucode/` (or `/usr/share/ucode/flab/`) and
   `/etc/init.d/rpcd restart`.
+- **Sharing one router.** A full Deploy or Cleanup ends every rpcd session, so it must not run while a browser test is signed in.
+  `tools/router-lock.ps1` is a reader-writer lock for sharing one test router between several people or agents:
+  `-Mode Read` for anything that uses the router and the deployed UI without replacing them (a `run.ps1`, `run.ps1 -Browser`, `deploy.ps1 -Action Sync`; any number
+  at once) and `-Mode Write` for a full Deploy or Cleanup (waits for the readers, and no new reader starts meanwhile). `-Suite <name>` names the suite a command runs,
+  because two runs of one suite use the same folders on the router and must queue. For example
+  `pwsh -File flab-ui\tools\router-lock.ps1 -Mode Read -Suite ddns -Command 'pwsh -NoProfile -File flab-ui\tests\ddns\run.ps1 -Browser'`.
 - To test a plugin without rpcd: copy it and `rpcd/lib/flab/` to `/tmp`, then run it with
   `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile).
 
@@ -557,7 +598,9 @@ address helpers the three network pages share.
   cable shows no diagnostics. Optical ports have no cable test.
 - **VLAN tables**: a card per bridge that filters VLANs or has VLANs (a matrix of VLANs against ports: tagged, untagged and the
   PVID), read with `bridge vlan show` when iproute2's `bridge` is installed and otherwise built from the `bridge-vlan` sections of
-  the network config (the card says which); and a card per swconfig switch with its VLAN groups.
+  the network config (the card says which); and a card per swconfig switch with its VLAN groups. A login that may change the
+  network config sees an **Edit VLANs** button on each card, and a bridge that has Ethernet ports but no VLAN table gets a small
+  **Set up VLAN filtering** card; a login that may not sees neither.
 - **swconfig switches** (older boards whose switch ports are not network devices): `swconfig list` finds them, `dev <switch>
   help` gives the driver and the CPU port, `dev <switch> show` the link, speed, duplex and PVID of each port and the VLAN
   groups; `/etc/board.json` names the CPU netdev and the LAN/WAN role of each port. Each user port becomes a port named
@@ -565,6 +608,47 @@ address helpers the three network pages share.
   rather than a jack, and a port takes its bridge and VLAN devices from the VLAN devices (`eth0.1`, ...) that carry its VLAN
   groups. This follows the documented output of swconfig and is covered by fixtures only: this repository's router has no
   swconfig switch.
+- **VLAN editor** (`vlanpage.js`, `vlanedit.js`, `vlanmodel.js`): **Edit VLANs** opens editable cards in place of the read-only
+  ones, one matrix per bridge and per swconfig switch, each cell a drop-down. It edits the network **config**, not the live
+  table: when the table the kernel runs (`bridge vlan show`) differs from the config the card says so and names the differences,
+  and the read-only card keeps saying where its table was read. The config is read only while the editor is open and only by
+  section type (`uci get` with `type`: `bridge-vlan`, `device`, `switch`, `switch_vlan`, `switch_port`), because the whole
+  network config holds secrets (PPPoE passwords, WireGuard keys) that the page never asks for; the page does not poll while the
+  editor is open (Refresh reloads). The changes use the same flow as the other editing pages: the review banner lists what
+  changes from what to what, nothing is written until **Save and apply**, then the change is staged, applied with the rollback
+  countdown, the config is read back by type and netifd's interface list (and the plugin) must still answer, and only then is it
+  confirmed; a router that kept something else, or that cannot be reached, gets the old configuration back and the edits stay
+  in the form. Changes staged earlier in the session are shown with a "Discard them" button. **Done** closes the editor (disabled
+  while edits are unsaved; Discard edits in the banner drops them). Its ACL fragment is `rpcd/acl.d/flab-vlan.json`
+  (see [Backend](#backend-rpcd-plugins)); the editor adds no plugin.
+  - *Bridges* (DSA and VLAN-filtering bridges): one row per VLAN (`config bridge-vlan`: `option device`, `option vlan`,
+    `list ports 'lan1:t'` / `'lan2:u*'`, `option local`), one column per port of the bridge (the ports of the bridge's `config
+    device` section, else its Ethernet members), and a **Router** column (`local`: the router itself is a member and can have an
+    address on the VLAN). A cell is not a member, tagged (`t`), untagged (`u`), untagged + PVID (`u*`) or, if the config has it,
+    tagged + PVID (`t*`). An entry the edit does not touch keeps its spelling and place in the list; a VLAN is added with its id
+    (1 to 4094), removed with its x button (its section is deleted), and its id cannot be edited (remove and add instead). A
+    separate checkbox **VLAN filtering** sets `option vlan_filtering` on the bridge's device section (a bridge defined in an
+    interface section instead has no such section, and the page says it cannot switch it); it is its own line in the review.
+    Errors (block Save): an id that is not 1 to 4094, a VLAN twice, two PVIDs on one port, a port that is not a member of the
+    bridge put into a VLAN. Warnings (do not block): VLAN filtering off while the table is edited (the table has no effect
+    until the bridge filters), turning filtering on or off (the whole table takes effect at once; ports in no VLAN carry
+    nothing), a VLAN device on the bridge (`br-lan.100`) that the table does not cover once the bridge filters, a port untagged
+    in several VLANs or untagged with no PVID anywhere (what happens to its untagged frames depends on the netifd version), a
+    member port in no VLAN, a VLAN with no member. **Lockout warnings** come from netifd's interface list: the interfaces that are
+    up and have an address on the bridge's untagged VLAN or on `<bridge>.<vid>` are known, and removing such a VLAN, the router
+    leaving it, or a port leaving or retagging it is warned about with the interface and address; the interface whose address
+    is the one the page was opened with is called out ("You are connected through this address"). Only a bridge that filters (or
+    is switched to filter) is checked for this, since the table is not in force otherwise.
+  - *swconfig switches*: one row per `config switch_vlan` (`option device`, `option vlan` = the group number, `option vid` when
+    it differs, `option ports '0t 1 2 3'`), one column per user port and one for the CPU port (a new group starts with the CPU
+    port tagged and the lowest free group number); a cell is not a member, tagged (`3t`) or untagged (`3`). A checkbox sets
+    `option enable_vlan` on the switch's `config switch` section. `switch_port` sections (the PVID of a port) are shown in a note
+    and left as they are. Errors: an id or group number that is invalid or twice, a port untagged in more than one group (the
+    documentation: an untagged port can only be in one VLAN). Warnings: VLANs off, turning them on or off, a port in no group,
+    the CPU port in no group, or leaving the group that carries an interface of the router. **This is covered by a mock only**:
+    this repository's router has no swconfig switch, so the swconfig editing has never run against a real one.
+  - *What it does not do*: ranges of VLAN ids, `alias`, `local_pvid` and the multicast options of a `bridge-vlan` section (left as
+    they are), ports of wireless interfaces, a bridge defined by an `interface` section.
 - **Cable test**: a button in the Link column of each twisted-pair port (not the internal link to a switch, a swconfig port or an
   optical cage) runs `ethtool --cable-test` after a confirmation that says the PHY drops the link for several seconds (and
   that nothing is interrupted for a port without link). The result lists the four pairs (OK, open circuit, short within a pair,
@@ -596,6 +680,23 @@ bytes per entry; the port number is the low byte at offset 6 plus the high byte 
 `bridge` utility is not installed. The CPU link (the DSA conduit) carries every switch port's traffic, so it
 is excluded from the throughput tile.
 
+**Editing** (the editor is shared with [Devices and Interfaces](#devices-and-interfaces-route-interfaces); `bridges/index.js` places the cards, `interfaces/cards.js` builds them): below the runtime card of each bridge sits the **configuration card** of the `device` section that defines it
+(foldable, closed until opened) and, after the last bridge, **Add bridge**. A configured bridge that is not running (no ports and no Wi-Fi) has a configuration card of its own.
+- **Ports** are a grid of check boxes: every Ethernet port the router has (not the DSA conduit, and not the ports of a swconfig
+  switch, which are not devices; their VLAN devices are), VLAN devices (also ones added in the same form, but not one that sits on the
+  bridge itself), the link state, and which bridge a port is in now. A port can be in one bridge only: ticking a port that another bridge
+  of the form holds moves it (the review lists both bridges). A device name can be typed to add one the grid does not list (it must exist on the
+  router, or be a port the config already names). Wi-Fi interfaces are not ports here: they join through the wireless `network` option, and the card says so.
+- **Options**, in folding groups with a hint each: VLAN filtering and "keep the bridge without ports"; spanning tree (STP, priority,
+  forward delay, hello time, max age, MAC aging); multicast (IGMP snooping, querier, the intervals, hash size, robustness); packet
+  handling (MAC address, MTU, IPv6 MTU, transmit queue, IPv6, promiscuous mode, ARP options, IGMP/MLD version, multicast to unicast, port isolation, DAD transmits). Options the page has no control for
+  are listed read only and kept.
+- **Validation** (errors block Save): device names (letters, digits, `_ . : -`, 15 characters, not taken), ports that do not exist or are bridges or listed
+  twice, a port in two bridges, numbers and ranges from the documentation, the query response interval below the query interval. Warnings: a bridge
+  without ports, a forward delay below the 802.1D minimum with STP, the same MAC on two devices, ports the config names that the router lacks.
+- **Dangerous changes**: removing a port from, changing the VLAN filtering of, or removing the bridge that carries the management
+  network is flagged in the review banner and asks for a confirmation before anything is applied (see Devices and Interfaces). Saving, the draft shared with Devices and Interfaces and the ACL are described there too.
+
 ### Wi-Fi (route `#wifi`)
 Two sections, both refreshed every 5 s.
 
@@ -605,19 +706,76 @@ antennas, clients); the configuration next to what is actually running (channel,
 regulatory limit of that channel, country vs active regulatory domain, cell density, beacon interval,
 options); channel utilization (busy, RX and TX airtime as a percentage and chart, derived in the browser from
 the driver's cumulative survey counters); the channels allowed by the regulatory domain (a picker to change the
-channel, below) with the running block highlighted and DFS (radar) channels marked; and a table of the SSIDs (BSSID,
+channel, see Editing below) with the running block highlighted and DFS (radar) channels marked; and a table of the SSIDs (BSSID,
 networks, security, clients, live and total traffic, 802.11r/k/v, WPS, OCV, hidden, isolation, MAC filter
 policy with entry count, BSS status). Findings appear when something is off: radio down, setup failing,
 running channel different from the configured one, high noise, busy channel, DFS availability check in
-progress, open network, country mismatch. Only whitelisted options are copied: keys, passwords, FT key
-material and MAC lists never leave the router. Mesh (802.11s) interfaces are not listed here: a radio
+progress, open network, country mismatch. `status` copies only whitelisted options: keys, passwords, FT key
+material and MAC lists never leave the router through it (`config`, below, returns the MAC list of a filter because it is edited there). Mesh (802.11s) interfaces are not listed here: a radio
 carrying one shows a `mesh · <id>` badge linking to the Mesh page, and mesh peers are not in the clients list.
 
-**Changing the channel** (`wifi/channels.js` model, `wifi/picker.js` control, the shared editor of
-`core/editpage.js`): each radio card shows its allowed channels as tiles. Only the `channel` option of the radio's
-`wifi-device` section is edited (a channel number or `auto`); the width stays as configured, so a channel is only
-selectable when the whole block of that width fits around it in the regulatory domain (others are hatched).
-- **Preview**: hovering or focusing a tile shows the block the radio would use at its configured width, in blue,
+**Editing the wireless configuration** (`wifi/schema.js` option tables, `wifi/model.js` pure model, `wifi/editors.js` controls,
+`wifi/channels.js` and `wifi/picker.js` for the channel, the shared editor of `core/editpage.js`): the page edits
+`/etc/config/wireless`, the radios (`wifi-device`) and the wireless networks (`wifi-iface` of mode `ap` and `sta`; mesh
+interfaces are the Mesh page's). Everything it offers comes from what the router reports (radios, bands, channels, supported
+modes, countries, hostapd features), so it works on any hardware.
+- **Reading without secrets**: the configuration is read through `flab.radio config`, which returns every option of every
+  `wifi-device` and `wifi-iface` section except the ones that hold a secret (`key`, `key1`-`key4`, `sae_password`,
+  `auth_secret`, `acct_secret`, `dae_secret`, `identity`, `password`, `priv_key_pwd`, `wps_pin`, `r0kh`, `r1kh`, and any
+  option whose name says password, passphrase, secret, pwd or token): for those it reports only that they are set. The
+  browser never calls `uci get` on this config (the ACL fragment does not grant it), and the read-back after a save goes
+  through the same method. Password fields are write-only: they are empty and say "stored; leave empty to keep it", a typed value
+  replaces the stored one, and a value that was typed is never shown in the review list. The MAC list of a MAC filter is
+  returned (it is edited here); `status` still only reports its entry count. Sections of other types (`wifi-vlan`,
+  `wifi-station`, which can hold keys) are listed by name only.
+- **Radio settings**: a foldable block per radio card with the options of the OpenWrt documentation, each with a hint: disable
+  the radio, mode and channel width (`htmode`), country, transmit power, cell density, legacy 802.11b rates, minimum client
+  standard, coexistence scan, beacon interval, 802.11d, distance, RTS and fragmentation thresholds, antenna gain and the hostapd
+  log level. The mode list is what the hardware reports: the htmodes `iwinfo` lists for a running interface, else the widths the
+  phy's capabilities advertise for the radio's band (HT, VHT, HE, EHT; the explicit `HT40+` and `HT40-` on 2.4 GHz and `NOHT` are
+  added); a radio whose phy is unknown gets a text box checked for its form. The country list comes from the driver
+  (`iwinfo <if> countrylist`), else a text box. Options that apply to one band are shown on it (legacy rates and the coexistence
+  scan on 2.4 GHz) or when they are already set.
+- **Wireless networks**: one foldable editor per `ap` and `sta` network on each radio, with groups (network, enterprise
+  authentication, security options, clients and traffic, roaming 802.11r/k/v), and buttons that add an access point or a
+  client network. Options: SSID, the networks it is attached to (a check box per network interface of the router), encryption
+  (what the installed hostapd can do: SAE and OWE and WPA-Enterprise are offered only when `hostapd -vsae`, `-vowe`, `-veap`
+  succeed; a value the file already holds, such as WEP or TKIP, stays selectable), the password, hidden SSID, disable,
+  RADIUS server, port and secret and accounting for an enterprise access point, EAP method, identity, password and
+  certificates for an enterprise client, protected management frames, SAE derivation, OCV, WPS, isolation, client limit,
+  MAC filter and list, WMM, DTIM, inactivity, multicast to unicast, proxy ARP, 802.11r (mobility domain, FT over DS, local PSK
+  generation, PMK-R1 push, NAS and R1 key holder, reassociation deadline), 802.11k, 802.11v, WNM sleep, time advertisement. An
+  option that does not apply to the mode or the encryption is hidden, keeps its value in the file and is not written. A new
+  network is added as a named section (`wifinetN`); a section without a name (`cfgXXXXXX`) is addressed by its generated name,
+  and the check after a save finds the networks by position because that name changes with the content.
+- **Validation** (errors block Save and mark the control; warnings do not): only what the draft changes is checked, so an
+  odd configuration does not block an unrelated edit. Errors: an SSID over 32 bytes or empty, a network attached to nothing, a
+  password that is not 8 to 63 printable ASCII characters or 64 hexadecimal digits, a missing password on a protected network
+  (a stored one counts), an encryption the hostapd cannot do, missing RADIUS or EAP fields, protected management frames
+  disabled with WPA3 or OWE, malformed MAC addresses, malformed 802.11r identifiers, numbers out of range, a mode the hardware does not
+  report, a country the driver does not know, a channel the new mode cannot carry.
+- **Warnings for dangerous changes**: switching a radio off (how many networks and clients it takes down, and that the router
+  undoes the change by itself 30 seconds after the apply if the admin loses the connection), changing the SSID,
+  password, encryption, networks, protected frames or hiding of a network that has clients (their number, and that the admin may be
+  connected through it), removing or disabling a running network, an open network (who can join and what they reach), WEP, WPA1
+  or TKIP, two networks with the same SSID on one radio, an access point and a client network sharing a radio (they share its
+  channel), a power above the regulatory limit, changing the country, the 802.11r settings that break fast transition with
+  WPA3, an allow filter with an empty list, a 40 MHz channel on 2.4 GHz, legacy rates, requiring 802.11ac, a hidden SSID.
+- **Saving**: stage, apply with the rollback countdown (rpcd reloads Wi-Fi), read the configuration back through
+  `flab.radio config` and compare every shown option (a typed password: that one is now stored), then wait up to 16 seconds for each
+  changed radio to be up with its new or changed networks running (a radio that is switched off, or has no enabled network, is not
+  waited for); if the check or the wait fails the change is rolled back. A radio on a DFS channel counts as up while it listens for radar.
+- Polling is suspended while edits are pending, a control has the focus, the pointer is over a channel picker or a save runs. A login that may not write sees the
+  forms read only; a router whose `flab.radio` has no `config` method gets the radios read only with a note, and a radio whose phy did not list its
+  channels gets the plain channel strip.
+- The page needs the ACL fragment `rpcd/acl.d/flab-radio.json`: `flab.radio` `status` and `config`, `uci changes` (read) and the
+  `uci` write methods on `wireless`. It does not grant `uci get`.
+
+**The channel picker** (`wifi/channels.js` model, `wifi/picker.js` control): each radio card shows its allowed channels as tiles. The
+`channel` option of the radio is a channel number or `auto`; a channel is only selectable when the whole block of the width of the mode
+being edited fits around it in the regulatory domain (others are hatched), so choosing a mode redraws which blocks fit, and a mode that
+no longer fits the chosen channel is an error on both controls.
+- **Preview**: hovering or focusing a tile shows the block the radio would use at that width, in blue,
   or in red with the reason when it does not fit. The block is made of whole 20 MHz channels: on 5 and 6 GHz the
   fixed blocks (36-48 at 80 MHz, 100-128 at 160 MHz); on 2.4 GHz a 40 MHz block is the channel and the one four
   numbers away, on the side netifd picks (channels 1-6 above, 7-13 below, or an explicit `HT40+`/`HT40-`), so
@@ -629,12 +787,6 @@ selectable when the whole block of that width fits around it in the regulatory d
   connect), `auto`, and a radio that carries a mesh interface (the other mesh nodes must be moved to the same
   channel by hand). A channel the regulatory domain disables, or whose block does not fit, is an error that
   blocks Save.
-- **Saving**: stage, apply with the rollback countdown, then read back only the radios' own sections (never the
-  whole wireless config, which holds the Wi-Fi keys) and wait until each changed radio is up again; if it is not
-  within 16 seconds the change is rolled back. A radio on a DFS channel counts as up while it listens for radar.
-- Polling is suspended while the pointer is over a picker, while a choice is pending and during a save. A login
-  that may not write, or a radio whose phy did not list its channels, gets the plain channel strip.
-- The page needs the ACL fragment `rpcd/acl.d/flab-radio.json` (the plugin, and `uci` read and write on `wireless`).
 
 **Clients** (`flab.wifi`, a port of `utilities/list_connected_devices.uc`): clients per radio and SSID with
 MAC, IPv4/IPv6, hostname, signal, Wi-Fi standard, bandwidth, TX/RX bitrate, security label, AKM/SAE
@@ -683,28 +835,77 @@ the plugin reports this as `daemon.configured`.
 Refreshed every 5 s, from `flab.wireguard`. Interfaces come from UCI network (`proto wireguard`) plus whatever
 `wg show interfaces` reports, peers from the `wireguard_<interface>` sections plus whatever the kernel has
 (matched by public key), so a new interface or a peer added at run time with `wg set` shows up on the next
-poll (flagged as not in the configuration).
+poll (flagged as not in the configuration). The page also edits the configuration behind them.
 - **Tiles**: interfaces up, peers connected, latest handshake, live traffic (rates derived in the browser from
   the byte counters).
 - **Interface card**: state, firewall zone, addresses, listen port, public key (not secret), MTU, firewall
-  mark, totals.
+  mark, totals; the buttons *Add a device*, *Add peer* and *Remove interface*; a note with a link to the Firewall page when the interface is in no
+  zone; the peers table; and the foldable *Interface settings* form. An interface that only the kernel has (made with `wg-quick` or `ip link`) is
+  shown read only with a note.
 - **Peers table**: name (UCI `description`) and a role badge from the allowed IPs (*client*: host routes only,
   *site*: a whole network behind the peer, *all traffic*: a `/0`), shortened public key (full key on hover),
-  endpoint (empty for roaming peers), allowed IPs, handshake state, keepalive, live and total traffic.
+  endpoint (empty for roaming peers), allowed IPs, handshake state, keepalive, live and total traffic, and the buttons *Edit* (opens the peer's
+  editor under its row), *Remove* and *Undo*.
 - **Handshake state**: *connected* when the last handshake is under 180 s old (WireGuard rekeys every 120 s
   and rejects a session after 180 s), *no recent handshake* when older, *never connected* when the kernel has
   no handshake, *not loaded* when the peer is configured but the interface is not running.
 - **Findings**: interface down, interface in no firewall zone, a configured peer not loaded, stale or never
   connected peers (informational: roaming phones are often offline), a site peer whose `route_allowed_ips` is
   off.
-- Secrets: the plugin never reads `private_key` or `preshared_key` into its output, and only the single-field
-  `wg show` forms are used because they never print them. The test recorder scrubs both keys, and the test
-  generator aborts if a capture still contains one.
+- **Interface options** (hints from the OpenWrt documentation on each): disabled, listen port, addresses (a list), MTU, firewall mark, no host
+  routes to endpoints, and the private key. Options the page has no control for (`tunlink`, `ip6prefix`, ...) are listed read only.
+  An interface is added with *Add WireGuard interface* (name: letters, digits and underscores, at most 15, not the name of any section of the
+  network config; the first free `wgN`, the first free UDP port from 51820 and a private key made in the browser are offered) and removed with
+  its peers (until saved, with *Undo*).
+- **Peer options**: name, disabled, public key, pre-shared key, allowed IPs (a list), create routes for the allowed IPs, endpoint host and port,
+  keepalive. Peers are added (an anonymous `wireguard_<interface>` section, as LuCI makes them), edited in place and removed.
+- **Keys never reach the browser, and a new one is made there.** The plugin never reads `private_key` or `preshared_key` (or any option named like a
+  secret) into its output and reports only whether each is set; only the single-field `wg show` forms are used because they never print them. The test recorder
+  scrubs both keys, and the test generator aborts if a capture still contains one. The key boxes are write-only: empty keeps the stored key, the review banner shows *new value
+  (hidden)*, never the text. *Generate a key* makes an X25519 key pair in the browser with WebCrypto (feature-detected; where the browser has no
+  X25519 a small BigInt implementation of RFC 7748 derives the public key from random bytes of the browser's own generator; where there is no
+  secure random generator at all, the button is disabled and the page says to paste a key made with `wg genkey`). The public key of a typed or
+  generated private key is shown next to the box (with *Copy*). A pre-shared key is 32 random bytes from the same generator.
+- **Add a device**: a dialog for a phone or laptop of an interface that is running. It takes a name, the router's public address (offered: the
+  host name the page was opened with), the UDP port, what the device sends through the tunnel (the tunnel networks, everything, or a list),
+  an optional DNS server, a keepalive and whether to use a pre-shared key. It makes the device's key pair in the browser, adds the device as a peer
+  of the form (its public key and the next free address of each family from the interface's tunnel network, skipping what other peers allow) and shows
+  the device's WireGuard configuration once (`[Interface]` with its private key and address, `[Peer]` with the router's public key as `wg show`
+  reports it, the endpoint and the allowed IPs), with *Copy* and *Download* (`<interface>-<device>.conf`). The device's private key exists
+  only in the dialog; the peer reaches the router only when you press *Save and apply*. A QR code is not offered.
+- **Validation** (errors block Save; warnings do not): the interface name, a listen port that is a number and that no other enabled interface (or
+  an interface only the kernel has) uses, addresses as CIDR (a dotted netmask is accepted), the MTU range and the firewall mark, a typed key that is
+  44 base64 characters with the right padding bits, a peer's public key (required, not the interface's own, not repeated on the interface),
+  allowed IPs as CIDR with a prefix length, an endpoint host that is a name or an address (an IPv6 address without brackets), port and keepalive
+  ranges, a new interface without a private key. Warnings: no address, an address without a prefix, overlapping tunnel networks of two interfaces,
+  an MTU above 1420 or below 1280 with IPv6, no listen port on a router that peers connect to, overlapping allowed IPs between peers (the same
+  prefix: the later one wins; a broader one: the more specific wins), a `/0` on a peer (the default route when routes are created, else that no
+  route is created), a network on a peer without routes, no allowed IPs, an endpoint that does not look reachable (loopback, unspecified,
+  link-local, multicast, a name without a dot or in `.local`/`.lan`, an address inside the router's own tunnel network), an endpoint port without a
+  host, a new interface (it is in no firewall zone), a removed interface that a firewall zone still names.
+- **Changes that may cut the tunnel you are working through.** The plugin reports the established TCP connections to the router's web and SSH
+  ports (the ports in uci uhttpd and dropbear, plus 22, 80 and 443). A connection whose remote address is inside an enabled peer's allowed IPs of
+  a running interface (the most specific one; a `/0` does not count) is probably your own, so removing, disabling or re-keying that interface
+  or peer, or any change that restarts it, is called out in the banner, and removing the interface or the peer asks first in a dialog that names
+  the address and the peer. Without such a connection a connected peer or interface gets a generic warning. The page does not know which
+  connection is its own, so another administrator's session through the tunnel gives the same warning.
+- **Saving** goes through `applyChange()` like the other editing pages (stage, apply with the rollback countdown, read the config back through
+  the plugin, confirm). The check requires every option, every typed key (as set) and every new or removed interface and peer to be as drafted,
+  and then that the tunnel really runs: an interface that was running, is new or is being enabled must be `up`, and a new, re-keyed or enabled
+  peer must be loaded in the kernel. netifd takes a moment, so the read-back is repeated for about 7 s while something is not running yet; a
+  configuration that makes the interface fail (no key, a bad key, a missing `wireguard-tools`) is rolled back and the edit stays in the form. Changes
+  already staged in the session are shown with a "Discard them" button. The page does not poll over unsaved edits, a focused control or an open dialog.
+- **The firewall zone is another page's job**: a new interface is in no zone until you put it in one on the Firewall page (the card links there); the
+  listen port also needs a firewall rule from the zone the peers come from.
+- **Plugin missing**: a router without `flab.wireguard` gets a note instead of the page; a router without netifd's wireguard protocol handler
+  (`wireguard-tools`) gets a note that interfaces cannot start. A login that may not write sees the page read only.
+- **ACL**: `rpcd/acl.d/flab-wireguard.json` grants `flab.wireguard` `status` (read), `uci` `changes` (read) and `set`, `add`, `delete`, `revert`, `apply`,
+  `confirm`, `rollback` (write), and `uci` read and write on the `network` config. It has to list that config under read because `uci changes` needs it, although the config holds the
+  private and pre-shared keys: it does not grant `uci get`, the page never calls it (a test fails if it does) and reads the config only through the plugin, which leaves the keys out.
 
 ### Firewall (route `#firewall`)
-Refreshed every 5 s, from `flab.firewall` (firewall4 / nftables). The configuration comes from UCI firewall
-and the live state from `nft -j list ruleset` (about 10 ms, ~30 KB), so a new zone, rule or port forward shows
-up on the next poll and every number is a real kernel counter.
+Refreshed every 5 s, from `flab.firewall` (firewall4 / nftables) and, to edit, rpcd's `uci` object. The live state comes from `nft -j list ruleset` (about 10 ms, ~30 KB), so a new zone, rule or port forward shows
+up on the next poll and every number is a real kernel counter; the configuration is read with `uci get firewall` (it holds no secrets), so every section is known by its own name (an anonymous one is `cfgXXXXXX`, never "rule 3": positions change when sections are added or removed). The plugin's reply is joined to the config by that name; when the two do not agree (a reply made for another config, a change between the two reads, a rule with another enabled state) the page shows the plugin's own data read only.
 - **Tiles**: zones, traffic rules (enabled / total), port forwards, packets turned away from the Internet
   (with a live rate), connection tracking usage, flow offloading (off, software or hardware, and the flowtable
   devices).
@@ -714,25 +915,33 @@ up on the next poll and every number is a real kernel counter.
   only through a `forwarding` section. A cell is green when the policy allows it, amber when it is blocked but
   specific rules or port forwards open parts of it ("N rules"), gray when closed; an open cell notes rules
   that block part of it. Hover a cell for the rule names. Disabled rules, rules naming an unknown zone and
-  rules with neither side are ignored, as the firewall does.
+  rules with neither side are ignored, as the firewall does. **Clicking a cell between two different zones switches the forwarding** from the row's zone to the column's: an enabled forwarding is removed, a disabled one is enabled, otherwise one is added; the cell says "forwarding added / removed, not saved". Under the matrix every `forwarding` section is listed as a chip (so a disabled one, one with an address family, or one naming "any zone" can be switched off or removed too).
 - **Zones**: configured interfaces, the kernel devices the loaded rules really match for the zone (read from
   the jumps in the base chains), input/output/forward *policy*, NAT and MSS clamping, where the zone may
   forward to, and the packets its reject/drop chains turned away, in each direction, with a live rate. The
   policies are defaults: `reject`/`drop` refuse everything except what a specific rule or forwarding allows
   (replies to allowed connections are always let back in), which the card's legend and the column tooltips
   spell out. *Forward* is only traffic between interfaces of the same zone; reaching other zones is the "May
-  forward to" column.
+  forward to" column. **Add zone** and each row's pencil and trash buttons open or remove a zone. The dialog has: name (letters, digits and `. _ - /`; it cannot be changed once saved, because rules and forwardings refer to it by name), enabled, the three policies (empty = the global default), the interfaces as check boxes over the router's interfaces (an interface can be in one zone only: choosing one that is in another zone says so and moves it, the other zone loses it when the form is accepted), devices (`tun+`) and subnets, address family, masquerading (`masq`, `masq6`, `masq_src`, `masq_dest`, `masq_allow_invalid`), MSS clamping, logging (`log`, `log_limit`) and connection tracking helpers. Removing a zone also removes the forwardings that name it (Undo brings both back); the rules and port forwards that still name it are errors until they are changed.
 - **Reachable from the Internet**: the zones that masquerade are treated as facing the Internet; this lists
   the accepting rules and port forwards that start there, i.e. everything a stranger can reach.
 - **Traffic rules** and **Port forwards and NAT**: every section in configuration order with its match
-  (protocol, ports, ICMP types, addresses, limit, family), action and hit counters. nft counters are matched
+  (protocol, ports, ICMP types, addresses, limit, family), action and hit counters, and **in plain words what it does** ("Allows TCP port 22 from zone wan to the router itself, from 10.0.0.0/8, IPv4 only."; "Forwards TCP port 8080 arriving from zone wan to 192.168.1.10 port 80 in zone lan."). nft counters are matched
   to the UCI section through the comment firewall4 puts on each rule (`!fw4: <name>`; an unnamed rule is
   `@<type>[N]`, N counting sections of that type); a rule that expands to several nft rules has its counters
-  summed. A disabled rule is grayed out and has no counters.
+  summed. A disabled rule is grayed out and has no counters; an edited or new item shows no counters until it is saved. A row has an enable switch (`option enabled`), buttons to move it up or down (the order is the order the firewall evaluates), Edit, Remove (struck through until saved, with Undo), and the card has Add rule / Add port forward. A `nat` section is listed read only ("edit in the file").
+  - The **rule dialog** (what it does: name, enabled, action ACCEPT / REJECT / DROP / MARK / NOTRACK, source and destination zone, address family; which traffic: protocols as check boxes plus any other name or number, ICMP types (suggestions of every name fw4 knows), source and destination addresses (address, CIDR, mask, range `a-b`, an interface name, `!` in front), source MAC, source and destination ports and ranges; rate limit and burst, the mark of the action MARK; a schedule: times, days of the week ("every day except"), dates, UTC) writes only the options that differ from the firewall's defaults. A sentence at the top says in words what the rule does as the form is filled in.
+  - The **port forward dialog** (kind DNAT or SNAT; protocols; source zone, "arrives at" address and port, only-from address, port and MAC; destination zone, internal address and port; reflection, its source and zones; rate limit and schedule) words its fields differently for a source NAT ("Rewrite the source address to").
+- **Global settings** (a card, folded: `defaults` section): default input, output and forward policies, drop invalid packets, SYN-flood protection (rate and burst), the reject answers, software and hardware flow offloading, TCP SYN cookies, ECN, window scaling, ICMP redirects, source routing, helpers and nftables includes, each with a hint from the OpenWrt documentation. A router without a defaults section gets one on the first change.
 - **Findings**: firewall not loaded (no fw4 table), an Internet-facing zone that accepts input or forwards
   within itself, a rule accepting every TCP/UDP port from it, rules naming a zone that does not exist,
   interfaces in no zone (their traffic is rejected), zones with no interface, SYN-flood protection off,
-  disabled rules, connection tracking over 80 % full.
+  disabled rules, connection tracking over 80 % full. While there are edits the findings (and the matrix, tables and tiles) describe the configuration as it will be once saved.
+- **Validation** (errors block Save, warnings do not), following firewall4's own parsers: ports and ranges, addresses, subnets and ranges, MAC addresses, limits, times and dates, marks, ICMP types, protocols, weekdays; a zone name used twice, an interface in two zones, a rule, forwarding or port forward that names a zone that does not exist or is being removed (a forwarding to a missing zone can never be saved), the action MARK without a mark, NOTRACK without a source zone, a port forward without a source zone (or with "any zone"), without an internal address or port, with a negated internal address, a source NAT without destination zone or address. Warnings: ports on a protocol that has none, IPv4 addresses with an IPv6-only family, a port forward that opens every port, a zone with nothing in it, an interface the router does not have, a disabled zone that rules name, hardware offloading without software offloading, rules sharing a name (their counters add up). A problem that is already in the file and sits in a section the form has not touched is only a warning, so unrelated edits can still be saved; one the edit causes is always an error.
+- **Lock-out check**: the page works out, for the web interface's port and for SSH (22), which zones let their hosts reach it today (input policy ACCEPT, or an enabled ACCEPT rule with a source zone and no destination zone for TCP and that port) and which will after the edits. A zone that loses it gets a warning; when the address the page was opened with is one of the router's own (the plugin lists every interface's addresses) the interface and zone you are using is named ("Lock-out risk: you are reaching the router at 192.168.1.1 (interface lan, zone lan)…"). Save then asks for confirmation, listing the risks ("Apply anyway" / Cancel).
+- **Saving** goes through `applyChange()` like the other editing pages (stage, apply with the rollback countdown, read back, confirm). The check after the apply reads the config back and requires every list to hold the same items in the same order with the same values (a new section is recognized by its place, because the router names it itself), and, when the firewall was loaded before, the fw4 table to exist with a chain set for exactly the enabled zones of the file (it waits up to 12 s for the reload). A change the router did not keep, or that makes the firewall stop loading (fw4 refuses the configuration and keeps the old ruleset), is rolled back at once and the edits stay in the form. Only the order of rules and port forwards is staged with `uci order` (a full list, every section of the file in its place; new sections are named by the router, and the page uses the names `add` returned); adding or removing a zone or forwarding needs none, because firewall4 reads sections by type and its types in any order.
+- The page does not poll over unsaved edits, an open dialog or a focused control of the global settings. A login that may not write gets the page with every control disabled and a note; a login that may not read the firewall config, or a router whose plugin predates the editor, gets the read-only page. Not offered: renaming a zone (rules refer to zones by name), editing `nat`, `ipset`, `include` and `helper` sections, and options with no control (for example `src_mac` on a forwarding, `mark`, `dscp`, `helper`, `extra`), which stay untouched in the file. The lock-out check knows the interface the page was opened through only when the URL holds one of the router's own addresses; with a host name it names every zone that loses access.
+- **ACL**: `rpcd/acl.d/flab-firewall.json` grants `flab.firewall` `status` and `uci` `get` and `changes` (read), and `uci` `set`, `add`, `delete`, `order`, `revert`, `apply`, `confirm`, `rollback` (write), on the `firewall` config only. The firewall config holds no secrets; the plugin's `networks` list carries only the name, whether it is disabled, the protocol and the router's own addresses of each interface, never a key.
 
 ### Devices and Interfaces (route `#interfaces`)
 Refreshed every 5 s. `layers.js` is the pure model, `table.js` renders it. Data: `flab.network`, netifd's
@@ -762,6 +971,40 @@ last; a device the router does not describe is kept as an unknown device, never 
 - **Addressing** also lists non-default routes netifd installed for the interface (`on link` when the next hop
   is unspecified) and the IPv6 prefixes assigned to it or received on it.
 - **Tiles**: interfaces up, bridges, VLAN devices, protocol devices, tunnels, radios up, wireless interfaces.
+
+**Editing** (`editor.js`, `cards.js`, `schema.js`, `model.js`, `checks.js`; shared with [Bridges](#bridges-route-bridges)): below the table the page edits `/etc/config/network` through `flab.network config` and rpcd's `uci`:
+- **Interfaces**: one foldable card per logical interface (closed until opened; the header shows protocol, state and a summary) and **Add interface**.
+  Editable protocols are static, DHCP, DHCPv6, PPPoE and none; an interface with another protocol (WireGuard, IPsec XFRM, modems, tunnels) is shown read
+  only with its options as they are in the file (its secrets as "hidden (a secret)") and cannot be removed here. Groups: Interface (protocol, device, boot, disabled,
+  IPv6, MTU, MAC address, force link), IPv4 address (addresses with prefix or netmask, gateway, broadcast), IPv6 address and prefixes (static address and gateway,
+  `ip6assign`, `ip6hint`, `ip6class`, `ip6ifaceid`, `delegate`), PPPoE login (username, **write-only password**, access concentrator, service, AC MAC, Host-Uniq, keepalive,
+  inactivity timeout, extra pppd options), DHCP client options (broadcast flag, host name, client id, vendor class, options to send and request, classless routes, release),
+  DHCPv6 client options (address and prefix request, client id, request options, release, forced prefix, SLAAC, source filter), DNS and default route (servers, search domains,
+  metric, use of the provider's DNS and default route), Advanced (routing tables). Every option has a hint from the OpenWrt documentation. The device is chosen from the
+  router's bridges, ports and VLAN devices (also ones added in the form), or `@interface` to borrow another interface's device.
+  Changing the protocol removes the options that belong to the old protocol only (the review says which), so a stale static address is never requested by a DHCP client.
+- **Devices**: VLAN devices (802.1Q and 802.1ad: base device, ID, name) and the settings of an existing device (a `device` section with no type: MTU, MAC address, link speed,
+  duplex, auto-negotiation, pause frames, EEE and the packet-handling options), each added, changed and removed here. Bridges are on the Bridges page. Device sections of other types
+  (macvlan, ...) are shown read only.
+- **Validation** (errors block Save): IPv4/IPv6 addresses and prefixes, netmasks, MTU ranges, a static address without prefix and without netmask, a gateway outside the
+  interface's subnet or equal to its address, two interfaces on the same subnet or with the same address (an overlap is a warning; a disabled interface does not count),
+  a device that does not exist (only a warning for one the interface already had), an alias to a missing interface, DHCP and PPPoE option formats, interface and device names (including the
+  `pppoe-<name>` length), a VLAN ID, the same VLAN twice, removing a device or interface that another one uses. Warnings: no username or password for PPPoE, an MTU above 1492 for
+  PPPoE or below 1280 with IPv6, a delegated prefix longer than /64, two interfaces with a default route of the same metric, an interface on a port that is a bridge member.
+- **The password is write-only.** The plugin never returns it (nor any other option whose name says it is a secret: a SIM PIN, a modem password, a WireGuard key); the box starts empty and says that one is stored; empty keeps it; the review shows "new value (hidden)".
+- **Dangerous changes.** The management network is the interface called `lan` and every interface in a firewall zone that accepts input without NAT; its bridge is the device it runs on.
+  Changing its protocol, device, address, netmask, MTU, MAC address, gateway, disabling it, removing it, removing a port from its bridge, switching VLAN filtering and
+  removing any interface are listed as warnings in the review banner and, before the change is applied, in a confirmation that says so (and names the address
+  the browser is connected at when it is one being changed). Cancel applies nothing.
+- **Saving** goes through `applyChange()` like the other editing pages with a **90 second** rollback countdown (set for these calls only through the editor's
+  `timeoutS`, which the review banner repeats) and a 4 second settling time (`settleMs`). The check reads the config back through the plugin and netifd's interface dump, retrying for about 10 seconds
+  while the network reloads (a failed read during a reload is not yet a failed save), and requires every field of every kept section to read back, new sections to exist, removed ones to be gone, and
+  every static interface that was up and is enabled in the form to be up again; otherwise the change is rolled back at once and the message says which interface did not come up.
+  Staged leftovers are shown with a "Discard them" button. The two pages share one draft (`interfaces/editor.js`), so unsaved edits survive a switch between them
+  and one Save applies them together. A login that may not write, or a router whose plugin lacks `config`, gets the runtime view with a note instead of the editor.
+- **ACL**: `rpcd/acl.d/flab-network.json` grants `flab.network` `status` and `config` and `uci` `changes` (read), `cable_test` and the `uci`
+  write methods (write), and `uci` read and write on the `network` config. It does not grant `uci get`: the pages read the network
+  config through `flab.network config` only, so a PPPoE password or a WireGuard key can never reach the browser.
 
 ### Routing (route `#routing`)
 The kernel's routing state and, when the router has BIRD, BGP, in up to two tabs on one page
@@ -860,10 +1103,11 @@ Notes:
   announcement.
 
 ### Traffic (route `#traffic`)
-Where the bandwidth goes, in three tabs on one page (the tab strip sits in the command bar). Connections is offered when
-the router has connection tracking and Usage only when it has `nlbw`; `flab.traffic status` reports which features exist.
-Only the open tab is polled, every 3 s. The connection table and nlbwmon cost the router more than reading a counter, so
-those two tabs reuse their last answer until it is 10 s (Connections) or 30 s (Usage) old, unless the request changed or
+Where the bandwidth goes, in four tabs on one page (the tab strip sits in the command bar). Connections is offered when
+the router has connection tracking, Usage only when it has `nlbw`, and Settings whenever `flab.traffic` answers (it says so when
+nlbwmon is not installed); `flab.traffic status` reports which features exist.
+Only the open tab is polled, every 3 s. The connection table, nlbwmon and the settings cost the router more than reading a counter, so
+those three tabs reuse their last answer until it is 10 s (Connections, Settings) or 30 s (Usage) old, unless the request changed or
 Refresh was pressed. The state (open tab, filters, sorts) lives in the page, so it survives the redraw on every poll.
 
 #### Live tab
@@ -939,9 +1183,59 @@ nlbwmon's counters per host (`flab.traffic usage_periods` and `usage`); the tab 
   flow offloading, which on the main router fed nlbwmon about one byte per packet and inflated a month to tens of terabytes), rows
   left out by the plugin's cap.
 
+#### Settings tab
+The accounting settings of nlbwmon, editable through UCI (`/etc/config/nlbwmon`, the one `nlbwmon` section; the config holds no
+secrets, so the page reads it with rpcd's own `uci get`). Every option of the init script has a control, the default as a
+placeholder when it is not set, and a hint taken from nlbwmon's README, its source and the init script. A login without write
+permission sees the same page read-only, with a note. The tab is `settings.js` (cards and saving), `settings-schema.js` (the option
+table) and `settings-model.js` (pure: draft, validation, effects, the UCI plan, the check after a save).
+- **Tiles**: nlbwmon (running or stopped, its process, and whether it runs with the saved settings: the command line procd reports
+  is compared with what the saved options mean), the accounting period now (day N of M, its dates, when the next starts), the
+  periods held against the number to keep, and the database (RAM, flash, external or read-only, where it really is and when it was
+  last written).
+- **What is counted**: `local_network`, a list. An entry is a network name (the init script resolves it to the network's subnets) or
+  an address with a prefix or mask (IPv4 or IPv6); a name with a dot or colon is an address to nlbwmon. An invalid entry would stop
+  nlbwmon from starting, so it is an error; a name the router does not have is a warning; an empty list warns that nothing is
+  counted. The effect line shows the subnets the running daemon counts and the router's network names.
+- **Accounting periods and history**: `database_interval` (a day of the month, negative from the end, or `YYYY-MM-DD/N` for every N
+  days; the effect line shows the running period for the draft) and `database_generations` (0 to 1000, 0 keeps every period; the
+  effect line and a warning name the stored periods that the next start of nlbwmon would delete, worked out the way nlbwmon does:
+  every period that began this many periods back or earlier). Changing the interval warns that the stored periods keep the dates they
+  were cut at (and that switching between a day of the month and N days may make them unreadable as periods); a start day of 29 to
+  31 warns that the shorter months are not documented.
+- **Database storage**: `database_directory`, `commit_interval`, `database_compress`. The directory is validated (absolute, at most
+  126 characters because nlbwmon refuses longer, letters, digits and `. _ + @ : = , / -` only, no `..`, not `/`, `/proc`, `/sys`,
+  `/rom` or `/dev`). The router then says what it is (`flab.traffic nlbwmon_paths`): the real path after links (`/var` is `/tmp`),
+  the filesystem and whether it is RAM, the router's flash, external storage or read-only, whether it exists (nlbwmon creates it),
+  and the database files in it. A path typed but not saved is asked about after a pause in typing, once per path. A directory that is
+  a file, below a file or on a read-only filesystem is an error. Changing the directory warns that nothing is moved: the stored
+  periods stay in the old directory and the running period starts from zero in the new one. The commit interval (units `w d h m s`,
+  at most 24 days, because nlbwmon multiplies by 1000 into 32 bits) warns when it is under an hour and the directory is not in RAM,
+  with the number of writes a day.
+- **Polling, memory and protocols**: `refresh_interval` (at least 1 s; a very short or long one warns), `database_limit` (0 for no
+  limit; the effect line gives the RAM it can use at roughly 100 bytes an entry and its share of the router's memory, and a very low,
+  missing or huge limit warns), `database_prealloc` (warns that it does nothing without a limit), `netlink_buffer_size` (bytes, at
+  least 32768, a `K` or `M` suffix is accepted and written in bytes, a buffer under 128 KiB warns) and `protocol_database` (the file
+  must exist and be readable; the router is asked, and a missing, unreadable or non-regular file is an error because nlbwmon does not
+  start without it).
+- **Review and saving**: the shared review banner lists every change from what to what and every error and warning; Save is off
+  while anything is invalid. Only what changed is written, an emptied option is deleted rather than set to an empty string, and a
+  missing `nlbwmon` section is created. Saving uses `applyChange()`: stage, apply with the 30 s rollback countdown (the apply reloads
+  nlbwmon, which writes its counts to disk first and deletes the periods beyond the number to keep when it starts), read the config
+  back and compare it, then (when nlbwmon ran before the change) wait until procd shows nlbwmon running with a command line that
+  matches the saved options and the same process in two looks 1.5 s apart (up to eight looks). A config that is not kept, a daemon
+  that stopped, one that kept the old command line and one that keeps restarting each roll the change back and name the reason. When
+  nlbwmon was not running before, only the config is checked.
+- **States**: no nlbwmon (no config and no `nlbw`) is a note, not an error and not a form; a config that cannot be read although
+  `nlbw` exists is an error note; a missing plugin removes the tab (the page falls back to Live); changes already staged in this
+  session are shown with a "Discard them" button; the page does not poll over unsaved edits, a focused control or a save, and an
+  unsaved edit survives a change of tab. The Settings tab also uses `service list`, `network.interface dump` and `system info`, which `flab-base.json` grants.
+
 #### The plugin
-`flab.traffic` is read-only and the ACL fragment (`rpcd/acl.d/flab-traffic.json`) grants its four methods under `read`; there is
-no write access and no generic `file` or exec grant. Live throughput is not here: it is the counters `flab.network` already reads.
+`flab.traffic` only reads the router; it writes nothing. The ACL fragment
+(`rpcd/acl.d/flab-traffic.json`) grants its five methods and `uci get` and `changes` on the `nlbwmon` config under `read`, and
+`set`, `add`, `delete`, `revert`, `apply`, `confirm` and `rollback` on the `nlbwmon` config under `write`; there is no generic `file`
+or exec grant. Live throughput is not here: it is the counters `flab.network` already reads.
 - `status`: `conntrack` (the tracker is loaded: its count file exists), `count`, `max`, `acct`, `nlbw` (`command -v nlbw`),
   `nlbwmon_running` (`pidof nlbwmon`). It never reads the table itself.
 - `connections` (`q`, `limit`, `sort`, `proto`, `scope`): parses `/proc/net/nf_conntrack` (read through `sysfs_raw`, so the
@@ -965,6 +1259,16 @@ no write access and no generic `file` or exec grant. Live throughput is not here
   over every row, `names` by MAC and by IP and `window` (`start`, `end` (the first day of the next period), `today`, `ongoing`, `days`).
   Without nlbw, with nlbwmon stopped, for an unlisted period or when `nlbw` prints no data
   the reply is `{ ok: false, error }`.
+- `nlbwmon_paths` (`dir`, `protocols`, each optional): describes the paths nlbwmon's settings name. `dir`: `path`, `resolved` (links
+  followed, for a directory that does not exist yet the nearest existing parent plus the rest), `exists`, `is_dir`, `blocked` (not a
+  directory, or below a file), `mount`, `fstype`, `device`, `readonly` (from `/proc/mounts`, longest mount point that is a prefix),
+  `kind` (`volatile`: tmpfs or ramfs; `readonly`: mounted read-only or squashfs; `flash`: overlay, jffs2, ubifs, `/overlay` or a
+  `/dev/mtd`, `/dev/ubi` or `/dev/loop` device; `storage`: anything else; `unknown`: no mount found), and `files` and `total`: the
+  database files in it (`<YYYYMMDD>.db` or `.db.gz`, newest first, at most 100) with their size and last write. `protocols`: `path`,
+  `exists`, `file`, `size`, `readable`. Each path is checked before any filesystem function sees it (an absolute path of at most 126
+  characters for `dir` and 255 for `protocols`, only letters, digits and `. _ + @ : = , / -`, no `..`, no newline); one that fails
+  comes back as `{ ok: false, error }` with no data. It uses only `stat`, `lsdir`, `realpath` and `open` of ucode and `/proc/mounts`,
+  never a shell, so the rule about the only `run()` calls below still holds.
 - **Validation**: every argument is checked before anything is built, and a request that fails comes back as `{ ok: false, error }`
   without entries. `q`: a string of at most 64 characters from letters, digits and `. : - _ /` and space (a newline is refused too); `limit`: an
   integer from 1 to 2000 (default 300); `sort`: `bytes`, `packets` or `timeout`; `proto`: `all` or 1 to 12 lowercase letters and digits; `scope`: `all`,
@@ -1518,28 +1822,34 @@ The suites below are driven by `run.ps1` scripts that never change the router's 
 network suites share one mechanism (the "Common mechanism" below): the repository's plugins run **on the router**
 against saved fixtures (`FLAB_FIXTURES`, with `ucode -L` so the uploaded libraries win over the deployed ones), and
 an optional browser pass opens the deployed UI in Edge through `playwright-core` (installed into a temporary
-folder) with the plugin calls intercepted and answered with the scenario JSON. The Settings and DHCP suites have no
-plugin: they unit-test their models and, with `-Browser`, drive the page against a mock of rpcd's `uci` object.
+folder) with the plugin calls intercepted and answered with the scenario JSON. The Settings, DHCP and VLAN editor suites have no
+plugin: they unit-test their models and, with `-Browser`, drive the page against a mock of rpcd's `uci` object. The other editing suites (Wi-Fi editing, Network editors, Firewall editing, WireGuard editing, nlbwmon settings, Dynamic DNS, DNS, Services) also run their plugin on the router against fixtures.
 
 | Suite | Command | Covers |
 |---|---|---|
 | BGP | `pwsh -File flab-ui\tests\bgp\run.ps1 [-Browser]` | `flab.bgp` parser and findings, the BGP tab of the Routing page |
 | Routing | `pwsh -File flab-ui\tests\routing\run.ps1 [-Browser]` | The Routing model (addresses, tables, findings, filters, lookup meaning, rule origins); `flab.routing` against a captured and a synthetic router (every route and rule syntax, every lookup answer, refused input); the Routes tab, the lookup and the BGP tab against mocked replies |
 | Toolbox | `pwsh -File flab-ui\tests\toolbox\run.ps1 [-Browser] [-KeepWork]` | The Toolbox model (request checks, the parsers of ping, traceroute, DNS, comparison and certificate output, the connectivity check's verdicts, MAC handling) and, from real captures, the parsers of the iperf3 events, the DNS trace and mtr and the AS data of a traceroute; `flab.diag` running real jobs on the router (streaming, offsets, stop, DNS, traceroute, mtr, a DNS trace, an iperf3 server with a loopback client, the router's own certificate, a comparison, a whole connectivity check, a Wake-on-LAN packet on loopback, every allowed option, 83 refused tool requests and 18 refused wake requests with an injection canary, job-id traversal, the three-job cap, CRLF source); the page against a scripted job engine |
-| Traffic | `pwsh -File flab-ui\tests\traffic\run.ps1 [-Browser]` | The Traffic model (interfaces, WAN, totals, findings, endpoints, NAT, states, merging hosts by MAC, filtering and sorting, protocol rows); `flab.traffic` against a captured and several synthetic routers (every protocol, TCP state, NAT form and IPv6 spelling, a 60000-entry table, nlbwmon periods, no nlbw, no conntrack, no accounting) checked against an independent reference, and every refused argument; the Live, Connections and Usage tabs against mocked replies |
+| Traffic | `pwsh -File flab-ui\tests\traffic\run.ps1 [-Browser]` | The Traffic model (interfaces, WAN, totals, findings, endpoints, NAT, states, merging hosts by MAC, filtering and sorting, protocol rows); `flab.traffic` against a captured and several synthetic routers (every protocol, TCP state, NAT form and IPv6 spelling, a 60000-entry table, nlbwmon periods, no nlbw, no conntrack, no accounting) checked against an independent reference, and every refused argument; the Live, Connections and Usage tabs against mocked replies (the Settings tab is covered by the nlbwmon settings suite) |
 | IPsec | `pwsh -File flab-ui\tests\ipsec\run.ps1 [-Browser]` | `flab.ipsec`, IPsec page, throughput history |
 | Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Wired network, Bridges, Devices and Interfaces, Wi-Fi, Mesh, WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
 | Settings | `pwsh -File flab-ui\tests\settings\run.ps1 [-Browser]` | System settings model, option table and zone table; the whole editing flow against a mock router |
 | DHCP | `pwsh -File flab-ui\tests\dhcp\run.ps1 [-Browser]` | DHCP model (address helpers, reading config and leases, validation, change plan); the page against the router's own data, then the whole editing flow against a mock router |
 | DNS | `pwsh -File flab-ui\tests\dns\run.ps1 [-Router ...] [-Url ...] [-Browser]` | The DNS model (tiles, findings, activity, options) and the zones (Unbound's blocks of every type and dnsmasq's entries: drafts, order, changes, validation, the UCI operations, the checks after a save); `flab.dns` against a captured and several synthetic routers (Unbound with and without extended statistics or `unbound-control`, dnsmasq, both, stopped, none, cut lists) and a call with shell metacharacters as arguments; the page against mocked replies, including adding, editing, removing and saving zones |
 | Wi-Fi | `pwsh -File flab-ui\tests\wifi\run.ps1 [-Browser]` | Wi-Fi channel model (blocks of channels, errors and warnings, change plan); the radio cards and pickers against the router's own data, then the whole channel-change flow against a mock router |
+| Wi-Fi editing | `pwsh -File flab-ui\tests\wifiedit\run.ps1 [-Browser]` | The editing model (reading, draft, review, validation, warnings, UCI operations, check after a save, what to wait for); `flab.radio config` and `status` against fixtures (nothing is executed) and a read-only run on the router with a check that none of its stored Wi-Fi secrets is in a reply; the radio settings and network editors against the router's own configuration, then the whole editing flow against a mock router |
+| Network editors | `pwsh -File flab-ui\tests\ifedit\run.ps1 [-Browser]` | The editors of the Devices and Interfaces and Bridges pages: the model (value checks, option tables, draft, review, validation, dangerous changes, UCI operations, check after a save); `flab.network config` against fixtures with a secret in every kind of place and a read-only run on the router; both pages against the router's own data, then the whole editing flow against a mock router |
+| VLAN editor | `pwsh -File flab-ui\tests\vlanedit\run.ps1 [-Browser]` | The VLAN editor's model (reading the sections, the tables of a bridge and of a swconfig switch, the draft, the review, validation and lockout warnings, the UCI operations, the check after a save); the Wired network page against the router's own config (read only), then the whole editing flow of a bridge and of a swconfig switch against a mock router |
+| WireGuard editing | `pwsh -File flab-ui\tests\wgedit\run.ps1 [-Browser]` | The WireGuard model (address math, keys, draft, review, UCI plan, validation, the tunnel you work through, check after a save, add-a-device helpers); `flab.wireguard` against fixtures and read only on the router; the page against the router's own interfaces, then the whole editing flow against a mock router |
+| Firewall editing | `pwsh -File flab-ui\tests\fwedit\run.ps1 [-Browser]` | The Firewall editing model (reading, draft, zones, forwardings, rules, port forwards, defaults, validation, the lock-out check, UCI operations and section order, the check after a save); `flab.firewall` against fixtures and read only on the router; the page against the router's own firewall (read only), then the whole editing flow against a mock router |
+| nlbwmon settings | `pwsh -File flab-ui\tests\nlbwedit\run.ps1 [-Browser]` | The nlbwmon settings model (reading, every option's validation, the accounting window and the periods a lower count deletes, effects, warnings, the UCI plan, the check after a save, the daemon check); `flab.traffic nlbwmon_paths` against fixtures (RAM, flash, USB, read-only, network share, a missing or blocked directory, 100+ files, no `/proc/mounts`, refused paths) and once for real; the Settings tab against the router's own config, then the whole editing flow against a mock router |
 | Services | `pwsh -File flab-ui\tests\services\run.ps1 [-Browser]` | Services model; `flab.services` against fixtures (nothing is executed) and a read-only `list` on the router; the page against the router's own services, then the whole start, stop and restart flow against a mock |
 | Dynamic DNS | `pwsh -File flab-ui\tests\ddns\run.ps1 [-Browser]` | Dynamic DNS model (reading, draft, validation, change plan, check after a save, verdicts, intervals, log parsing); `flab.ddns` against fixtures (nothing is executed) and a read-only `status` and `log` on the router; the page against the router's own services, then the whole editing and action flow against a mock |
 
-`-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
+`-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy`, or `-Action Sync` after a front-end change) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
 password is needed. Every suite removes its local temp folder when it finishes, and the BGP, IPsec, Routing and network
-suites also remove their `/tmp/flab-*-test` folder on the router.
+suites also remove their `/tmp/flab-*-test` folder on the router. When several people or agents share one router, run a suite through `tools/router-lock.ps1` (see [Deploy, test, clean up](#deploy-test-clean-up)).
 
 ### Common mechanism (BGP, IPsec, Routing and network suites)
 
@@ -1742,13 +2052,13 @@ the dark theme and an expired session.
 ### Wi-Fi suite
 Same shape as the DHCP suite. `model.test.mjs` covers the width of an htmode, the block a channel would occupy
 (fixed blocks on 5 and 6 GHz; on 2.4 GHz the second half and the covered and overlapped channels, including
-netifd's rule for the side), the blocks a radio is running on, the draft, the errors and warnings (not allowed, no
+netifd's rule for the side), the blocks a radio is running on, the channel part of the draft, the errors and warnings (not allowed, no
 room for the width, DFS, mesh, auto), the operations and the read-back check; `network/uci.test.mjs` covers
 `applyChange`. The browser pass (`live.mjs`) first shows the router's own radios with their pickers, with every uci
-write blocked, then switches to a mock of the radio and Wi-Fi plugins and a stateful mock of `uci` and drives hover
+write and `uci get` blocked, then switches to a mock of the radio and Wi-Fi plugins (including `flab.radio config`) and a stateful mock of `uci` and drives hover
 previews (fitting and not fitting, 2.4 and 5 GHz, keyboard focus), choosing, undoing, Auto, the banner and its
-warnings, a page that does not poll over a pending choice, a successful save (only the channels written, only the
-radios' own sections read), a change the router does not keep, a radio that does not come back (rolled back),
+warnings, a page that does not poll over a pending choice, a successful save (only the channels written, the config read back through
+the plugin and never with `uci get`), a change the router does not keep, a radio that does not come back (rolled back),
 leftovers from an earlier attempt, a login without write access, the dark theme and an expired session.
 
 ### Services suite
@@ -1807,6 +2117,135 @@ fixture or by a mock, and blocked (failing the test) in the phase that talks to 
   and its review text, the provider switch), saving, adding and removing services, a change the router does not keep, staged
   leftovers, a stopped updater, a missing ddns-scripts or plugin, a login that may not write or run actions, the dark theme and a
   session that expires. It also checks that the page never calls `uci get`.
+
+### Wi-Fi editing suite
+Never changes the router's configuration (the only things created on the router are the fixtures and the plugin copy in
+`/tmp/flab-wifiedit-test`, removed afterwards).
+- **Unit tests** (`model.test.mjs`, no router): reading the plugins' replies (editable and read-only data, live state joined by
+  section name), the draft (strings, booleans, lists, "none" as the open choice, secrets empty), the review list (a password is
+  never shown), the operations (only changed options, emptied options deleted, one value of `network` as a plain option, a
+  password written as typed and removed when it no longer applies, added networks as named `add`, removed ones as `delete`,
+  hidden options neither written nor compared), adding and removing networks, every validation and warning, the check
+  after a save (including an unnamed section that got a new name, an added and a removed network, a password that did not
+  stick) and what to wait for.
+- **Backend** (`mkfx.mjs`, `harness.uc`, `assert.mjs`): the repository's `flab.radio.uc` runs on the router against fixtures
+  (`FLAB_FIXTURES`): a router with three radios (one running, one switched off, one whose phy is unknown), access points and a
+  client network that hold every kind of secret (including a passphrase with spaces, a hex key, an option named like a secret,
+  `wifi-station` and `wifi-vlan` sections), a mesh interface, an unnamed section, a smaller hostapd, no hostapd and no radios.
+  It asserts the documented fields, the names of the secrets (never their values), that options that only look like secrets (a
+  `wpa_psk_file` path, an `r1_key_holder`, `ft_psk_generate_local`) are returned, the htmode lists (from `iwinfo`, derived from
+  the phy, unknown), the countries, the hostapd features and the networks, and that no canary appears anywhere in `config` or
+  `status`. It then runs both methods for real (they only read) and counts how often any of the router's stored Wi-Fi secrets
+  appears in the replies (it must be zero; the count of secrets looked for must not be).
+- **Browser** (`live.mjs`): first the router's own configuration with every uci write and every `uci get` blocked (a settings
+  block per radio, an editor per network, empty password fields that say one is stored, a hint on every option), then a mock of
+  `flab.radio` and a stateful mock of rpcd's `uci` object: the radio settings (mode list from the hardware, band-specific
+  options, validation, disabling a radio), a mode that decides which channels fit, a successful save (only the changed options
+  written, read back through the plugin), renaming a network with clients, a new password (never visible), an unnamed section,
+  validation of names, passwords and network lists, the dangerous changes, the MAC filter, 802.11r and enterprise options
+  appearing when they apply, adding, discarding and removing networks, a change the router does not keep, a radio and a new
+  network that do not come back, a refused confirmation, leftovers from an earlier attempt, a login without write access, a plugin
+  without `config`, a router without the radio plugin, the dark theme and an expired session.
+
+### Network editors suite
+The Devices and Interfaces and Bridges pages. Never changes the router's configuration: every write is answered by a mock, and blocked (failing the test) in the phase that talks to the real router.
+- **Unit tests** (`model.test.mjs`, no router): netmasks, prefixes and subnet math; the value checks; the option tables (unique ids and options per protocol and device type, a hint on every field);
+  reading the plugin's reply (a reply of another shape is "unavailable"); the router's devices; an untouched draft changes nothing; the UCI plan (a list for addresses, a deleted emptied option, flags as 1/0,
+  a secret only when typed, an interface with a protocol the page does not edit never written, a protocol change deleting the old protocol's options first, defaults that follow the protocol, new and removed
+  interfaces and devices, a port moved between bridges); every validation rule; which interfaces are management interfaces and which changes are dangerous; the check after a save against an independently
+  built "router after the plan"; interfaces that are down after a change.
+- **Backend** (`mkfx.mjs`, `harness.uc`, `assert.mjs`): `flab.network.uc` runs `config` on the router with `FLAB_FIXTURES` (scenarios `main`: a PPPoE password, a WireGuard private and pre-shared key, a SIM PIN, a modem
+  password, `psk` and `key` options and a canary in each, anonymous and named sections in a shuffled key order, other section types, bridge VLANs; `empty`; `missing`). It asserts that no canary appears in any reply,
+  that the secrets are only flagged, that `keepalive` is not taken for a key, file order, list options, the counts of other sections. The harness refuses every call but `config`. `config` is also run once for real
+  (only reads): the counts match `uci show network`, and the number of times a stored secret appears in the reply is counted on the router (only the count leaves it) and must be zero.
+- **Browser** (`live.mjs`): the two pages first show the router's own configuration with every write blocked; then a stateful mock of rpcd's `uci` object and mocked flab.network and netifd replies drive
+  reading (cards, values, hints, read-only protocols, the stored password never in the page), validation, a protocol change, the write-only password, adding and removing interfaces and devices, a risky change and its
+  confirmation (Cancel applies nothing), the 90 second countdown on the apply call, a change the router does not keep, an interface that stays down after the change, a refused confirmation, staged leftovers, moving ports
+  between bridges, a login that may not write, a login without the config call, a plugin without it, a reply of another shape, the dark theme, edits surviving a switch between the pages and an expired session.
+
+### VLAN editor suite
+Never changes the router's configuration: every `uci` write is blocked (and fails the test) in the phase that talks to the real
+router, and the editing flow runs against a stateful mock of rpcd's `uci` object. There is no backend part: the editor adds no
+plugin.
+- **Unit tests** (`model.test.mjs`, no router): the port entries and tokens, the sections as `uci get` returns them
+  (anonymous and named, the `name` option of a device section), the tables (columns from the device section, a port named by a VLAN
+  but not in the bridge, the interfaces of the router on the bridge's VLANs and the management one, a kernel table against the
+  config), the draft, the review text and the UCI operations (only what changed is set, untouched entries keep their spelling, `local`,
+  an emptied row, a new or removed VLAN, filtering, `enable_vlan`, a swconfig group's tokens and `vid`), every error and warning, and
+  the check after a save (a config that holds the draft, one that kept nothing, other members, a switch that stayed).
+- **Browser** (`live.mjs`): the Wired network page first shows the real router read only: the bridge without a table offers
+  **Set up VLAN filtering**, the editor opens with the real `br-lan` and its filtering state, every `uci get` carries a section
+  type (never the whole network config), **Done** closes it, and nothing is staged or written. Then a mock router (the real
+  status of the router with the bridge's VLAN table and filtering following a mocked network config that also holds an interface
+  with a password) drives: the read-only card, the cells, the PVID error and its two marked cells, the review text, saving (the
+  order of the calls, the ports written in the notation of the file, the read-back by type), adding (an id out of range, one in
+  use, Enter, the validation of the new row) and removing a VLAN, the lockout warnings, VLAN filtering off and turning it on, a
+  router that applies nothing, one that refuses the confirmation, staged leftovers, a kernel table that differs, an older swconfig
+  board (the groups, the CPU port, the `vid`, the untagged-once rule, a new group, `enable_vlan`; mock only, since the router has no
+  swconfig switch), a login that may not write or may not read, and a session that expires while saving.
+
+### WireGuard editing suite
+Never changes the router's configuration: every uci write is answered by a mock, and blocked (failing the test) in the phase that talks to the
+real router.
+- **Unit tests** (`model.test.mjs`, no router): the address math (parsing, netmasks, IPv6 text, overlap, the next free host, endpoint
+  checks), the keys (X25519 against the RFC 7748 vectors, WebCrypto against the plain implementation, clamping, the key text check), reading the
+  plugin's reply (also from a plugin without the new fields), the draft, the review list, the UCI plan (only what changed, deletes only of options
+  that exist, a key only when typed, a new interface and its peers, a removed interface and its peers), every validation, the sessions that belong to
+  a tunnel and each warning about cutting it, the check after a save (kept, not kept, a key stored, a new peer found by its public key, a removed one
+  gone, an interface that did not come up, a peer that did not load, what is not expected to run) and the add-a-device helpers (the next address,
+  refusals, the allowed IPs, the configuration text, the file name).
+- **Backend** (`mkfx.mjs`, `harness.uc`, `assert.mjs`): `flab.wireguard.uc` runs on the router with `FLAB_FIXTURES`, so it executes nothing. Scenarios
+  `main` (a running interface with three peers, pre-shared keys, a peer whose public key option holds a pasted secret, a disabled peer; a disabled
+  interface without a running tunnel; an interface and a peer only the kernel has; a firewall zone; `/proc/net/tcp` and `tcp6` with connections on
+  the default, uhttpd and dropbear ports from IPv4, IPv4-mapped, native IPv6 and loopback addresses, plus listening, closing and unrelated sockets)
+  and `empty` (no WireGuard, no protocol handler). The test checks the options and their secret flags, that no key, token, password or pasted secret
+  (canaries) is anywhere in a reply and no secret-named option among the options, the order of interfaces and peers, the names list, the sessions
+  (addresses of both families, the ports, no duplicates). It also runs `status` once for real, which only reads: the count of the router's stored
+  keys that appear in the reply is zero (only the count leaves the router), every `wireguard_*` section is reported by its section name, and the ssh
+  connection the test arrived on is among the sessions.
+- **Browser** (`live.mjs`): the page first shows the router's own interfaces and peers with every uci write blocked and failing the test, then a
+  mock of the plugin built from a stateful mock of `uci` drives: validation of each kind of field, the key generator and the public key it shows,
+  the review list (a key only as "new value (hidden)"), a save (call order, what was written, that the page never calls `uci get`), editing a peer in
+  place, adding and removing peers with Undo, the dialogs that ask before cutting your own session (Cancel, confirm, the banner), the generic
+  warning when no session goes through the tunnel, the add-a-device dialog (the next address, the configuration text, that the stored public key is
+  the one of the shown private key, Copy, Download, Cancel), adding an interface (name, port and key offered, taken names, a taken port, a peer, the
+  note and link for the firewall zone), an interface that does not come up (rolled back, nothing staged), removing an interface and its peers, a change
+  the router does not keep, a confirmation that comes too late, leftovers from an earlier attempt, an interface only the kernel has, a router without
+  the protocol handler or without the plugin, no interface at all, a login without write access, the dark theme and an expired session.
+
+### Firewall editing suite
+Never changes the router's configuration: every `uci` write (including `order`) is blocked, and fails the test, in the phase that talks to the real router; the editing flow runs against a stateful mock of rpcd's `uci` object. It also runs the network suite's `firewall.test.mjs` and `uci.test.mjs`.
+- **Unit tests** (`model.test.mjs`, no router): reading sections in file order by name, form values (loose spellings, absent options, legacy `syn_flood`), zones (edit, add with an interface moving between zones, removal with its forwardings and Undo, duplicate names, an interface in two zones), forwardings (the matrix switch), rules (edits staged by section name, an emptied option deleted, add, move, remove, the order of every section of the file including named sections, new rules after the last rule, no needless `order`), port forwards (DNAT and SNAT checks), the defaults (including creating the section), the lock-out check (zone and address recognition, rules that keep HTTPS, port ranges, defaults, removal, interfaces leaving a zone), the check after a save (a new section matched by place, a change not kept, a stopped firewall, a zone that was not loaded), `stageOps` with an `order`, the view joined to counters, every value check and the plain words.
+- **Backend** (`mkfx.mjs`, `harness.uc`, `assert.mjs`): `flab.firewall.uc` runs on the router with `FLAB_FIXTURES`: `main` (the lab-like config with anonymous and named sections, a `nat` section, an include, an ipset, interfaces with addresses, counters, a canary private key in the network config), `nodefaults`, `legacy`, `stopped`, `nonet`, `partial`. It also runs once for real (read only) and compares the counts with `uci show` and the private keys it finds with the reply.
+- **Browser** (`live.mjs`): the page first shows the real router read only (editing controls present, dialogs open and cancel, every write blocked); then a mock router drives the matrix, every dialog and its validation, reorder, enable and delete with Undo, the defaults card, saving (the order of the calls, the sections written, the order of rules, a new section renamed by the router afterwards), a change the router does not keep, a firewall that keeps the old ruleset or stops loading, a refused confirmation, staged leftovers, the lock-out confirmation (Cancel and Apply anyway), a login that may not write or read, a plugin reply that does not match the config, a missing plugin, the dark theme and an expiring session.
+
+### nlbwmon settings suite
+Never changes the router's configuration and never touches the daemon: every uci write is either answered by a mock or blocked
+(failing the test) in the phase that talks to the real router.
+- **Unit tests** (`model.test.mjs`, no router): reading the config and the replies, the defaults of an absent option, the tables,
+  durations, sizes (K, M, hexadecimal) and IPv4/IPv6 subnets as nlbwmon parses them, the accounting window under a day of the month,
+  from the end and every N days, the periods a lower count deletes, the daemon's command line and its comparison with the config,
+  the daemon check (restart, never back, wrong command line, crash loop), the draft, the review list, the UCI plan (a size in bytes,
+  deleted options, a missing section), the check after a save, the validation of every option with good and bad values, every
+  warning, what the router says about paths, and the effect texts.
+- **Backend** (`mkfx.mjs`, `harness.uc`, `assert.mjs`): `flab.traffic.uc` runs on the router with `FLAB_FIXTURES`, so it reads a
+  fake filesystem (`nlbwmon_fs.json` plus `/proc/mounts` in `files.json`) and executes nothing: a database directory in RAM behind
+  the `/var` link, new and existing directories on a USB disk, under `/etc` (flash), under `/rom` and on a read-only card, on a
+  network share, a path that is a file or below one, the root, a trailing slash, 120 database files, no `/proc/mounts`, the
+  protocol file present, missing, a directory and unreadable, and 22 refused values tried as each argument (relative, empty, `..`,
+  spaces, shell metacharacters, a newline, wrong types, 300 characters), the 126/127 character limit. It also checks the plugin
+  source (no program is started in the new code, both paths are checked first) and the ACL, and runs the method once for real on
+  the router's own paths, comparing the kind with `/proc/mounts` and the files with the periods `nlbw -c list` prints.
+- **Browser** (`live.mjs`): the Settings tab first shows the router's own config, with every uci write blocked and failing the
+  test; then a stateful `uci` mock, procd's service list (a daemon whose command line is built the way the init script builds it, and
+  which restarts, stops, keeps the old command line or restarts forever when a change is applied) and a mock of the plugin drive
+  the tiles, every option and its default, the effect lines, the validation of every option, the warnings, the typed-path probes
+  (one question after a pause, none for a path that was asked or is already refused, errors for a read-only filesystem, a file, a
+  missing protocol file), saving (only the changed options written, a size in bytes, a switch as 0), removing an option, a stopped
+  daemon, a change the router does not keep, a change that stops nlbwmon, a daemon on the old settings, a daemon that keeps
+  restarting, a refused confirmation, leftovers staged in the session, a daemon that differs from the file, a config without a
+  section, no nlbwmon, no plugin, unsaved edits across a tab change with no polling, a login that may not write, the dark theme and a
+  session that expires.
 
 ## Implementation notes
 

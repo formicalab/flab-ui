@@ -28,3 +28,44 @@
 .fwm-main { font-weight: 600; }
 .fwm-sub { font-size: .75rem; opacity: .85; }
 .fwm-key { display: inline-block; width: .9rem; height: .9rem; border-radius: 4px; vertical-align: -2px; }
+
+/* Editing: a card's buttons sit at the right of its header; a row says when it is unsaved or to be removed */
+.fw-card-actions { margin-left: auto; display: inline-flex; gap: .4rem; }
+.fw-table td.fw-actions { white-space: nowrap; text-align: right; }
+.fw-table td.fw-actions > * { vertical-align: middle; }
+.fw-act { padding: .1rem .4rem; }
+.fw-switch { display: inline-block; margin: 0 .5rem 0 0; min-height: 0; padding-left: 2.5em; }
+.fw-switch .form-check-input { margin-top: .15rem; cursor: pointer; }
+.fw-table tr.fw-removed td:not(.fw-actions) { opacity: .5; text-decoration: line-through; }
+.fw-table tr.fw-removed .fl-badge { text-decoration: none; }
+.fw-words-line { max-width: 34rem; }
+
+/* The matrix cells that switch a forwarding, and the forwardings listed under the matrix */
+.fwm-cell.fwm-click[role=button] { cursor: pointer; transition: filter .1s; }
+.fwm-cell.fwm-click[role=button]:hover { filter: brightness(.94); }
+.fwm-cell.fwm-click[role=button]:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: 1px; }
+.fwm-cell.fwm-changed { box-shadow: inset 0 0 0 2px var(--fl-warn-fg); }
+.fw-forwardings { padding: 0 1rem 1rem; display: grid; gap: .4rem; }
+.fw-fwd { display: inline-flex; align-items: center; gap: .35rem; }
+.fw-fwd.fw-removed { text-decoration: line-through; opacity: .6; }
+.fw-fwd.fw-off { opacity: .6; }
+.fw-fwd .fl-badge { text-decoration: none; }
+.fw-fwd .fw-act { padding: 0 .25rem; border: 0; background: transparent; }
+
+/* The dialogs and the defaults card: groups that fold, the check boxes of a choice, and the sentence that says what a rule does */
+.fw-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
+.fw-group[hidden] { display: none; }
+.fw-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
+.fw-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+.fw-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
+.fw-group-body p { margin: 0; }
+.fw-groups { display: flex; flex-direction: column; gap: .8rem; }
+.fw-group [hidden] { display: none !important; }
+.fw-checks { display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; padding: .35rem .5rem; border: 1px solid transparent; border-radius: 6px; }
+.fw-checks.is-invalid { border-color: var(--fl-bad-fg); }
+.fw-check { display: inline-flex; align-items: center; gap: .4rem; margin: 0; padding-left: 0; }
+.fw-check .form-check-input { float: none; margin: 0; }
+.fw-check-note { margin-left: .2rem; }
+.fw-more { margin-top: .4rem; max-width: 24rem; }
+.fw-what { padding: .6rem .8rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface-hover); }
+.fw-words { font-size: .875rem; }

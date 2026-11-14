@@ -20,3 +20,34 @@
 
 /* Narrow screens: traffic summary flows left in the header */
 @media (max-width: 991.98px) { .wg-traffic { margin-left: 0; } }
+
+/* Editing (the controls and the review banner are in forms.css): the page is a column of cards, like the other editing pages. */
+.wg-form { display: flex; flex-direction: column; gap: 1.25rem; }
+.wg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .2rem 1.25rem .4rem; }
+.wg-spacer { flex: 1; }
+.wg-notes { padding: 0 1.25rem; }
+.wg-notes .set-note { margin-top: .2rem; }
+.wg-actions { white-space: nowrap; text-align: right; }
+.wg-actions .btn + .btn { margin-left: .3rem; }
+.wg-new { border-color: var(--fl-info-fg); }
+.wg-removed > :not(.wg-head):not(.wg-toolbar) { opacity: .55; }
+.wg-addbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0; }
+
+/* The interface settings form, a panel at the bottom of the card, and the editor of one peer under its row. */
+.wg-panels { padding: 0 1.25rem 1.25rem; }
+.wg-panel { border: 1px solid var(--fl-stroke); border-radius: 6px; }
+.wg-panel > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
+.wg-panel[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+.wg-panel-body { padding: .8rem .9rem 1rem; display: flex; flex-direction: column; gap: 1rem; }
+.wg-peer-edit > td { background: var(--fl-surface-hover); padding: 1rem 1.25rem; white-space: normal; }
+.wg-peer-form { display: flex; flex-direction: column; gap: 1rem; }
+.wg-form .set-fields { row-gap: .8rem; column-gap: 2rem; }
+.wg-keyfield { max-width: 40rem; }
+.wg-key-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; margin-top: .4rem; }
+.wg-derived { margin-top: .4rem; display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; }
+.wg-extra { border-top: 1px dashed var(--fl-stroke); padding-top: .6rem; }
+.wg-extra p { margin: 0 0 .4rem; }
+.wg-extra .kv { margin: 0; }
+
+/* The configuration text of a device, shown once in the dialog. */
+.wg-conf { margin: .8rem 0 0; padding: .8rem 1rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface-hover); white-space: pre-wrap; word-break: break-all; user-select: all; }

@@ -1,0 +1,39 @@
+/* Styling of the network editor shared by the Devices and Interfaces page and the Bridges page (the form controls and the review banner are in
+   forms.css). Loaded on demand by core/app.js when either page is first opened. The `ne-` prefix means "network editor". */
+
+/* A block of editing cards under a heading: the cards flow in a column, full width. */
+.ne-section { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+.ne-section > h3 { margin: 0; font-size: 1rem; }
+.ne-section > .set-legend { padding: 0; border: 0; }
+.ne-form { display: flex; flex-direction: column; gap: 1.25rem; }
+.ne-form .set-fields { align-items: stretch; row-gap: 0; column-gap: 2rem; }
+.ne-form .set-fields > * { padding: .7rem 0; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 55%, transparent); }
+.ne-groups { display: flex; flex-direction: column; gap: .8rem; }
+.ne-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
+.ne-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
+.ne-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+.ne-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
+.ne-group-body p { margin: 0; }
+
+/* A section that was added in the form, and one that is going to be removed. */
+.ne-new { border-color: var(--fl-info, var(--fl-stroke)); }
+.ne-removed > :not(.ne-actions) { opacity: .55; }
+.ne-actions { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.ne-addbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0; }
+.ne-extra { border-top: 1px dashed var(--fl-stroke); padding-top: .6rem; margin-top: .2rem; }
+.ne-extra p { margin: 0 0 .4rem; }
+.ne-extra .kv { margin: 0; }
+
+/* The ports picker of a bridge: a grid of ports with a checkbox, the link dot, and where the port is now. */
+.ne-ports { display: flex; flex-direction: column; gap: .6rem; }
+.ne-ports.is-invalid { outline: 1px solid var(--fl-bad-fg); outline-offset: 3px; border-radius: 6px; }
+.ne-port-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .4rem .8rem; }
+.ne-port { display: flex; align-items: center; gap: .5rem; margin: 0; padding: .3rem .5rem; border: 1px solid var(--fl-stroke); border-radius: 6px; flex-wrap: wrap; }
+.ne-port.on { border-color: color-mix(in srgb, var(--fl-brand) 55%, var(--fl-stroke)); background: var(--fl-surface-hover); }
+.ne-port .form-check-input { float: none; margin: 0; flex: none; }
+.ne-port .dot { width: 8px; height: 8px; display: inline-block; animation: none; flex: none; }
+.ne-port-add { max-width: 26rem; }
+
+/* The confirmation before a change that can cut the connection. */
+.ne-risks ul { margin: 0 0 .8rem; padding-left: 1.2rem; display: grid; gap: .5rem; }
+.ne-risks p { margin: 0; }

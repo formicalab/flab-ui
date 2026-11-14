@@ -13,6 +13,9 @@
 //   model       { draftFrom(data), changesOf(base, draft), isDirty(base, draft), problems(base, draft), plan(base, draft) }
 //   verify      (base, draft, after) => void    throws when the data read back does not hold what was saved
 //   afterSave   optional (base, draft) => boolean    true when the page took over the refresh (otherwise it reloads)
+//   timeoutS    optional seconds of the rollback countdown for this page's changes (default: core/uci.js APPLY_TIMEOUT_S)
+//   settleMs    optional milliseconds to wait after the apply before verifying (default: core/uci.js SETTLE_MS)
+//   confirmSave optional async (base, draft) => boolean    asks before the change is applied; false cancels the save
 import { AuthError, can, optional } from './ubus.js';
 import { button } from './ui.js';
 import { note, reviewBanner } from './forms.js';
@@ -72,14 +75,19 @@ export function createEditor(spec) {
   // confirm. Any failure leaves the router on its previous config and the edits in the form.
   async function save() {
     const { base, draft } = state;
+    // A page whose changes can cut its own connection asks first (it shows the risks and resolves to false on Cancel).
+    if (spec.confirmSave && !(await spec.confirmSave(base, draft))) return;
     const configs = configNames();
     state.busy = true;
     state.message = { kind: 'info', text: 'Applying the change…' };
     redraw();
     try {
-      await applyChange(uci, configs,
+      // A page that changes something that can cut its own connection asks for a longer countdown for its calls only.
+      const ed = spec.timeoutS ? { ...uci, apply: () => uci.apply(spec.timeoutS) } : uci;
+      await applyChange(ed, configs,
         ed => stageOps(ed, model.plan(base, draft)),
-        async () => spec.verify(base, draft, spec.readAfter ? await spec.readAfter() : spec.readBack(await uci.get(configs[0]))));
+        async () => spec.verify(base, draft, spec.readAfter ? await spec.readAfter() : spec.readBack(await uci.get(configs[0]))),
+        spec.settleMs ? { settleMs: spec.settleMs } : undefined);
       state.message = { kind: 'ok', text: 'Saved: the router applied the change and it was confirmed.' };
       state.draft = null;
     } catch (e) {
@@ -100,7 +108,7 @@ export function createEditor(spec) {
     // and put the returned node among the command-bar controls.
     attach(reload) {
       reloadPage = reload;
-      bar = reviewBanner({ onSave: save, onDiscard: discardEdits });
+      bar = reviewBanner({ onSave: save, onDiscard: discardEdits, seconds: spec.timeoutS });
       return bar.node;
     },
 

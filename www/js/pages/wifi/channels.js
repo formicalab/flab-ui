@@ -1,12 +1,12 @@
-// The model of changing the channel of each Wi-Fi radio (pure: no DOM, no router), used by the Wi-Fi page and its
-// unit test. A radio is an entry of the flab.radio reply: its name is the `wifi-device` section of
-// /etc/config/wireless, `config.channel` and `config.htmode` are what is configured, and `channels` lists what the
-// regulatory domain allows ({ channel, freq, disabled, dfs, max_power }).
+// The geometry of Wi-Fi channels (pure: no DOM, no router), used by the Wi-Fi page and its unit test. A radio is an entry
+// of the flab.radio status reply: its name is the `wifi-device` section of /etc/config/wireless, `config.channel` and
+// `config.htmode` are what is configured, and `channels` lists what the regulatory domain allows
+// ({ channel, freq, disabled, dfs, max_power }).
 //
-// What the page edits is only the `channel` option of each radio: a channel number or `auto`. The width stays as
-// configured, so a channel is only offered when the whole block of that width fits around it, and `spanOf()` tells
-// the page which channels the radio would occupy, for the hover preview.
-export const CONFIG = 'wireless';
+// A channel is chosen as a number or `auto`, at the width the radio's htmode says, so a channel is only offered when the
+// whole block of that width fits around it in the regulatory domain. `spanOf()` tells the page which channels the radio
+// would occupy, for the hover preview, and `channelCheck()` what is wrong with a choice. The draft, the review list and
+// the operations are in model.js.
 
 // Channel width in MHz of a `htmode` such as HT20, VHT80, HE160 or HT40+ (20 when it names none).
 export function widthOf(htmode) {
@@ -92,64 +92,25 @@ export const canUse = (radio, channel) => {
 // Whether the page can offer channels for a radio: the phy listed them.
 export const editable = radio => Boolean(radio.channels?.length);
 
-// The channel option as a string: a number, or `auto` when none is configured.
-const channelOf = radio => String(radio.config?.channel ?? 'auto');
+// The channel option of a radio as a string: a number, or `auto` when none is configured.
+export const channelOf = radio => String(radio.config?.channel ?? 'auto');
 
-// The form's draft: the channel of every radio, as configured.
-export const draftFrom = hw => ({ radios: Object.fromEntries((hw?.radios ?? []).map(r => [r.name, { channel: channelOf(r) }])) });
-
-// What the draft changes, as { key, label, from, to }, one per radio whose channel differs.
-export function changesOf(hw, draft) {
-  const out = [];
-  for (const r of hw?.radios ?? []) {
-    const to = draft.radios[r.name]?.channel;
-    if (to != null && to !== channelOf(r)) out.push({ key: `${r.name}:channel`, label: `${r.name}: channel`, from: channelOf(r), to });
+// Checks choosing `channel` (a number or `auto`, as a string) for `radio` while it runs in `htmode`: returns { error?, warnings }.
+// An error means the channel cannot be used: the regulatory domain does not allow it, or the whole block of the htmode's width
+// does not fit around it. The warnings are about radar (DFS) channels, which need an availability check before clients can
+// connect, and about `auto`.
+export function channelCheck(radio, channel, htmode) {
+  const name = radio.name;
+  if (channel === 'auto') return { warnings: [`${name}: with channel auto the radio picks its own channel when it starts, so it may land on a different one than its neighbors.`] };
+  if (!/^\d+$/.test(channel) || !radio.channels?.some(x => x.channel === +channel && !x.disabled)) {
+    return { error: `${name}: channel ${channel} is not allowed on this radio in the current regulatory domain.`, warnings: [] };
   }
-  return out;
-}
-
-// Whether the draft differs from what the router has.
-export const isDirty = (hw, draft) => changesOf(hw, draft).length > 0;
-
-// The errors that block Save (keyed by the control they belong to) and the warnings that do not, for the radios
-// whose channel is being changed: a channel the regulatory domain does not allow or that cannot carry the radio's
-// width, radar (DFS) channels, and a mesh interface on the radio.
-export function problems(hw, draft) {
-  const errors = [];
-  const warnings = [];
-  for (const c of changesOf(hw, draft)) {
-    const radio = hw.radios.find(r => `${r.name}:channel` === c.key);
-    const name = radio.name;
-    const mesh = radio.interfaces?.find(i => i.mode === 'mesh');
-    if (c.to === 'auto') {
-      warnings.push(`${name}: with channel auto the radio picks its own channel when it starts, so it may land on a different one than its neighbors.`);
-    } else if (!/^\d+$/.test(c.to) || !radio.channels?.some(x => x.channel === +c.to && !x.disabled)) {
-      errors.push({ key: c.key, text: `${name}: channel ${c.to} is not allowed on this radio in the current regulatory domain.` });
-      continue;
-    } else {
-      const span = spanOf(radio, +c.to);
-      const width = widthOf(radio.config?.htmode);
-      if (!span.fits) {
-        errors.push({ key: c.key, text: `${name}: channel ${c.to} cannot carry ${radio.config?.htmode} (${width} MHz): the whole ${width} MHz block around it must be allowed. Choose another channel.` });
-        continue;
-      }
-      if (span.channels.some(n => radio.channels.find(x => x.channel === n)?.dfs)) {
-        warnings.push(`${name}: channel ${c.to} is a radar (DFS) channel. The radio listens for radar for 1 to 10 minutes before clients can connect, and it moves away if radar is detected.`);
-      }
-    }
-    if (mesh) warnings.push(`${name} carries the mesh interface ${mesh.ssid ?? mesh.section}: the other mesh nodes must be moved to the same channel by hand, or they lose this node.`);
+  // The radio as it would run: its geometry depends on the htmode (the width, and on 2.4 GHz the side of a 40 MHz block).
+  const span = spanOf({ ...radio, config: { ...radio.config, htmode } }, +channel);
+  const width = widthOf(htmode);
+  if (!span.fits) {
+    return { error: `${name}: channel ${channel} cannot carry ${htmode || 'the driver default mode'} (${width} MHz): the whole ${width} MHz block around it must be allowed. Choose another channel or a narrower mode.`, warnings: [] };
   }
-  return { errors, warnings };
-}
-
-// The operations that make the draft real: one `set` of the channel option per changed radio.
-export const plan = (hw, draft) => changesOf(hw, draft).map(c => ({ op: 'set', config: CONFIG, section: c.key.split(':')[0], values: { channel: c.to } }));
-
-// Reads the channel of each radio from `uci get wireless <radio>` replies: { radio: { channel } }.
-export const readChannels = sections => Object.fromEntries(Object.entries(sections).map(([name, s]) => [name, { channel: String(s?.channel ?? 'auto') }]));
-
-// Throws unless the channels read back after the change (`after`, from readChannels) hold what the draft asked for.
-export function checkApplied(after, draft) {
-  const left = Object.entries(draft.radios).filter(([name, d]) => after[name] && after[name].channel !== d.channel);
-  if (left.length) throw new Error(`${left.map(([name]) => `${name}: channel`).join(', ')} ${left.length > 1 ? 'were' : 'was'} not saved`);
+  const dfs = span.channels.some(n => radio.channels.find(x => x.channel === n)?.dfs);
+  return { warnings: dfs ? [`${name}: channel ${channel} is a radar (DFS) channel. The radio listens for radar for 1 to 10 minutes before clients can connect, and it moves away if radar is detected.`] : [] };
 }

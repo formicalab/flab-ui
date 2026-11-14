@@ -101,7 +101,8 @@ export function fieldRow(f, io) {
 // edit, without redrawing the form (which would lose the focus). `view` is
 //   { changes: [{ label, from, to }], errors: [{ text }], warnings: [text], message: { kind, text } | null,
 //     busy, canEdit, dirty, dismiss() }
-export function reviewBanner({ onSave, onDiscard }) {
+// `seconds` is the length of the rollback countdown the review text promises (default 30, core/uci.js APPLY_TIMEOUT_S).
+export function reviewBanner({ onSave, onDiscard, seconds = 30 }) {
   let open = false;
   const summaryNode = h('span', { className: 'set-bar-summary' });
   const detailsToggle = h('button', { type: 'button', className: 'btn btn-sm btn-fl' });
@@ -112,7 +113,7 @@ export function reviewBanner({ onSave, onDiscard }) {
   const notes = h('div', { className: 'set-notes' });
   const list = h('ul', { className: 'set-changes' });
   const details = h('div', { className: 'set-bar-details' },
-    h('p', { className: 'muted small' }, 'Save applies the change and checks that the router kept it. If the check fails, or the page is closed before it finishes, the router puts the previous settings back by itself within 30 seconds.'),
+    h('p', { className: 'muted small' }, `Save applies the change and checks that the router kept it. If the check fails, or the page is closed before it finishes, the router puts the previous settings back by itself within ${seconds} seconds.`),
     list);
   const root = h('div', { className: 'set-bar', hidden: true },
     h('div', { className: 'set-bar-head' }, icon('check-circle'), summaryNode, h('span', { className: 'set-bar-spacer' }), detailsToggle, discard, saveButton, dismiss),

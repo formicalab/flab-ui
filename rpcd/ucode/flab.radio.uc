@@ -1,7 +1,8 @@
 #!/usr/bin/ucode
 //
 // rpcd ucode plugin reporting Wi-Fi radios, their configuration and their virtual interfaces as JSON:
-//   ubus call flab.radio status
+//   ubus call flab.radio status    live state of every radio and SSID
+//   ubus call flab.radio config    the wireless configuration without secrets, for editing it
 //
 // Everything is discovered at run time: radios from UCI wireless, their phy from the kernel, interfaces
 // from netifd, so a new radio, SSID or channel shows up on the next poll.
@@ -14,12 +15,22 @@
 //   - hostapd (ubus): BSSID, BSS status (ENABLED, DFS, ...), connected client count
 //   - sysfs: interface counters
 //
-// rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
+// `config` returns the whole wireless configuration (every wifi-device and wifi-iface option) for the page that edits it,
+// WITHOUT its secrets: an option that holds a key, password, identity or key-holder list is never returned, only whether
+// it is set (`secrets`). Next to it come what the page needs to validate an edit against this hardware: the modes each
+// radio supports, the country list, the networks and the encryption features of the installed hostapd.
+//
+// rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself (this includes `iwinfo`, which
+// is why the iwinfo command is used).
 
 'use strict';
 
 import { connect } from 'ubus';
 import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label, iw_channel_info } from 'flab.util';
+
+// Options of a wireless section that hold a secret: never returned. The WPA passphrase and WEP keys, the SAE password,
+// the RADIUS, accounting and DAE secrets, EAP identity and passwords, the WPS PIN and the 802.11r key-holder lists.
+const SECRET_OPTION = /^(key[1-4]?|identity|r0kh|r1kh|wps_pin|[a-z0-9_]*(passw|pwd|passphrase|secret|token)[a-z0-9_]*)$/i;
 
 //#region Helpers
 
@@ -79,14 +90,66 @@ function phy_for_path(paths, path) {
 	return matching[idx];
 }
 
+// The htmodes a band of a phy supports, from the markers in its "Band N:" block of `iw phy info`: HT20/HT40 from the HT
+// capabilities, VHT from the VHT capabilities (80 MHz off 2.4 GHz, 160 MHz when the width field says so), HE from the
+// HE PHY capability strings ("HE40/", "HE80/", "HE160/") and EHT likewise (320 MHz when it is named).
+function band_htmodes(block, band) {
+	let has = (re) => match(block, re) != null;
+	let modes = [];
+	if (has(/\n\t\tCapabilities: 0x/)) {
+		push(modes, 'HT20');
+		if (has(/HT20\/HT40/))
+			push(modes, 'HT40');
+	}
+	if (has(/VHT Capabilities/)) {
+		push(modes, 'VHT20', 'VHT40');
+		if (band != '2g')
+			push(modes, 'VHT80');
+		if (has(/Supported Channel Width: (160|80\+80)/))
+			push(modes, 'VHT160');
+	}
+	// The width flags of the HE (and EHT) capabilities that gate each mode.
+	let widths = [['20', true], ['40', has(/HE40\//)], ['80', has(/HE80\//)], ['160', has(/HE160\//)]];
+	if (has(/HE Iftypes/))
+		for (let w in widths)
+			if (w[1])
+				push(modes, 'HE' + w[0]);
+	if (has(/EHT Iftypes/)) {
+		for (let w in widths)
+			if (w[1])
+				push(modes, 'EHT' + w[0]);
+		if (has(/320 ?MHz/i))
+			push(modes, 'EHT320');
+	}
+	return modes;
+}
+
+// Sort rank of an htmode: the generation (HT, VHT, HE, EHT) first, then the width.
+function htmode_rank(mode) {
+	let m = match(mode, /^([A-Z]+)([0-9]+)$/);
+	return m ? (index(['HT', 'VHT', 'HE', 'EHT'], m[1]) + 1) * 1000 + +m[2] : 9000;
+}
+
 // Capabilities, antennas and the channel list (with DFS and disabled flags) of a phy, parsed from
 // `iw phy <phy> info`. Antenna counts come from the "Available Antennas" bitmasks. `standards` lists
-// the 802.11 generations the phy advertises.
+// the 802.11 generations the phy advertises and `bands` the channel widths each band supports, as the
+// `htmodes` a radio on that band may be configured with.
 function phy_info(phy) {
-	let out = { channels: [], standards: [] };
+	let out = { channels: [], standards: [], bands: [] };
 	let text = run('iw phy ' + phy + ' info 2>/dev/null');
 	if (text == '')
 		return out;
+
+	// Each "Band N:" block of the dump describes one band; the text before the first one is the phy header.
+	let blocks = split(text, /\n\tBand [0-9]+:/);
+	for (let i = 1; i < length(blocks); i++) {
+		let f = match(blocks[i], /\* ([0-9]+)(\.[0-9]+)? MHz/);
+		if (!f)
+			continue;
+		let mhz = +f[1];
+		let band = mhz < 2500 ? '2g' : mhz < 5925 ? '5g' : mhz <= 7125 ? '6g' : '60g';
+		push(out.bands, { band, htmodes: band_htmodes(blocks[i], band) });
+	}
 
 	let m = match(text, /Available Antennas: TX 0x([0-9a-f]+) RX 0x([0-9a-f]+)/);
 	if (m)
@@ -215,6 +278,15 @@ function interface_view(conn, s, wl_iface) {
 }
 //#endregion
 
+// The phy of radio `r` (a wifi-device section) with netifd's state `st`: the phy of a running interface, else the one the
+// device path names (a radio that is down).
+function radio_phy(r, st, paths) {
+	let phy = null;
+	for (let i in st.interfaces ?? [])
+		phy ??= i.ifname ? sysfs(`/sys/class/net/${i.ifname}/phy80211/name`) : null;
+	return phy ?? phy_for_path(paths, r.path);
+}
+
 // Builds the flab.radio status reply: every wifi-device with its configuration, interfaces and, for radios
 // that are up, live channel, survey and hardware data.
 function collect() {
@@ -228,12 +300,7 @@ function collect() {
 	for (let r in sections_of(all, 'wifi-device')) {
 		let name = r['.name'];
 		let st = wl[name] ?? {};
-
-		// Prefer the phy of a running interface; fall back to the device path for radios that are down.
-		let phy = null;
-		for (let i in st.interfaces ?? [])
-			phy ??= i.ifname ? sysfs(`/sys/class/net/${i.ifname}/phy80211/name`) : null;
-		phy ??= phy_for_path(paths, r.path);
+		let phy = radio_phy(r, st, paths);
 
 		let views = [];
 		for (let s in ifaces) {
@@ -278,12 +345,125 @@ function collect() {
 	return { generated: time(), regdomain: regdomain(), radios };
 }
 
-// rpcd registration: ubus object flab.radio with the single method `status` (no arguments).
+//#region Configuration
+
+// Whether a UCI value is set: an empty string and an empty list are not.
+function is_set(v) {
+	return type(v) == 'array' ? length(v) > 0 : (v != null && '' + v != '');
+}
+
+// A UCI section for the `config` reply: its name, type and position, the options that may be shown (every one but the
+// secrets) and which secrets are set: { values, secrets: { option: true } }. A secret's value is never copied.
+function section_view(s) {
+	let values = {}, secrets = {};
+	for (let k, v in s) {
+		if (index(k, '.') == 0)
+			continue;
+		if (match(k, SECRET_OPTION)) {
+			if (is_set(v))
+				secrets[k] = true;
+			continue;
+		}
+		values[k] = v;
+	}
+	return { section: s['.name'], anonymous: s['.anonymous'] == true, index: s['.index'] ?? 0, type: s['.type'], values, secrets };
+}
+
+// The htmodes radio `r` may be set to: what iwinfo lists for one of its running interfaces (the list netifd and hostapd
+// work from), else what the phy's capabilities for the radio's band allow. { source, modes }; the list is empty when the
+// hardware could not be asked (a radio that is down and whose phy is unknown).
+function radio_htmodes(r, phy, live_if) {
+	let listed = [];
+	if (live_if && safe_ifname(live_if))
+		listed = filter(split(trim(run('iwinfo ' + live_if + ' htmodelist 2>/dev/null')), /[[:space:]]+/), (m) => m != '');
+	if (length(listed))
+		return { source: 'iwinfo', modes: sort(listed, (a, b) => htmode_rank(a) - htmode_rank(b)) };
+
+	let bands = phy && safe_ifname(phy) ? phy_info(phy).bands : [];
+	let band = filter(bands, (b) => b.band == r.band)[0] ?? (r.band == null && length(bands) == 1 ? bands[0] : null);
+	return { source: band ? 'phy' : null, modes: band ? band.htmodes : [] };
+}
+
+// The countries the driver knows, as [{ code, name }], from `iwinfo <ifname> countrylist` (it needs a running interface).
+function country_list(ifname) {
+	let out = [];
+	if (!ifname || !safe_ifname(ifname))
+		return out;
+	for (let line in split(run('iwinfo ' + ifname + ' countrylist 2>/dev/null'), '\n')) {
+		let m = match(line, /^[[:space:]]*([A-Z0-9]{2}) "(.*)"$/);
+		if (m)
+			push(out, { code: m[1], name: m[2] });
+	}
+	return out;
+}
+
+// What the installed hostapd was built with, as { eap, sae, owe, ft, wps } booleans, from `hostapd -v<feature>` (exit status 0
+// when supported); every value is null when hostapd is not installed, so the page does not restrict anything it cannot know.
+function hostapd_features() {
+	let known = match(run('hostapd -v 2>&1'), /hostapd v/) != null;
+	let out = {};
+	for (let f in [['eap', 'eap'], ['sae', 'sae'], ['owe', 'owe'], ['ft', '11r'], ['wps', 'wps']])
+		out[f[0]] = known ? run('hostapd -v' + f[1] + ' >/dev/null 2>&1 && echo yes') != '' : null;
+	return out;
+}
+
+// The logical interfaces of /etc/config/network that a wireless network can be attached to (loopback left out).
+function network_list() {
+	let out = [];
+	for (let s in sections_of(uci_all('network'), 'interface'))
+		if (s['.name'] != 'loopback')
+			push(out, { name: s['.name'], proto: s.proto });
+	return out;
+}
+
+// Builds the flab.radio config reply: every wifi-device and wifi-iface of /etc/config/wireless without secrets, what each
+// radio supports, and the lists the page offers in its drop-downs. Sections of other types (wifi-vlan, wifi-station) are
+// only listed by name: they hold keys and the page does not edit them.
+function config() {
+	let conn = connect();
+	let all = uci_all('wireless');
+	let wl = ubus_call(conn, 'network.wireless', 'status') ?? {};
+	let paths = phy_paths();
+
+	let radios = [], country_if = null;
+	for (let r in sections_of(all, 'wifi-device')) {
+		let st = wl[r['.name']] ?? {};
+		let live_if = filter(map(st.interfaces ?? [], (i) => i.ifname), (n) => n != null)[0];
+		country_if ??= live_if;
+		let view = section_view(r);
+		view.phy = radio_phy(r, st, paths);
+		view.htmodes = radio_htmodes(r, view.phy, live_if);
+		push(radios, view);
+	}
+
+	let others = [];
+	for (let name, s in all)
+		if (s['.type'] != 'wifi-device' && s['.type'] != 'wifi-iface')
+			push(others, { section: s['.name'] ?? name, type: s['.type'] });
+
+	return {
+		generated: time(),
+		radios,
+		interfaces: map(sections_of(all, 'wifi-iface'), section_view),
+		others,
+		networks: network_list(),
+		countries: country_list(country_if),
+		features: hostapd_features(),
+	};
+}
+//#endregion
+
+// rpcd registration: ubus object flab.radio with the methods `status` and `config` (no arguments).
 return {
 	'flab.radio': {
 		status: {
 			call: function(request) {
 				return collect();
+			},
+		},
+		config: {
+			call: function(request) {
+				return config();
 			},
 		},
 	},

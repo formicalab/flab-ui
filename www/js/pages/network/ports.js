@@ -105,11 +105,12 @@ function details(net) {
 }
 
 // `redraw` repaints the page from cached data (used by the Details and cable-test buttons). Below the port table come the VLAN cards
-// of the bridges and swconfig switches that have a VLAN table.
-export function portsPanel(net, redraw) {
+// of the bridges and swconfig switches that have a VLAN table; `vlan` is the VLAN editor's context (vlanpage.js), null when the
+// login may not change the config.
+export function portsPanel(net, redraw, vlan) {
   rerender = redraw;
   hooks.rerender = redraw;
   // A port that vanished must not leave a stale open panel behind.
   for (const name of expanded) if (!net.ports.some(p => p.name === name)) expanded.delete(name);
-  return [topologyCard(net), details(net), ...vlanCards(net)];
+  return [topologyCard(net), details(net), ...vlanCards(net, vlan)];
 }

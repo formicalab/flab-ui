@@ -1,10 +1,12 @@
-// Unit test for the Wi-Fi channel model (www/js/pages/wifi/channels.js): the width, the span a channel would
-// occupy, what the draft changes, the errors and warnings, the operations and the read-back check. Pure
-// functions: no router and no browser. Usage: node model.test.mjs
+// Unit test for the Wi-Fi channel handling: the geometry of channels (www/js/pages/wifi/channels.js: the width, the span a
+// channel would occupy) and the channel part of the editing model (www/js/pages/wifi/model.js: what the draft changes, the errors
+// and warnings, the operations and the read-back check). Pure functions: no router and no browser. The rest of the editing model
+// is tested in tests/wifiedit. Usage: node model.test.mjs
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
-const m = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/wifi/channels.js')).href);
+const page = name => import(pathToFileURL(path.resolve(import.meta.dirname, `../../www/js/pages/wifi/${name}.js`)).href);
+const m = { ...(await page('channels')), ...(await page('model')) };
 
 let failed = 0;
 // Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
@@ -19,8 +21,11 @@ const radio2g = (config = {}, extra = {}) => ({ name: 'radio0', band: '2g', enab
 const band5 = [...[36, 40, 44, 48, 52, 56, 60, 64].map(n => ch('5g', n, n >= 52 ? { dfs: true } : {})), ...[100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140].map(n => ch('5g', n, { dfs: true })), ...[149, 153, 157, 161, 165].map(n => ch('5g', n))];
 // A 5 GHz radio with the full channel list and one AP, with `config` and `extra` applied on top.
 const radio5g = (config = {}, extra = {}) => ({ name: 'radio1', band: '5g', enabled: true, up: true, config: { channel: '104', htmode: 'HE160', ...config }, channels: band5, interfaces: [{ mode: 'ap', ssid: 'home' }], ...extra });
-// A hardware description holding `radios`.
-const hwOf = (...radios) => ({ radios });
+// The page's data for `radios`: the status reply (the radios) and a configuration reply that holds each radio's channel and htmode.
+const hwOf = (...radios) => m.readWifi({ radios }, {
+  radios: radios.map(r => ({ section: r.name, values: { channel: r.config.channel, htmode: r.config.htmode, band: r.band }, secrets: {}, htmodes: { source: null, modes: [] } })),
+  interfaces: [], others: [], networks: [], countries: [], features: {},
+});
 // A draft taken from `hw`, then modified by `edit`.
 const draftOf = (hw, edit) => { const d = m.draftFrom(hw); edit?.(d); return d; };
 
@@ -69,8 +74,8 @@ check(j(m.runningBlock(radio5g({}, { live: { channel: 36, width: 20, center: 518
 console.log('== the draft and what it changes ==');
 const hw = hwOf(radio2g(), radio5g());
 const d0 = m.draftFrom(hw);
-check(j(d0) === j({ radios: { radio0: { channel: '6' }, radio1: { channel: '104' } } }), 'the draft holds the configured channel of every radio');
-check(j(m.draftFrom(hwOf(radio2g({ channel: undefined })))) === j({ radios: { radio0: { channel: 'auto' } } }), 'a radio with no channel option is on auto');
+check(d0.radios.radio0.channel === '6' && d0.radios.radio1.channel === '104' && d0.added.length === 0, 'the draft holds the configured channel of every radio');
+check(m.draftFrom(hwOf(radio2g({ channel: undefined }))).radios.radio0.channel === 'auto', 'a radio with no channel option is on auto');
 check(!m.isDirty(hw, d0) && m.changesOf(hw, d0).length === 0 && m.plan(hw, d0).length === 0, 'an untouched draft changes nothing');
 const d1 = draftOf(hw, x => { x.radios.radio1.channel = '36'; });
 check(j(m.changesOf(hw, d1)) === j([{ key: 'radio1:channel', label: 'radio1: channel', from: '104', to: '36' }]) && m.isDirty(hw, d1), 'a new channel is one change with its from and to');
@@ -111,12 +116,13 @@ check(m.canUse(r5, 36) && !m.canUse(r5, 149) && !m.canUse(r5, 7), 'canUse says w
 check(m.editable(r5) && !m.editable({ name: 'x' }) && !m.editable({ name: 'x', channels: [] }), 'a radio is editable when the phy listed its channels');
 
 console.log('== reading back after apply ==');
-const after = m.readChannels({ radio0: { channel: '6', htmode: 'HE40' }, radio1: { channel: '36' }, radio2: {} });
-check(j(after) === j({ radio0: { channel: '6' }, radio1: { channel: '36' }, radio2: { channel: 'auto' } }), 'the channel of each radio is read from its own section');
+// The reply of `flab.radio config` as it is after the change: the radios' options.
+const afterOf = radios => ({ radios: Object.entries(radios).map(([section, values]) => ({ section, values, secrets: {} })), interfaces: [] });
+const after = afterOf({ radio0: { channel: '6', htmode: 'HE40' }, radio1: { channel: '36', htmode: 'HE160' } });
 let msg = null;
-try { m.checkApplied(after, d1); } catch (e) { msg = e.message; }
-check(msg === null, 'the draft was stored');
-try { m.checkApplied(m.readChannels({ radio1: { channel: '104' } }), d1); } catch (e) { msg = e.message; }
+try { m.checkApplied(hw, d1, after); } catch (e) { msg = e.message; }
+check(msg === null, 'the draft was stored', String(msg));
+try { m.checkApplied(hw, d1, afterOf({ radio0: { channel: '6', htmode: 'HE40' }, radio1: { channel: '104', htmode: 'HE160' } })); } catch (e) { msg = e.message; }
 check(/radio1: channel was not saved/.test(msg ?? ''), 'a channel that did not stick is reported', String(msg));
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall Wi-Fi channel checks passed');

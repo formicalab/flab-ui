@@ -1,10 +1,10 @@
 {
   "flab": {
-    "description": "flab-ui Wi-Fi page: radios and their state (read), and the channel of each radio through staged uci edits on the wireless config with automatic rollback",
+    "description": "flab-ui Wi-Fi page: radios and their state (read), the wireless config without its secrets (flab.radio config), and the radios and wireless networks through staged uci edits on the wireless config with automatic rollback. uci get is not granted: the wireless config holds the Wi-Fi keys",
     "read": {
       "ubus": {
-        "flab.radio": ["status"],
-        "uci": ["get", "changes"]
+        "flab.radio": ["status", "config"],
+        "uci": ["changes"]
       },
       "uci": ["wireless"]
     },

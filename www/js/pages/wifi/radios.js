@@ -1,7 +1,8 @@
 // Radios section of the Wi-Fi page: one card per radio with its live state (channel, width, tx power,
 // noise, channel utilization), its configuration next to what is actually running, the channels the
 // regulatory domain allows (a picker to change the channel, see picker.js), and a table of the SSIDs on it (mesh
-// interfaces are on the Mesh page). Data
+// interfaces are on the Mesh page). When the configuration can be edited, each card also holds the radio's settings and a
+// form per wireless network (editors.js). Data
 // comes from the flab.radio plugin; counters (airtime, bytes) are turned into rates here, so the cards
 // follow channel changes, DFS events and interfaces coming and going on every poll.
 import { h } from '../../core/dom.js';
@@ -11,6 +12,7 @@ import { createTracker, latest } from '../../core/rates.js';
 import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
 import { channelPicker } from './picker.js';
 import { editable, runningBlock } from './channels.js';
+import { networksEditor, radioSettings } from './editors.js';
 
 // Module-level so rate history survives the redraw on every poll (keys: airtime per radio and channel,
 // byte counters per interface).
@@ -200,17 +202,20 @@ function interfacesTable(r) {
 }
 //#endregion
 
-// One card per radio: header, live figures, findings, configuration and airtime/channels, interfaces. With `edit`
-// (see picker.js) the channels are a picker the draft is edited through; without it, a plain strip.
+// One card per radio: header, live figures, findings, configuration and airtime/channels, then (when the configuration can be
+// edited) the radio's settings, and the interfaces with their editors. With `edit` (see picker.js) the channels are a picker the
+// draft is edited through; without it, a plain strip.
 function radioCard(r, reg, edit) {
   const list = findings(r, reg);
   const channels = edit?.canEdit && editable(r) ? channelPicker(r, edit) : channelStrip(r);
+  const editing = Boolean(edit?.wifi?.editable);
   return h('div', { className: `card rd-card ${r.up ? 'is-up' : 'is-down'}` },
     header(r),
     hero(r),
     list.length ? h('ul', { className: 'rd-find' }, list.map(f => h('li', { className: f.level }, icon(f.level === 'bad' ? 'shield-exclamation' : f.level === 'warn' ? 'exclamation-triangle' : 'info-circle'), f.text))) : null,
     h('div', { className: 'rd-cols' }, h('div', {}, h('h3', {}, 'Configuration'), configBlock(r, reg)), h('div', {}, airtimeBlock(r), channels)),
-    h('div', { className: 'rd-ifaces' }, h('h3', {}, `Interfaces (${r.interfaces.length})`), interfacesTable(r)));
+    editing ? radioSettings(r.name, edit) : null,
+    h('div', { className: 'rd-ifaces' }, h('h3', {}, `Interfaces (${r.interfaces.length})`), interfacesTable(r), editing ? networksEditor(r.name, edit) : null));
 }
 
 // Returns the nodes for the radios section; an empty list when the plugin is not available. Mesh interfaces

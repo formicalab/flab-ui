@@ -72,3 +72,13 @@
 .vlan-table th:first-child, .vlan-table td:first-child { text-align: left; }
 .cable-panel .diag-head { display: flex; align-items: center; gap: .5rem; }
 .cable-panel .diag-head .btn { margin-left: auto; }
+
+/* The VLAN editor: the same matrix with a drop-down in every cell, a switch row above it and an "add a VLAN" box under it. */
+.vlan-edit-table td, .vlan-edit-table th { vertical-align: middle; }
+.vlan-edit-table .vlan-cell { min-width: 8.5rem; }
+.vlan-edit-vid.is-invalid strong { color: var(--fl-bad-fg); }
+.vlan-edit .vlan-switch { margin: 0 0 .5rem; }
+.vlan-add { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.vlan-add-id { width: 8rem; }
+.vlan-add-error { color: var(--fl-bad-fg); font-size: .8rem; }
+.vlan-carriers { margin-bottom: .6rem; }

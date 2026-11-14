@@ -13,15 +13,18 @@ The only flash writes are the rpcd files and the /www/flab symlink; Cleanup remo
 rpcd is restarted so it loads the plugins, which ends every active rpcd session (the browser asks for a new
 sign-in).
 
+Sync copies only www/ over the deployed UI (nothing is removed, rpcd is not restarted, no session ends), for the quick
+iterations of a front-end change. It needs a UI that Deploy has already installed.
+
 .PARAMETER Action
-Deploy or Cleanup.
+Deploy, Cleanup or Sync.
 
 .PARAMETER Router
 SSH destination of the router.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('Deploy', 'Cleanup')][string]$Action,
+    [Parameter(Mandatory)][ValidateSet('Deploy', 'Cleanup', 'Sync')][string]$Action,
     [string]$Router = 'root@openwrt.lab.formicalab.casa'
 )
 
@@ -98,6 +101,12 @@ for f in /usr/lib/ddns/*.flab-orig; do [ -f "$f" ] && mv -f "$f" "${f%.flab-orig
 #endregion
 
 switch ($Action) {
+    'Sync' {
+        # The UI must already be deployed (the folder exists); only the static files are replaced.
+        Invoke-Remote 'test -d /tmp/flab || { echo "The UI is not deployed: run deploy.ps1 -Action Deploy first."; exit 1; }'
+        Copy-ToRouter -Recurse -Path @(Get-ChildItem (Join-Path $root 'www') | ForEach-Object FullName) -Destination '/tmp/flab/'
+        Write-Host 'Synced www/ to the deployed UI.'
+    }
     'Cleanup' {
         Invoke-Remote $cleanup
         Invoke-Remote 'ls -d /www/flab /tmp/flab /tmp/flab-diag /usr/share/ucode/flab /usr/share/rpcd/acl.d/flab* /usr/share/rpcd/ucode/flab* 2>&1; true'

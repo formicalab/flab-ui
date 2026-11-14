@@ -97,5 +97,34 @@
 .rd-ifaces { padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
 .rd-feat { display: flex; flex-wrap: wrap; gap: .25rem; max-width: 24rem; }
 
+/* ── Editing: the radio's settings and the wireless networks (SSIDs). A block folds down to its summary; the controls
+   themselves are the shared ones of forms.css (set-fields, set-field, set-check). ── */
+.wf-block { margin: 0; border-top: 1px solid var(--fl-stroke); }
+.wf-block > summary, .wf-iface > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .8rem 1.25rem; cursor: pointer; }
+.wf-block > summary:hover, .wf-iface > summary:hover { background: var(--fl-surface-hover); }
+.wf-block-body { display: flex; flex-direction: column; gap: .8rem; padding: .3rem 1.25rem 1.1rem; }
+.wf-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
+.wf-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
+.wf-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+.wf-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
+.wf-group-body p { margin: 0; }
+.wf-group .set-fields > * { padding: .5rem 0; }
+
+/* The wireless networks of a radio: one block each, a new one outlined, one going to be removed dimmed. */
+.wf-nets-editor { display: flex; flex-direction: column; gap: .8rem; margin-top: 1.4rem; }
+.wf-nets-editor > h3 { margin: 0; }
+.wf-iface { border: 1px solid var(--fl-stroke); border-radius: 8px; }
+.wf-iface[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+.wf-new { border-color: var(--fl-info-fg); }
+.wf-iface-body { display: flex; flex-direction: column; gap: .8rem; padding: .9rem 1rem 1rem; }
+.wf-dim > .wf-group { opacity: .55; }
+.wf-actions { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.wf-addbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.wf-nets { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; padding: .3rem .4rem; border: 1px solid transparent; border-radius: 6px; }
+.wf-nets.is-invalid { border-color: var(--fl-bad-fg); background: var(--fl-bad-bg); }
+.wf-net { display: flex; align-items: center; gap: .45rem; margin: 0; padding-left: 0; }
+.wf-net .form-check-input { float: none; margin: 0; }
+.wf-block summary svg, .wf-iface summary svg { color: var(--fl-brand); }
+
 /* Narrow screens: single-column detail columns */
 @media (max-width: 991.98px) { .rd-cols { grid-template-columns: 1fr; } .rd-hw { margin-left: 0; } }

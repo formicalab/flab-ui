@@ -33,7 +33,7 @@ check(same(commands.sort(), ["'command -v nlbw 2>/dev/null'", "'ip -6 neigh show
 check(!/\brun\(`/.test(source) && !/popen|system\(|exec/.test(source.replace(/\/\/.*$/gm, '')), 'no template string reaches run(), and nothing else starts a program', '');
 check(/let cmd = `nlbw -c json -g \$\{GROUPS\[gi\]\}`;/.test(source) && /cmd \+= ` -t \$\{listed\}`;/.test(source), 'the nlbw command is built from the allow-list entry and a period taken from nlbw\'s own list only');
 const acl = JSON.parse(fs.readFileSync(path.join(here, '../../rpcd/acl.d/flab-traffic.json'), 'utf8'));
-check(same(Object.keys(acl), ['flab']) && same(acl.flab.read.ubus, { 'flab.traffic': ['status', 'connections', 'usage_periods', 'usage'] }) && same(acl.flab.write, {}) && same(Object.keys(acl.flab.read), ['ubus']), 'the ACL grants the four methods of flab.traffic read-only: no write, no file, no exec', j(acl));
+check(same(Object.keys(acl), ['flab']) && same(acl.flab.read.ubus['flab.traffic'], ['status', 'connections', 'usage_periods', 'usage', 'nlbwmon_paths']) && same(acl.flab.read.uci, ['nlbwmon']) && same(Object.keys(acl.flab.read), ['ubus', 'uci']), 'the ACL grants the five methods of flab.traffic and the nlbwmon config for reading (its writes are checked by the nlbwedit suite)', j(acl));
 //#endregion
 
 //#region status and features

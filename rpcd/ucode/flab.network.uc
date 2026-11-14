@@ -2,7 +2,7 @@
 //
 // rpcd ucode plugin reporting physical Ethernet ports, bridges, VLAN devices and the board's switch wiring as JSON:
 //   ubus call flab.network status
-//   ubus call flab.network cable_test '{"port":"lan1"}'   (on request: it can drop the link for a few seconds)
+//   ubus call flab.network config   (the editable part of /etc/config/network, without secrets)//   ubus call flab.network cable_test '{"port":"lan1"}'   (on request: it can drop the link for a few seconds)
 //
 // Everything is discovered at run time (nothing is hard-coded to this router's port names), so a changed
 // board layout, a new bridge or a new VLAN device shows up on the next poll.
@@ -912,12 +912,65 @@ function collect() {
 	return { generated: time(), model: board.model, ports, bridges, vlans, switches, tunlinks: tunlinks(), zones: firewall_zones(), dhcp: dhcp_services() };
 }
 
-// rpcd registration: ubus object flab.network. `status` takes no arguments; `cable_test` (port) runs one cable test on request.
+// Options whose value is a secret (PPPoE and modem passwords, SIM PINs, WireGuard and pre-shared keys, 802.1x and WPA keys): never
+// returned by `config`, only whether they are set.
+const SECRET_OPTION = /^(password|passwd|pin|pincode|[a-z0-9_]*(passw|secret|psk|key|token|credential)[a-z0-9_]*)$/i;
+
+// The options of one UCI section that may be shown, and which secrets are set: { values, secrets: { option: true } }.
+// Bookkeeping keys (.type, .name, ...) are left out.
+function section_options(sec) {
+	let values = {}, secrets = {};
+	for (let k, v in sec) {
+		if (substr(k, 0, 1) == '.')
+			continue;
+		if (match(k, SECRET_OPTION)) {
+			if (type(v) == 'array' ? length(v) > 0 : (v != null && v != ''))
+				secrets[k] = true;
+			continue;
+		}
+		values[k] = v;
+	}
+	return { values, secrets };
+}
+
+// The sections of one type in file order, as [{ section, anonymous, values, secrets }].
+function sections_of(all, type) {
+	let list = [];
+	for (let name, s in all)
+		if (s['.type'] == type)
+			push(list, { index: s['.index'] ?? 0, section: name, anonymous: s['.anonymous'] == true, ...section_options(s) });
+	return map(sort(list, (a, b) => a.index - b.index), (x) => ({ section: x.section, anonymous: x.anonymous, values: x.values, secrets: x.secrets }));
+}
+
+// Builds the flab.network config reply: the `interface` and `device` sections of /etc/config/network without any secret (they are only
+// reported as set), the number of sections of every other type, and the devices that have `bridge-vlan` sections. Everything the
+// Devices and Interfaces and Bridges pages edit is here; the other sections (routes, rules, WireGuard peers, switch VLANs) are not.
+function network_config() {
+	let all = uci_all('network');
+	let other = {}, bridge_vlans = [];
+	for (let name, s in all) {
+		let t = s['.type'];
+		if (t == 'interface' || t == 'device')
+			continue;
+		other[t] = (other[t] ?? 0) + 1;
+		if (t == 'bridge-vlan')
+			push(bridge_vlans, { section: name, device: s.device, vlan: s.vlan });
+	}
+	return { generated: time(), interfaces: sections_of(all, 'interface'), devices: sections_of(all, 'device'), other, bridge_vlans };
+}
+
+// rpcd registration: ubus object flab.network. `status` takes no arguments; `config` returns the editable part of the network config
+// without secrets; `cable_test` (port) runs one cable test on request.
 return {
 	'flab.network': {
 		status: {
 			call: function(request) {
 				return collect();
+			},
+		},
+		config: {
+			call: function(request) {
+				return network_config();
 			},
 		},
 		cable_test: {

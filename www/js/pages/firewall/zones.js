@@ -1,11 +1,12 @@
-// The zones table: for every firewall zone its interfaces (configured, and the kernel devices the firewall
-// really matches), the three default policies, NAT, where it may forward to, and the traffic its reject/drop
-// chains have turned away (with a live rate).
+// The zones table: for every firewall zone its interfaces (configured, and the kernel devices the loaded rules really match), the three default
+// policies, NAT, where it may forward to, and the traffic its reject/drop chains have turned away (with a live rate). With editing on, each row has
+// Edit and Remove (Undo after a removal), a button adds a zone, and a row shows when it was changed and not saved yet.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card, muted } from '../../core/ui.js';
+import { badge, button, card, muted } from '../../core/ui.js';
 import { fmtBytes, fmtNum } from '../../core/format.js';
 import { packetsPerSec, fmtPps } from './util.js';
+import { iconButton, pendingBadge } from './parts.js';
 
 // A zone's policy as a badge: accept is green, reject/drop are neutral (refusing by default is normal).
 const policyBadge = (p, title = '') => badge(String(p).toLowerCase(), p === 'ACCEPT' ? 'success' : 'info', title);
@@ -20,24 +21,33 @@ function blockedLine(z, dir, text) {
     h('span', { className: 'muted' }, ` · ${fmtBytes(b.bytes)}`), pps ? h('span', { className: 'fw-pps' }, pps) : null);
 }
 
+// The Edit / Remove (or Undo) buttons of a zone row.
+function actionsCell(z, ctx) {
+  if (z.removed) return h('td', { className: 'fw-actions' }, iconButton('arrow-counterclockwise', 'Keep this zone (undo the removal)', () => ctx.restore('zones', z.id)));
+  return h('td', { className: 'fw-actions' }, iconButton('pencil', `Edit zone ${z.name}`, () => ctx.edit('zones', z.id)), iconButton('trash', `Remove zone ${z.name}`, () => ctx.remove('zones', z.id)));
+}
+
 // One table row per zone: interfaces, kernel devices, the three default policies, forwarding targets and
 // the traffic turned away. Disabled zones are dimmed.
-function zoneRow(z) {
-  return h('tr', { className: z.enabled ? '' : 'fw-off' },
+function zoneRow(z, ctx) {
+  const members = [...z.networks, ...(z.values ? [...z.values.device, ...z.values.subnet] : [])];
+  return h('tr', { className: `${z.enabled ? '' : 'fw-off'}${z.removed ? ' fw-removed' : ''}` },
     h('td', {}, h('strong', {}, z.name), z.masq ? [' ', badge('NAT', 'info', 'Outgoing traffic is masqueraded: this zone faces the Internet')] : null,
+      z.removed || z.pending ? [' ', pendingBadge(z)] : null, z.enabled ? null : [' ', badge('disabled')],
       z.mtu_fix ? h('div', { className: 'muted small' }, 'MSS clamping') : null),
-    h('td', {}, z.networks.length ? h('div', { className: 'fw-chips' }, z.networks.map(n => h('span', { className: 'fw-chip' }, n))) : muted('none')),
-    h('td', {}, z.devices.length ? h('div', { className: 'fw-chips' }, z.devices.map(d => h('span', { className: 'fw-chip mono' }, d))) : muted('none loaded')),
+    h('td', {}, members.length ? h('div', { className: 'fw-chips' }, members.map(n => h('span', { className: `fw-chip${z.networks.includes(n) ? '' : ' mono'}` }, n))) : muted('none')),
+    h('td', {}, z.devices.length ? h('div', { className: 'fw-chips' }, z.devices.map(d => h('span', { className: 'fw-chip mono' }, d))) : muted(z.pending ? 'not loaded yet' : 'none loaded')),
     h('td', {}, policyBadge(z.input, 'Traffic from this zone to the router itself')),
     h('td', {}, policyBadge(z.output, 'Traffic from the router itself into this zone')),
     h('td', {}, policyBadge(z.forward, 'Traffic between interfaces of this zone')),
     h('td', {}, z.forwards.length ? h('div', { className: 'fw-chips' }, z.forwards.map(f => h('span', { className: 'fw-chip' }, f))) : muted('no other zone')),
     h('td', {}, blockedLine(z, 'from', 'from the zone to the router'), blockedLine(z, 'to', 'on the way to the zone'),
-      !z.blocked_from && !z.blocked_to ? muted('nothing counted') : null));
+      !z.blocked_from && !z.blocked_to ? muted('nothing counted') : null),
+    ctx ? actionsCell(z, ctx) : null);
 }
 
-// The zones card: a legend explaining the policy semantics, then the zones table.
-export function zonesCard(fw) {
+// The zones card: a legend explaining the policy semantics, then the zones table. `ctx` (null: read only) carries the edit actions.
+export function zonesCard(fw, ctx = null) {
   // [label, tooltip]: the three policy columns are defaults, which the tooltips and the legend spell out.
   const cols = [
     ['Zone'], ['Interfaces'], ['Kernel devices'],
@@ -46,13 +56,17 @@ export function zonesCard(fw) {
     ['Forward policy (inside zone)', 'Default for traffic between two interfaces of this same zone. Traffic to other zones is governed by "May forward to".'],
     ['May forward to', 'Other zones this zone may send traffic to (forwarding sections). Anything else is blocked unless a rule or port forward allows it.'],
     ['Turned away'],
+    ...(ctx ? [['']] : []),
   ];
-  return card([icon('shield-check'), h('span', {}, 'Zones'), h('span', { className: 'sub' }, `${fw.zones.length} zones · policies are defaults, specific rules are exceptions`)],
+  const rows = fw.rows?.zones ?? fw.zones;
+  const add = ctx ? button('Add zone', 'plus-lg', () => ctx.edit('zones', null)) : null;
+  if (add) add.disabled = !ctx.canEdit;
+  return card([icon('shield-check'), h('span', {}, 'Zones'), h('span', { className: 'sub' }, `${fw.zones.length} zones · policies are defaults, specific rules are exceptions`), add ? h('span', { className: 'fw-card-actions' }, add) : null],
     h('div', {},
       h('div', { className: 'muted small fw-legend fw-zones-legend' },
         h('p', {}, h('b', {}, 'accept'), ' lets everything through by default. ', h('b', {}, 'reject'), ' and ', h('b', {}, 'drop'), ' refuse everything by default except what a specific rule or forwarding allows (reject answers the sender with an error, drop silently discards); replies to connections that were allowed are always let back in.'),
         h('p', {}, h('b', {}, 'Input'), ' = zone to the router itself · ', h('b', {}, 'Output'), ' = router to the zone · ', h('b', {}, 'Forward'), ' = between interfaces of the same zone only; reaching other zones is the "May forward to" column. So a wan input of reject means: nothing from the Internet reaches the router except the rules listed under "Reachable from the Internet".')),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table fw-table' },
         h('thead', {}, h('tr', {}, cols.map(([label, title]) => h('th', { title: title ?? '' }, label)))),
-        h('tbody', {}, fw.zones.length ? fw.zones.map(zoneRow) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No zones are configured.')))))));
+        h('tbody', {}, rows.length ? rows.map(z => zoneRow(z, ctx)) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No zones are configured.')))))));
 }

@@ -1,15 +1,19 @@
 {
   "flab": {
-    "description": "flab-ui Network page (ports, bridges and VLANs); the write grant is the cable test, which the page only runs when asked",
+    "description": "flab-ui Network, Bridges and Devices and Interfaces pages (ports, bridges, VLANs, logical interfaces); the network config without its secrets (flab.network config) and, through staged uci edits with automatic rollback, the network config itself; the cable test, which the page only runs when asked",
     "read": {
       "ubus": {
-        "flab.network": ["status"]
-      }
+        "flab.network": ["status", "config"],
+        "uci": ["changes"]
+      },
+      "uci": ["network"]
     },
     "write": {
       "ubus": {
-        "flab.network": ["cable_test"]
-      }
+        "flab.network": ["cable_test"],
+        "uci": ["set", "add", "delete", "revert", "apply", "confirm", "rollback"]
+      },
+      "uci": ["network"]
     }
   }
 }

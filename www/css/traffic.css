@@ -34,3 +34,11 @@
 /* ── Usage ── */
 .tr-usage td { vertical-align: middle; }
 .tr-addrs > div { line-height: 1.35; }
+
+/* ── Settings (the controls and the review banner are in forms.css) ── */
+.nlbw-form { display: flex; flex-direction: column; gap: 1.25rem; }
+.nlbw-form .set-fields { grid-template-columns: repeat(auto-fill, minmax(26rem, 1fr)); }
+/* The line that says what the value does, taken from the live router: set apart from the static hint above it. */
+.nlbw-effect { padding-left: .6rem; border-left: 3px solid var(--fl-info-fg); }
+.nlbw-effect.warn { border-left-color: var(--fl-warn-fg); color: var(--fl-warn-fg); }
+.nlbw-effect[hidden] { display: none; }

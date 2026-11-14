@@ -1,5 +1,5 @@
 // The channel picker of a radio card: the channels the regulatory domain allows as clickable tiles. Hovering (or
-// focusing) a tile previews the block of channels the radio would occupy at its configured width, in blue, or in red
+// focusing) a tile previews the block of channels the radio would occupy at the width of its mode, in blue, or in red
 // when the block does not fit; clicking selects the channel, and the Auto chip hands the choice to the radio. Nothing
 // is saved here: the choice goes into the page's draft and the review banner takes it from there.
 import { h } from '../../core/dom.js';
@@ -28,12 +28,14 @@ function describeSpan(s, channel) {
 //   touched()   called after every choice
 export function channelPicker(r, edit) {
   const live = r.live ?? {};
-  const width = widthOf(r.config?.htmode);
-  const configured = String(r.config?.channel ?? 'auto');
   const mine = edit.draft.radios[r.name];
+  // The radio as it would run: the width, and on 2.4 GHz the side of a 40 MHz block, come from the mode in the draft.
+  const eff = { ...r, config: { ...r.config, htmode: mine.htmode } };
+  const width = widthOf(mine.htmode);
+  const configured = String(r.config?.channel ?? 'auto');
   const byNo = new Map(r.channels.map(c => [c.channel, c]));
   // Whether the whole block of the radio's width fits around each channel (computed once).
-  const fits = new Map(r.channels.map(c => [c.channel, !c.disabled && spanOf(r, c.channel, width).fits]));
+  const fits = new Map(r.channels.map(c => [c.channel, !c.disabled && spanOf(eff, c.channel, width).fits]));
   const running = runningBlock(r);
   let previewed = null;
 
@@ -46,14 +48,14 @@ export function channelPicker(r, edit) {
   function describe() {
     const chosen = mine.channel;
     if (previewed != null) {
-      const s = spanOf(r, previewed, width);
+      const s = spanOf(eff, previewed, width);
       return fits.get(previewed)
         ? [h('b', {}, `Channel ${previewed}`), ` at ${width} MHz would use ${describeSpan(s, previewed)}.`]
         : [h('b', {}, `Channel ${previewed}`), byNo.get(previewed).disabled ? ' is not allowed in this regulatory domain.' : ` cannot carry ${width} MHz: the block ${mhz(s)} is not entirely allowed.`];
     }
     if (chosen === 'auto') return [h('b', {}, 'Auto'), chosen === configured ? ': the radio picks its channel when it starts.' : ' selected: the radio will pick its channel when it starts.'];
     if (chosen !== configured) {
-      const s = spanOf(r, +chosen, width);
+      const s = spanOf(eff, +chosen, width);
       return [h('b', {}, `${configured} → ${chosen}`), ` would use ${describeSpan(s, +chosen)}, ${width} MHz.`];
     }
     return [`Hover a channel to see the ${width} MHz it would use, click to choose it.`];
@@ -62,8 +64,8 @@ export function channelPicker(r, edit) {
   // Sets the classes of every tile from the draft, the running channel and the hovered one.
   function paint() {
     const chosen = mine.channel;
-    const picked = chosen !== configured && /^\d+$/.test(chosen) ? spanOf(r, +chosen, width) : null;
-    const hovered = previewed != null ? spanOf(r, previewed, width) : null;
+    const picked = chosen !== configured && /^\d+$/.test(chosen) ? spanOf(eff, +chosen, width) : null;
+    const hovered = previewed != null ? spanOf(eff, previewed, width) : null;
     const shown = hovered ?? picked;
     for (const [n, el] of tiles) {
       const c = byNo.get(n);

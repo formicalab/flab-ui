@@ -7,17 +7,23 @@
 //
 // Sources (no LuCI component is used):
 //   - UCI firewall: the configuration (defaults, zones, forwardings, traffic rules, port forwards, NAT, includes)
-//   - UCI network: interface names, to find interfaces that are in no zone
+//   - UCI network: interface names, to find interfaces that are in no zone and to offer them to the zone editor
+//   - ubus network.interface dump (netifd): the router's own addresses on each interface, so the page can tell which
+//     interface the administrator reaches the router through
 //   - `nft -j list ruleset`: what is actually loaded: the hit counters of each rule (matched to the UCI rule by
 //     the `!fw4: <name>` comment firewall4 puts on every rule), the packets rejected or dropped per zone, the
-//     kernel devices behind each zone and the flow-offload devices
+//     kernel devices behind each zone, the zones that have a chain set (so a change can be checked against what
+//     the firewall really loaded) and the flow-offload devices
 //   - procfs: connection tracking usage
+//
+// Every rule and port forward carries its UCI section name (`section`), the identity the editing page uses.
 //
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
 'use strict';
 
-import { run, uci_all, sysfs, num, as_list } from 'flab.util';
+import { connect } from 'ubus';
+import { run, ubus_call, uci_all, sysfs, num, as_list } from 'flab.util';
 
 // Accumulator helper for reduce-style loops: adds the packet and byte counts of nft counter `c` to `acc`.
 const sum_counter = (acc, c) => {
@@ -58,7 +64,7 @@ function nft_state() {
 	if (!doc?.nftables)
 		return null;
 
-	let st = { chains: 0, rules: 0, policy: {}, hits: {}, chain_hits: {}, devices: {}, flowtable: null };
+	let st = { chains: 0, rules: 0, policy: {}, hits: {}, chain_hits: {}, devices: {}, zones: {}, flowtable: null };
 	let found = false;
 	for (let item in doc.nftables) {
 		if (item.chain?.table == 'fw4' && item.chain.family == 'inet') {
@@ -66,6 +72,10 @@ function nft_state() {
 			st.chains++;
 			if (item.chain.policy)
 				st.policy[item.chain.name] = item.chain.policy;
+			// firewall4 makes an input_<zone> chain for every zone it loaded.
+			let z = match(item.chain.name, /^input_(.+)$/);
+			if (z)
+				st.zones[z[1]] = true;
 		}
 		else if (item.flowtable?.table == 'fw4') {
 			st.flowtable = { devices: item.flowtable.dev ?? [] };
@@ -133,9 +143,9 @@ function blocked(nft, dir, zone) {
 	return null;
 }
 
-// JSON view of a UCI zone section: policies (firewall4 defaults to REJECT), the zones it forwards to and
-// the kernel devices behind it. `all` is the whole firewall config (for forwardings).
-function zone_view(s, all, nft) {
+// JSON view of a UCI zone section: policies (a zone without its own takes the ones of the defaults section),
+// the zones it forwards to and the kernel devices behind it. `all` is the whole firewall config (for forwardings).
+function zone_view(s, all, nft, defaults) {
 	let name = s.name;
 	let forwards = [];
 	for (let n, f in all)
@@ -146,7 +156,7 @@ function zone_view(s, all, nft) {
 		name,
 		networks: as_list(s.network),
 		devices,
-		input: s.input ?? 'REJECT', output: s.output ?? 'REJECT', forward: s.forward ?? 'REJECT',
+		input: uc(s.input ?? defaults.input), output: uc(s.output ?? defaults.output), forward: uc(s.forward ?? defaults.forward),
 		masq: s.masq == '1', mtu_fix: s.mtu_fix == '1',
 		forwards,
 		enabled: s.enabled != '0',
@@ -162,7 +172,7 @@ function zone_view(s, all, nft) {
 function rule_view(s, key, nft) {
 	let enabled = s.enabled != '0';
 	return {
-		name: s.name ?? null, key,
+		name: s.name ?? null, key, section: s['.name'],
 		src: s.src, dest: s.dest,
 		proto: s.proto ? as_list(s.proto) : [],
 		src_ip: as_list(s.src_ip), dest_ip: as_list(s.dest_ip),
@@ -183,7 +193,7 @@ function redirect_view(s, key, nft) {
 	let enabled = s.enabled != '0';
 	let snat = s['.type'] == 'nat';
 	return {
-		name: s.name ?? null, key, kind: s['.type'],
+		name: s.name ?? null, key, section: s['.name'], kind: s['.type'],
 		src: s.src, dest: s.dest,
 		proto: s.proto ? as_list(s.proto) : [ 'tcp', 'udp' ],
 		src_ip: as_list(s.src_ip), src_dip: as_list(s.src_dip), src_dport: as_list(s.src_dport),
@@ -195,12 +205,33 @@ function redirect_view(s, key, nft) {
 	};
 }
 
-// Interfaces (netifd) that no zone contains: traffic from them reaches the final reject of the base chains.
-function unzoned(all_zone_networks) {
+// The router's interfaces (netifd, from /etc/config/network) as [{ name, disabled, proto, addrs }], sorted by name: `addrs` are the
+// router's own addresses on the interface (ubus network.interface dump, which only lists interfaces that are up). The zone editor
+// offers these, and the page recognizes the interface it is reached through by an address.
+function networks(conn) {
+	let addrs = {};
+	let dump = conn ? ubus_call(conn, 'network.interface', 'dump', {}) : null;
+	for (let i in dump?.interface ?? []) {
+		let list = [];
+		for (let a in i['ipv4-address'] ?? [])
+			push(list, a.address);
+		for (let a in i['ipv6-address'] ?? [])
+			push(list, a.address);
+		addrs[i.interface] = list;
+	}
 	let out = [];
 	for (let n, s in uci_all('network'))
-		if (s['.type'] == 'interface' && n != 'loopback' && s.disabled != '1' && index(all_zone_networks, n) < 0)
-			push(out, n);
+		if (s['.type'] == 'interface')
+			push(out, { name: n, disabled: s.disabled == '1', proto: s.proto, addrs: addrs[n] ?? [] });
+	return sort(out, (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+// Interfaces (netifd) that no zone contains: traffic from them reaches the final reject of the base chains.
+function unzoned(nets, all_zone_networks) {
+	let out = [];
+	for (let n in nets)
+		if (n.name != 'loopback' && !n.disabled && index(all_zone_networks, n.name) < 0)
+			push(out, n.name);
 	return sort(out);
 }
 
@@ -213,13 +244,17 @@ function collect() {
 	let nft = nft_state();
 	let sections = sort(values(all), (a, b) => (a['.index'] ?? 0) - (b['.index'] ?? 0));
 
-	// Only the first defaults section counts.
-	let defaults = {};
+	// Only the first defaults section counts. Without one, or without a policy in it, firewall4 drops.
+	let defaults = {
+		input: 'DROP', output: 'DROP', forward: 'DROP',
+		synflood_protect: false, flow_offloading: false, flow_offloading_hw: false, drop_invalid: false,
+	};
 	for (let s in sections)
 		if (s['.type'] == 'defaults') {
 			defaults = {
-				input: s.input ?? 'REJECT', output: s.output ?? 'REJECT', forward: s.forward ?? 'REJECT',
-				synflood_protect: s.synflood_protect == '1',
+				input: uc(s.input ?? 'DROP'), output: uc(s.output ?? 'DROP'), forward: uc(s.forward ?? 'DROP'),
+				// syn_flood is the older name of synflood_protect.
+				synflood_protect: (s.synflood_protect ?? s.syn_flood) == '1',
 				flow_offloading: s.flow_offloading == '1', flow_offloading_hw: s.flow_offloading_hw == '1',
 				drop_invalid: s.drop_invalid == '1',
 			};
@@ -234,7 +269,7 @@ function collect() {
 		let n = counts[t] ?? 0;
 		counts[t] = n + 1;
 		if (t == 'zone')
-			push(zones, zone_view(s, all, nft));
+			push(zones, zone_view(s, all, nft, defaults));
 		else if (t == 'rule')
 			push(rules, rule_view(s, comment_key(s, n), nft));
 		else if (t == 'redirect' || t == 'nat')
@@ -249,6 +284,7 @@ function collect() {
 	for (let z in zones)
 		for (let n in z.networks)
 			push(zoned, n);
+	let nets = networks(connect());
 
 	return {
 		generated: time(),
@@ -258,11 +294,14 @@ function collect() {
 		hooks: nft ? { input: nft.policy.input, forward: nft.policy.forward, output: nft.policy.output } : null,
 		flowtable: nft?.flowtable,
 		nft: nft ? { chains: nft.chains, rules: nft.rules } : null,
+		// The zones the firewall has loaded (a chain set each), or null when nftables has no fw4 table.
+		loaded_zones: nft ? sort(keys(nft.zones)) : null,
 		conntrack: {
 			count: num(sysfs('/proc/sys/net/netfilter/nf_conntrack_count')),
 			max: num(sysfs('/proc/sys/net/nf_conntrack_max')),
 		},
-		unzoned: unzoned(zoned),
+		networks: nets,
+		unzoned: unzoned(nets, zoned),
 	};
 }
 

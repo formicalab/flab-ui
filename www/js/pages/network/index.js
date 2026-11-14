@@ -2,13 +2,15 @@
 // PHYs, jacks) and a port table with link, hardware, traffic and errors. Bridges and the layers built on
 // the ports have their own pages. Data comes from the flab.network plugin; everything is rediscovered on
 // every poll and counters are turned into rates in the browser (core/rates.js), so ports that appear,
-// change or disappear are reflected without a reload.
+// change or disappear are reflected without a reload. The VLAN cards under the port table can be edited
+// (vlanpage.js, vlanedit.js, vlanmodel.js): the editor stages changes to the VLAN sections of the network config.
 import { tile, tiles, healthBanner } from '../../core/ui.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
 import { fmtLine, fmtNum } from '../../core/format.js';
 import { portsPanel } from './ports.js';
 import { hooks } from './cable.js';
 import { loadWired } from './shared.js';
+import { vlan } from './vlanpage.js';
 import { traffic, portFindings, errorsOf, dropsOf, newFlaps } from './util.js';
 
 // Module-level so the Pause button state survives the redraw on every poll.
@@ -40,22 +42,23 @@ export default {
   title: 'Wired network · ports',
   icon: 'ethernet',
   interval: 3000,
-  css: 'css/network.css',
-  isPaused: () => state.paused,
+  css: ['css/network.css', 'css/forms.css'],
+  isPaused: () => state.paused || vlan.paused(),
 
-  load: loadWired,
+  // The wired data, plus what the VLAN editor needs while it is open.
+  load: async () => vlan.load(await loadWired()),
 
   controls({ reload }) {
     hooks.reload = reload;
-    return { nodes: [pauseControl(state), refreshControl(reload)] };
+    return { nodes: [pauseControl(state), refreshControl(reload), vlan.attach(reload)] };
   },
 
   // Summary tiles, the findings banner, then the wiring diagram and port table (which redraw via `rerender`).
-  view({ net }, rerender) {
+  view(data, rerender) {
     return [
-      summary(net),
-      healthBanner(portFindings(net), 'All ports look healthy.'),
-      ...portsPanel(net, rerender),
+      summary(data.net),
+      healthBanner(portFindings(data.net), 'All ports look healthy.'),
+      ...portsPanel(data.net, rerender, vlan.view(data, rerender)),
     ];
   },
 };

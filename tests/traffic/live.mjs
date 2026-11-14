@@ -160,7 +160,7 @@ console.log('== the Live tab ==');
 const nav = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
 check(nav.indexOf('Traffic') === nav.indexOf('Routing') + 1 && (await page.locator('.nav-pane a.active').innerText()).trim() === 'Traffic', 'Traffic is in the navigation right after Routing, and active', nav.join(' | '));
 check((await page.locator('.cmdbar h1').innerText()).trim() === 'Traffic', 'the page title');
-check((await tabNames()).join() === 'Live,Connections,Usage' && (await activeTab()) === 'Live', 'three tabs, Live open (the router has nlbw and conntrack)', (await tabNames()).join());
+check((await tabNames()).join() === 'Live,Connections,Usage,Settings' && (await activeTab()) === 'Live', 'four tabs, Live open (the router has nlbw and conntrack)', (await tabNames()).join());
 for (let i = 0; i < 4; i++) await refresh();
 const live = await tile('WAN throughput');
 check(/^↓ /.test(live.value) && /↑ .*· wan \(eth1\.1036\)/.test(live.sub), 'WAN throughput: the interface with the default route, carried by its VLAN device', `${live.value} | ${live.sub}`);
@@ -217,7 +217,7 @@ const bare = await tile('Connections');
 check(bare.value === 'n/a' && (await tabNames()).join() === 'Live' && await page.locator('.tr-live').count() === 1, 'without the flab.traffic plugin the Live tab still works and is the only tab', `${bare.value} | ${(await tabNames()).join()}`);
 mock.noPlugin = false;
 await refresh();
-check((await tabNames()).join() === 'Live,Connections,Usage', 'the tabs come back with the plugin');
+check((await tabNames()).join() === 'Live,Connections,Usage,Settings', 'the tabs come back with the plugin');
 //#endregion
 
 //#region Connections
@@ -478,20 +478,20 @@ console.log('\n== usage: nlbwmon stopped, nlbw missing ==');
 mock.status.nlbwmon_running = false; mock.periods = { ok: true, present: true, running: false, periods: [] };
 await refresh(1500);
 check(/nlbwmon is installed but not running, so nothing is being counted/.test(await banner()) && (await bannerClass()).includes('warn') && await page.locator('.tile').count() === 0 && await page.locator('.tr-note').count() === 1, 'a stopped nlbwmon is a warning and the note stays', await banner());
-check((await tabNames()).join() === 'Live,Connections,Usage', 'the Usage tab is still offered (nlbw exists)');
+check((await tabNames()).join() === 'Live,Connections,Usage,Settings', 'the Usage tab is still offered (nlbw exists)');
 await openTab('Live');
 check(/nlbwmon is installed but not running/.test(await banner()), 'the Live tab warns too');
 await openTab('Usage');
 mock.status.nlbw = false; mock.status.nlbwmon_running = false; mock.periods = { ok: true, present: false, running: false, periods: [] };
 await refresh(2000);
-check((await tabNames()).join() === 'Live,Connections' && await activeTab() === 'Live' && await page.locator('.tr-live').count() === 1, 'without nlbw the Usage tab disappears and the page falls back to Live', `${(await tabNames()).join()} / ${await activeTab()}`);
+check((await tabNames()).join() === 'Live,Connections,Settings' && await activeTab() === 'Live' && await page.locator('.tr-live').count() === 1, 'without nlbw the Usage tab disappears and the page falls back to Live', `${(await tabNames()).join()} / ${await activeTab()}`);
 check(!/nlbwmon/.test(await banner()), 'and nothing complains about nlbwmon', await banner());
 mock.status.conntrack = false;
 await refresh(1500);
-check((await tabNames()).join() === 'Live', 'without connection tracking the Connections tab is not offered either', (await tabNames()).join());
+check((await tabNames()).join() === 'Live,Settings', 'without connection tracking the Connections tab is not offered either (Settings stays: it explains that nlbwmon is missing)', (await tabNames()).join());
 mock.status = clone(load('rich-status'));
 await refresh(1500);
-check((await tabNames()).join() === 'Live,Connections,Usage', 'everything comes back with the features');
+check((await tabNames()).join() === 'Live,Connections,Usage,Settings', 'everything comes back with the features');
 //#endregion
 
 check(mock.writes.length === 0, 'the page wrote nothing to the router', mock.writes.join());

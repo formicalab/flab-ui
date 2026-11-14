@@ -35,6 +35,13 @@ export function createUci(call) {
       return option ? r.value : r.values;
     },
 
+    // Only the sections of one type ({ section: { '.type': ..., option: value } }), for a config that holds secrets elsewhere (the
+    // network config keeps keys and passwords in its interface sections, so a page that needs bridge-vlan sections asks for
+    // that type alone). Staged changes are included, as with get().
+    async getByType(config, type) {
+      return (await call('uci', 'get', { config, type })).values ?? {};
+    },
+
     // Stages option values for an existing section: values = { option: value | [list] }. To remove an option use
     // delete(); rpcd rejects null values.
     set: (config, section, values) => call('uci', 'set', { config, section, values }),
@@ -47,6 +54,9 @@ export function createUci(call) {
 
     // Stages the deletion of a section, or of only some of its options.
     delete: (config, section, options) => call('uci', 'delete', { config, section, ...(options ? { options } : {}) }),
+
+    // Stages the order of the sections of a config: `sections` lists section names (all of the config, in the order they should have).
+    order: (config, sections) => call('uci', 'order', { config, sections }),
 
     // What is staged by this session: { config: [[operation, section, option, value], ...] }; empty when nothing
     // is pending. rpcd keeps the staging area per session, and puts the edits of a rolled-back apply back

@@ -5,6 +5,12 @@
 //   ubus call flab.traffic connections '{"q":"192.168.1","limit":300,"sort":"bytes","proto":"tcp","scope":"internet"}'
 //   ubus call flab.traffic usage_periods
 //   ubus call flab.traffic usage '{"period":"current","group":"mac,ip"}'
+//   ubus call flab.traffic nlbwmon_paths '{"dir":"/var/lib/nlbwmon","protocols":"/usr/share/nlbwmon/protocols"}'
+//
+// `nlbwmon_paths` describes the two paths nlbwmon's settings name, for the page that edits them: where the database
+// directory really is (which filesystem it is on, so the page can say whether it is RAM, the router's flash or external
+// storage), the database files in it and when they were last written, and whether the protocol file exists. It only
+// uses the filesystem functions of ucode (stat, lsdir, realpath, open) and /proc/mounts, never a shell.
 //
 // `status` reports which features exist (conntrack readable, nlbw installed and nlbwmon running, byte accounting on)
 // and the conntrack count and limit. `connections` parses /proc/net/nf_conntrack (at most MAX_PARSE entries), counts
@@ -27,7 +33,8 @@
 'use strict';
 
 import { connect } from 'ubus';
-import { run, sysfs, sysfs_raw, ubus_call, uci_all, normalize_mac, as_list } from 'flab.util';
+import { realpath, lsdir, stat, open } from 'fs';
+import { run, fixture, sysfs, sysfs_raw, ubus_call, uci_all, normalize_mac, as_list } from 'flab.util';
 
 // The kernel's connection table and the netfilter settings next to it.
 const CT_FILE = '/proc/net/nf_conntrack';
@@ -837,6 +844,161 @@ function usage(args) {
 
 //#endregion
 
+//#region nlbwmon paths
+
+// The longest a database directory path may be: nlbwmon refuses one of 127 characters or more.
+const MAX_DIR = 126;
+// The longest protocol file path accepted.
+const MAX_FILE = 255;
+// The most database files listed in a reply.
+const MAX_DB_FILES = 100;
+// Filesystem types whose contents are lost at reboot, and those that are the router's own flash.
+const VOLATILE_FS = ['tmpfs', 'ramfs'];
+const FLASH_FS = ['overlay', 'jffs2', 'ubifs'];
+
+// What the tests replay instead of the real filesystem (the directory named by FLAB_FIXTURES holds nlbwmon_fs.json):
+//   { real: { path: resolved }, stat: { path: { type, size, mtime } }, dirs: { path: [names] }, readable: { path: true } }
+// A router never sets the variable.
+const FIXTURES = getenv('FLAB_FIXTURES');
+let fs_saved = null;
+// The replayed filesystem (parsed once).
+function fs_seam() {
+	fs_saved ??= json(fixture('nlbwmon_fs.json') || '{}');
+	return fs_saved;
+}
+// The path with every symbolic link resolved, or null when it does not exist.
+function fs_real(path) {
+	return FIXTURES ? (fs_seam().real ?? {})[path] : realpath(path);
+}
+// What stat() says about a path (following links): { type, size, mtime }, or null when it does not exist.
+function fs_stat(path) {
+	return FIXTURES ? (fs_seam().stat ?? {})[path] : stat(path);
+}
+// The names in a directory, or null when it cannot be listed.
+function fs_names(path) {
+	return FIXTURES ? (fs_seam().dirs ?? {})[path] : lsdir(path);
+}
+// Whether the file can be opened for reading.
+function fs_readable(path) {
+	if (FIXTURES)
+		return (fs_seam().readable ?? {})[path] == true;
+	let f = open(path, 'r');
+	if (f == null)
+		return false;
+	f.close();
+	return true;
+}
+
+// Whether `path` is an absolute path of at most `max` characters made of the characters a path can hold here, with no
+// ".." segment. The text only ever reaches the filesystem functions, never a command line. A newline is refused by name:
+// the regular expression engine matches line by line, so it would accept the first line of a longer text.
+function safe_path(path, max) {
+	return type(path) == 'string' && length(path) >= 1 && length(path) <= max && match(path, /^\/[A-Za-z0-9._+@:=,\/-]*$/) != null
+		&& index(path, '\n') < 0 && index(path + '/', '/../') < 0;
+}
+
+// The mount that holds `path` (it must be resolved): the longest mount point that is a prefix of it, the last one listed
+// when several share it. Returns { device, mount, fstype, ro } or null when /proc/mounts cannot be read.
+function mount_of(path) {
+	let text = sysfs_raw('/proc/mounts');
+	let best = null;
+	for (let line in split(text ?? '', '\n')) {
+		let f = split(trim(line), ' ');
+		if (length(f) < 4)
+			continue;
+		let mp = f[1];
+		if (!(mp == '/' || path == mp || index(path, mp + '/') == 0))
+			continue;
+		if (best == null || length(mp) >= length(best.mount))
+			best = { device: f[0], mount: mp, fstype: f[2], ro: index(split(f[3], ','), 'ro') >= 0 };
+	}
+	return best;
+}
+
+// What kind of storage a mount is: volatile (RAM, gone at reboot), readonly, flash (the router's own flash, which each
+// commit wears) or storage (anything else: external disks and cards, network shares). unknown when no mount is known.
+function storage_kind(m) {
+	if (m == null)
+		return 'unknown';
+	if (index(VOLATILE_FS, m.fstype) >= 0)
+		return 'volatile';
+	if (m.ro || m.fstype == 'squashfs')
+		return 'readonly';
+	if (index(FLASH_FS, m.fstype) >= 0 || m.mount == '/overlay' || match(m.device, /^\/dev\/(mtd|ubi|loop)/) != null)
+		return 'flash';
+	return 'storage';
+}
+
+// The database files of a directory: [{ name, size, mtime }] newest period first (at most MAX_DB_FILES), and how many
+// there are. A database file is named <YYYYMMDD>.db or <YYYYMMDD>.db.gz.
+function db_files(dir) {
+	let out = [];
+	let total = 0;
+	for (let name in sort(fs_names(dir) ?? [])) {
+		if (!match(name, /^[0-9]{8}\.db(\.gz)?$/))
+			continue;
+		total++;
+		let st = fs_stat((dir == '/' ? '' : dir) + '/' + name);
+		push(out, { name, size: st?.size ?? null, mtime: st?.mtime ?? null });
+	}
+	out = reverse(out);
+	return { files: length(out) > MAX_DB_FILES ? slice(out, 0, MAX_DB_FILES) : out, total };
+}
+
+// The description of a database directory: whether it exists (else the nearest directory that does decides the
+// filesystem, since nlbwmon creates the missing parts), where it really is, the filesystem and its kind, and the files.
+function dir_info(path) {
+	if (!safe_path(path, MAX_DIR))
+		return { ok: false, path: type(path) == 'string' ? path : null, error: 'That is not a usable directory path.' };
+	// Walk up to the nearest path that exists, remembering what was cut off. A trailing slash is not part of the path.
+	let near = rtrim(path, '/');
+	if (near == '')
+		near = '/';
+	let clean = near;
+	let tail = '';
+	let st = fs_stat(near);
+	while (st == null && near != '/') {
+		let cut = rindex(near, '/');
+		tail = substr(near, cut) + tail;
+		near = cut == 0 ? '/' : substr(near, 0, cut);
+		st = fs_stat(near);
+	}
+	let base = fs_real(near) ?? near;
+	let resolved = (base == '/' ? '' : base) + tail;
+	let mount = mount_of(resolved == '' ? '/' : resolved);
+	let exists = tail == '';
+	let is_dir = st?.type == 'directory';
+	let listed = exists && is_dir ? db_files(clean) : { files: [], total: 0 };
+	return {
+		ok: true, path, resolved: resolved == '' ? '/' : resolved, exists, is_dir,
+		// Something in the path is not a directory, so nlbwmon could not create or use the directory.
+		blocked: !is_dir,
+		mount: mount?.mount ?? null, fstype: mount?.fstype ?? null, device: mount?.device ?? null, readonly: mount?.ro ?? null,
+		kind: storage_kind(mount), files: listed.files, total: listed.total,
+	};
+}
+
+// The description of the protocol file: whether it exists, is a regular file and can be read.
+function protocols_info(path) {
+	if (!safe_path(path, MAX_FILE))
+		return { ok: false, path: type(path) == 'string' ? path : null, error: 'That is not a usable file path.' };
+	let st = fs_stat(path);
+	return { ok: true, path, exists: st != null, file: st?.type == 'file', size: st?.size ?? null, readable: st?.type == 'file' && fs_readable(path) };
+}
+
+// The reply of `nlbwmon_paths`: the description of each path that was asked for (`dir`, `protocols`), null for one that
+// was not.
+function nlbwmon_paths(args) {
+	return {
+		ok: true,
+		generated: time(),
+		dir: args?.dir != null ? dir_info(args.dir) : null,
+		protocols: args?.protocols != null ? protocols_info(args.protocols) : null,
+	};
+}
+
+//#endregion
+
 // rpcd registration: ubus object flab.traffic. The args objects name the accepted fields and their types.
 return {
 	'flab.traffic': {
@@ -860,6 +1022,12 @@ return {
 			args: { period: '', group: '' },
 			call: function(request) {
 				return usage(request.args);
+			},
+		},
+		nlbwmon_paths: {
+			args: { dir: '', protocols: '' },
+			call: function(request) {
+				return nlbwmon_paths(request.args);
 			},
 		},
 	},

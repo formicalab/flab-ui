@@ -310,7 +310,7 @@ check(site.state === 'connected' && site.handshake_age >= 0 && site.handshake_ag
 check(wi.peers.filter(p => p !== site).every(p => ['never', 'connected', 'stale'].includes(p.state) && (p.state !== 'never' || (p.handshake_age === null && p.endpoint === null))), 'the other peers are connected, stale or never connected without an endpoint');
 for (const n of ['base', 'w-stale', 'w-down', 'w-newpeer', 'w-noroutes', 'w-nozone']) {
   const text = JSON.stringify(wg(n));
-  check(!text.includes(expect.canary) && !/"(private_key|preshared_key|key)"/.test(text), `${n}: no private or pre-shared key in the WireGuard output`);
+  check(!text.includes(expect.canary) && !/"(private_key|preshared_key|key)":(?!true)/.test(text), `${n}: no private or pre-shared key in the WireGuard output (only the flag that one is set)`);
 }
 const stale = wpeer(wg('w-stale'));
 check(stale.state === 'stale' && stale.handshake_age > 900 && stale.handshake_age < 1200, 'a handshake older than 3 minutes is stale', JSON.stringify(stale));
