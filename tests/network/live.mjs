@@ -219,6 +219,7 @@ const runCable = async n => {
 check(await page.locator('.port-table .cable-btn').count() === baseNet.ports.filter(p => p.role !== 'conduit').length && await cableBtn('eth0').count() === 0, 'a cable test button on every twisted-pair port, none on the internal link to the switch');
 await cableBtn('lan1').click();
 await dlg.waitFor();
+if (shots) await page.screenshot({ path: path.join(shots, 'network-cable-test-dialog.png') });
 check(/drops the link on lan1 for several seconds/.test(await dlg.innerText()) && /your connection to the router/.test(await dlg.innerText()) && cableCalls.length === 0, 'the confirmation says what the test does to a link that is up, and nothing has been asked yet', await dlg.innerText());
 await dlg.locator('button:has-text("Cancel")').click();
 check(await dlg.count() === 0 && cableCalls.length === 0, 'Cancel runs nothing');

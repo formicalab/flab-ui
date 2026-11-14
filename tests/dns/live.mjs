@@ -768,6 +768,7 @@ await dlg().locator('button:has-text("Cancel")').click();
 await page.click('.dns-toolbar button:has-text("Add zone")');
 await dlg().waitFor();
 check(/Add a zone/.test(await text(dlg().locator('.fl-dialog-title'))) && await doneBtn().isDisabled() && await dlg().locator('.set-note.bad').count() === 0 && /Add to the changes/.test(await text(doneBtn())), 'Add zone opens an empty form; nothing is flagged before the user starts typing, but it cannot be accepted yet');
+if (shots) await page.screenshot({ path: path.join(shots, 'dns-zone-dialog.png') });
 check(same(await dlg().locator('select').first().locator('option').allInnerTexts(), ['Forward zone', 'Stub zone', 'Authoritative zone']), 'the type of a new zone is chosen from the three kinds');
 await dlg().locator('select').first().selectOption('stub_zone');
 const stubBody = await text(dlg());

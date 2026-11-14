@@ -308,3 +308,18 @@ details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
   .nav-spacer { display: none; }
   .cmdbar, main { padding-left: 1rem; padding-right: 1rem; }
 }
+
+/* Dialogs (core/modal.js): Bootstrap's modal markup on a native <dialog>. `.modal` already makes it fill the viewport and scroll, and
+   the `.modal-*` classes lay out the content; what is left is the <dialog> element's own defaults (a border, a size limit, a white
+   background) and the theme: Bootstrap's modal variables take the Fluent tokens, so the dialog follows the light and dark themes. */
+dialog.fl-dialog { padding: 0; border: 0; max-width: none; max-height: none; background: transparent; color: inherit; }
+dialog.fl-dialog[open] { display: block; }
+dialog.fl-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.fl-dialog {
+  --bs-modal-bg: var(--fl-surface); --bs-modal-color: var(--fl-text);
+  --bs-modal-border-color: var(--fl-stroke); --bs-modal-header-border-color: var(--fl-stroke); --bs-modal-footer-border-color: var(--fl-stroke);
+  --bs-modal-border-radius: 8px; --bs-modal-inner-border-radius: calc(8px - 1px); --bs-modal-box-shadow: 0 1rem 3rem rgba(0, 0, 0, .35);
+}
+.fl-dialog .modal-title { font-weight: 600; }
+.fl-dialog .modal-body > * + * { margin-top: .75rem; }
+.fl-dialog .modal-body > p { margin-bottom: 0; }

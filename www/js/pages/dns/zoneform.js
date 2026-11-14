@@ -101,6 +101,8 @@ export function openZoneDialog({ data, getDraft, key, onSave, onClose }) {
   const shown = openDialog({
     title: isNew ? 'Add a zone' : `Edit zone ${unbound ? key : ''}`.trim(),
     subtitle: unbound ? 'Unbound' : 'dnsmasq',
+    size: 'lg',
+    staticBackdrop: true,
     body: h('div', {}),
     footer: [errorsBox, cancel, save],
     onClose,

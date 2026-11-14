@@ -99,6 +99,7 @@ flab-ui/
         controls.js          Command-bar controls: search, select, pause, toggle, refresh
         format.js            Bytes, line rates, durations, numbers
         clipboard.js         copyText() and copyButton(): copy text with a button that confirms (Toolbox, certificates)
+        modal.js             openDialog(): a Bootstrap-style modal (.modal, .modal-dialog, .modal-content, .modal-header with .btn-close, .modal-body, .modal-footer) on a native <dialog>; used by the DNS zone form and the cable test
         ip.js                parseAddress(): IPv4 and IPv6 addresses as BigInt values (Routing and BGP)
         rates.js             Rate tracker: turns cumulative counters into rates/ratios between polls
         icons.js             Inlined Bootstrap Icons path data, icon(name)
@@ -1360,7 +1361,7 @@ pauses while a text box has the focus. Top to bottom:
   that only Unbound's extension file defines: read only, with a lock; the main router has none).
   **Add zone**, and **Edit** and **Remove** on every UCI zone, work on the draft of the page; nothing is written until the review
   banner at the top is saved (the same stage, apply with the 30 second rollback, read back, confirm as the options use).
-  - The **dialog** (`core/modal.js`, on the native `<dialog>`: Escape and the close button leave it, the focus stays inside) has
+  - The **dialog** (`core/modal.js`: Bootstrap's modal markup and styles on a native `<dialog>`, so Escape and the close button leave it and the focus stays inside; a form keeps a click on the dimmed area from closing it) has
     the fields of the zone's type (`ZONE_TYPES` in `dns/schema.js`): forward zones take domains, servers, TLS (use, certificate
     name, port), port, fall back, local resolver check and "also use the WAN resolvers"; stub zones domains, servers (addresses
     only), port, fall back, check and WAN; authoritative zones domains, servers (or a URL), the URL and fall back. The type is
