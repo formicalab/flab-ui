@@ -61,6 +61,11 @@ const RUN_TIMEOUT = 30;
 const MAX_OUTPUT = 4096;
 // Where the output of the init script is collected while it runs (one call runs at a time inside rpcd).
 const OUTPUT_FILE = '/tmp/flab-ddns.out';
+// How long the list of providers is kept before the files are read again, in seconds. It only changes when a package is installed,
+// and reading the ~70 provider files costs about half of a status call.
+const PROVIDER_TTL = 60;
+// The providers read last and when (rpcd keeps the plugin loaded, so this survives between calls).
+let provider_cache = { at: 0, list: null };
 
 //#region Helpers
 
@@ -282,7 +287,7 @@ function runtime(sec, ctx) {
 // PASSWORD, PARAMENC and PARAMOPT the provider's update address contains (null for a provider that is a script, which reads
 // the options itself); `script` is the name of the provider's script and `available` whether it is installed. A provider in the
 // user's own directory replaces one of the same name.
-function providers() {
+function read_providers() {
 	let script = '[ -f "$f" ] && { printf "%s\\t" "$f"; tr -d "\\n\\t" < "$f"; echo; }';
 	let out = run(`for f in ${join(' ', map(PROVIDER_DIRS, (d) => d + '/*.json'))}; do ${script}; done 2>/dev/null`);
 	let installed = {};
@@ -325,6 +330,14 @@ function providers() {
 		};
 	}
 	return sort(map(keys(by_name), (k) => by_name[k]), (a, b) => a.name < b.name ? -1 : (a.name > b.name ? 1 : 0));
+}
+
+// The providers, read again at most every PROVIDER_TTL seconds.
+function providers() {
+	let now = time();
+	if (provider_cache.list == null || now - provider_cache.at >= PROVIDER_TTL || now < provider_cache.at)
+		provider_cache = { at: now, list: read_providers() };
+	return provider_cache.list;
 }
 
 // The logical interfaces (the uci network sections of type interface and the ones netifd reports, without loopback), sorted.

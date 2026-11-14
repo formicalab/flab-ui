@@ -13,7 +13,7 @@ const DAY = 86400000;
 const cn = text => (String(text ?? '').match(/CN\s*=\s*([^,/]+)/)?.[1] ?? String(text ?? '')).trim();
 
 // The state of a certificate's dates: 'bad' when expired, 'warn' within 14 days of the end, 'soon' within 60 days, else 'ok'.
-export function dateState(c, now) {
+function dateState(c, now) {
   if (c.notAfter == null) return 'ok';
   if (c.notAfter < now) return 'bad';
   if (c.notBefore != null && c.notBefore > now) return 'bad';
@@ -72,6 +72,7 @@ export function expiryTimeline(t, now = Date.now()) {
   const lo0 = Math.min(now, ...certs.map(c => c.notBefore)), hi0 = Math.max(now, ...certs.map(c => c.notAfter));
   const pad = Math.max(DAY, (hi0 - lo0) * 0.03);
   const lo = lo0 - pad, hi = hi0 + pad;
+  // The position of a time on the timeline, in percent.
   const pos = ms => ((ms - lo) / (hi - lo)) * 100;
   const rows = certs.map(c => h('div', { className: 'rt-tl-row' },
     h('div', { className: 'rt-tl-label', title: c.subject }, h('strong', {}, cn(c.subject)), h('span', { className: 'muted' }, c.role)),

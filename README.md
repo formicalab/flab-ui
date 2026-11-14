@@ -80,7 +80,7 @@ flab-ui/
     css/
       base.css               Fluent tokens, app shell, shared component styles, sign-in screen
       <page>.css             Page-specific styles, loaded on first visit
-      forms.css              Shared form and review-banner styles (System settings, DHCP)
+      forms.css              Shared form, review-banner, dialog and folding-card styles (System settings, DHCP, DNS, Dynamic DNS)
     js/
       main.js                Entry point: theme + start the app
       core/                  Framework-level modules shared by all pages
@@ -91,6 +91,7 @@ flab-ui/
         fields.js            Pure form-field model: option readers, value checks (IP, MAC, duration, ...), fieldError()
         forms.js             Form building blocks: legend, note, fieldRow() (a field with `secret` is a write-only password box; an enum's `blank` is the text of its empty choice), the sticky review banner
         editpage.js          createEditor(): the draft, banner, save/discard and notes every editing page shares
+        fold.js              Cards that fold down to their header: foldable(), chevron(), reveal() (opens what hides an error) (DHCP pools, Dynamic DNS)
         login.js             Sign-in screen (inline SVG and CSS only)
         dom.js               h() element builder (XSS-safe), byId()
         ui.js                Components: card, tile(s), table, badge, chip, kv, lifebar, meter, sparkline,
@@ -278,7 +279,7 @@ return {
 | `flab.system.uc` | `flab.system` | `cpu` | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime` |
 | `flab.ddns.uc` | `flab.ddns` | `status` (no arguments); `log` (`section`); `control` (`section`, `action` = `check` or `force`) | uci `ddns` and `network`, procd `service list` (the updater instances), ubus `network.interface dump`, the run files in `ddns_rundir` (`<service>.ip`, `.update`, `.nextcheck`, `.err`) and the logs in `ddns_logdir`, `/proc/uptime`, `/usr/share/ddns/{default,custom}/*.json` (the providers), `/usr/lib/ddns` (provider scripts), `/sys/class/net`, `ip addr`, `/etc/rc.d`; `control` runs `/etc/init.d/ddns stop` and `start` for one enabled service after strict validation (see [Dynamic DNS](#dynamic-dns-route-ddns)); passwords and tokens are never returned |
 | `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
-| `flab.services.uc` | `flab.services` | `list`; `control` (`name`, `action`) | `/etc/init.d` (executable files) and `/etc/rc.d` (`S<NN><name>` = starts at boot), `netstat -lntup` and `/proc/sys/net/ipv4/ip_local_port_range` (the listening sockets) for `list`; `control` runs `/etc/init.d/<name> start\|stop\|restart` after strict validation (see [Services](#services-route-services)); its ACL fragment grants `list` under `read` and `control` under `write` |
+| `flab.services.uc` | `flab.services` | `list`; `control` (`name`, `action`) | `/etc/init.d` (executable files) and `/etc/rc.d` (`S<NN><name>` = starts at boot), `netstat -lntup` and `/proc/sys/net/ipv4/ip_local_port_range` (the listening sockets) for `list`; `control` runs `/etc/init.d/<name> start\|stop\|restart\|enable\|disable` after strict validation (see [Services](#services-route-services)); its ACL fragment grants `list` under `read` and `control` under `write` |
 
 The System settings page needs no plugin: it reads `/etc/config/system` through rpcd's own `uci` object, whose
 calls (on the `system` config only) are granted by `rpcd/acl.d/flab-settings.json`; the DHCP page likewise uses
@@ -1429,7 +1430,8 @@ custom update address) on the router, and says so when it is missing.
 - **The plugin** (`flab.ddns`): `status` takes no arguments and returns the config without secrets, each service's runtime (from the
   updater's run files and log: registered address, last update and next check as epoch times, the pid from procd, the problem or
   fatal error from the log), the providers (name, IPv6 support, what the update address needs, script and whether it is installed;
-  a provider in `/usr/share/ddns/custom` replaces one of the same name), the networks, devices and tools, whether the updater
+  a provider in `/usr/share/ddns/custom` replaces one of the same name; the list is read again at most once a minute, because reading
+  the ~70 provider files is the most expensive part of the call), the networks, devices and tools, whether the updater
   starts at boot, the version and the CA certificates. `log` reads one service's log (the newest 64 KB). `control` accepts only the
   name of an existing enabled service (letters, digits, underscore; at most 64) and the action `check` or `force`; every command is
   built from those validated words, and anything else is refused with a reason before a command runs. The ACL fragment

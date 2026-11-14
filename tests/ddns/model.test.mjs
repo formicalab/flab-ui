@@ -4,6 +4,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// Imports one module of the page.
 const mod = f => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/ddns', f)).href);
 const m = await mod('model.js');
 const { SERVICE_FIELDS, GLOBAL_FIELDS } = await mod('schema.js');
@@ -26,6 +27,7 @@ const PROVIDERS = [
 ];
 // The reply of flab.ddns status for a router with one enabled service that is up to date (the password is stored but never sent).
 const NOW = 1794600000;
+// A reply of flab.ddns status like the real router's: five services in different states.
 const status = () => ({
   generated: NOW, uptime: 5000, installed: true, version: '2.8.4-12', running: true, at_boot: true, rundir: '/var/run/ddns', logdir: '/var/log/ddns', ca: '/etc/ssl/certs/ca-certificates.crt',
   global: { section: 'global', values: { ddns_dateformat: '%F %R', ddns_loglines: '250', ddns_rundir: '/var/run/ddns', ddns_logdir: '/var/log/ddns' } },
@@ -37,6 +39,7 @@ const status = () => ({
   }],
   providers: PROVIDERS, networks: ['lan', 'wan', 'wan6'], devices: ['br-lan', 'eth1'], tools: { curl: true, wget: false, uclient_fetch: true, host: false },
 });
+// The model's reading of that reply.
 const data = () => m.readDdns(status());
 // The draft of a router, to be edited by the test.
 const draftOf = d => m.draftFrom(d ?? data());
@@ -138,6 +141,7 @@ console.log('\n== validation ==');
   const d = data();
   /** The errors of an edit of the home service as "key: text" lines. */
   const errs = edit => { const draft = draftOf(d); edit(svc(draft), draft); return m.problems(d, draft).errors; };
+  // The warnings the model gives for the draft after `edit` has changed service home.
   const warns = edit => { const draft = draftOf(d); edit(svc(draft), draft); return m.problems(d, draft).warnings; };
   check(m.problems(d, draftOf(d)).errors.length === 0 && m.problems(d, draftOf(d)).warnings.length === 0, 'the router\'s own configuration has no problems');
   let e = errs(v => { v.lookup_host = 'bad host!'; v.domain = 'bad domain!'; v.dns_server = 'a b'; });
@@ -224,7 +228,9 @@ console.log('\n== after a save ==');
 
 console.log('\n== what a service is doing ==');
 {
+  // A copy of the first service, for the verdict cases.
   const base = () => clone(m.readDdns(status()).services[0]);
+  // The verdict of a service.
   const v = s => m.verdictOf(s);
   check(v(base()).kind === 'ok' && /home\.example\.com resolves to 203\.0\.113\.7, the address of the router/.test(v(base()).detail), 'the registered address is the router\'s: up to date', j(v(base())));
   let s = base(); s.values.enabled = '0';

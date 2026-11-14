@@ -2,20 +2,21 @@
 // groups) and one for the global settings. The controls come from the option tables in schema.js through core/forms.js; the
 // values, the rules and the status verdicts are in model.js.
 import { h } from '../../core/dom.js';
+import { chevron, foldable } from '../../core/fold.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, can, ubus } from '../../core/ubus.js';
 import { badge, button, card, kv, mono, muted } from '../../core/ui.js';
 import { fieldRow, legend } from '../../core/forms.js';
 import { GLOBAL_FIELDS, SERVICE_FIELDS, SERVICE_GROUPS } from './schema.js';
-import { addService, ago, currentIp, effective, isNoteworthy, isShown, parseLog, providerLabel, providerOf, removeService, restoreService, spanWords, timing, verdictOf } from './model.js';
+import { addService, ago, currentIp, effective, isNoteworthy, isShown, parseLog, providerLabel, removeService, restoreService, spanWords, timing, verdictOf } from './model.js';
 
 //#region State that survives a redraw
 
 // Which option groups are expanded, kept across redraws: id `<service>:<group>` to open or closed.
 const opened = new Map();
-// The cards the user has folded down to their header (a service id, or 'global' which starts folded).
-const folded = new Set();
-const unfoldedGlobal = { value: false };
+// Which cards are folded down to their header: a service id or 'global' to true or false. A service starts open, the global card
+// folded.
+const folds = new Map();
 // The log panels: service name to { open, all, loading, exists, text, error }. An open panel is read again on every poll.
 const logs = new Map();
 // The call that is running ({ section, action }) and the outcome of the last one per service ({ kind, text }).
@@ -43,29 +44,8 @@ export async function fetchLog(section) {
 
 //#region Helpers
 
-// Makes a card foldable: its header becomes the toggle (mouse, Enter or Space) and the choice is remembered under `key`.
-// A card is open unless `key` is in `folded` (the global card is the other way round).
-function foldable(el, key, startFolded = false) {
-  const header = el.querySelector('.card-header');
-  // Whether the card is folded right now.
-  const isFolded = () => (startFolded ? !unfoldedGlobal.value : folded.has(key));
-  el.classList.toggle('ddns-folded', isFolded());
-  // Folds or unfolds the card and remembers the state.
-  const toggle = () => {
-    const now = el.classList.toggle('ddns-folded');
-    if (startFolded) unfoldedGlobal.value = !now;
-    else if (now) folded.add(key); else folded.delete(key);
-    header.setAttribute('aria-expanded', String(!now));
-  };
-  header.classList.add('ddns-fold-header');
-  header.setAttribute('role', 'button');
-  header.setAttribute('tabindex', '0');
-  header.setAttribute('aria-expanded', String(!isFolded()));
-  header.title = 'Click to fold or unfold';
-  header.addEventListener('click', e => { if (!e.target.closest('input, button, select, a')) toggle(); });
-  header.addEventListener('keydown', e => { if (e.target === header && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(); } });
-  return el;
-}
+// Makes the card of `key` foldable (core/fold.js) and remembers whether the user folded it.
+const foldCard = (el, key) => foldable(el, folds.get(key) ?? key === 'global', folded => folds.set(key, folded));
 
 // The option keys whose value changes which other controls are shown, so changing one redraws the form.
 const REDRAWS = new Set(['service_name', 'ip_source', 'use_https', 'use_ipv6']);
@@ -263,18 +243,18 @@ export function serviceCard(ctx, svc) {
         onclick: () => { removeService(ctx.draft, svc.id); ctx.touched(); ctx.redraw(); } }, icon('trash'), svc.isNew ? 'Discard service' : 'Remove service'));
   const state = svc.isNew ? badge('new', 'info', 'not saved yet') : off ? badge('to be removed', 'danger') : badge(verdict.text, VERDICT[verdict.kind][0], verdict.detail);
   const el = card(
-    [h('span', { className: 'ddns-chevron' }), icon('globe2'), h('span', {}, svc.name || 'New service'), state, h('span', { className: 'sub' }, describe(ctx, svc))],
+    [chevron(), icon('globe2'), h('span', {}, svc.name || 'New service'), state, h('span', { className: 'sub' }, describe(ctx, svc))],
     h('div', { className: `card-body ddns-groups${off ? ' ddns-removed' : ''}` },
       svc.isNew ? nameControl(ctx, svc) : null,
       !svc.isNew && !off ? statusBlock(ctx, svc) : null,
       actions, groups, extraOptions(svc)),
     svc.isNew ? 'ddns-new' : '');
-  return foldable(el, svc.id);
+  return foldCard(el, svc.id);
 }
 
 // The row below the services for adding one.
 export function addServiceBar(ctx) {
-  const add = button('Add service', 'plus-lg', () => { folded.delete(addService(ctx.data, ctx.draft)); ctx.touched(); ctx.redraw(); });
+  const add = button('Add service', 'plus-lg', () => { folds.delete(addService(ctx.data, ctx.draft)); ctx.touched(); ctx.redraw(); });
   add.disabled = !ctx.canEdit;
   return h('div', { className: 'ddns-addbar' }, add,
     h('span', { className: 'muted small' }, 'One service updates one name at one provider, for IPv4 or for IPv6. To update both families, or several names, add a service for each.'));
@@ -290,14 +270,14 @@ export function globalCard(ctx) {
   const d = ctx.data;
   const fields = GLOBAL_FIELDS.map(f => controlFor(ctx, f, `global:${f.key}`, ctx.draft.global, false));
   const el = card(
-    [h('span', { className: 'ddns-chevron' }), icon('gear'), h('span', {}, 'Global settings'),
+    [chevron(), icon('gear'), h('span', {}, 'Global settings'),
       badge(d.running ? 'updater running' : 'updater not running', d.running ? 'success' : 'warning'),
       h('span', { className: 'sub' }, `ddns-scripts ${d.version ?? ''} · ${d.atBoot ? 'starts at boot' : 'does not start at boot'} · run files in ${d.rundir}`)],
     h('div', { className: 'card-body' },
       legend(['These apply to every service. The documentation advises casual users to leave them as they are. The updater itself is started and stopped on the Services page (the "ddns" service).']),
       h('div', { className: 'set-fields' }, fields)),
     '');
-  return foldable(el, 'global', true);
+  return foldCard(el, 'global');
 }
 
 //#endregion

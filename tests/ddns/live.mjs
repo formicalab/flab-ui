@@ -219,6 +219,7 @@ console.log('\n== reading (mock router) ==');
 check(await tile(0) === 'Running' && /2 of 3 services enabled running · starts at boot/.test(await tileSub(0)), 'tile: the updater runs 2 of the 3 enabled services', `${await tile(0)} | ${await tileSub(0)}`);
 check(await tile(1) === '1 of 3' && /2 services with a problem/.test(await tileSub(1)), 'tile: 1 of 3 up to date, 2 with a problem', `${await tile(1)} | ${await tileSub(1)}`);
 check(/ago/.test(await tile(2)) && /sent for home/.test(await tileSub(2)) && /^in \d+s$/.test(await tile(3)), 'tiles: the last update and the next check', `${await tile(2)} | ${await tileSub(2)} | ${await tile(3)}`);
+// The verdict heading of the card of service `n`.
 const verdict = async n => (await svc(n).locator('.ddns-verdict strong').innerText()).trim();
 check(await verdict('home') === 'Up to date' && await verdict('v6') === 'Problem' && await verdict('custom') === 'Not running' && await verdict('off') === 'Disabled', 'each service has its verdict', [await verdict('home'), await verdict('v6'), await verdict('custom'), await verdict('off')].join());
 const homeStatus = await svc('home').locator('.ddns-status').innerText();

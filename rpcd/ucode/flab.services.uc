@@ -1,6 +1,6 @@
 #!/usr/bin/ucode
 //
-// rpcd ucode plugin that lists the init scripts of /etc/init.d and starts, stops or restarts one of them:
+// rpcd ucode plugin that lists the init scripts of /etc/init.d and starts, stops, restarts, enables or disables one of them:
 //   ubus call flab.services list
 //   ubus call flab.services control '{"name":"dnsmasq","action":"restart"}'
 //

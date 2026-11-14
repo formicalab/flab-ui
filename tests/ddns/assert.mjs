@@ -42,6 +42,7 @@ check(st.services.map(s => s.section).join() === SERVICES.join(), 'the services 
 check(j(main['status-args'].services.map(s => s.values)) === j(st.services.map(s => s.values)) && main['status-args'].providers.length === st.providers.length, 'arguments sent to status are ignored');
 
 console.log('\n== secrets never leave the router ==');
+// The service section called `n` in the reply of the main scenario.
 const svc = n => st.services.find(s => s.section === n);
 check(!('password' in svc('home').values) && !('api_token' in svc('home').values) && j(svc('home').secrets) === j({ password: true, api_token: true }) && svc('home').values.odd_option === 'x', 'a password and an option that is named like a secret are left out; an unknown ordinary option is kept');
 check(j(svc('v6').secrets) === j({ password: true }) && j(svc('custom').secrets) === j({ password: true }) && j(svc('off').secrets) === '{}' && !('password' in svc('v6').values) && !('password' in svc('custom').values), 'the services say only whether a password is stored');
@@ -51,6 +52,7 @@ const hidden = Object.entries(SECRETS).filter(([k]) => k !== 'short').map(([, s]
 check(hidden.every(s => !everything.includes(s)), 'no secret appears anywhere in any reply (status, logs, errors); only the short one, which is not masked in text, can', hidden.filter(s => everything.includes(s)).join());
 
 console.log('\n== what each service is doing ==');
+// The runtime of service `n`.
 const rt = n => svc(n).runtime;
 check(rt('home').running === true && rt('home').pid === 4000 && rt('home').registered_ip === '203.0.113.7' && rt('home').local_ip === '203.0.113.7' && rt('home').detected_ip === '203.0.113.7' && rt('home').error === null && rt('home').log === true, 'home: running, with the registered address, the one the router has (from the network) and the one the updater detected');
 check(st.generated - rt('home').last_update === 5000 - 4400 && rt('home').next_check - st.generated === 5040 - 5000, 'the run files hold uptime stamps, which become epoch times (last update 600 s ago, next check in 40 s)', j([st.generated, rt('home').last_update, rt('home').next_check]));
@@ -64,6 +66,7 @@ check(rt('evil').local_ip === null, 'a device whose name starts with a dash is n
 
 console.log('\n== what the router offers ==');
 check(st.providers.map(p => p.name).join() === 'cloud.example-v4,duckdns.example,dyn.example,missing.example,old.example', 'the providers, sorted; a line without a tab or with bad JSON is ignored', st.providers.map(p => p.name).join());
+// The provider called `n`.
 const prov = n => st.providers.find(p => p.name === n);
 check(j(prov('duckdns.example').needs) === j(['DOMAIN', 'PASSWORD']) && prov('duckdns.example').ipv6 === true && prov('duckdns.example').script === null && prov('duckdns.example').available === true && prov('duckdns.example').source === 'default', 'what a provider\'s update address needs, and IPv6 support');
 check(j(prov('old.example').needs) === j(['DOMAIN', 'USERNAME', 'PASSWORD', 'PARAMOPT']) && prov('old.example').ipv6 === false, 'a provider with only an IPv4 address does not support IPv6');

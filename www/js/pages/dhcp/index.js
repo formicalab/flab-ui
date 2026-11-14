@@ -16,6 +16,7 @@ import { tile, tiles } from '../../core/ui.js';
 import { refreshControl, searchControl, selectControl } from '../../core/controls.js';
 import { note } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
+import { reveal } from '../../core/fold.js';
 import { uci } from '../../core/uci.js';
 import { announcedCard, leases4Card, leases6Card } from './leases.js';
 import { addPoolBar, daemonCard, poolCard } from './pools.js';
@@ -105,11 +106,7 @@ export default {
 
     // Called after every edit: marks the controls that hold an error and refreshes the banner. A control with an
     // error must not stay hidden in a folded card or a closed group, so those are opened.
-    ctx.sync = () => editor.markErrors(ctx.inputs, canEdit, bad => {
-      const group = bad.closest('details');
-      if (group && !group.open) group.open = true;
-      if (bad.closest('.dhcp-folded')) bad.closest('.card').querySelector('.dhcp-fold-header').click();
-    });
+    ctx.sync = () => editor.markErrors(ctx.inputs, canEdit, reveal);
 
     // The MACs that already have a reservation (in the draft), so a lease is not offered for reserving twice.
     const reservedMacs = new Set(state.draft.hosts.filter(r => !r.removed).flatMap(r => hostNorm(r.values).mac.split(' ')).filter(Boolean));

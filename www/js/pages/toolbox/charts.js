@@ -15,7 +15,7 @@ function svg(tag, attrs = {}, ...kids) {
 }
 
 // The smallest "round" number (1, 2, 2.5, 5 or 10 times a power of ten) that is at least `value`: the top of a chart's scale.
-export function niceMax(value) {
+function niceMax(value) {
   if (!(value > 0)) return 1;
   const p = 10 ** Math.floor(Math.log10(value));
   return [1, 2, 2.5, 5, 10].map(m => m * p).find(v => v >= value) ?? 10 * p;
@@ -25,6 +25,7 @@ export function niceMax(value) {
 // their labels (`label(value)` words a value of the scale), and the plot area's geometry for the caller.
 function frame(width, height, pad, max, label) {
   const plot = { x0: pad.l, x1: width - pad.r, y0: height - pad.b, y1: pad.t };
+  // The vertical position of a value in the plot.
   const y = v => plot.y0 - (v / max) * (plot.y0 - plot.y1);
   const root = svg('svg', { viewBox: `0 0 ${width} ${height}`, class: 'rt-chart', role: 'img', preserveAspectRatio: 'xMidYMid meet' });
   for (const f of [0, 0.5, 1]) {
@@ -45,6 +46,7 @@ export function pingChart(p, ended) {
   const W = 640, H = 190;
   const max = niceMax(Math.max(...p.replies.map(r => r.rtt)) * 1.1);
   const { root, plot, y } = frame(W, H, { l: 52, r: 12, t: 12, b: 26 }, max, v => (v === 0 ? '0' : fmtMs(v)));
+  // The horizontal position of reply number `i` (a single reply sits in the middle).
   const x = i => (total === 1 ? (plot.x0 + plot.x1) / 2 : plot.x0 + (i / (total - 1)) * (plot.x1 - plot.x0));
   const { min, avg, max: slowest } = p.stats;
   root.append(
@@ -52,6 +54,7 @@ export function pingChart(p, ended) {
     svg('line', { class: 'rt-ch-avg', x1: plot.x0, x2: plot.x1, y1: y(avg), y2: y(avg) }, svg('title', {}, `average ${fmtMs(avg)}`)));
   // A path through each run of consecutive replies; a lost ping breaks the line.
   let run = [];
+  // Draws the run of replies collected so far as one line and starts a new run.
   const flush = () => { if (run.length > 1) root.append(svg('polyline', { class: 'rt-ch-line', points: run.join(' ') })); run = []; };
   for (let i = 0; i < total; i++) {
     const r = bySeq.get(i);
@@ -80,6 +83,7 @@ export function throughputChart(intervals, { duration = null, max = null, target
   const top = niceMax(Math.max(max ?? 0, target ?? 0, ...intervals.map(i => i.bps)) * 1.08);
   const span = Math.max(5, duration ?? 0, intervals.at(-1)?.t1 ?? 0);
   const { root, plot, y } = frame(width, height, { l: 78, r: 14, t: 12, b: 24 }, top, v => (v === 0 ? '0' : fmtBitrate(v)));
+  // The horizontal position of a time (seconds from the start of the test).
   const x = t => plot.x0 + (t / span) * (plot.x1 - plot.x0);
   if (target) root.append(svg('line', { class: 'rt-ch-avg', x1: plot.x0, x2: plot.x1, y1: y(target), y2: y(target) }, svg('title', {}, `target ${fmtBitrate(target)}`)));
   if (intervals.length) {

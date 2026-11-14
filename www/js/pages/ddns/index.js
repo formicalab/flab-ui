@@ -16,6 +16,7 @@ import { tile, tiles } from '../../core/ui.js';
 import { refreshControl } from '../../core/controls.js';
 import { note } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
+import { reveal } from '../../core/fold.js';
 import { addServiceBar, fetchLog, globalCard, openLogs, serviceCard } from './cards.js';
 import { CONFIG, ago, changesOf, checkApplied, draftFrom, isDirty, plan, problems, readDdns, serviceList, summarize } from './model.js';
 
@@ -48,6 +49,7 @@ async function load() {
 // check are.
 function summary(data) {
   const s = summarize(data, data.generated);
+  // "1 service" or "N services".
   const noun = n => `${n} service${n === 1 ? '' : 's'}`;
   return tiles(
     tile('Updater', data.running ? 'Running' : 'Stopped', `${s.running} of ${noun(s.enabled)} enabled running · ${data.atBoot ? 'starts at boot' : 'does not start at boot'}`, !data.running && s.enabled ? 'text-danger' : ''),
@@ -63,7 +65,7 @@ export default {
   id: 'ddns',
   label: 'Dynamic DNS',
   title: 'Dynamic DNS · ddns-scripts',
-  icon: 'globe2',
+  icon: 'cloud',
   interval: 10000,
   css: ['css/forms.css', 'css/ddns.css'],
   isPaused: () => editor.paused('.ddns-form'),
@@ -86,11 +88,7 @@ export default {
 
     // Called after every edit: marks the controls that hold an error and refreshes the banner. A control with an error must not
     // stay hidden in a folded card or a closed group, so those are opened.
-    ctx.sync = () => editor.markErrors(ctx.inputs, canEdit, bad => {
-      const group = bad.closest('details');
-      if (group && !group.open) group.open = true;
-      if (bad.closest('.ddns-folded')) bad.closest('.card').querySelector('.ddns-fold-header').click();
-    });
+    ctx.sync = () => editor.markErrors(ctx.inputs, canEdit, reveal);
 
     const page = [
       summary(data),

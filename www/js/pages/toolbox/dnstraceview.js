@@ -27,6 +27,7 @@ function recordsTable(records) {
 // The name servers of a referral as chips (a tick marks one whose address came with the referral), the first few shown and
 // the rest behind a toggle.
 function nameServers(list) {
+  // The chip of one name server, marked when its address came from a glue record in the referral.
   const chipOf = ns => h('span', { className: `chip rt-ns${ns.glue.length ? ' glued' : ''}`, title: ns.glue.length ? `${ns.name} (address in the referral: ${ns.glue.join(', ')})` : `${ns.name} (no address in the referral)` }, ns.name.replace(/\.$/, ''), ns.glue.length ? h('span', { className: 'rt-tick' }, '✓') : null);
   const head = list.slice(0, 6), rest = list.slice(6);
   return h('div', { className: 'rt-nslist' }, head.map(chipOf), rest.length ? h('details', { className: 'rt-nsmore' }, h('summary', {}, `+${rest.length} more`), rest.map(chipOf)) : null);

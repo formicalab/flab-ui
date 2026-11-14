@@ -21,6 +21,7 @@ export const CMD = {
 };
 // The commands that restart one service's updater, forget its last update, and collect what the init script printed.
 export const forceCmd = name => `rm -f /var/run/ddns/${name}.update`;
+// The command line that restarts the updater of service `name`.
 export const restartCmd = name => `timeout 30 /etc/init.d/ddns stop ${name} </dev/null >/tmp/flab-ddns.out 2>&1; timeout 30 /etc/init.d/ddns start ${name} </dev/null >>/tmp/flab-ddns.out 2>&1; echo $?`;
 export const OUTPUT_CMD = 'head -c 4096 /tmp/flab-ddns.out 2>/dev/null; rm -f /tmp/flab-ddns.out';
 

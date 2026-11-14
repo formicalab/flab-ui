@@ -133,9 +133,6 @@ export const GLOBAL_FIELDS = [
 
 //#endregion
 
-// The unit field of each interval field, for the pairs above ({ check_interval: 'check_unit', ... }).
-export const UNIT_OF = Object.fromEntries(SERVICE_FIELDS.filter(f => f.unit).map(f => [f.key, f.unit]));
-
 // Seconds in one unit of time.
 export const UNIT_SECONDS = { seconds: 1, minutes: 60, hours: 3600, days: 86400 };
 

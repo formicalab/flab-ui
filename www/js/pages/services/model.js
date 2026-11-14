@@ -90,6 +90,7 @@ export function portsOf(sockets, pids) {
     if (!g.addresses.includes(s.address)) g.addresses.push(s.address);
     groups.set(key, g);
   }
+  // Whether an address is on the loopback interface (only reachable from the router itself).
   const loopback = a => /^127\./.test(a) || a === '::1';
   return [...groups.values()].map(g => ({ ...g, scope: g.addresses.some(a => a === '0.0.0.0' || a === '::') ? 'all' : g.addresses.every(loopback) ? 'local' : 'some' }))
     .sort((a, b) => (a.proto === b.proto ? 0 : a.proto === 'tcp' ? -1 : 1) || a.port - b.port);

@@ -8,7 +8,7 @@
 import { differs, errorsOf, flag, normalize, show, valueOf } from '../../core/fields.js';
 import { parseAddress } from '../../core/ip.js';
 import { fmtSpan } from '../../core/format.js';
-import { CHECK_FLOOR_SECONDS, CONFIG, GLOBAL_FIELDS, GLOBAL_SECTION, SERVICE_FIELDS, UNIT_OF, UNIT_SECONDS } from './schema.js';
+import { CHECK_FLOOR_SECONDS, CONFIG, GLOBAL_FIELDS, GLOBAL_SECTION, SERVICE_FIELDS, UNIT_SECONDS } from './schema.js';
 
 export { CONFIG };
 
@@ -214,6 +214,7 @@ export function problems(data, draft) {
     const title = s.name.trim() || 'New service';
     // Adds an error against the control of field `key`.
     const err = (key, text) => errors.push({ key: `svc:${s.id}:${key}`, text: `${title}: ${text}` });
+    // Records a warning on the service being checked, prefixed with its title.
     const warn = text => warnings.push(`${title}: ${text}`);
 
     if (s.isNew) {

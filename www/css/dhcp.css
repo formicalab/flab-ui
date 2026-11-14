@@ -65,12 +65,3 @@
 .dhcp-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
 .dhcp-group-body p { margin: 0; }
 
-/* A daemon or pool card folds down to its header: the whole header is the toggle. The marker is a triangle on the left that
-   points right when folded and down when open, like the group markers inside the card. */
-.dhcp-fold-header { cursor: pointer; }
-.dhcp-fold-header:hover { background: var(--fl-surface-hover); }
-.dhcp-fold-header:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
-.dhcp-chevron { width: 0; height: 0; border-left: .6rem solid currentColor; border-top: .36rem solid transparent; border-bottom: .36rem solid transparent; transform: rotate(90deg); transition: transform .15s; }
-.dhcp-folded > :not(.card-header) { display: none; }
-.dhcp-folded > .card-header { border-bottom: 0; }
-.dhcp-folded .dhcp-chevron { transform: none; }

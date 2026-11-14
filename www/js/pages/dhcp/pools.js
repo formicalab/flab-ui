@@ -3,6 +3,7 @@
 // pool's options are in collapsible groups (services, DHCPv4, DHCPv6, router advertisements, ...) so the page
 // stays readable.
 import { h } from '../../core/dom.js';
+import { chevron, foldable } from '../../core/fold.js';
 import { icon } from '../../core/icons.js';
 import { badge, button, card, muted } from '../../core/ui.js';
 import { fieldRow, legend } from '../../core/forms.js';
@@ -16,26 +17,9 @@ const opened = new Map();
 // folded down to their header, which already summarizes them.
 const unfolded = new Set();
 
-// Makes a card foldable: its whole header becomes the toggle (mouse, Enter or Space), the card starts folded unless
-// `key` was opened before, and the choice is remembered under `key`.
-function foldable(el, key) {
-  const header = el.querySelector('.card-header');
-  el.classList.toggle('dhcp-folded', !unfolded.has(key));
-  // Folds or unfolds the card and remembers the state.
-  const toggle = () => {
-    const isFolded = el.classList.toggle('dhcp-folded');
-    if (isFolded) unfolded.delete(key); else unfolded.add(key);
-    header.setAttribute('aria-expanded', String(!isFolded));
-  };
-  header.classList.add('dhcp-fold-header');
-  header.setAttribute('role', 'button');
-  header.setAttribute('tabindex', '0');
-  header.setAttribute('aria-expanded', String(unfolded.has(key)));
-  header.title = 'Click to fold or unfold';
-  header.addEventListener('click', toggle);
-  header.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
-  return el;
-}
+// Makes the card `el` foldable (core/fold.js): it starts folded unless `key` was opened before, and the choice is remembered
+// under `key`.
+const foldCard = (el, key) => foldable(el, !unfolded.has(key), folded => (folded ? unfolded.delete(key) : unfolded.add(key)));
 
 // Connects the control of one field to the draft, under the control name `id` (also used to mark errors). `off` grays
 // it out (a pool that is going to be removed).
@@ -95,10 +79,10 @@ export function poolCard(ctx, pool) {
       h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !ctx.canEdit, title: `Stop serving ${pool.iface} and delete this pool`, onclick: () => { removePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); } }, icon('trash'), pool.isNew ? 'Discard pool' : 'Remove pool'));
   const state = pool.isNew ? badge('new', 'info', 'not saved yet') : off ? badge('to be removed', 'danger') : null;
   const el = card(
-    [h('span', { className: 'dhcp-chevron' }), icon('signpost-split'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, state, h('span', { className: 'sub' }, describe(ctx, pool))],
+    [chevron(), icon('signpost-split'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, state, h('span', { className: 'sub' }, describe(ctx, pool))],
     h('div', { className: `card-body dhcp-groups${off ? ' dhcp-removed-pool' : ''}` }, actions, groups, extraOptions(pool.extra, '/etc/config/dhcp')),
     pool.isNew ? 'dhcp-new-pool' : '');
-  return foldable(el, pool.section);
+  return foldCard(el, pool.section);
 }
 
 // Makes the card of a pool start unfolded (a pool that was just added: its options are what the user wants to see).
@@ -124,12 +108,12 @@ export function daemonCard(ctx) {
   const running = ctx.data.daemonRunning;
   const d = ctx.draft.daemon;
   const el = card(
-    [h('span', { className: 'dhcp-chevron' }), icon('hdd-stack'), h('span', {}, 'odhcpd daemon'),
+    [chevron(), icon('hdd-stack'), h('span', {}, 'odhcpd daemon'),
       running == null ? muted('state not available') : badge(running ? 'running' : 'not running', running ? 'success' : 'danger'),
       h('span', { className: 'sub' }, `${d.maindhcp ? 'main DHCPv4 server' : 'not the main DHCPv4 server'} · log level ${d.loglevel === '' ? `${DAEMON_FIELDS.find(f => f.key === 'loglevel').default} (default)` : d.loglevel}`)],
     h('div', {},
       legend(['The daemon that serves DHCPv4, DHCPv6 and router advertisements. These are the odhcpd section of /etc/config/dhcp, and the server DUID of /etc/config/network; the interface pools below are the dhcp sections.']),
       h('div', { className: 'card-body set-fields' }, fields),
       h('div', { className: 'card-body' }, extraOptions(ctx.data.daemon.extra, '/etc/config/dhcp'))));
-  return foldable(el, 'daemon');
+  return foldCard(el, 'daemon');
 }

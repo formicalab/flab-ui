@@ -14,6 +14,7 @@ import { parseBlocks } from './diagmodel.js';
 export function parseMtr(text, running = false) {
   const hops = new Map();
   let error = null;
+  // The record of hop `i` (0-based), created on first use.
   const hop = i => {
     if (!hops.has(i)) hops.set(i, { n: i + 1, addrs: [], sent: 0, recv: 0, sum: 0, sumSq: 0, last: null, best: null, worst: null, history: [], answered: new Set(), lastSeq: null });
     return hops.get(i);
@@ -129,6 +130,7 @@ export function parseAsn(text) {
 // The registry record in the output of a `net` block (the first whois object: inetnum or inet6num, netname, country,
 // descr), or null when it names nothing or the range is one the registry does not manage (RIPE's "NON-RIPE-NCC-MANAGED").
 function netOf(output) {
+  // The first non-empty value of the whois field `key`, or null.
   const get = key => String(output ?? '').split('\n').map(l => l.match(new RegExp(`^${key}:\\s*(.+)$`))?.[1]?.trim()).find(Boolean) ?? null;
   const netname = get('netname');
   if (!netname || /^NON-RIPE-NCC-MANAGED/i.test(netname)) return null;

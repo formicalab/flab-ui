@@ -35,6 +35,7 @@ function connectPanel(info, port, bind) {
   const open = all.filter(a => a.input === 'ACCEPT');
   const blocked = all.filter(a => a.input !== 'ACCEPT');
   const first = open.find(a => a.family === 4) ?? open[0];
+  // One address the iperf3 server can be reached at, with the zone and whether its firewall zone accepts input.
   const row = a => h('div', { className: 'rt-addr' }, badge(a.iface, '', `${a.device ?? ''} · zone ${a.zone ?? 'none'}`), mono(a.ip), a.input === 'ACCEPT' ? null : badge(`zone ${a.zone ?? 'none'}: ${a.input.toLowerCase()}`, 'warning', 'The firewall does not accept traffic for the router from this zone'));
   return h('div', { className: 'rt-connect' },
     h('h3', {}, 'Connect from a computer'),
