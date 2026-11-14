@@ -36,11 +36,16 @@ on). These are optional: install the ones for the pages you use.
 
 flab-ui is an architecture-independent apk package that depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`
 (`ucode-mod-fs`, `ucode-mod-ubus`, `ucode-mod-uci`), `uhttpd` and `uhttpd-mod-ubus`. It is not in an OpenWrt feed yet.
-Build it with an OpenWrt SDK (see [Package](docs/package.md#building-the-package)) and install the result:
+Download the apk (and its `.sha256`) from the [latest release](https://github.com/formicalab/flab-ui/releases/latest),
+copy it to the router and install it. The package is unsigned, so apk needs `--allow-untrusted`:
 
 ```sh
-apk add --allow-untrusted ./flab-ui-<version>.apk
+scp -O flab-ui-<version>.apk root@<router>:/tmp/
+ssh root@<router> 'apk add --allow-untrusted /tmp/flab-ui-<version>.apk'
 ```
+
+It targets apk-based OpenWrt (a snapshot, or a release built with apk). To build it yourself, see
+[Package](docs/package.md#building-the-package).
 
 Installing reloads `rpcd`, so no reboot is needed. Then open `https://<router>/flab/` and sign in as `root` with the
 router's root password. To remove it:
