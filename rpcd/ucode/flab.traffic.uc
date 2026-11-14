@@ -458,7 +458,7 @@ function connection_request(args) {
 	return { q: trim(q), limit, sort: sort_by, proto, scope };
 }
 
-// The reply of `connections`; see the header for the request and README.md for the shape of the reply.
+// The reply of `connections`; see the header for the request and docs/reference.md for the shape of the reply.
 function connections(args) {
 	let req = connection_request(args);
 	if (req.error)
