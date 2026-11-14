@@ -16,7 +16,7 @@ Tests the Traffic page (live throughput, the connection table and nlbwmon usage)
    Traffic page with mocked flab.traffic and flab.network replies: every tab, filter, selector and finding, and the
    case without nlbw. Nothing reaches the router's configuration.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action Deploy) and
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action Deploy) and
 installs playwright-core into the temporary work folder. Everything created on the router (/tmp/flab-traffic-test)
 and locally is removed afterwards.
 

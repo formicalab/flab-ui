@@ -17,7 +17,7 @@ Tests the DNS page (the state of the router's resolver, Unbound or dnsmasq) with
    and adding, editing, removing and saving zones in the dialog. The uci object is a stateful mock; nothing reaches the router's
    configuration.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action Deploy) and
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action Deploy) and
 installs playwright-core into the temporary work folder. Everything created on the router (/tmp/flab-dns-test) and
 locally is removed afterwards.
 

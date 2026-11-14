@@ -30,7 +30,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Services | `pwsh -File flab-ui\tests\services\run.ps1 [-Browser]` | Services model; `flab.services` against fixtures (nothing is executed) and a read-only `list` on the router; the page against the router's own services, then the whole start, stop and restart flow against a mock |
 | Dynamic DNS | `pwsh -File flab-ui\tests\ddns\run.ps1 [-Browser]` | Dynamic DNS model (reading, draft, validation, change plan, check after a save, verdicts, intervals, log parsing); `flab.ddns` against fixtures (nothing is executed) and a read-only `status` and `log` on the router; the page against the router's own services, then the whole editing and action flow against a mock |
 
-`-Browser` needs the UI installed (`tools/apk-deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
+`-Browser` needs the UI installed (`tools/package.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
 password is needed. Every suite removes its local temp folder when it finishes, and the BGP, IPsec, Routing and network
 suites also remove their `/tmp/flab-*-test` folder on the router. When several people or agents share one router, run a suite through `tools/router-lock.ps1` (see [Development script](package.md#development-script)).

@@ -19,7 +19,7 @@ Tests the WireGuard page's editing without changing the router.
    dialog, the warnings about your own tunnel, saving, a change the router does not keep, an interface that does not come up, a login that
    may not write) WITHOUT touching the router's configuration.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1) and installs playwright-core into the
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1) and installs playwright-core into the
 temporary work folder. Everything created on the router (/tmp/flab-wgedit-test) and locally is removed afterwards.
 
 .PARAMETER Router

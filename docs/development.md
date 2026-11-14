@@ -33,7 +33,7 @@ Example: an `ntp` page.
    `PATHS` map in `core/icons.js`.
 5. **Tests.** Add the plugin to `$plugins` in `tests/network/run.ps1`, scenarios to `tests/network/mkfx.mjs`,
    assertions to `assert.mjs` and a browser section to `live.mjs` (or extend the suite that fits best).
-6. **Install and test** with `tools/apk-deploy.ps1`; every file in `rpcd/` and `www/` is picked up automatically.
+6. **Install and test** with `tools/package.ps1`; every file in `rpcd/` and `www/` is picked up automatically.
 
 Reuse before writing new code: if two pages need the same widget, move it to `core/ui.js`; if the same
 parsing is needed by two plugins, move it to `rpcd/lib/flab/`. Comment every function and lookup table, put

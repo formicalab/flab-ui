@@ -15,7 +15,7 @@ Tests the Routing page (kernel routes, tables, policy rules, the next-hop lookup
 
 The diagnostic tools have their own suite, tests/toolbox/run.ps1.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action Deploy) and
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action Deploy) and
 installs playwright-core into the temporary work folder. Everything created on the router (/tmp/flab-routing-test) and
 locally is removed afterwards.
 

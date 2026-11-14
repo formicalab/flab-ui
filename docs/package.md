@@ -66,36 +66,20 @@ ssh root@<router> 'apk add --allow-untrusted /tmp/flab-ui-*.apk'
 Installing and removing (`apk del flab-ui`) reload rpcd. apk does not reinstall the version that is already installed,
 so to try a rebuilt package of the same version, remove the installed one first.
 
-## Releasing
+## Package script
 
-The tag and the package Makefile have to name the same version, and the Makefile cannot live in this repository:
-`PKG_HASH` is the hash of the tag's tarball, which would contain the Makefile. `tools/release.ps1` keeps them aligned,
-so a release is one command and the version is chosen only there:
-
-```powershell
-pwsh -File tools/release.ps1 -Version 0.1.1 -Router root@192.168.1.1 -PackagesDir ../packages -Amend
-```
-
-It checks that this repository is on a clean, pushed `main`, tags `v<Version>`, downloads the tag's tarball, writes
-`PKG_VERSION`, `PKG_HASH` and `PKG_RELEASE:=1` into `admin/flab-ui/Makefile` of the packages checkout, builds the apk
-from that tarball (so the SDK checks the hash; `apk-deploy.ps1 -UseFeedSource`), installs it on the router as a check
-(`-SkipInstallCheck` to skip), commits and pushes the Makefile to the fork (`-Remote`, default `fork`), and creates the
-GitHub release with the apk and its SHA-256 file. `-Amend` folds the Makefile change into the single package commit
-while the package is not merged; without it the script adds a commit `flab-ui: update to <Version>`. If a step before
-the release fails, the tag the run created is deleted and the Makefile restored. It needs `git` and an authenticated
-`gh`.
-
-## Development script
-
-`tools/apk-deploy.ps1` does the "from a local checkout" build and the install in one command. It needs PowerShell 7 and,
+`tools/package.ps1` is the one script for building, installing and releasing the package. It needs PowerShell 7 and,
 for `Deploy` and `Remove`, `ssh` and `scp` with key auth to the router (`scp -O` is used because dropbear has no
 sftp-server).
 
 ```powershell
-pwsh -File tools/apk-deploy.ps1 -Action Build                          # only build the apk (no router needed)
-pwsh -File tools/apk-deploy.ps1 -Action Deploy -Router root@192.168.1.1   # build, replace the installed flab-ui, check
-pwsh -File tools/apk-deploy.ps1 -Action Remove -Router root@192.168.1.1   # apk del flab-ui and check that no flab.* object is left
+pwsh -File tools/package.ps1 -Action Build                             # only build the apk (no router needed)
+pwsh -File tools/package.ps1 -Action Deploy -Router root@192.168.1.1   # build, replace the installed flab-ui, check
+pwsh -File tools/package.ps1 -Action Remove -Router root@192.168.1.1   # apk del flab-ui and check that no flab.* object is left
+pwsh -File tools/package.ps1 -Action Release -Version 0.1.1 -Router root@192.168.1.1 -Amend   # see Releasing
 ```
+
+`Build` and `Deploy` do the "from a local checkout" build described above.
 
 - **Where the SDK is.** On Linux the build runs directly in bash. On Windows it runs in WSL (`-Distro`, default
   `Ubuntu-26.04`) and reaches the working tree through `/mnt`. `-Sdk` is the SDK directory as that shell sees it
@@ -108,13 +92,35 @@ pwsh -File tools/apk-deploy.ps1 -Action Remove -Router root@192.168.1.1   # apk 
 - **What Deploy does.** It builds, copies the apk to the router, removes the installed package and adds the new one,
   then waits until rpcd serves one `flab.*` object per plugin in `rpcd/ucode/` and the page answers over HTTPS. Open
   `https://<router>/flab/` and sign in as root with the router's root password.
+- **Building from the tag.** `-UseFeedSource` builds from the source the feed Makefile names (the tag tarball, whose
+  hash the SDK checks) instead of the working tree; `Release` always does.
 
-Things to know:
+## Releasing
 
-- **Sharing one router.** A Deploy or Remove replaces the plugins and the web files that a signed-in page uses, so it must
+The tag and the package Makefile have to name the same version, and the Makefile cannot live in this repository:
+`PKG_HASH` is the hash of the tag's tarball, which would contain the Makefile. `-Action Release` keeps them aligned,
+so a release is one command and the version is chosen only there:
+
+```powershell
+pwsh -File tools/package.ps1 -Action Release -Version 0.1.1 -Router root@192.168.1.1 -PackagesDir ../packages -Amend
+```
+
+It checks that this repository is on a clean, pushed `main`, tags `v<Version>`, downloads the tag's tarball, writes
+`PKG_VERSION`, `PKG_HASH` and `PKG_RELEASE:=1` into `admin/flab-ui/Makefile` of the packages checkout, builds the apk
+from that tarball (so the SDK checks the hash), installs it on the router as a check (`-SkipInstallCheck` to skip),
+commits and pushes the Makefile to the fork (`-Remote`, default `fork`), and creates the GitHub release with the apk and
+its SHA-256 file (`-Draft` makes it a draft). `-PackagesDir` is the checkout of the feed branch (default: the
+`FLAB_PACKAGES` environment variable, else a `packages` folder next to this repository). `-Amend` folds the Makefile
+change into the single package commit while the package is not merged; without it the script adds a commit
+`flab-ui: update to <Version>`. If a step before the release fails, the tag the run created is deleted and the Makefile
+restored. It needs `git` and an authenticated `gh`.
+
+## Sharing a router
+
+- **One router, several people.** A Deploy or Remove replaces the plugins and the web files that a signed-in page uses, so it must
   not run while a browser test is running. `tools/router-lock.ps1` is a reader-writer lock for sharing one test router
   between several people or agents: `-Mode Read` for anything that uses the router and the installed UI without replacing
-  them (a `run.ps1` or `run.ps1 -Browser`; any number at once) and `-Mode Write` for `apk-deploy.ps1` (waits for the readers,
+  them (a `run.ps1` or `run.ps1 -Browser`; any number at once) and `-Mode Write` for `package.ps1` (waits for the readers,
   and no new reader starts meanwhile). `-Suite <name>` names the suite a command runs, because two runs of one suite use the
   same folders on the router and must queue. For example
   `pwsh -File tools/router-lock.ps1 -Mode Read -Suite ddns -Command 'pwsh -NoProfile -File tests/ddns/run.ps1 -Browser'`.

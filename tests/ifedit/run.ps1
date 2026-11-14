@@ -18,7 +18,7 @@ Tests the editors of the Devices and Interfaces page (the network board, with th
    change, saving, a change the router does not keep, an interface that does not come up, a login that may not write, a missing plugin
    method, an expired session) WITHOUT touching the router's configuration.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action Deploy) and installs playwright-core
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action Deploy) and installs playwright-core
 into the temporary work folder. Everything created on the router (/tmp/flab-ifedit-test) and locally is removed afterwards.
 
 .PARAMETER Router

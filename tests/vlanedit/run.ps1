@@ -17,7 +17,7 @@ Tests the VLAN editor of the Wired network page without changing the router.
 
 There is no backend part: the editor adds no plugin and reads the config through rpcd's uci object.
 
-Needs ssh access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1) and installs playwright-core into the
+Needs ssh access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1) and installs playwright-core into the
 temporary work folder; the work folder is removed afterwards.
 
 .PARAMETER Router

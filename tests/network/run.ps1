@@ -19,7 +19,7 @@ Tests the Network, Devices and Interfaces (with its bridges), Wi-Fi radio, Mesh,
    checking that tiles, port tiles, the bridges on the network board, radio cards, mesh and WireGuard cards, the firewall
    matrix and findings follow without a reload.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action
 Deploy) and installs playwright-core into the temporary work folder. Everything it creates on the router
 (/tmp/flab-net-test) and locally is removed afterwards.
 

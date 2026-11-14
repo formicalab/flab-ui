@@ -4,11 +4,11 @@
 Runs a command while holding a lock on the shared test router, so several people or agents can work against one router.
 
 .DESCRIPTION
-A full deploy (tools/apk-deploy.ps1 -Action Deploy) replaces the UI and reloads rpcd, so it must not run while a
+A full deploy (tools/package.ps1 -Action Deploy) replaces the UI and reloads rpcd, so it must not run while a
 browser test is running. This is a reader-writer lock kept in a folder under the temp directory:
   -Mode Read   for anything that uses the router and the installed UI without replacing them (run.ps1, run.ps1 -Browser).
                Any number of readers run at the same time.
-  -Mode Write  for apk-deploy.ps1 (Deploy or Remove). It waits for the readers to finish, and while it waits or runs no new reader starts.
+  -Mode Write  for package.ps1 (Deploy or Remove). It waits for the readers to finish, and while it waits or runs no new reader starts.
 A holder that died without releasing the lock (its process id is gone) is ignored. The command runs in a child pwsh and its exit
 code becomes this script's exit code.
 

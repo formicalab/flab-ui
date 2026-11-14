@@ -16,7 +16,7 @@ Tests the Services page and the flab.services plugin without ever starting, stop
    `flab.services` and `service` objects are mocked and the whole flow (confirmations, outcomes, failures, a login
    that may not control services, a missing plugin, an expired session) is exercised.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action Deploy)
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action Deploy)
 and installs playwright-core into the temporary work folder. The router work folder (/tmp/flab-services-test), the
 session and the local folder are removed afterwards.
 

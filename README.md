@@ -72,11 +72,11 @@ Details are in the [security model](docs/architecture.md#security-model).
 
 - [docs/](docs/README.md) covers the architecture, the frontend and backend, the behavior of every page, how to add a
   page, the test suites and the coding conventions.
-- `tools/apk-deploy.ps1` (PowerShell 7) builds the package from the working tree with an OpenWrt SDK, on Linux or in
-  WSL on Windows, and installs it on a router (`-Action Deploy`) or removes it (`-Action Remove`); `-Action Build` only
-  builds the apk. See [Development script](docs/package.md#development-script).
-- `tools/release.ps1` publishes a release: it tags the source, updates the package Makefile to the same version and
-  hash, builds the apk from the tag and creates the GitHub release. See [Releasing](docs/package.md#releasing).
+- `tools/package.ps1` (PowerShell 7) is the one script for the package. It builds the apk from the working tree with
+  an OpenWrt SDK, on Linux or in WSL on Windows (`-Action Build`), installs it on a router (`-Action Deploy`) or removes
+  it (`-Action Remove`), and publishes a release (`-Action Release`: it tags the source, updates the package Makefile
+  to the same version and hash, builds the apk from the tag and creates the GitHub release). See
+  [Package script](docs/package.md#package-script) and [Releasing](docs/package.md#releasing).
 - Tests live in `tests/` and need Node.js, PowerShell 7 and, for most suites, ssh access to a test router. They use
   fixtures and mocks and do not change the router's configuration; `-Browser` also drives a browser. See
   [Testing](docs/testing.md).

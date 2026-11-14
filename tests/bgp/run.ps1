@@ -12,7 +12,7 @@ Tests the BGP tab of the Routing page against captured and synthetic BIRD states
 4. With -Browser, opens the deployed UI in Edge and drives the page through the scenarios live, checking
    that peers, routes, announcements, health findings and colors update without a reload.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action
 Deploy) and installs playwright-core into the temporary work folder. Everything it creates on the router
 (/tmp/flab-bgp-test) and locally is removed afterwards.
 
