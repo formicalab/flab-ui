@@ -5,7 +5,7 @@
 // Every item also carries what the editing controls need: its `id` (the section's own name, or `new:N` until it is saved), `pending`
 // ('new', 'edited' or null), `removed`, the form `values`, and a sentence saying what it does.
 import { asList, uciBool } from '../../core/fields.js';
-import { forwardingWords, redirectWords, ruleWords } from './describe.js';
+import { redirectWords, ruleWords } from './describe.js';
 import { itemChanged, live, policyOf, zoneName } from './edit.js';
 
 // 'new', 'edited' or null for an item of the draft.
@@ -108,14 +108,4 @@ export function effectiveView(data, draft) {
     rows: { zones: zoneRows, rules: ruleRows, redirects: redirectRows },
     forwardPending,
   };
-}
-
-// The forwardings of the draft as rows for the list under the matrix: the zone names, whether the forwarding is enabled, and whether the
-// matrix can show it (both zones exist, are different and are not "any zone").
-export function forwardingRows(data, draft) {
-  const names = new Set(live(draft.zones).map(zoneName));
-  return draft.forwardings.map(item => ({
-    id: item.id, removed: item.removed, pending: pendingOf(data, 'forwardings', item), values: item.values, words: forwardingWords(item.values),
-    plain: names.has(item.values.src) && names.has(item.values.dest) && item.values.src !== item.values.dest,
-  }));
 }

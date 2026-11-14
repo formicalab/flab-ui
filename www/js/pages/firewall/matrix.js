@@ -1,12 +1,11 @@
 // The zone matrix card: who may talk to whom by default (green), what only works through rules (amber) and what
 // is closed. Rows are the source, columns the destination; the router itself is both a source and a destination.
-// With editing on, a cell between two different zones is a switch for the forwarding from the row's zone to the column's, and the forwardings
-// themselves are listed under the matrix (so a disabled one, or one the matrix cannot show, can still be changed or removed).
+// With editing on, a cell between two different zones is a switch for the forwarding from the row's zone to the column's (the zone's own dialog
+// has the same switches, with the forwarding's other options left as they are).
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card } from '../../core/ui.js';
+import { card } from '../../core/ui.js';
 import { buildMatrix, ROUTER } from './model.js';
-import { iconButton, pendingBadge } from './parts.js';
 
 // Label of a matrix end: the router pseudo-zone reads "Router itself".
 const label = end => end === ROUTER ? 'Router itself' : end;
@@ -46,25 +45,8 @@ function cell(c, ctx, pending) {
   return td;
 }
 
-// The forwardings under the matrix, one chip each with its switch and remove button.
-function forwardingList(rows, ctx) {
-  if (!rows.length) return h('div', { className: 'muted small fw-forwardings' }, 'There are no forwardings: no zone may send traffic to another.');
-  return h('div', { className: 'fw-forwardings' }, h('div', { className: 'muted small' }, 'Forwardings: the first zone may send traffic to the second.'),
-    h('div', { className: 'fw-chips' }, rows.map(r => {
-      const v = r.values;
-      return h('span', { className: `fw-chip fw-fwd${r.removed ? ' fw-removed' : ''}${v.enabled ? '' : ' fw-off'}`, title: r.words },
-        `${v.src === '*' ? 'any zone' : v.src || '?'} › ${v.dest === '*' ? 'any zone' : v.dest || '?'}`,
-        v.family && v.family !== 'any' ? badge(v.family === 'ipv4' ? 'IPv4' : 'IPv6', 'info') : null,
-        v.enabled ? null : badge('disabled'),
-        r.removed || r.pending ? pendingBadge(r) : null,
-        r.removed ? iconButton('arrow-counterclockwise', 'Keep this forwarding (undo the removal)', () => ctx.restore('forwardings', r.id))
-          : [iconButton(v.enabled ? 'toggle-on' : 'toggle-off', v.enabled ? 'Disable this forwarding' : 'Enable this forwarding', () => ctx.setEnabled('forwardings', r.id, !v.enabled), !ctx.canEdit),
-            iconButton('trash', 'Remove this forwarding', () => ctx.remove('forwardings', r.id), !ctx.canEdit)]);
-    })));
-}
-
 // The card: the matrix from buildMatrix (rows are sources, columns destinations) plus a color legend. `ctx` (null: read only) carries the
-// edit actions and the forwardings (`ctx.forwardings`).
+// edit actions.
 export function matrixCard(fw, ctx = null) {
   const m = buildMatrix(fw);
   const pending = fw.forwardPending ?? {};
@@ -77,6 +59,5 @@ export function matrixCard(fw, ctx = null) {
         h('span', { className: 'fwm-key fwm-open' }), ' allowed by policy   ',
         h('span', { className: 'fwm-key fwm-partial' }), ' blocked by policy, opened by specific rules   ',
         h('span', { className: 'fwm-key fwm-closed' }), ' blocked. A zone reaches another zone only through a forwarding, a rule or a port forward; the diagonal is traffic between interfaces of the same zone.'),
-      h('div', { className: 'grid-wrap' }, table),
-      ctx ? forwardingList(ctx.forwardings, ctx) : null));
+      h('div', { className: 'grid-wrap' }, table)));
 }

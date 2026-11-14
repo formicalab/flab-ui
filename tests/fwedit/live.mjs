@@ -322,7 +322,7 @@ check(rules0.length === 4 && /Allow-Ping/.test(rules0[0]) && /Allows ICMP echo-r
 check(/@rule\[3\]/.test(rules0[3]) && /Rejects TCP port 3128 from zone vpn to the router itself/.test(rules0[3]), 'an unnamed rule is listed by its position and in words', rules0[3]);
 check(/Forwards TCP port 8080 arriving from zone wan to 192\.168\.1\.10 port 80 in zone lan/.test((await rowTexts('Port forwards and NAT'))[0]), 'a port forward says what it does');
 check(await (await cellAt('lan', 'wan')).getAttribute('role') === 'button' && /accept/.test(await cellText('lan', 'wan')) && /blocked/.test(await cellText('vpn', 'wan')), 'the matrix shows what is allowed and what is blocked', `${await cellText('lan', 'wan')} / ${await cellText('vpn', 'wan')}`);
-check(await page.locator('.fw-fwd').count() === 3 && /lan › wan/.test(await page.locator('.fw-forwardings').innerText()), 'the forwardings are listed under the matrix', await page.locator('.fw-forwardings').innerText());
+check(await page.locator('.fw-forwardings').count() === 0 && !/Reachable from the Internet/.test(await page.locator('.card-header').allInnerTexts().then(t => t.join(' '))), 'there is no separate list of forwardings and no "Reachable from the Internet" table');
 check(await bar().isHidden(), 'the banner is hidden while nothing is edited');
 await shot('mock-base');
 //#endregion
@@ -337,12 +337,27 @@ await clickCell('vpn', 'wan');
 check(await bar().isHidden(), 'clicking again takes it back: nothing is pending');
 await clickCell('lan', 'vpn');
 check(/forwarding removed, not saved/.test(await cellText('lan', 'vpn')) && /Remove forwarding lan › vpn/.test(await changes()), 'clicking an open cell removes its forwarding', await changes());
-check(await page.locator('.fw-fwd.fw-removed').count() === 1, 'the list shows it struck out');
 await discard();
-check(await bar().isHidden() && await page.locator('.fw-fwd.fw-removed').count() === 0, 'Discard edits brings it back');
+check(await bar().isHidden(), 'Discard edits brings it back');
 check(await (await cellAt('lan', 'lan')).getAttribute('role') === null && await (await cellAt('Router itself', 'wan')).getAttribute('role') === null, 'the diagonal and the router are not switches');
-await flip(page.locator('.fw-fwd', { hasText: 'vpn › lan' }).locator('button[title="Disable this forwarding"]'));
-check(/Forwarding vpn › lan: Enabled: on → off/.test(await changes()), 'a forwarding can be disabled from the list', await changes());
+// The same forwardings in the zone's dialog: one box per other zone and direction.
+await row('Zones', /^vpn/).locator('button[title="Edit zone vpn"]').click();
+const fwdTo = () => dfield('May forward to').locator('label.fw-check');
+const fwdFrom = () => dfield('May receive from').locator('label.fw-check');
+check((await fwdTo().allInnerTexts()).map(t => t.trim()).join() === 'lan,wan' && await fwdTo().filter({ hasText: /^\s*lan/ }).locator('input').isChecked() && !await fwdTo().filter({ hasText: /^\s*wan/ }).locator('input').isChecked(), 'the zone dialog shows where the zone may forward to', (await fwdTo().allInnerTexts()).join());
+check(await fwdFrom().filter({ hasText: /^\s*lan/ }).locator('input').isChecked() && !await fwdFrom().filter({ hasText: /^\s*wan/ }).locator('input').isChecked(), 'and who may forward to it');
+await fwdTo().filter({ hasText: /^\s*lan/ }).locator('input').uncheck();
+await fwdTo().filter({ hasText: /^\s*wan/ }).locator('input').check();
+await dsave().click();
+await settle();
+check(/Remove forwarding vpn › lan/.test(await changes()) && /Lets zone vpn send traffic to zone wan/.test(await changes()) && !/Zone vpn:/.test(await changes()), 'the boxes become forwardings in the review, and the zone itself is unchanged', await changes());
+check(/forwarding removed, not saved/.test(await cellText('vpn', 'lan')) && /forwarding added, not saved/.test(await cellText('vpn', 'wan')), 'and the matrix shows them');
+await discard();
+await row('Zones', /^lan/).locator('button[title="Edit zone lan"]').click();
+await fwdFrom().filter({ hasText: /^\s*wan/ }).locator('input').check();
+await dsave().click();
+await settle();
+check(/Lets zone wan send traffic to zone lan/.test(await changes()), 'ticking "May receive from" adds the forwarding in the other direction', await changes());
 await discard();
 //#endregion
 
@@ -666,7 +681,7 @@ await ro.close();
 
 console.log('\n== a login that cannot read the config ==');
 const nr = await open({ ubus: { system: ['board'], 'flab.firewall': ['status'] } });
-check(await nr.locator('.fwm').count() === 1 && await nr.locator('button:has-text("Add zone")').count() === 0 && await nr.locator('.fw-table').count() >= 4, 'the page is the read-only page it was before editing: no controls', await nr.locator('main').innerText().then(t => t.slice(0, 80)));
+check(await nr.locator('.fwm').count() === 1 && await nr.locator('button:has-text("Add zone")').count() === 0 && await nr.locator('.fw-table').count() >= 3, 'the page is the read-only page it was before editing: no controls', await nr.locator('main').innerText().then(t => t.slice(0, 80)));
 await nr.close();
 
 console.log('\n== a reply of the plugin that does not match the config ==');

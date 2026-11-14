@@ -8,7 +8,7 @@ import { icon } from '../../core/icons.js';
 import { openDialog } from '../../core/modal.js';
 import { fieldRow, note } from '../../core/forms.js';
 import { REDIRECT_GROUPS, RULE_GROUPS, ZONE_GROUPS, PROTOCOLS } from './schema.js';
-import { KINDS, fieldFor, findItem, isShown, live, newValues, zoneName } from './edit.js';
+import { KINDS, fieldFor, findItem, forwardLinks, isShown, live, newValues, zoneName } from './edit.js';
 import { redirectWords, ruleWords } from './describe.js';
 import { itemProblems } from './validate.js';
 import { checkField, weekdaysField } from './controls.js';
@@ -28,11 +28,15 @@ const copyOf = values => Object.fromEntries(Object.entries(values).map(([k, v]) 
 
 // Opens the dialog for the item `id` of the list `key` of the draft (null: a new one). `data` is what the router has, `getDraft()` the
 // page's draft as it is when the dialog needs it (the other zones decide which interfaces are free, the zones decide what a rule may
-// refer to), `onSave(values)` receives the copy when the user accepts it, and `onClose()` runs when the dialog is gone.
+// refer to), `onSave(values, links)` receives the copy when the user accepts it (for a zone, `links` is { to, from }: the zones it may forward
+// to and the zones that may forward to it), and `onClose()` runs when the dialog is gone.
 export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
   const isNew = id == null;
   const item = isNew ? null : findItem(getDraft(), key, id);
   const values = isNew ? newValues(key, data) : copyOf(item.values);
+  // The forwardings of a zone, kept apart from its values: the checked zones in each direction (only zones that exist, so a forwarding that
+  // names "any zone" is neither shown nor changed).
+  const links = { to: [], from: [] };
   const fields = KINDS[key].fields;
   const inputs = {};
   let touchedOnce = !isNew;
@@ -40,7 +44,7 @@ export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
 
   const errorsBox = h('div', { className: 'set-notes' });
   const words = h('div', { className: 'fw-words' });
-  const save = h('button', { type: 'button', className: 'btn btn-sm btn-brand', onclick: () => { onSave(values); dialog.close(); } }, icon('check2'), isNew ? 'Add to the changes' : 'Update the changes');
+  const save = h('button', { type: 'button', className: 'btn btn-sm btn-brand', onclick: () => { onSave(values, links); dialog.close(); } }, icon('check2'), isNew ? 'Add to the changes' : 'Update the changes');
   const cancel = h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: () => dialog.close() }, 'Cancel');
   // The wrappers of the controls (field key to element) and of the groups, to show and hide them as the values change.
   let wrappers = {};
@@ -48,6 +52,10 @@ export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
 
   // The zones of the draft the other fields may refer to, for the drop-downs.
   const zoneNames = () => live(getDraft().zones).map(zoneName).filter(Boolean);
+  if (!isNew) {
+    const found = forwardLinks(getDraft(), zoneName(item));
+    for (const k of ['to', 'from']) links[k] = found[k].filter(n => zoneNames().includes(n));
+  }
 
   // Checks the copy: Save follows, the messages and the marked controls show once the user has started to edit.
   function validate() {
@@ -140,8 +148,25 @@ export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
         h('summary', {}, g.title), h('div', { className: 'fw-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, nodes)));
       groupBoxes.push({ el, fields: list });
       parts.push(el);
+      if (key === 'zones' && g.id === 'members') parts.push(forwardingGroup());
     }
     return parts;
+  }
+
+  // The zones this zone may send traffic to, and the zones that may send traffic to it: one check box per other zone. A forwarding covers one
+  // direction only, so each direction is its own box; the page turns them into forwarding sections when the zone is added to the changes.
+  function forwardingGroup() {
+    const self = values.name.trim();
+    const items = zoneNames().filter(n => n !== self).map(value => ({ value }));
+    const direction = (list, label, hint) => checkField({ label, hint }, { get: () => list, disabled: false, touched, register: () => {}, redraw: () => {} }, items);
+    const gid = 'zones:forwardings';
+    return h('details', { className: 'fw-group', open: opened.get(gid) ?? true, ontoggle: e => opened.set(gid, e.target.open) },
+      h('summary', {}, 'Traffic to and from other zones'),
+      h('div', { className: 'fw-group-body' },
+        h('p', { className: 'muted small' }, 'A forwarding lets one zone send new connections to another, in one direction only (replies are always let back in). To let two zones talk both ways, tick both boxes. Traffic between interfaces of this same zone is the Forward policy above.'),
+        h('div', { className: 'set-fields' },
+          direction(links.to, 'May forward to', 'Hosts in this zone may start connections to these zones.'),
+          direction(links.from, 'May receive from', 'Hosts in these zones may start connections to this zone.'))));
   }
 
   // Draws the body again (a control that changes the shape of the form was used), then checks it.

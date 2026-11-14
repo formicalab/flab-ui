@@ -206,6 +206,26 @@ export function toggleForwarding(draft, src, dest) {
   return 'added';
 }
 
+// The other zones the zone `name` may forward to (`to`) and the ones that may forward to it (`from`), from the enabled forwardings of the draft.
+export function forwardLinks(draft, name) {
+  const on = live(draft.forwardings).filter(f => f.values.enabled);
+  return { to: on.filter(f => f.values.src === name).map(f => f.values.dest), from: on.filter(f => f.values.dest === name).map(f => f.values.src) };
+}
+
+// Makes the forwardings between the zone `name` and each of the zones `others` match `links` ({ to, from }, as forwardLinks returns them): a pair
+// that should be open and is not gets a forwarding (or its disabled one is enabled), one that should be closed loses it. Forwardings that name
+// something else (a zone not in `others`, "any zone") are left alone.
+export function setForwardLinks(draft, name, links, others) {
+  const apply = (src, dest, want) => {
+    const have = live(draft.forwardings).some(f => f.values.enabled && f.values.src === src && f.values.dest === dest);
+    if (want !== have) toggleForwarding(draft, src, dest);
+  };
+  for (const other of others) {
+    apply(name, other, links.to.includes(other));
+    apply(other, name, links.from.includes(other));
+  }
+}
+
 //#endregion
 
 //#region Comparing

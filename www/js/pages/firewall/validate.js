@@ -104,6 +104,10 @@ function familyMismatch(family, ...lists) {
 function zoneProblems(item, draft, data, ctx) {
   const v = item.values, out = tableProblems(ZONE_FIELDS, v, ctx);
   const name = zoneName(item);
+  if (name.length > 11) {
+    const before = data.zones.some(z => z.values.name === name);
+    out.push({ key: 'name', level: 'error', introduced: !before, text: `"${name}" has ${name.length} characters; 11 is the longest zone name that works with the firewall.` });
+  }
   const same = live(draft.zones).filter(z => zoneName(z) === name);
   if (name && same.length > 1) {
     const before = data.zones.filter(z => (z.values.name ?? '') === name).length > 1;

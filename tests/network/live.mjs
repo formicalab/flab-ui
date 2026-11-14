@@ -441,14 +441,14 @@ check(zoneNames.length >= 2 && await page.locator('.fwm tbody tr').count() === z
 check(await before('.fw-zones-legend', '.fw-table') && /refuse everything by default except what a specific rule/.test(await text('.fw-zones-legend')) && /Input policy/.test(await text('.fw-table thead')), 'the zones card explains that reject/drop are defaults, above the table, and the columns say "policy"');
 check(await page.locator('.fwm-open').count() >= 3 && await page.locator('.fwm-partial').count() >= 1 && await page.locator('.fwm-closed').count() >= 1, 'open, partial and closed cells');
 check(await page.locator('.fw-matrix-legend').count() === 1 && await before('.fw-matrix-legend', '.fwm'), 'the matrix legend is above the matrix');
-check(await page.locator('.fw-table').count() >= 3 && /Zones/.test(await text('.card-header')) && /Traffic rules/.test(await text('.card-header')), 'zones, exposure, rules and port-forward tables');
-check(await page.locator('.fw-table').nth(2).locator('tbody tr').count() >= 10, 'the traffic rules are listed', String(await page.locator('.fw-table').nth(2).locator('tbody tr').count()));
-check(/Reachable from the Internet/.test(await text('.card-header')) && /UDP 51820/.test(await text('main')), 'the exposure table lists what the Internet can reach (the WireGuard port)');
+check(await page.locator('.fw-table').count() >= 3 && /Zones/.test(await text('.card-header')) && /Traffic rules/.test(await text('.card-header')), 'zones, rules and port-forward tables');
+check(await page.locator('.fw-table').nth(1).locator('tbody tr').count() >= 10, 'the traffic rules are listed', String(await page.locator('.fw-table').nth(1).locator('tbody tr').count()));
+check(!/Reachable from the Internet/.test(await text('.card-header')) && /UDP 51820/.test(await text('main')), 'what is open to the Internet is read from the rules (the WireGuard port), with no table of its own');
 check(/^\d+ \/ \d+$/.test(await tile(1)) && /^\d+$/.test((await tile(0)).trim()), 'summary tiles', `${await tile(0)} ${await tile(1)}`);
 
 await stage('a port forward from the Internet', 'firewall', 'f-redirect');
 check(await tile(2) === '1' && /Web/.test(await text('.fw-table')) && /8080/.test(await text('.fw-table')) && /192\.168\.1\.10:80/.test(await text('.fw-table')), 'the port forward is listed with what it forwards to');
-check(/Reachable from the Internet/.test(await text('.card-header')) && /port forward/.test(await text('main')), 'and appears among what the Internet can reach');
+check(/Port forwards and NAT/.test(await text('.card-header')) && /port forward/i.test(await text('main')), 'and the port forwards card lists it');
 check(/7/.test(await text('.fw-table tbody')) , 'its hit counter is shown');
 
 await stage('Internet-facing zone wide open', 'firewall', 'f-exposed');

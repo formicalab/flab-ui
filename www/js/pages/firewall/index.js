@@ -1,10 +1,11 @@
-// Firewall page (route #firewall): the zones and what may flow between them, the traffic rules and port forwards, and what is reachable from the
-// Internet, each with the live hit counters nftables keeps, and the editor of /etc/config/firewall (firewall4) behind them. The live state comes from
+// Firewall page (route #firewall): the zones and what may flow between them, the traffic rules and port forwards, each with the live hit counters
+// nftables keeps, and the editor of /etc/config/firewall (firewall4) behind them. The live state comes from
 // `nft -j list ruleset` through the flab.firewall plugin and is rediscovered on every poll; the configuration is read with rpcd's `uci` object (it
 // holds no secrets), so every section is known by its own name.
 //
-// Editing: a zone, a traffic rule or a port forward is added or edited in a dialog (itemdialog.js), a forwarding is switched by clicking a cell of the
-// matrix, rules and port forwards are enabled, disabled, moved and removed in their tables, and the global defaults are edited in their card. All of it goes
+// Editing: a zone, a traffic rule or a port forward is added or edited in a dialog (itemdialog.js; the zone's dialog also holds its forwardings), a
+// forwarding can also be switched by clicking a cell of the matrix, rules and port forwards are enabled, disabled, moved and removed in their tables,
+// and the global defaults are edited in their card. All of it goes
 // into a draft (the cards show the draft laid over the live state, see view.js) that the review banner saves: stage, apply with the rollback countdown,
 // read the config back and check that nftables still has the ruleset loaded, confirm. The model is in edit.js (draft), validate.js, plan.js and
 // view.js; this file wires them to the cards. A login that may not read or write the config, or a reply of the plugin that does not match the config,
@@ -21,14 +22,14 @@ import { note } from '../../core/forms.js';
 import { uci } from '../../core/uci.js';
 import { matrixCard } from './matrix.js';
 import { zonesCard } from './zones.js';
-import { exposureCard, rulesCard, redirectsCard } from './rules.js';
+import { rulesCard, redirectsCard } from './rules.js';
 import { defaultsCard } from './defaults.js';
 import { openItemDialog } from './itemdialog.js';
 import { findings, recordFirewall, packetsPerSec, fmtPps, wanZones } from './util.js';
-import { CONFIG, adminNetworks, commitItem, draftFrom, findItem, moveItem, readFirewall, removeItem, removeZone, restoreItem, restoreZone, toggleForwarding } from './edit.js';
+import { CONFIG, adminNetworks, commitItem, draftFrom, findItem, moveItem, readFirewall, removeItem, removeZone, restoreItem, restoreZone, setForwardLinks, toggleForwarding, zoneName, live } from './edit.js';
 import { lockoutWarnings, problems } from './validate.js';
 import { changesOf, checkApplied, isDirty, notLoaded, plan } from './plan.js';
-import { consistent, effectiveView, forwardingRows } from './view.js';
+import { consistent, effectiveView } from './view.js';
 
 // What has to survive the redraw on every poll besides the draft: the paused flag, and whether a dialog is open (nothing is redrawn under it).
 const state = { paused: false, dialog: false };
@@ -113,18 +114,26 @@ function summary(fw) {
 const shell = { rerender: () => {}, reload: () => {} };
 
 // The actions of the editing controls on the draft. Each changes the draft, forgets the outcome of the last save and redraws the page.
-function actionsFor(canEdit, forwardings) {
+function actionsFor(canEdit) {
   const { draft } = editor.state;
   // Redraws after a change to the draft.
   const changed = () => { editor.state.message = null; editor.redraw(); };
   return {
-    canEdit, forwardings,
+    canEdit,
     // Opens the dialog of a zone, rule or port forward (id null: a new one).
     edit(kind, id) {
       state.dialog = true;
       openItemDialog({
         key: kind, id, data: editor.state.base, getDraft: () => editor.state.draft,
-        onSave: values => { commitItem(editor.state.draft, kind, id, values); changed(); },
+        onSave: (values, links) => {
+          const at = commitItem(editor.state.draft, kind, id, values);
+          // A zone's forwardings are edited in its dialog: they follow the boxes ticked there.
+          if (kind === 'zones') {
+            const name = zoneName(findItem(editor.state.draft, 'zones', at));
+            setForwardLinks(editor.state.draft, name, links, live(editor.state.draft.zones).map(zoneName).filter(n => n && n !== name));
+          }
+          changed();
+        },
         onClose: () => { state.dialog = false; },
       });
     },
@@ -148,7 +157,6 @@ function readOnlyView(fw) {
     healthBanner(findings(fw), 'The firewall is running and nothing needs attention.'),
     matrixCard(fw),
     zonesCard(fw),
-    exposureCard(fw),
     rulesCard(fw),
     redirectsCard(fw),
   ];
@@ -186,7 +194,7 @@ export default {
 
     const canEdit = editor.begin(data, rerender);
     const fw = effectiveView(data, editor.state.draft);
-    const ctx = actionsFor(canEdit, forwardingRows(data, editor.state.draft));
+    const ctx = actionsFor(canEdit);
     const inputs = {};
     const defaults = {
       draft: editor.state.draft, canEdit, inputs,
@@ -200,7 +208,6 @@ export default {
       healthBanner(findings(fw), 'The firewall is running and nothing needs attention.'),
       matrixCard(fw, ctx),
       zonesCard(fw, ctx),
-      exposureCard(fw),
       rulesCard(fw, ctx),
       redirectsCard(fw, ctx),
       h('div', { className: 'fw-defaults' }, defaultsCard(defaults)),

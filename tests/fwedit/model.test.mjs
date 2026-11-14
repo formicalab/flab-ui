@@ -170,6 +170,29 @@ console.log('\n== forwardings ==');
 }
 {
   const { d, draft } = fresh();
+  const lan = E.forwardLinks(draft, 'lan');
+  check(j(lan.to.slice().sort()) === j(['vpn', 'wan']) && lan.from.length === 0, 'a zone\'s links are the enabled forwardings it starts and receives', j(lan));
+  E.setForwardLinks(draft, 'wan', { to: [], from: ['lan'] }, ['lan', 'vpn']);
+  check(P.changesOf(d, draft).length === 0, 'links that already match change nothing');
+  E.setForwardLinks(draft, 'vpn', { to: ['lan'], from: ['lan'] }, ['lan', 'wan']);
+  check(j(ops(d, draft)) === j([{ op: 'add', config: 'firewall', type: 'forwarding', id: 'new:1', values: { src: 'vpn', dest: 'lan' } }]), 'ticking a box adds the missing forwarding and leaves the existing one alone', j(ops(d, draft)));
+  E.setForwardLinks(draft, 'lan', { to: ['vpn'], from: [] }, ['wan', 'vpn']);
+  check(draft.forwardings.find(f => f.values.src === 'lan' && f.values.dest === 'wan').removed && !draft.forwardings.find(f => f.values.src === 'lan' && f.values.dest === 'vpn').removed, 'clearing a box removes that forwarding only');
+  const { draft: other } = fresh();
+  other.forwardings[0].values.enabled = false;
+  check(!E.forwardLinks(other, 'lan').to.includes('wan'), 'a disabled forwarding is not a link');
+  E.setForwardLinks(other, 'lan', { to: ['wan', 'vpn'], from: [] }, ['wan', 'vpn']);
+  check(other.forwardings[0].values.enabled && other.forwardings.length === 2, 'ticking its box enables it instead of adding a second one');
+}
+{
+  const { d, draft } = fresh();
+  draft.zones[0].values.name = 'abcdefghijkl';
+  check(V.problems(d, draft).errors.some(e => /longest zone name/.test(e.text)), 'a zone name of more than 11 characters is an error');
+  draft.zones[0].values.name = 'abcdefghijk';
+  check(!V.problems(d, draft).errors.some(e => /longest zone name/.test(e.text)), 'one of 11 is fine');
+}
+{
+  const { d, draft } = fresh();
   draft.forwardings[0].values.dest = 'nosuch';
   check(V.problems(d, draft).errors.some(e => /does not exist/.test(e.text)), 'a forwarding to a zone that does not exist is an error');
   draft.forwardings[0].values.dest = 'lan';
@@ -490,8 +513,6 @@ console.log('\n== the view ==');
   E.removeItem(draft, 'rules', 'wg');
   const x = W.effectiveView(d, draft);
   check(x.rules.length === 3 && x.rows.rules.length === 4 && x.rows.rules[2].removed, 'a removed rule is out of the list the matrix reads but still a row');
-  const f = W.forwardingRows(d, draft);
-  check(f.length === 2 && f.every(r => r.plain), 'the forwardings the matrix can show are marked');
 }
 //#endregion
 

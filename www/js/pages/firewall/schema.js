@@ -71,7 +71,7 @@ export const ZONE_FIELDS = [
   { key: 'output', type: 'enum', options: POLICIES, labels: POLICY_LABELS, caseless: true, group: 'general', label: 'Output policy',
     hint: 'What happens to traffic from the router itself into this zone, unless a rule says otherwise. When empty the value of the global defaults is used.' },
   { key: 'forward', type: 'enum', options: POLICIES, labels: POLICY_LABELS, caseless: true, group: 'general', label: 'Forward policy',
-    hint: 'What happens to traffic between two interfaces of this same zone. Traffic to other zones is allowed by forwardings (the matrix above). When empty the value of the global defaults is used.' },
+    hint: 'What happens to traffic between two interfaces of this same zone. Traffic to other zones is allowed by forwardings (tick them under "Traffic to and from other zones" below). When empty the value of the global defaults is used.' },
 
   { key: 'network', type: 'list', control: 'networks', group: 'members', label: 'Interfaces',
     hint: 'The router\'s network interfaces (from /etc/config/network) in this zone. An interface can be in one zone only: choosing one that is in another zone moves it here. With nothing chosen here, and no device or subnet, the firewall looks for an interface with the name of the zone.' },
