@@ -26,7 +26,6 @@ export function readDdns(s) {
     rundir: s?.rundir ?? '/var/run/ddns',
     logdir: s?.logdir ?? '/var/log/ddns',
     ca: s?.ca ?? '',
-    passwordExact: Boolean(s?.password_exact),
     global: { section: s?.global?.section ?? null, values: s?.global?.values ?? {} },
     services: (s?.services ?? []).map(x => ({ section: x.section, values: x.values ?? {}, secrets: x.secrets ?? {}, runtime: x.runtime ?? {} })),
     providers: s?.providers ?? [],
@@ -248,7 +247,7 @@ export function problems(data, draft) {
       if (v.use_https && !v.cacert) warn('HTTPS is on without CA certificates, so the provider\'s certificate cannot be checked.');
       if (v.use_https && v.cacert === 'IGNORE') warn('the provider\'s certificate is not checked (CA certificates: IGNORE), which is insecure.');
       if (/^https:/i.test(v.update_url)) warn('write "http:" in the update address; HTTPS is switched on with "Use HTTPS".');
-      if (!data.passwordExact && /['\\]|[^\x00-\x7f]/.test(raw.password)) warn('this router\'s updater mangles a single quote, a backslash or a non-ASCII character in a password, so the provider would reject it. Run tools/patch-ddns-scripts.sh on the router (deploy.ps1 does) to make it pass every character unchanged.');
+      if (/['\\]|[^\x00-\x7f]/.test(raw.password)) warn('ddns-scripts does not pass a single quote, a backslash or a non-ASCII character in a password through unchanged (its URL encoding and the Cloudflare script), so the provider could reject it. Choose a password or token without them; a $ is fine.');
       if ((v.force_ipversion || v.force_dnstcp || v.is_glue) && data.tools.host === false) warn('forcing the IP version, DNS over TCP and glue records need the host command (the bind-host package), which the router does not have.');
       if (v.is_glue && !v.dns_server) warn('a glue record needs a DNS server to compare against.');
       for (const [key, label] of [['interface', 'Interface'], ['ip_network', 'Network'], ['bind_network', 'Send from network']]) {

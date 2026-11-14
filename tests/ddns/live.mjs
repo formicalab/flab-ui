@@ -39,7 +39,7 @@ const PROVIDERS = [
   { name: 'duckdns.example', ipv6: true, needs: ['DOMAIN', 'PASSWORD'], script: null, available: true, source: 'default' },
   { name: 'old.example', ipv6: false, needs: ['DOMAIN', 'USERNAME', 'PASSWORD'], script: null, available: true, source: 'default' },
 ];
-const mock = { on: false, cfg: baseCfg(), staged: [], restage: [], snapshot: null, calls: [], controls: [], dropWrites: false, confirmFails: false, expired: false, noPlugin: false, exact: false, installed: true, running: true, controlFails: false, reads: [], unsafe: [] };
+const mock = { on: false, cfg: baseCfg(), staged: [], restage: [], snapshot: null, calls: [], controls: [], dropWrites: false, confirmFails: false, expired: false, noPlugin: false, installed: true, running: true, controlFails: false, reads: [], unsafe: [] };
 let nextId = 1;
 // The log the mock gives for any service: a routine line, a note, a warning, an error and a debug line.
 const LOG = [' 100000  info : Rerun IP check at 2026-11-13 10:05', ' 100001  note : Starting main loop at 100001', ' 100002  WARN : Transfer failed - retry 1/0 in 30 seconds', ' 100003 ERROR : bad credentials for the account', ' 100004      : Detected IP: 203.0.113.7'].join('\n') + '\n';
@@ -63,7 +63,7 @@ function status() {
     runtime: runtime(name, now),
   }));
   return {
-    installed: mock.installed, version: '2.8.4-12', running: mock.running, at_boot: true, uptime: 5000, generated: now, rundir: '/var/run/ddns', logdir: '/var/log/ddns', ca: '/etc/ssl/certs/ca-certificates.crt', password_exact: mock.exact,
+    installed: mock.installed, version: '2.8.4-12', running: mock.running, at_boot: true, uptime: 5000, generated: now, rundir: '/var/run/ddns', logdir: '/var/log/ddns',     ca: '/etc/ssl/certs/ca-certificates.crt',
     global: { section: mock.cfg.global ? 'global' : null, values: Object.fromEntries(Object.entries(mock.cfg.global ?? {}).filter(([k]) => !k.startsWith('.'))) },
     services, providers: PROVIDERS, networks: ['lan', 'wan', 'wan6'], devices: ['br-lan', 'eth0', 'eth1'], tools: { curl: true, wget: false, uclient_fetch: true, host: false },
   };
@@ -280,13 +280,11 @@ check(await bar().isVisible() && /1 unsaved change/.test(await page.locator('.se
 await input(svc('home'), 'Password or token').fill(TYPED);
 check(/2 unsaved changes/.test(await page.locator('.set-bar-summary').innerText()), 'typing a password is a change');
 await input(svc('home'), 'Password or token').fill("it's a caffè \\ $");
-check(/mangles a single quote, a backslash or a non-ASCII character/.test(await page.locator('.set-bar').innerText()) && await saveBtn().isEnabled(), 'on a router whose updater is not patched such a password is a warning that does not block Save');
-mock.exact = true;
-await page.click('button:has-text("Discard edits")');
-await refresh();
-await input(svc('home'), 'Lookup host name').fill('home2.example.com');
-await input(svc('home'), 'Password or token').fill("it's a caffè \\ $");
-check(!/mangles/.test(await page.locator('.set-bar').innerText()) && await saveBtn().isEnabled(), 'and no character is a problem once the updater is patched');
+check(/does not pass a single quote, a backslash or a non-ASCII character in a password through unchanged/.test(await page.locator('.set-bar').innerText()) && await saveBtn().isEnabled(), 'a single quote, a backslash or a non-ASCII character in a password is a warning that does not block Save');
+await input(svc('home'), 'Password or token').fill("it's a $");
+check(/does not pass a single quote/.test(await page.locator('.set-bar').innerText()), 'a quote alone is enough');
+await input(svc('home'), 'Password or token').fill('plain$word');
+check(!/does not pass/.test(await page.locator('.set-bar').innerText()) && await saveBtn().isEnabled(), 'and a $ is no problem');
 await input(svc('home'), 'Password or token').fill(TYPED);
 await page.click('.set-bar button:has-text("Details")');
 const review = await changes();

@@ -72,7 +72,6 @@ Design principles:
 flab-ui/
   deploy.ps1                 Deploy / Cleanup / Sync script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
-  tools/patch-ddns-scripts.sh  Makes the router's ddns-scripts pass every character of a password unchanged (deploy.ps1 runs it)
   tools/router-lock.ps1      Reader-writer lock for sharing one test router between several people or agents (Mode Read or Write, -Suite)
   tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), nlbwedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
@@ -462,15 +461,14 @@ What Deploy does:
 2. Copies `www/` to `/tmp/flab` (tmpfs, gone after a reboot) and symlinks `/www/flab` to it.
 3. Copies `rpcd/ucode/*` to `/usr/share/rpcd/ucode/`, `rpcd/acl.d/*` to `/usr/share/rpcd/acl.d/` and
    `rpcd/lib/flab/*` to `/usr/share/ucode/flab/`.
-4. Runs `tools/patch-ddns-scripts.sh apply` on the router (see [Dynamic DNS](#dynamic-dns-route-ddns)): the one change outside flab-ui's own files.
-5. **Restarts rpcd**, which only reads its plugins and ACL fragments at start.
+4. **Restarts rpcd**, which only reads its plugins and ACL fragments at start.
 
-Cleanup removes all of the above (and the diagnostics' job directory `/tmp/flab-diag`, ending any diagnostic still running) and restarts rpcd again; it also puts back the ddns-scripts files the patch replaced. No login or rpcd setting is created or changed.
+Cleanup removes all of the above (and the diagnostics' job directory `/tmp/flab-diag`, ending any diagnostic still running) and restarts rpcd again. No login or rpcd setting is created or changed, and no file of any other package is touched.
 
 Things to know:
 
 - `rpcd` is **restarted**, so every deploy/cleanup ends the active rpcd sessions (LuCI's and flab-ui's).
-- Flash writes are limited to the rpcd plugin and ACL files, the symlink, and the two ddns-scripts files the patch replaces (the originals are kept next to them as `*.flab-orig`); Cleanup removes or restores them.
+- Flash writes are limited to the rpcd plugin and ACL files and the symlink; Cleanup removes them.
 - `scp -O` is required (dropbear has no sftp-server).
 - After editing a front-end file, `deploy.ps1 -Action Sync` copies `www/` to the deployed UI without restarting rpcd (the UI must already be
   deployed; a changed plugin or ACL fragment needs a full Deploy); Ctrl+F5 reloads the page. For a single file, `scp -O <file> root@<router>:/tmp/flab/<path>` does the same. Backend changes need the file copied to `/usr/share/rpcd/ucode/` (or `/usr/share/ucode/flab/`) and
@@ -1793,15 +1791,12 @@ custom update address) on the router, and says so when it is missing.
   proxy address is masked. The box starts empty and says that one is stored; typing a value replaces it, empty keeps it. The review
   banner shows *new value (hidden)*, never the text. Log lines and errors are masked too. The ACL fragment does not grant `uci get`
   and the page never calls it.
-- **Any character may be used in a password.** ddns-scripts itself mangles some: its `urlencode()` (every provider that puts
-  `[PASSWORD]` in its update address) hands the string to `awk -v`, which reads a backslash as an escape, and indexes it by ASCII
-  only, so an accented letter or the euro sign becomes `%00`; and the Cloudflare script writes the password inside single quotes
-  that it later `eval`s, so a single quote ends the quoting (`$` is not a problem). `tools/patch-ddns-scripts.sh` corrects both:
-  `urlencode()` takes the string from the environment and encodes it byte by byte, and the Cloudflare script escapes quotes for the
-  `eval`. The originals are kept as `<file>.flab-orig`; `apply` does nothing when already patched, `restore` puts them back, and a
-  file that is not the expected version is left alone and reported. `deploy.ps1` applies it (Cleanup restores it). A package
-  upgrade replaces the files, so the plugin reports `password_exact` (the patch markers are present) and the page warns about a
-  single quote, a backslash or a non-ASCII character in a password only while it is false.
+- **Some characters need care in a password.** flab-ui never changes the ddns-scripts package, and ddns-scripts itself does not pass
+  every character through: its `urlencode()` (every provider that puts `[PASSWORD]` in its update address) hands the string to
+  `awk -v`, which reads a backslash as an escape, and indexes it by ASCII only, so an accented letter or the euro sign becomes
+  `%00`; and the Cloudflare script writes the password inside single quotes that it later `eval`s, so a single quote ends the
+  quoting (`$` is not a problem). The page therefore warns (the warning does not block Save) when a password holds a single quote, a
+  backslash or a non-ASCII character, and says to choose one without them.
 - **Saving** goes through `applyChange()` like the other editing pages (stage, apply with the rollback countdown, read the config
   back through the plugin, confirm); the check after a save also requires a typed password to be stored. A change the router does
   not keep is rolled back and the edit stays in the form. Changes already staged in the session are shown with a "Discard them"
@@ -2151,10 +2146,6 @@ fixture or by a mock, and blocked (failing the test) in the phase that talks to 
   report success if its command were run, so a refused call that ran anyway shows up as `ok`. The harness refuses `control` when no
   fixtures are set. `status` and every service's `log` are also run once for real (they only read): the reply is compared with
   the router's config, and the number of times a stored secret appears in it is counted on the router (only the count leaves it).
-  The password patch is tested on a copy of the router's ddns-scripts files (`patch-test.sh`): apply, a second apply, the mode and
-  the other scripts, restore, a file that is not the expected version, `urlencode()` round trips for backslashes, quotes, `$`,
-  backticks, `%`, spaces, accented letters and the euro sign, and the Cloudflare headers for hostile passwords, which must carry
-  the text and run nothing.
 - **Browser** (`live.mjs`): the page first shows the router's own services, with every `uci` write and `control` call blocked and
   failing the test; then mocked replies and a stateful `uci` mock drive the tiles, the verdict of each kind of service, the actions
   (busy state, success, a failing init script), the log (filter, every line, scroll), editing (validation, the write-only password

@@ -372,13 +372,6 @@ function ca_path() {
 	return trim(run('if [ -f /etc/ssl/certs/ca-certificates.crt ]; then echo /etc/ssl/certs/ca-certificates.crt; elif [ -d /etc/ssl/certs ]; then echo /etc/ssl/certs; fi') ?? '');
 }
 
-// Whether the updater passes every character of a password through unchanged. The package's urlencode() reads backslash sequences
-// and non-ASCII characters wrongly and the Cloudflare script breaks on a single quote; tools/patch-ddns-scripts.sh corrects both
-// and leaves a marker in each file, which this looks for (the Cloudflare script only when it is installed).
-function password_exact() {
-	return trim(run('grep -q \'flab-ui: byte-exact\' /usr/lib/ddns/dynamic_dns_functions.sh 2>/dev/null && { [ ! -f /usr/lib/ddns/update_cloudflare_com_v4.sh ] || grep -q \'flab-ui: quoted\' /usr/lib/ddns/update_cloudflare_com_v4.sh; } && echo 1') ?? '') == '1';
-}
-
 //#endregion
 
 // The reply of `status`.
@@ -409,7 +402,6 @@ function status() {
 		rundir,
 		logdir,
 		ca: ca_path(),
-		password_exact: password_exact(),
 		global: { section: glob.section, values: g.values },
 		services,
 		providers: providers(),

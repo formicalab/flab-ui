@@ -108,11 +108,6 @@ echo $leaks > real-leaks.txt
     Invoke-Native 'scp' @('-O', "${Router}:$remote/out-real.json", (Join-Path $work 'out\real.json'))
     Invoke-Native 'scp' @('-O', "${Router}:$remote/real-sections.txt", "${Router}:$remote/real-leaks.txt", (Join-Path $work 'out'))
     Invoke-Native 'node' @((Join-Path $here 'assert.mjs'), (Join-Path $work 'out'))
-
-    # The script that makes the updater pass every character of a password, tested on a copy of the router's ddns-scripts files.
-    Write-Host '    The ddns-scripts password patch, on a copy of the files'
-    Invoke-Native 'scp' @('-O', (Join-Path $root 'tools\patch-ddns-scripts.sh'), (Join-Path $here 'patch-test.sh'), "${Router}:$remote/")
-    Invoke-Remote "cd $remote && tr -d '\r' < patch-ddns-scripts.sh > p.sh && tr -d '\r' < patch-test.sh > t.sh && sh t.sh $remote/p.sh"
     #endregion
 
     if ($Browser) {

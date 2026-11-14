@@ -15,7 +15,6 @@ export const CMD = {
   boot: 'ls -1 /etc/rc.d 2>/dev/null',
   ca: 'if [ -f /etc/ssl/certs/ca-certificates.crt ]; then echo /etc/ssl/certs/ca-certificates.crt; elif [ -d /etc/ssl/certs ]; then echo /etc/ssl/certs; fi',
   eth1v6: 'ip -o -6 addr show dev eth1 scope global 2>/dev/null',
-  exact: "grep -q 'flab-ui: byte-exact' /usr/lib/ddns/dynamic_dns_functions.sh 2>/dev/null && { [ ! -f /usr/lib/ddns/update_cloudflare_com_v4.sh ] || grep -q 'flab-ui: quoted' /usr/lib/ddns/update_cloudflare_com_v4.sh; } && echo 1",
   // The command a service whose device is named "-r" must NOT run (it would be read as an option).
   dashDevice: 'ip -o -4 addr show dev -r scope global 2>/dev/null',
 };

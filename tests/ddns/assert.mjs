@@ -29,14 +29,13 @@ function refusals(sc, r) {
 // The keys a service of the status reply has, and the runtime's.
 const SERVICE_KEYS = 'runtime,secrets,section,values';
 const RUNTIME_KEYS = 'detected_ip,error,last_update,local_ip,log,next_check,pid,problem,registered_ip,running,terminated';
-const STATUS_KEYS = 'at_boot,ca,devices,generated,global,installed,logdir,networks,password_exact,providers,rundir,running,services,tools,uptime,version';
+const STATUS_KEYS = 'at_boot,ca,devices,generated,global,installed,logdir,networks,providers,rundir,running,services,tools,uptime,version';
 
 console.log('== status ==');
 const main = load('main');
 const st = main.status;
 check(Object.keys(st).sort().join() === STATUS_KEYS && st.services.every(s => Object.keys(s).sort().join() === SERVICE_KEYS && Object.keys(s.runtime).sort().join() === RUNTIME_KEYS), 'the reply has only the documented fields', Object.keys(st).sort().join());
 check(st.installed === true && st.version === '2.8.4-12' && st.running === true && st.at_boot === true && st.uptime === 5000 && st.rundir === '/var/run/ddns' && st.logdir === '/var/log/ddns' && st.ca === '/etc/ssl/certs/ca-certificates.crt' && typeof st.generated === 'number', 'the updater, its version, whether it starts at boot, the directories and the CA certificates', j({ ...st, providers: 0, services: 0 }));
-check(st.password_exact === true && main['status-args'].password_exact === true, 'it knows that the updater has been patched to pass every character of a password');
 check(st.global.section === 'global' && j(Object.keys(st.global.values).sort()) === j(['ddns_dateformat', 'ddns_logdir', 'ddns_loglines', 'ddns_rundir']), 'the global section');
 check(st.services.map(s => s.section).join() === SERVICES.join(), 'the services in file order', st.services.map(s => s.section).join());
 check(j(main['status-args'].services.map(s => s.values)) === j(st.services.map(s => s.values)) && main['status-args'].providers.length === st.providers.length, 'arguments sent to status are ignored');
@@ -103,7 +102,7 @@ refusals('noresult', noresult);
 console.log('\n== a router without ddns-scripts ==');
 const empty = load('empty');
 const es = empty.status;
-check(es.installed === false && es.password_exact === false && es.version === null && es.running === false && es.at_boot === false && es.services.length === 0 && es.global.section === null && j(es.global.values) === '{}' && es.providers.length === 0 && es.networks.length === 0 && es.ca === '', 'nothing is installed: an empty reply, not an error', j({ ...es, providers: 0 }));
+check(es.installed === false && es.version === null && es.running === false && es.at_boot === false && es.services.length === 0 && es.global.section === null && j(es.global.values) === '{}' && es.providers.length === 0 && es.networks.length === 0 && es.ca === '', 'nothing is installed: an empty reply, not an error', j({ ...es, providers: 0 }));
 check(CASES.filter(c => c.method === 'control').every(c => empty[c.id].ok === false && empty[c.id].code === null) && CASES.filter(c => c.method === 'log').every(c => empty[c.id].ok === false), 'every control and log request is refused');
 
 if (fs.existsSync(path.join(dir, 'real.json'))) {

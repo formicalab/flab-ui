@@ -130,7 +130,6 @@ function scenario(name, { code, output, config }) {
   put(CMD.ca, '/etc/ssl/certs/ca-certificates.crt\n');
   put(CMD.dashDevice, '2: -r    inet 198.51.100.77/24 scope global\n');
   put(CMD.eth1v6, '3: eth1    inet6 2001:db8::5/64 scope global \\       valid_lft forever preferred_lft forever\n');
-  if (name !== 'noresult') put(CMD.exact, '1\n');
   put(OUTPUT_CMD, output);
   // A result for the command line of every call in CASES (valid or not), so a refused call that was run anyway would be
   // answered and shows up in the checks.
