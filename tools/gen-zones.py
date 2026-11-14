@@ -54,7 +54,7 @@ def main() -> int:
         return 0 if current == text else 1
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(text, encoding='utf-8', newline='\n')
-    print(f'wrote {OUT} ({text.count(chr(10)) - 3} zones)')
+    print(f"wrote {OUT} ({sum(1 for line in text.splitlines() if line.startswith('  ' + chr(39)))} zones)")
     return 0
 
 
