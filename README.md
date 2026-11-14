@@ -75,6 +75,7 @@ flab-ui/
   deploy.ps1                 Deploy / Cleanup / Sync script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
   tools/router-lock.ps1      Reader-writer lock for sharing one test router between several people or agents (Mode Read or Write, -Suite)
+  tools/apk-deploy.ps1       Builds the OpenWrt package from the working tree with the SDK in WSL and installs or removes it on the router with apk (Action Deploy or Remove)
   tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), nlbwedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
   www/                       Static site, deployed to /tmp/flab and linked at /www/flab
@@ -501,6 +502,23 @@ It depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`, `ucode-mod-fs`, `ucode-mod
 runtime tools, not dependencies: install the ones for the pages you use. Installing and removing the package reloads rpcd.
 The package is built from the `v<version>` tag of this repository; `tests/`, `tools/` and `deploy.ps1` are not installed.
 `deploy.ps1` and the package both use `/www/flab`, so remove the package before a Deploy, and run Cleanup before installing it.
+
+**Development loop with the package.** `tools/apk-deploy.ps1` builds the package from the working tree, not from the tag
+tarball of the feed Makefile, and installs it with apk:
+
+```powershell
+pwsh -File flab-ui\tools\apk-deploy.ps1 -Action Deploy   # build, remove the installed flab-ui, add the new one, check
+pwsh -File flab-ui\tools\apk-deploy.ps1 -Action Remove   # apk del flab-ui and check that no flab.* object is left
+```
+
+It needs an OpenWrt SDK in WSL (`-Distro`, `-Sdk`; defaults `Ubuntu-26.04`, `$HOME/sdk/openwrt-sdk-*`) whose feeds hold
+`admin/flab-ui` from a checkout of openwrt/packages (a `src-link` feed, `./scripts/feeds install flab-ui`, and
+`CONFIG_PACKAGE_flab-ui=m` in the SDK's `.config`). Deploy stages `www/`, `rpcd/` and `LICENSE`, builds with
+`USE_SOURCE_DIR`, copies the apk to the router and replaces the installed package (apk does not reinstall the version
+that is already installed, so the old one is removed first). It then waits until rpcd serves one `flab.*` object per
+plugin in `rpcd/ucode/` and the page answers over HTTPS. Like Deploy, it replaces the plugins that serve a signed-in
+page, so run it under `tools/router-lock.ps1 -Mode Write` on a shared router. The package is unsigned, so the router
+installs it with `--allow-untrusted`.
 
 ## License
 
