@@ -20,10 +20,10 @@ The package is built from the `v<version>` tag of this repository; `tests/` and 
 
 The package definition (`Makefile` and the CI tests) is `admin/flab-ui` in the
 [openwrt/packages](https://github.com/openwrt/packages) feed. It is not merged there yet; until it is, it is on the
-branch [`flab-ui-new-package`](https://github.com/marcelloformica/packages/tree/flab-ui-new-package) of a fork:
+branch [`flab-ui`](https://github.com/marcelloformica/packages/tree/flab-ui) of a fork:
 
 ```sh
-git clone --depth 1 -b flab-ui-new-package https://github.com/marcelloformica/packages.git
+git clone --depth 1 -b flab-ui https://github.com/marcelloformica/packages.git
 ```
 
 It builds an architecture-independent apk, so an SDK or buildroot for any target works. The SDK only runs on Linux; on
