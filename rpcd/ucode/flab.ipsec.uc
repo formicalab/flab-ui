@@ -3,7 +3,7 @@
 // rpcd ucode plugin reporting strongSwan tunnel status and security posture as JSON:
 //   ubus call flab.ipsec status
 //
-// Sources (no LuCI component is used):
+// Sources:
 //   - swanctl --raw (VICI): configured connections, IKE SAs, child SAs, daemon statistics
 //   - ip xfrm state: kernel SA details; only algorithm names, sizes, replay and encapsulation
 //     data are copied. Key material in the dump is never forwarded.

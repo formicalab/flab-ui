@@ -17,7 +17,7 @@ Tests the Toolbox page (connectivity check, ping, traceroute, DNS lookup and com
    Toolbox page with a scripted job engine in place of flab.diag, so no tool runs on the router. Nothing reaches the
    router's configuration.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (deploy.ps1 -Action Deploy) and
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action Deploy) and
 installs playwright-core into the temporary work folder. Everything created on the router (/tmp/flab-toolbox-test,
 /tmp/flab-diag) and locally is removed afterwards.
 

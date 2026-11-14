@@ -1,7 +1,7 @@
 // The one place the browser talks to rpcd's native `uci` object, for configuration changes. No page should
 // call ubus('uci', ...) directly: going through here keeps every edit staged, reviewable and reversible.
 //
-// How a change flows (all of it is rpcd's own `uci` object, not LuCI):
+// How a change flows (all of it is rpcd's own `uci` object):
 //   1. stage     `set` / `add` / `delete` write into the session's staging area (/tmp/.uci); the real
 //                configuration on flash is untouched until apply.
 //   2. review    `changes` lists what is staged; `revert` throws it away.
@@ -11,7 +11,7 @@
 //                if it cannot (the change cut the connection), rpcd restores the previous configuration by
 //                itself. That rollback is what makes it safe to edit network and firewall settings remotely.
 //
-// What a login may change is decided by the router, not here: the UI signs in as root, as LuCI does, so
+// What a login may change is decided by the router, not here: the UI signs in as root, so
 // writing is allowed, and a login without the `uci` write methods gets "Access denied by ACL" from every
 // method below. Pages do not call the steps one by one: applyChange() at the bottom runs stage, apply, verify
 // and confirm with the rollback on every failure.

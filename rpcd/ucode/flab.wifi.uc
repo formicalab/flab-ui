@@ -6,7 +6,7 @@
 // Only sanitized client data is returned; Wi-Fi keys from `network.wireless status`
 // are never copied into the result.
 //
-// Sources (no LuCI component is used): ubus (network.wireless status, hostapd.<if> get_clients, dhcp
+// Sources: ubus (network.wireless status, hostapd.<if> get_clients, dhcp
 // ipv4leases), `hostapd_cli all_sta`, `iw dev <if> station dump`, UCI wireless/network/dhcp, /proc/net/arp,
 // `ip -6 neigh`, /etc/ethers and /tmp/hosts.
 //

@@ -14,7 +14,7 @@ Tests the IPsec page against captured and synthetic strongSwan states without to
 5. With -Browser, opens the deployed UI in Edge and drives the page through the scenarios live, checking
    that cards, badges and tiles follow the changes without a reload.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (deploy.ps1 -Action
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action
 Deploy) and installs playwright-core into the temporary work folder. Everything it creates on the router
 (/tmp/flab-ipsec-test) and locally is removed afterwards.
 

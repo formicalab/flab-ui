@@ -7,7 +7,7 @@
 // peers, paths and parameters from the kernel's mac80211, so a new mesh interface, peer or path shows up on
 // the next poll.
 //
-// Sources (no LuCI component is used):
+// Sources:
 //   - UCI wireless: configured mesh interfaces (mesh id, encryption label, forwarding). The key is never
 //     read into the output.
 //   - netifd (network.wireless status): which interface name a mesh section has

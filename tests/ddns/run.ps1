@@ -17,7 +17,7 @@ Tests the Dynamic DNS page without changing the router.
    the log, the whole editing flow (validation, the write-only password, adding and removing services, saving, a change the router
    does not keep, a login that may not write) WITHOUT touching the router's configuration or its updater.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (deploy.ps1 -Action Deploy) and installs
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action Deploy) and installs
 playwright-core into the temporary work folder. Everything created on the router (/tmp/flab-ddns-test) and locally is removed
 afterwards.
 

@@ -7,7 +7,7 @@
 // Everything is discovered at run time (nothing is hard-coded to this router's port names), so a changed
 // board layout, a new bridge or a new VLAN device shows up on the next poll.
 //
-// Sources (no LuCI component is used):
+// Sources:
 //   - netifd (network.device status): device types, link speed and negotiation, bridge membership, counters
 //   - sysfs: carrier and link-flap counters, bridge/STP state (/sys/class/net/<if>/bridge and brport)
 //   - the bridge forwarding table (/sys/class/net/<bridge>/brforward): learned MAC addresses per port

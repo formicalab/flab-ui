@@ -4,7 +4,7 @@
 //   1. Create js/pages/<name>.js (or a js/pages/<name>/ folder) that default-exports a page object.
 //   2. Import it below and add it to the list.
 //   3. If it needs server-side data that rpcd's own objects (uci, system, service, ...) do not give, add
-//      rpcd/ucode/flab.<name>.uc; deploy.ps1 installs every file in that folder automatically.
+//      rpcd/ucode/flab.<name>.uc; the package installs every file in that folder automatically.
 //
 // Page contract (id, label, icon, interval, load and view are required; the rest is optional):
 //   id        route name, used as the URL hash (#id)

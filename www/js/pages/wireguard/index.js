@@ -104,7 +104,7 @@ export default {
   },
 
   view(data, rerender) {
-    if (data.unavailable) return [note('bad', 'The WireGuard plugin (flab.wireguard) is not available on the router, so this page cannot show or change anything. Install it with the rest of flab-ui (deploy.ps1) and restart rpcd.')];
+    if (data.unavailable) return [note('bad', 'The WireGuard plugin (flab.wireguard) is not available on the router, so this page cannot show or change anything. Install or reinstall the flab-ui package and reload rpcd.')];
     const canEdit = editor.begin(data, rerender);
     const ctx = { data, draft: editor.state.draft, canEdit, inputs: {}, rerender, redraw: () => editor.redraw(), touched: () => {}, sync: () => {} };
     ctx.touched = editor.touched(ctx);

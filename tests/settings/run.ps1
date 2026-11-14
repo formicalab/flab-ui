@@ -13,7 +13,7 @@ Tests the System settings page without changing the router's configuration.
    (validation, review, save, a change the router does not keep, a late confirmation, an expired session, a login
    without write access) is exercised without touching /etc/config/system.
 
--Browser needs ssh access to the router, the deployed UI (deploy.ps1 -Action Deploy), Node.js, and installs
+-Browser needs ssh access to the router, the deployed UI (tools/apk-deploy.ps1 -Action Deploy), Node.js, and installs
 playwright-core into a temporary work folder. The router session and the work folder are removed afterwards.
 
 .PARAMETER Router

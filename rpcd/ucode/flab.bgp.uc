@@ -2,7 +2,7 @@
 //
 // rpcd ucode plugin reporting the BIRD BGP situation as JSON: ubus call flab.bgp status
 //
-// Sources (no LuCI component is used):
+// Sources:
 //   - birdc (BIRD control socket): daemon status, protocols with channel statistics, the
 //     master routing table with all BGP attributes, per-peer export tables, memory use
 //   - ip route show proto bird: what the kernel protocol actually installed (ECMP next hops)

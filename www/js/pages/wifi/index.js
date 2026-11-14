@@ -220,7 +220,7 @@ export default {
     const radioCards = radiosSection(data.hw, data.hw?.radios?.length ? edit : null);
     edit.sync();
     const unreadable = data.hw?.radios?.length && !data.wifi.editable
-      ? note('info', 'The Wi-Fi plugin on this router cannot report the wireless configuration (flab.radio config), so the radios and wireless networks cannot be edited here. Install the current flab-ui (deploy.ps1) and restart rpcd.') : null;
+      ? note('info', 'The Wi-Fi plugin on this router cannot report the wireless configuration (flab.radio config), so the radios and wireless networks cannot be edited here. Install the current flab-ui package and reload rpcd.') : null;
     return [summary, ...editor.notes(data), unreadable, ...radioCards, legend, ...groups].filter(Boolean);
   },
 };

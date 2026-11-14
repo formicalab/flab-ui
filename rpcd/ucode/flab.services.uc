@@ -5,7 +5,7 @@
 //   ubus call flab.services control '{"name":"dnsmasq","action":"restart"}'
 //
 // procd's `service` object only reports running daemons; it cannot start or stop anything. The init scripts
-// are what OpenWrt itself uses to do that, so they are what this plugin runs (no LuCI component is used).
+// are what OpenWrt itself uses to do that, so they are what this plugin runs.
 //
 // Sources:
 //   - /etc/init.d: every executable file directly in it is a service (listed by one shell loop).

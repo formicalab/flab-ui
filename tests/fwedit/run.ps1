@@ -16,7 +16,7 @@ Tests the editable Firewall page without changing the router.
    lock-out confirmation, saving, a change the router does not keep, a firewall that stops loading, a login that may not write, a missing
    plugin, an expired session) WITHOUT touching the router's configuration.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (deploy.ps1 -Action Deploy) and installs playwright-core
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action Deploy) and installs playwright-core
 into the temporary work folder. Everything created on the router (/tmp/flab-fwedit-test) and locally is removed afterwards.
 
 .PARAMETER Router

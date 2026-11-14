@@ -13,7 +13,7 @@ Tests the network board of the Devices and Interfaces page (its model, the drawe
    keeping it over a poll, Escape, the close button, leaving the page), the Device menu, the Network-wide settings button and the old #bridges
    route. The panels' contents are tested by the Network editors suite.
 
--Browser needs ssh access to the router, the deployed UI (deploy.ps1 -Action Deploy or -Action Sync), Node.js, and installs playwright-core into a
+-Browser needs ssh access to the router, the deployed UI (tools/apk-deploy.ps1 -Action Deploy), Node.js, and installs playwright-core into a
 temporary work folder. The router session and the work folder are removed afterwards.
 
 .PARAMETER Router

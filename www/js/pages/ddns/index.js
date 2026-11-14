@@ -80,7 +80,7 @@ export default {
 
   view(data, rerender) {
     shell.rerender = rerender;
-    if (data.unavailable) return [note('bad', 'The Dynamic DNS plugin (flab.ddns) is not available on the router, so this page cannot show or change anything. Install it with the rest of flab-ui (deploy.ps1) and restart rpcd.')];
+    if (data.unavailable) return [note('bad', 'The Dynamic DNS plugin (flab.ddns) is not available on the router, so this page cannot show or change anything. Install or reinstall the flab-ui package and reload rpcd.')];
     if (!data.installed) return [note('bad', 'ddns-scripts is not installed on the router. Install it (apk add ddns-scripts, and ddns-scripts-services or a provider package) and reload this page.')];
     const canEdit = editor.begin(data, rerender);
     const ctx = { data, draft: state.draft, canEdit, now: data.generated, inputs: {}, rerender, reload: () => shell.reload(), redraw: () => editor.redraw(), touched: () => {}, sync: () => {} };

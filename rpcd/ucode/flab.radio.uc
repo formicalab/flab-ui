@@ -7,7 +7,7 @@
 // Everything is discovered at run time: radios from UCI wireless, their phy from the kernel, interfaces
 // from netifd, so a new radio, SSID or channel shows up on the next poll.
 //
-// Sources (no LuCI component is used):
+// Sources:
 //   - UCI wireless: configured radios and SSIDs. Only whitelisted options are copied; keys, passwords,
 //     MAC lists and FT key material are never forwarded (only the number of MAC filter entries).
 //   - netifd (network.wireless status): radio and interface state

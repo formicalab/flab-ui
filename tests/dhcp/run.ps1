@@ -14,7 +14,7 @@ Tests the DHCP page (odhcpd leases, reservations and settings) without changing 
    router does not keep, a stopped odhcpd, a login without write access, an expired session) is exercised without
    touching /etc/config/dhcp.
 
--Browser needs ssh access to the router, the deployed UI (deploy.ps1 -Action Deploy), Node.js, and installs
+-Browser needs ssh access to the router, the deployed UI (tools/apk-deploy.ps1 -Action Deploy), Node.js, and installs
 playwright-core into a temporary work folder. The router session and the work folder are removed afterwards.
 
 .PARAMETER Router

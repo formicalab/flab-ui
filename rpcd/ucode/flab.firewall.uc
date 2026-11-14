@@ -5,7 +5,7 @@
 //
 // Everything is discovered at run time, so a new zone, rule or port forward shows up on the next poll.
 //
-// Sources (no LuCI component is used):
+// Sources:
 //   - UCI firewall: the configuration (defaults, zones, forwardings, traffic rules, port forwards, NAT, includes)
 //   - UCI network: interface names, to find interfaces that are in no zone and to offer them to the zone editor
 //   - ubus network.interface dump (netifd): the router's own addresses on each interface, so the page can tell which

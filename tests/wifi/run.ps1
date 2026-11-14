@@ -14,7 +14,7 @@ Tests changing a radio's channel on the Wi-Fi page without changing the router's
    successful save, a change the router does not keep, a radio that does not come back, a login without write
    access, an expired session) is exercised without touching /etc/config/wireless.
 
--Browser needs ssh access to the router, the deployed UI (deploy.ps1 -Action Deploy), Node.js, and installs
+-Browser needs ssh access to the router, the deployed UI (tools/apk-deploy.ps1 -Action Deploy), Node.js, and installs
 playwright-core into a temporary work folder. The router session and the work folder are removed afterwards.
 
 .PARAMETER Router

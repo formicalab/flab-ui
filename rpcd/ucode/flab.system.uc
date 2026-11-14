@@ -5,7 +5,7 @@
 // Returns the kernel's cumulative CPU time counters (/proc/stat), the load average and the task counts.
 // Utilization is a rate, so it is derived from the difference between two successive calls (the UI does
 // this); the counters are not converted here, which keeps the call instantaneous and rpcd unblocked.
-// Reads procfs only; no other tool or LuCI component is involved.
+// Reads procfs only; no other tool is involved.
 
 'use strict';
 

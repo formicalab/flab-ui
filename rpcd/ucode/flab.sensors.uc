@@ -2,7 +2,7 @@
 //
 // rpcd ucode plugin reporting hardware temperatures as JSON: ubus call flab.sensors status
 //
-// Reads sysfs only (/sys/class/thermal and /sys/class/hwmon); no other tool or LuCI component is
+// Reads sysfs only (/sys/class/thermal and /sys/class/hwmon); no other tool is
 // involved. Sensors that appear both as a thermal zone and as its hwmon twin are reported once.
 
 'use strict';

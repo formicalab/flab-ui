@@ -4,7 +4,7 @@
 //   ubus call flab.logs read '{"lines":500}'               both logs
 //   ubus call flab.logs read '{"source":"kernel"}'         one of them ("system" or "kernel")
 //
-// Sources (no LuCI component is used):
+// Sources:
 //   - `logread -l N`: logd's ring buffer, which holds every daemon's syslog messages (kernel messages too).
 //     Lines look like "Wed Nov 11 12:06:15 2026 daemon.info odhcpd[2571]: message".
 //   - `dmesg -r`: the kernel ring buffer in raw form: "<6>[ 272373.680866] message", where <N> is the

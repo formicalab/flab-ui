@@ -7,7 +7,7 @@
 // kernel reports, peers from the `wireguard_<interface>` sections plus whatever the kernel knows, so a new
 // interface or peer shows up on the next poll.
 //
-// Sources (no LuCI component is used):
+// Sources:
 //   - UCI network: interface settings (addresses, listen port, MTU) and the configured peers (name,
 //     allowed IPs, endpoint, keepalive)
 //   - `wg show <if> <field>`: live state. Only the single-field forms are used (public-key, listen-port,

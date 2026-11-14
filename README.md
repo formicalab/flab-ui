@@ -1,16 +1,15 @@
 # flab-ui
 
-A lightweight, LuCI-free administration UI for OpenWrt, developed and tested on the GL.iNet GL-MT6000
+A lightweight administration UI for OpenWrt, developed and tested on the GL.iNet GL-MT6000
 (1 GB RAM). It is a static single-page app served by `uhttpd`, talking to the router through the
 standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins.
 
-> **Hard rule: no LuCI components.** flab-ui is a replacement for LuCI, so it must never call
-> `luci-rpc`, `luci.*` ubus objects or any LuCI library. Read data directly from `swanctl`, `netifd`,
-> `procd`, `nft`, `wg`, sysfs, the kernel (`ip`, `iw`, `hostapd_cli`) and `uci`. rpcd's own `uci` object
-> (staged edits, apply with rollback) is part of rpcd, not LuCI, and is what configuration changes use.
+> **Hard rule: standalone.** flab-ui must never depend on the ubus objects or libraries of another web UI. Read data
+> directly from `swanctl`, `netifd`, `procd`, `nft`, `wg`, sysfs, the kernel (`ip`, `iw`, `hostapd_cli`) and `uci`. rpcd's
+> own `uci` object (staged edits, apply with rollback) is part of rpcd and is what configuration changes use.
 
-It is deployed to tmpfs for testing and removed again with one command; nothing is installed permanently. Like
-LuCI, it signs in with the router's own `root` login and creates no login of its own. The pages that only
+It is installed as the `flab-ui` package (see [OpenWrt package](#openwrt-package)). It signs in with the router's own
+`root` login and creates no login of its own. The pages that only
 read the router are Overview, Mesh, IPsec VPN, Routing, Toolbox (which runs diagnostics and sends a Wake-on-LAN packet) and Logs. The others
 edit its configuration through UCI: System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), Dynamic DNS (`/etc/config/ddns`), Wi-Fi (the radios and wireless networks in `/etc/config/wireless`), Wired network (the VLAN sections of `/etc/config/network`), Devices and Interfaces, which holds the bridges (`/etc/config/network`), WireGuard (the WireGuard interfaces and peers in `/etc/config/network`), Firewall (`/etc/config/firewall`) and the Settings tab of Traffic (`/etc/config/nlbwmon`). The Services page starts, stops and restarts services. How configuration changes are made safely is described in
 [Configuration changes](#configuration-changes) and how services are controlled under [Services](#services-route-services).
@@ -23,14 +22,13 @@ edit its configuration through UCI: System settings (`/etc/config/system`), DHCP
 4. [Backend (rpcd plugins)](#backend-rpcd-plugins)
 5. [Security model](#security-model)
 6. [Configuration changes](#configuration-changes)
-7. [Deploy, test, clean up](#deploy-test-clean-up)
-8. [OpenWrt package](#openwrt-package)
-9. [License](#license)
-10. [How to add a page](#how-to-add-a-page)
-11. [Pages](#pages)
-12. [Testing](#testing)
-13. [Implementation notes](#implementation-notes)
-14. [Conventions](#conventions)
+7. [OpenWrt package](#openwrt-package)
+8. [License](#license)
+9. [How to add a page](#how-to-add-a-page)
+10. [Pages](#pages)
+11. [Testing](#testing)
+12. [Implementation notes](#implementation-notes)
+13. [Conventions](#conventions)
 
 ## Architecture at a glance
 
@@ -38,7 +36,7 @@ edit its configuration through UCI: System settings (`/etc/config/system`), DHCP
 Browser (ES modules, Bootstrap 5.3 + Fluent theme, no build step)
    |  HTTPS POST /ubus   {"jsonrpc":"2.0","method":"call","params":[sid, object, method, args]}
    v
-uhttpd  (ubus_prefix '/ubus', static files from /www/flab -> /tmp/flab)
+uhttpd  (ubus_prefix '/ubus', static files from /www/flab)
    |  ubus
    v
 rpcd ---- built-in objects:  session, system, network.interface, service, uci (configuration changes)
@@ -60,7 +58,7 @@ Design principles:
 - **Thin server, rich client.** Plugins return sanitized JSON; the browser does all presentation.
 - **Everything is discovered at run time.** Ports, bridges, radios, tunnels, zones and peers come from the
   router on every poll; nothing is hard-coded to one board, so another router is reflected correctly.
-- **The router's own login.** The UI signs in as `root` through rpcd, exactly as LuCI does, and creates no login.
+- **The router's own login.** The UI signs in as `root` through rpcd and creates no login.
   rpcd gives root read and write `*`, which means every ACL group installed on the router; the ACL fragments in
   `rpcd/acl.d` are what add the flab-ui calls to it. Everything the plugins and pages read or write is therefore
   limited by what root may do, and by the safeguards below (validation, apply with rollback).
@@ -72,13 +70,12 @@ Design principles:
 
 ```
 flab-ui/
-  deploy.ps1                 Deploy / Cleanup / Sync script (PowerShell 7)
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
   tools/router-lock.ps1      Reader-writer lock for sharing one test router between several people or agents (Mode Read or Write, -Suite)
   tools/apk-deploy.ps1       Builds the OpenWrt package from the working tree with the SDK in WSL and installs or removes it on the router with apk (Action Deploy or Remove)
   tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), nlbwedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
-  www/                       Static site, deployed to /tmp/flab and linked at /www/flab
+  www/                       Static site, installed to /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
     css/
@@ -367,7 +364,7 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 ## Security model
 
 - **The router's own login.** The UI signs in with rpcd's `session login`, as `root` (the login every OpenWrt
-  router has, with read and write `*` on everything), exactly as LuCI does. flab-ui creates no login, installs no
+  router has, with read and write `*` on everything). flab-ui creates no login, installs no
   ACL and changes no rpcd configuration, so it can never grant itself or anyone else more than root already has,
   and nothing about it persists in `/etc/config/rpcd`.
 - **What protects the router** is therefore the root password, HTTPS, the ACL fragments (each lists exactly the
@@ -443,52 +440,9 @@ restoring the configuration afterwards: a confirmed change (zone, description, l
 switch), the removal of options, a custom zone rule, a forced rollback and the countdown rollback of an
 unconfirmed apply. The Wi-Fi, Wired network VLAN, Devices and Interfaces, WireGuard, Firewall and Traffic settings editors are exercised through their suites against mock routers only; the suites block every write on the real router.
 
-## Deploy, test, clean up
-
-Requires PowerShell 7, `ssh`/`scp` with key auth to the router (default `root@openwrt.lab.formicalab.casa`).
-
-```powershell
-# Install. Open https://<router>/flab/ and sign in as root with the router's root password
-pwsh -File flab-ui\deploy.ps1 -Action Deploy
-
-# Copy only www/ over the deployed UI (nothing is removed, rpcd is not restarted, no session ends)
-pwsh -File flab-ui\deploy.ps1 -Action Sync
-
-# Remove every trace from the router
-pwsh -File flab-ui\deploy.ps1 -Action Cleanup
-```
-
-What Deploy does:
-
-1. Runs the cleanup script first (idempotent).
-2. Copies `www/` to `/tmp/flab` (tmpfs, gone after a reboot) and symlinks `/www/flab` to it.
-3. Copies `rpcd/ucode/*` to `/usr/share/rpcd/ucode/`, `rpcd/acl.d/*` to `/usr/share/rpcd/acl.d/` and
-   `rpcd/lib/flab/*` to `/usr/share/ucode/flab/`.
-4. **Restarts rpcd**, which only reads its plugins and ACL fragments at start.
-
-Cleanup removes all of the above (and the diagnostics' job directory `/tmp/flab-diag`, ending any diagnostic still running) and restarts rpcd again. No login or rpcd setting is created or changed, and no file of any other package is touched.
-
-Things to know:
-
-- `rpcd` is **restarted**, so every deploy/cleanup ends the active rpcd sessions (LuCI's and flab-ui's).
-- Flash writes are limited to the rpcd plugin and ACL files and the symlink; Cleanup removes them.
-- `scp -O` is required (dropbear has no sftp-server).
-- After editing a front-end file, `deploy.ps1 -Action Sync` copies `www/` to the deployed UI without restarting rpcd (the UI must already be
-  deployed; a changed plugin or ACL fragment needs a full Deploy); Ctrl+F5 reloads the page. For a single file, `scp -O <file> root@<router>:/tmp/flab/<path>` does the same. Backend changes need the file copied to `/usr/share/rpcd/ucode/` (or `/usr/share/ucode/flab/`) and
-  `/etc/init.d/rpcd restart`.
-- **Sharing one router.** A full Deploy or Cleanup ends every rpcd session, so it must not run while a browser test is signed in.
-  `tools/router-lock.ps1` is a reader-writer lock for sharing one test router between several people or agents:
-  `-Mode Read` for anything that uses the router and the deployed UI without replacing them (a `run.ps1`, `run.ps1 -Browser`, `deploy.ps1 -Action Sync`; any number
-  at once) and `-Mode Write` for a full Deploy or Cleanup (waits for the readers, and no new reader starts meanwhile). `-Suite <name>` names the suite a command runs,
-  because two runs of one suite use the same folders on the router and must queue. For example
-  `pwsh -File flab-ui\tools\router-lock.ps1 -Mode Read -Suite ddns -Command 'pwsh -NoProfile -File flab-ui\tests\ddns\run.ps1 -Browser'`.
-- To test a plugin without rpcd: copy it and `rpcd/lib/flab/` to `/tmp`, then run it with
-  `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile).
-
 ## OpenWrt package
 
-The `flab-ui` package (`admin/flab-ui` in the [openwrt/packages](https://github.com/openwrt/packages) feed) installs the
-same files `deploy.ps1` copies, but permanently:
+The `flab-ui` package (`admin/flab-ui` in the [openwrt/packages](https://github.com/openwrt/packages) feed) installs:
 
 | Source | Installed to |
 |---|---|
@@ -500,8 +454,7 @@ same files `deploy.ps1` copies, but permanently:
 It depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`, `ucode-mod-fs`, `ucode-mod-ubus`, `ucode-mod-uci`, `uhttpd` and
 `uhttpd-mod-ubus`. The programs the pages read from (`swanctl`, `birdc`, `wg`, `nft`, `iw`, `nlbw`, ...) are optional
 runtime tools, not dependencies: install the ones for the pages you use. Installing and removing the package reloads rpcd.
-The package is built from the `v<version>` tag of this repository; `tests/`, `tools/` and `deploy.ps1` are not installed.
-`deploy.ps1` and the package both use `/www/flab`, so remove the package before a Deploy, and run Cleanup before installing it.
+The package is built from the `v<version>` tag of this repository; `tests/` and `tools/` are not installed.
 
 **Development loop with the package.** `tools/apk-deploy.ps1` builds the package from the working tree, not from the tag
 tarball of the feed Makefile, and installs it with apk:
@@ -516,9 +469,22 @@ It needs an OpenWrt SDK in WSL (`-Distro`, `-Sdk`; defaults `Ubuntu-26.04`, `$HO
 `CONFIG_PACKAGE_flab-ui=m` in the SDK's `.config`). Deploy stages `www/`, `rpcd/` and `LICENSE`, builds with
 `USE_SOURCE_DIR`, copies the apk to the router and replaces the installed package (apk does not reinstall the version
 that is already installed, so the old one is removed first). It then waits until rpcd serves one `flab.*` object per
-plugin in `rpcd/ucode/` and the page answers over HTTPS. Like Deploy, it replaces the plugins that serve a signed-in
-page, so run it under `tools/router-lock.ps1 -Mode Write` on a shared router. The package is unsigned, so the router
-installs it with `--allow-untrusted`.
+plugin in `rpcd/ucode/` and the page answers over HTTPS. The package is unsigned, so the router installs it with
+`--allow-untrusted`. Open `https://<router>/flab/` and sign in as root with the router's root password. It needs
+PowerShell 7 and `ssh`/`scp` with key auth to the router (default `root@openwrt.lab.formicalab.casa`; `scp -O` is used
+because dropbear has no sftp-server).
+
+Things to know:
+
+- **Sharing one router.** A Deploy or Remove replaces the plugins and the web files that a signed-in page uses, so it must
+  not run while a browser test is running. `tools/router-lock.ps1` is a reader-writer lock for sharing one test router
+  between several people or agents: `-Mode Read` for anything that uses the router and the installed UI without replacing
+  them (a `run.ps1` or `run.ps1 -Browser`; any number at once) and `-Mode Write` for `apk-deploy.ps1` (waits for the readers,
+  and no new reader starts meanwhile). `-Suite <name>` names the suite a command runs, because two runs of one suite use the
+  same folders on the router and must queue. For example
+  `pwsh -File flab-ui\tools\router-lock.ps1 -Mode Read -Suite ddns -Command 'pwsh -NoProfile -File flab-ui\tests\ddns\run.ps1 -Browser'`.
+- To test a plugin without rpcd: copy it and `rpcd/lib/flab/` to `/tmp`, then run it with
+  `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile).
 
 ## License
 
@@ -539,7 +505,7 @@ Example: an `ntp` page.
      ```
      A page that reads or writes a config through rpcd's `uci` object needs a fragment too, listing the config
      in its `uci` read (and write) lists, like `flab-settings.json`.
-   - Prefer data sources that are not LuCI (see the hard rule above), and rpcd's own `uci`, `system` and
+   - Prefer direct data sources (see the hard rule above), and rpcd's own `uci`, `system` and
      `service` objects where they are enough: no plugin is needed for those.
 2. **Frontend.** Create `www/js/pages/ntp.js` (or an `ntp/` folder with `index.js` plus helpers):
    ```js
@@ -558,7 +524,7 @@ Example: an `ntp` page.
    `PATHS` map in `core/icons.js`.
 5. **Tests.** Add the plugin to `$plugins` in `tests/network/run.ps1`, scenarios to `tests/network/mkfx.mjs`,
    assertions to `assert.mjs` and a browser section to `live.mjs` (or extend the suite that fits best).
-6. **Deploy and test** with `deploy.ps1`; every file in `rpcd/` and `www/` is picked up automatically.
+6. **Install and test** with `tools/apk-deploy.ps1`; every file in `rpcd/` and `www/` is picked up automatically.
 
 Reuse before writing new code: if two pages need the same widget, move it to `core/ui.js`; if the same
 parsing is needed by two plugins, move it to `rpcd/lib/flab/`. Comment every function and lookup table, put
@@ -865,7 +831,7 @@ poll (flagged as not in the configuration). The page also edits the configuratio
   network config; the first free `wgN`, the first free UDP port from 51820 and a private key made in the browser are offered) and removed with
   its peers (until saved, with *Undo*).
 - **Peer options**: name, disabled, public key, pre-shared key, allowed IPs (a list), create routes for the allowed IPs, endpoint host and port,
-  keepalive. Peers are added (an anonymous `wireguard_<interface>` section, as LuCI makes them), edited in place and removed.
+  keepalive. Peers are added (an anonymous `wireguard_<interface>` section), edited in place and removed.
 - **Keys never reach the browser, and a new one is made there.** The plugin never reads `private_key` or `preshared_key` (or any option named like a
   secret) into its output and reports only whether each is set; only the single-field `wg show` forms are used because they never print them. The test recorder
   scrubs both keys, and the test generator aborts if a capture still contains one. The key boxes are write-only: empty keeps the stored key, the review banner shows *new value
@@ -1928,10 +1894,10 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Services | `pwsh -File flab-ui\tests\services\run.ps1 [-Browser]` | Services model; `flab.services` against fixtures (nothing is executed) and a read-only `list` on the router; the page against the router's own services, then the whole start, stop and restart flow against a mock |
 | Dynamic DNS | `pwsh -File flab-ui\tests\ddns\run.ps1 [-Browser]` | Dynamic DNS model (reading, draft, validation, change plan, check after a save, verdicts, intervals, log parsing); `flab.ddns` against fixtures (nothing is executed) and a read-only `status` and `log` on the router; the page against the router's own services, then the whole editing and action flow against a mock |
 
-`-Browser` needs the UI deployed (`deploy.ps1 -Action Deploy`, or `-Action Sync` after a front-end change) and signs in with a temporary rpcd session that
+`-Browser` needs the UI installed (`tools/apk-deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
 password is needed. Every suite removes its local temp folder when it finishes, and the BGP, IPsec, Routing and network
-suites also remove their `/tmp/flab-*-test` folder on the router. When several people or agents share one router, run a suite through `tools/router-lock.ps1` (see [Deploy, test, clean up](#deploy-test-clean-up)).
+suites also remove their `/tmp/flab-*-test` folder on the router. When several people or agents share one router, run a suite through `tools/router-lock.ps1` (see [OpenWrt package](#openwrt-package)).
 
 ### Common mechanism (BGP, IPsec, Routing and network suites)
 

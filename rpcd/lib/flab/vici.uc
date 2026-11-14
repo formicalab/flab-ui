@@ -4,7 +4,7 @@
 // `swanctl --list-sas --raw` prints one event per line in the form
 //   list-sa event {Name {key=value list=[a b] section {...}}}
 // Scalar values may contain spaces ("class=pre-shared key"), so a value ends where the next
-// "key=" or "key {" token starts. Only the swanctl binary is used; no LuCI component is involved.
+// "key=" or "key {" token starts. Only the swanctl binary is used.
 
 'use strict';
 

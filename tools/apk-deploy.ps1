@@ -11,8 +11,7 @@ copies the apk to the router, removes the installed flab-ui and adds the new one
 answers over HTTPS. Remove runs apk del and checks that no flab.* object is left.
 
 The SDK must already be set up in WSL, with the feed that holds admin/flab-ui (a src-link to a checkout of
-openwrt/packages) installed and CONFIG_PACKAGE_flab-ui=m in its .config. Remove the package before using
-deploy.ps1 and the other way around: both use /www/flab.
+openwrt/packages) installed and CONFIG_PACKAGE_flab-ui=m in its .config.
 
 A Deploy or Remove ends nothing in rpcd by itself, but it replaces the plugins that serve the signed-in pages, so run
 it under tools/router-lock.ps1 -Mode Write when the router is shared.

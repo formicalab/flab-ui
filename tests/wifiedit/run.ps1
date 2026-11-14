@@ -18,7 +18,7 @@ Tests editing the wireless configuration on the Wi-Fi page without changing the 
    a radio that does not come back, a login that may not write, a router whose plugin cannot report the configuration) WITHOUT
    touching the router's configuration.
 
-Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (deploy.ps1 -Action Deploy) and installs
+Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/apk-deploy.ps1 -Action Deploy) and installs
 playwright-core into the temporary work folder. Everything created on the router (/tmp/flab-wifiedit-test) and locally is removed
 afterwards.
 
