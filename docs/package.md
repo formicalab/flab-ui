@@ -16,23 +16,72 @@ It depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`, `ucode-mod-fs`, `ucode-mod
 runtime tools, not dependencies: install the ones for the pages you use. Installing and removing the package reloads rpcd.
 The package is built from the `v<version>` tag of this repository; `tests/` and `tools/` are not installed.
 
-**Development loop with the package.** `tools/apk-deploy.ps1` builds the package from the working tree, not from the tag
-tarball of the feed Makefile, and installs it with apk:
+## Building the package
 
-```powershell
-pwsh -File flab-ui\tools\apk-deploy.ps1 -Action Deploy   # build, remove the installed flab-ui, add the new one, check
-pwsh -File flab-ui\tools\apk-deploy.ps1 -Action Remove   # apk del flab-ui and check that no flab.* object is left
+The package definition (`Makefile` and the CI tests) is `admin/flab-ui` in the
+[openwrt/packages](https://github.com/openwrt/packages) feed. It builds an architecture-independent apk, so an SDK or
+buildroot for any target works. The SDK only runs on Linux; on Windows use WSL.
+
+**With any OpenWrt SDK.** Download an SDK from [downloads.openwrt.org](https://downloads.openwrt.org) (an apk-based
+snapshot), unpack it, and from its top directory:
+
+```sh
+# Make admin/flab-ui visible to the SDK. Either copy the package directory ...
+cp -r /path/to/packages/admin/flab-ui package/flab-ui
+# ... or use a checkout of the feed that holds it:
+#   echo "src-link packages /path/to/packages" >> feeds.conf
+#   ./scripts/feeds update packages && ./scripts/feeds install flab-ui
+
+make defconfig
+echo CONFIG_PACKAGE_flab-ui=m >> .config && make defconfig
+make package/flab-ui/compile
+ls bin/packages/*/*/flab-ui-*.apk
 ```
 
-It needs an OpenWrt SDK in WSL (`-Distro`, `-Sdk`; defaults `Ubuntu-26.04`, `$HOME/sdk/openwrt-sdk-*`) whose feeds hold
-`admin/flab-ui` from a checkout of openwrt/packages (a `src-link` feed, `./scripts/feeds install flab-ui`, and
-`CONFIG_PACKAGE_flab-ui=m` in the SDK's `.config`). Deploy stages `www/`, `rpcd/` and `LICENSE`, builds with
-`USE_SOURCE_DIR`, copies the apk to the router and replaces the installed package (apk does not reinstall the version
-that is already installed, so the old one is removed first). It then waits until rpcd serves one `flab.*` object per
-plugin in `rpcd/ucode/` and the page answers over HTTPS. The package is unsigned, so the router installs it with
-`--allow-untrusted`. Open `https://<router>/flab/` and sign in as root with the router's root password. It needs
-PowerShell 7 and `ssh`/`scp` with key auth to the router (default `root@openwrt.lab.formicalab.casa`; `scp -O` is used
-because dropbear has no sftp-server).
+This downloads the `v<version>` tag of this repository, as the Makefile says, and checks its hash.
+
+**From a local checkout.** To build the working tree instead of the tag, give the SDK a directory with `www/`, `rpcd/`
+and `LICENSE`. The SDK writes its build stamps into that directory, so use a copy:
+
+```sh
+mkdir /tmp/flab-ui-src && cp -a www rpcd LICENSE /tmp/flab-ui-src/
+make package/flab-ui/clean
+make package/flab-ui/compile USE_SOURCE_DIR=/tmp/flab-ui-src
+```
+
+**Install.** The package is unsigned, so apk needs `--allow-untrusted`:
+
+```sh
+scp -O bin/packages/*/*/flab-ui-*.apk root@<router>:/tmp/
+ssh root@<router> 'apk add --allow-untrusted /tmp/flab-ui-*.apk'
+```
+
+Installing and removing (`apk del flab-ui`) reload rpcd. apk does not reinstall the version that is already installed,
+so to try a rebuilt package of the same version, remove the installed one first.
+
+## Development script
+
+`tools/apk-deploy.ps1` does the "from a local checkout" build and the install in one command. It needs PowerShell 7 and,
+for `Deploy` and `Remove`, `ssh` and `scp` with key auth to the router (`scp -O` is used because dropbear has no
+sftp-server).
+
+```powershell
+pwsh -File tools/apk-deploy.ps1 -Action Build                          # only build the apk (no router needed)
+pwsh -File tools/apk-deploy.ps1 -Action Deploy -Router root@192.168.1.1   # build, replace the installed flab-ui, check
+pwsh -File tools/apk-deploy.ps1 -Action Remove -Router root@192.168.1.1   # apk del flab-ui and check that no flab.* object is left
+```
+
+- **Where the SDK is.** On Linux the build runs directly in bash. On Windows it runs in WSL (`-Distro`, default
+  `Ubuntu-26.04`) and reaches the working tree through `/mnt`. `-Sdk` is the SDK directory as that shell sees it
+  (default `$HOME/sdk/openwrt-sdk-*`; a glob is allowed).
+- **SDK setup.** The SDK must already hold `admin/flab-ui` (copied or through a feed, as above) and have
+  `CONFIG_PACKAGE_flab-ui=m` in its `.config`. The script checks that and says what is missing.
+- **Router.** `-Router` defaults to the `FLAB_ROUTER` environment variable, else `root@192.168.1.1`. The router must run
+  an apk-based OpenWrt.
+- **Output.** `-OutDir` (default: `flab-apk` in the temp folder) receives the apk.
+- **What Deploy does.** It builds, copies the apk to the router, removes the installed package and adds the new one,
+  then waits until rpcd serves one `flab.*` object per plugin in `rpcd/ucode/` and the page answers over HTTPS. Open
+  `https://<router>/flab/` and sign in as root with the router's root password.
 
 Things to know:
 
@@ -42,7 +91,7 @@ Things to know:
   them (a `run.ps1` or `run.ps1 -Browser`; any number at once) and `-Mode Write` for `apk-deploy.ps1` (waits for the readers,
   and no new reader starts meanwhile). `-Suite <name>` names the suite a command runs, because two runs of one suite use the
   same folders on the router and must queue. For example
-  `pwsh -File flab-ui\tools\router-lock.ps1 -Mode Read -Suite ddns -Command 'pwsh -NoProfile -File flab-ui\tests\ddns\run.ps1 -Browser'`.
+  `pwsh -File tools/router-lock.ps1 -Mode Read -Suite ddns -Command 'pwsh -NoProfile -File tests/ddns/run.ps1 -Browser'`.
 - To test a plugin without rpcd: copy it and `rpcd/lib/flab/` to `/tmp`, then run it with
   `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile).
 

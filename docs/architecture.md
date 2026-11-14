@@ -59,7 +59,7 @@ flab-ui/
   docs/                      The documentation (start at docs/README.md); one file per page under docs/pages/
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
   tools/router-lock.ps1      Reader-writer lock for sharing one test router between several people or agents (Mode Read or Write, -Suite)
-  tools/apk-deploy.ps1       Builds the OpenWrt package from the working tree with the SDK in WSL and installs or removes it on the router with apk (Action Deploy or Remove)
+  tools/apk-deploy.ps1       Builds the OpenWrt package from the working tree with an SDK (Linux, or WSL on Windows) and installs or removes it on the router with apk (Action Build, Deploy or Remove)
   tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), nlbwedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
   www/                       Static site, installed to /www/flab

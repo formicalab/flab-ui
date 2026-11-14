@@ -1,39 +1,48 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-Builds the flab-ui apk from the working tree with the OpenWrt SDK and installs or removes it on the router with apk.
+Builds the flab-ui apk from the working tree with an OpenWrt SDK and installs or removes it on a router with apk.
 
 .DESCRIPTION
-Deploy copies www/, rpcd/ and LICENSE to a staging folder inside WSL, builds the package with the OpenWrt SDK's
-USE_SOURCE_DIR (so the package comes from the working tree, not from the tag tarball and hash in the feed Makefile),
-copies the apk to the router, removes the installed flab-ui and adds the new one. Installing and removing reload rpcd
-(the package's own scripts do that). Deploy then waits until every flab.* ubus object of rpcd/ucode exists and the page
-answers over HTTPS. Remove runs apk del and checks that no flab.* object is left.
+Build copies www/, rpcd/ and LICENSE to a staging folder inside the SDK and builds the package with the SDK's
+USE_SOURCE_DIR (so the package comes from the working tree, not from the tag tarball and hash in the feed Makefile).
+The apk is written to -OutDir. Deploy builds and then copies the apk to the router, removes the installed flab-ui and adds
+the new one. Installing and removing reload rpcd (the package's own scripts do that). Deploy then waits until every
+flab.* ubus object of rpcd/ucode exists and the page answers over HTTPS. Remove runs apk del and checks that no flab.*
+object is left.
 
-The SDK must already be set up in WSL, with the feed that holds admin/flab-ui (a src-link to a checkout of
-openwrt/packages) installed and CONFIG_PACKAGE_flab-ui=m in its .config.
+The OpenWrt SDK only runs on Linux. On Linux the build runs directly in bash; on Windows it runs inside WSL (-Distro)
+and the working tree is reached through /mnt. The SDK must already be set up, with the feed that holds admin/flab-ui
+(a src-link to a checkout of openwrt/packages) installed and CONFIG_PACKAGE_flab-ui=m in its .config; see
+docs/package.md. The router must run an apk-based OpenWrt (a snapshot or a release built with apk).
 
 A Deploy or Remove ends nothing in rpcd by itself, but it replaces the plugins that serve the signed-in pages, so run
 it under tools/router-lock.ps1 -Mode Write when the router is shared.
 
 .PARAMETER Action
-Deploy or Remove.
+Build (only build the apk), Deploy (build, then install on the router) or Remove (uninstall from the router).
 
 .PARAMETER Router
-SSH destination of the router.
+SSH destination of the router, for example root@192.168.1.1. Defaults to the FLAB_ROUTER environment variable, else
+root@192.168.1.1. Not used by Build.
 
 .PARAMETER Distro
-Name of the WSL distribution that holds the SDK.
+Name of the WSL distribution that holds the SDK. Used on Windows only.
 
 .PARAMETER Sdk
-Directory of the SDK inside WSL; a glob is allowed and the first match is used.
+Directory of the SDK as the shell that runs the build sees it (a WSL path on Windows); a glob is allowed and the first
+match is used.
+
+.PARAMETER OutDir
+Folder that receives the built apk.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('Deploy', 'Remove')][string]$Action,
-    [string]$Router = 'root@openwrt.lab.formicalab.casa',
+    [Parameter(Mandatory)][ValidateSet('Build', 'Deploy', 'Remove')][string]$Action,
+    [string]$Router = $(if ($env:FLAB_ROUTER) { $env:FLAB_ROUTER } else { 'root@192.168.1.1' }),
     [ValidatePattern('^[A-Za-z0-9._-]+$')][string]$Distro = 'Ubuntu-26.04',
-    [ValidatePattern('^[A-Za-z0-9._/$*~-]+$')][string]$Sdk = '$HOME/sdk/openwrt-sdk-*'
+    [ValidatePattern('^[A-Za-z0-9._/$*~-]+$')][string]$Sdk = '$HOME/sdk/openwrt-sdk-*',
+    [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'flab-apk')
 )
 
 Set-StrictMode -Version Latest
@@ -42,25 +51,29 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
 #region Helpers
-function ConvertTo-WslPath {
+function ConvertTo-BuildPath {
     <#
     .SYNOPSIS
-    Converts a Windows drive path to its /mnt path inside WSL.
+    Converts a local path to the path the shell that runs the build uses.
+    .DESCRIPTION
+    On Linux the path is used as is. On Windows the build runs in WSL, where a drive path such as D:\source\repo is
+    /mnt/d/source/repo.
     .PARAMETER Path
-    An absolute path on a drive, for example D:\source\repo.
+    An absolute local path.
     .OUTPUTS
     String.
     #>
     param([Parameter(Mandatory)][string]$Path)
 
+    if (-not $IsWindows) { return $Path }
     if ($Path -notmatch '^([A-Za-z]):[\\/](.*)$') { throw "Not a drive path: $Path" }
     return '/mnt/' + $Matches[1].ToLower() + '/' + ($Matches[2] -replace '\\', '/').TrimEnd('/')
 }
 
-function Invoke-Wsl {
+function Invoke-Bash {
     <#
     .SYNOPSIS
-    Runs a bash script inside the WSL distribution and returns its output.
+    Runs a bash script where the SDK is (locally on Linux, in the WSL distribution on Windows) and returns its output.
     .DESCRIPTION
     The script goes in on standard input, so no quoting by wsl.exe or PowerShell touches its variables. Line endings are
     normalized to LF. Throws on a nonzero exit code.
@@ -71,8 +84,9 @@ function Invoke-Wsl {
     #>
     param([Parameter(Mandatory)][string]$Script)
 
-    $out = ($Script -replace "`r`n", "`n") | wsl -d $Distro -- bash -s
-    if ($LASTEXITCODE -ne 0) { throw "WSL script failed with exit code $LASTEXITCODE" }
+    $text = $Script -replace "`r`n", "`n"
+    $out = if ($IsWindows) { $text | wsl -d $Distro -- bash -s } else { $text | bash -s }
+    if ($LASTEXITCODE -ne 0) { throw "The build script failed with exit code $LASTEXITCODE" }
     return $out
 }
 
@@ -119,46 +133,64 @@ function Wait-Objects {
 }
 #endregion
 
-#region Build script (runs in WSL)
-# Stages only what the package installs, because the SDK writes its build stamps into the source directory it is given.
-# The newest apk is taken, since the apk of an earlier version may still be in the SDK's bin folder.
+#region Build script (runs where the SDK is)
+# Stages only what the package installs, because the SDK writes its build stamps into the source directory it is given;
+# the staging folder lives in the SDK's own tmp/ and is recreated on every run. The newest apk is taken, since the apk
+# of an earlier version may still be in the SDK's bin folder.
 $buildScript = @'
 set -eu
 SRC='@@SRC@@'
 OUT='@@OUT@@'
-STAGE="$HOME/sdk/src/flab-ui"
 LOG=/tmp/flab-ui-build.log
 SDK=$(ls -d @@SDK@@ 2>/dev/null | head -n 1 || true)
 [ -n "$SDK" ] || { echo "No OpenWrt SDK found at: @@SDK@@" >&2; exit 1; }
+cd "$SDK"
+if [ ! -f .config ] || ! grep '^CONFIG_PACKAGE_flab-ui=m' .config > /dev/null || ! ls -d package/feeds/*/flab-ui > /dev/null 2>&1; then
+  echo "The SDK at $SDK is not set up for flab-ui: install the feed that holds admin/flab-ui and set CONFIG_PACKAGE_flab-ui=m (see docs/package.md)." >&2
+  exit 1
+fi
+STAGE="$SDK/tmp/flab-ui-src"
 rm -rf "$STAGE"
 mkdir -p "$STAGE" "$OUT"
-rsync -a "$SRC/www" "$SRC/rpcd" "$SRC/LICENSE" "$STAGE/"
-cd "$SDK"
+cp -a "$SRC/www" "$SRC/rpcd" "$SRC/LICENSE" "$STAGE/"
 make package/flab-ui/clean > "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
 make package/flab-ui/compile USE_SOURCE_DIR="$STAGE" >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
-APK=$(ls -t "$SDK"/bin/packages/*/packages/flab-ui-*.apk | head -n 1)
+APK=$(ls -t bin/packages/*/*/flab-ui-*.apk 2>/dev/null | head -n 1 || true)
+[ -n "$APK" ] || { echo "The build produced no flab-ui apk (is this an apk-based SDK?). Log: $LOG" >&2; exit 1; }
 rm -f "$OUT"/flab-ui-*.apk
 cp "$APK" "$OUT/"
 basename "$APK"
 '@
+
+function Build-Package {
+    <#
+    .SYNOPSIS
+    Builds the apk from the working tree with the SDK and returns the path of the apk in -OutDir.
+    .OUTPUTS
+    String.
+    #>
+    New-Item -ItemType Directory $OutDir -Force | Out-Null
+    Write-Host 'Building the package from the working tree...'
+    $script = $buildScript.Replace('@@SRC@@', (ConvertTo-BuildPath $root)).Replace('@@OUT@@', (ConvertTo-BuildPath (Resolve-Path $OutDir).Path)).Replace('@@SDK@@', $Sdk)
+    $apk = Join-Path $OutDir @(Invoke-Bash $script)[-1]
+    if (-not (Test-Path $apk)) { throw "The built package is missing: $apk" }
+    Write-Host "Built $apk"
+    return $apk
+}
 #endregion
 
 #region Actions
 switch ($Action) {
+    'Build' {
+        $null = Build-Package
+    }
     'Deploy' {
         # The plugins are the source of truth for which ubus objects must appear (one object per plugin file).
-        $expected = @(Get-ChildItem (Join-Path $root 'rpcd\ucode') -Filter 'flab.*.uc' | ForEach-Object { $_.BaseName })
+        $expected = @(Get-ChildItem (Join-Path (Join-Path $root 'rpcd') 'ucode') -Filter 'flab.*.uc' | ForEach-Object { $_.BaseName })
         if (-not $expected) { throw 'No rpcd plugin found in rpcd/ucode.' }
 
-        $outDir = Join-Path ([IO.Path]::GetTempPath()) 'flab-apk'
-        New-Item -ItemType Directory $outDir -Force | Out-Null
-
-        Write-Host 'Building the package from the working tree...'
-        $script = $buildScript.Replace('@@SRC@@', (ConvertTo-WslPath $root)).Replace('@@OUT@@', (ConvertTo-WslPath $outDir)).Replace('@@SDK@@', $Sdk)
-        $apkName = @(Invoke-Wsl $script)[-1]
-        $apk = Join-Path $outDir $apkName
-        if (-not (Test-Path $apk)) { throw "The built package is missing: $apk" }
-
+        $apk = Build-Package
+        $apkName = Split-Path $apk -Leaf
         Write-Host "Installing $apkName on the router..."
         scp -O -q $apk "${Router}:/tmp/$apkName"
         if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
