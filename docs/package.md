@@ -115,17 +115,11 @@ change into the single package commit while the package is not merged; without i
 `flab-ui: update to <Version>`. If a step before the release fails, the tag the run created is deleted and the Makefile
 restored. It needs `git` and an authenticated `gh`.
 
-## Sharing a router
+## Testing a plugin without rpcd
 
-- **One router, several people.** A Deploy or Remove replaces the plugins and the web files that a signed-in page uses, so it must
-  not run while a browser test is running. `tools/router-lock.ps1` is a reader-writer lock for sharing one test router
-  between several people or agents: `-Mode Read` for anything that uses the router and the installed UI without replacing
-  them (a `run.ps1` or `run.ps1 -Browser`; any number at once) and `-Mode Write` for `package.ps1` (waits for the readers,
-  and no new reader starts meanwhile). `-Suite <name>` names the suite a command runs, because two runs of one suite use the
-  same folders on the router and must queue. For example
-  `pwsh -File tools/router-lock.ps1 -Mode Read -Suite ddns -Command 'pwsh -NoProfile -File tests/ddns/run.ps1 -Browser'`.
-- To test a plugin without rpcd: copy it and `rpcd/lib/flab/` to `/tmp`, then run it with
-  `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile).
+A Deploy or Remove replaces the plugins and the web files that a signed-in page uses, so do not run one while a browser
+test is running on the same router. To test a plugin without rpcd: copy it and `rpcd/lib/flab/` to `/tmp`, then run it
+with `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile).
 
 ## License
 

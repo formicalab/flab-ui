@@ -29,8 +29,8 @@ and the working tree is reached through /mnt. The SDK must already be set up, wi
 (a src-link to a checkout of openwrt/packages) installed and CONFIG_PACKAGE_flab-ui=m in its .config; see
 docs/package.md. The router must run an apk-based OpenWrt (a snapshot or a release built with apk).
 
-A Deploy or Remove replaces the plugins that serve the signed-in pages, so run it under tools/router-lock.ps1
--Mode Write when the router is shared.
+A Deploy or Remove replaces the plugins that serve the signed-in pages, so do not run one while a browser test is
+running on the same router.
 
 .PARAMETER Action
 Build, Deploy, Remove or Release (see the description).

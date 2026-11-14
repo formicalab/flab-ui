@@ -33,7 +33,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 `-Browser` needs the UI installed (`tools/package.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
 password is needed. Every suite removes its local temp folder when it finishes, and the BGP, IPsec, Routing and network
-suites also remove their `/tmp/flab-*-test` folder on the router. When several people or agents share one router, run a suite through `tools/router-lock.ps1` (see [Sharing a router](package.md#sharing-a-router)).
+suites also remove their `/tmp/flab-*-test` folder on the router. Do not run two suites of the same name at once on one router, because they share those folders, and do not run `tools/package.ps1` while a browser suite is running.
 
 ## Common mechanism (BGP, IPsec, Routing and network suites)
 
