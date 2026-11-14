@@ -13,6 +13,7 @@
 .topo-box .tb-title { font-weight: 600; }
 .topo-box .tb-title svg { vertical-align: -2px; color: var(--fl-brand); }
 .topo-box .tb-sub { font-size: .75rem; color: var(--fl-muted); line-height: 1.25; }
+.topo-box .tb-mac { font-family: var(--fl-mono); font-size: .7rem; color: var(--fl-muted); }
 .topo-box .tb-live { font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--fl-ok-fg); }
 .topo-box.mac.on, .topo-box.phy.on { border-color: color-mix(in srgb, var(--fl-ok-fg) 55%, var(--fl-stroke)); }
 .topo-box.chip { border-color: var(--fl-brand); background: color-mix(in srgb, var(--fl-info-bg) 55%, var(--fl-surface)); }
@@ -32,6 +33,7 @@
 .port { position: relative; display: grid; gap: .3rem; justify-items: center; text-align: center; width: 176px; padding: .85rem .7rem .75rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: var(--fl-surface-hover); transition: border-color .25s, background .25s; }
 .port .jack { display: grid; place-items: center; width: 52px; height: 40px; border-radius: 8px; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
 .port .pname { font-weight: 600; }
+.port .pmac { font-family: var(--fl-mono); font-size: .68rem; color: var(--fl-muted); letter-spacing: -.01em; }
 .port .pspeed { font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .port .prate { display: flex; gap: .8rem; font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--fl-muted); }
 .port .prate svg { margin-right: .15rem; vertical-align: -1px; }
@@ -50,11 +52,11 @@
 .port-table th, .port-table td { padding-left: .6rem; padding-right: .6rem; }
 .hw-lines { font-size: .75rem; line-height: 1.35; max-width: 15rem; white-space: normal; }
 .hw-lines > div { overflow-wrap: anywhere; }
-.neg { max-width: 13rem; }
+.neg { max-width: 13rem; white-space: normal; }
 
 /* ── Error breakdown: expandable row under a port with counters, driver statistics and log excerpt ── */
-.diag-btn { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }
-.diag-btn svg { margin-right: .3rem; }
+.diag-btn, .cable-btn { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }
+.diag-btn svg, .cable-btn svg { margin-right: .3rem; }
 .port-table tr.diag-row > td { padding: 0; background: color-mix(in srgb, var(--fl-surface-hover) 60%, transparent); }
 .diag { display: grid; gap: .9rem; padding: 1rem 1.25rem 1.25rem; white-space: normal; }
 .diag-head { display: flex; align-items: center; gap: .6rem; }
@@ -64,3 +66,9 @@
 .diag-table td { border-color: var(--fl-stroke); vertical-align: top; }
 .diag-table td:nth-child(2) { white-space: nowrap; font-weight: 600; }
 .diag-log { margin: 0; padding: .6rem .8rem; max-height: 12rem; overflow: auto; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface); white-space: pre-wrap; }
+
+/* The VLAN matrix: one row per VLAN, one column per port; the cells are centered. */
+.vlan-table th, .vlan-table td { text-align: center; }
+.vlan-table th:first-child, .vlan-table td:first-child { text-align: left; }
+.cable-panel .diag-head { display: flex; align-items: center; gap: .5rem; }
+.cable-panel .diag-head .btn { margin-left: auto; }

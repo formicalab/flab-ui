@@ -145,6 +145,14 @@ const wireless = fx => JSON.parse(fx.raw['network_wireless_status.json']);
 // Stores `w` as the wireless status of fixture `fx`.
 const setWireless = (fx, w) => { fx.raw['network_wireless_status.json'] = JSON.stringify(w); };
 
+// The calls the cable-test harness makes against the n-cable scenario ({ id, args }); assert.mjs checks the result of each by its id.
+const CABLE_CASES = [
+  { id: 'lan1', args: { port: 'lan1' } }, { id: 'lan2', args: { port: 'lan2' } }, { id: 'lan3', args: { port: 'lan3' } },
+  { id: 'lan4', args: { port: 'lan4' } }, { id: 'lan5', args: { port: 'lan5' } }, { id: 'lan4-again', args: { port: 'lan4' } },
+  { id: 'conduit', args: { port: 'eth0' } }, { id: 'bridge', args: { port: 'br-lan' } }, { id: 'unknown', args: { port: 'nosuch' } },
+  { id: 'injection', args: { port: 'lan1; reboot' } }, { id: 'number', args: { port: 5 } }, { id: 'none', args: {} },
+];
+
 const scenarios = {
   base: fx => fx,
 
@@ -216,6 +224,128 @@ const scenarios = {
     fx.devices.lan2.statistics.rx_crc_errors = 5; fx.devices.lan2.statistics.rx_errors = 5;
     fx.raw['ethtool_S_lan2.txt'] = 'NIC statistics:\n     tx_packets: 100\n     rx_crc_errors: 5\n     rx_pp_alloc_slow: 9\n';
     fx.raw['logread_e_lan2_.txt'] = 'Wed Nov 11 09:00:01 2026 kern.info kernel: [1] mtk_soc_eth: lan2: Link is Down\nWed Nov 11 09:00:05 2026 kern.info kernel: [2] mtk_soc_eth: lan2: Link is Up - 1Gbps/Full\n';
+    return fx;
+  },
+
+  // eth1 becomes an optical cage with a module that reports alarms, lan3 an empty cage and lan4 a direct-attach cable (no diagnostics).
+  'n-sfp': fx => {
+    // Makes the captured `ethtool <port>` output say the port is of type `type` (the value of "Supported ports" and "Port").
+    const asCage = (port, type, media) => {
+      const k = `ethtool_${port}.txt`;
+      fx.raw[k] = fx.raw[k].replace(/Supported ports: \[[^\]]*\]/, `Supported ports: [ ${type} ]`).replace(/Port: .*/, `Port: ${media}`);
+    };
+    asCage('eth1', 'FIBRE', 'FIBRE'); asCage('lan3', 'FIBRE', 'FIBRE'); asCage('lan4', 'FIBRE', 'Direct Attach');
+    fx.raw['ethtool_m_eth1.txt'] = [
+      '\tIdentifier                                : 0x03 (SFP)',
+      '\tExtended identifier                       : 0x04 (GBIC/SFP defined by 2-wire interface ID)',
+      '\tConnector                                 : 0x07 (LC)',
+      '\tTransceiver type                          : Ethernet: 1000BASE-LX',
+      '\tTransceiver type                          : FC: intermediate distance (I)',
+      '\tLaser wavelength                          : 1310nm',
+      '\tVendor name                               : FS',
+      '\tVendor PN                                 : SFP-GE-LX',
+      '\tVendor rev                                : A',
+      '\tVendor SN                                 : G2010001234',
+      '\tDate code                                 : 200101',
+      '\tOptical diagnostics support               : Yes',
+      '\tLaser bias current                        : 18.502 mA',
+      '\tLaser output power                        : 0.5000 mW / -3.01 dBm',
+      '\tReceiver signal average optical power     : 0.0010 mW / -30.00 dBm',
+      '\tModule temperature                        : 41.50 degrees C / 106.70 degrees F',
+      '\tModule voltage                            : 3.2958 V',
+      '\tAlarm/warning flags implemented           : Yes',
+      '\tLaser bias current high alarm             : Off',
+      '\tLaser rx power low alarm                  : On',
+      '\tLaser rx power low warning                : On',
+      '\tModule temperature high warning           : Off',
+      '',
+    ].join('\n');
+    fx.raw['ethtool_m_lan4.txt'] = [
+      '\tIdentifier                                : 0x03 (SFP)',
+      '\tConnector                                 : 0x21 (Copper pigtail)',
+      '\tVendor name                               : DAC-Maker',
+      '\tVendor PN                                 : DAC-10G-1M',
+      '\tOptical diagnostics support               : No',
+      '',
+    ].join('\n');
+    return fx;
+  },
+  // The kernel's VLAN table of the bridge (`bridge vlan show`): lan1 carries VLAN 20 tagged, lan2 has VLAN 1 as PVID and 20 untagged.
+  'n-vlantable': fx => {
+    fx.files[sys(bridge, 'bridge/vlan_filtering')] = '1';
+    fx.raw['bridge_vlan_show.txt'] = [
+      'port              vlan-id',
+      'lan1              1 PVID Egress Untagged',
+      '                  20',
+      'lan2              1 PVID Egress Untagged',
+      '                  20 Egress Untagged',
+      'lan5              30',
+      'eth9              1 PVID Egress Untagged',
+      `${bridge}            1 PVID Egress Untagged`,
+      '',
+    ].join('\n');
+    return fx;
+  },
+  // No `bridge` tool: the table comes from the bridge-vlan sections of the network config.
+  'n-vlanconfig': fx => {
+    fx.files[sys(bridge, 'bridge/vlan_filtering')] = '1';
+    editUci(fx, 'uci_network.json', v => {
+      v.bv10 = { '.type': 'bridge-vlan', '.name': 'bv10', '.anonymous': true, device: bridge, vlan: '10', ports: ['lan1:t', 'lan2:u*', 'lan3:u'] };
+      v.bv20 = { '.type': 'bridge-vlan', '.name': 'bv20', '.anonymous': true, device: bridge, vlan: '20', ports: ['lan1:t'] };
+      v.bvother = { '.type': 'bridge-vlan', '.name': 'bvother', '.anonymous': true, device: 'br-other', vlan: '99', ports: ['lan4:u'] };
+    });
+    return fx;
+  },
+  // An older board: the switch ports are not network devices but are driven through swconfig. eth0 is the CPU port's netdev and carries
+  // VLAN devices eth0.1 (LAN, bridged) and eth0.2 (WAN).
+  'n-swconfig': fx => {
+    for (const n of Object.keys(fx.devices)) if (fx.devices[n].devtype === 'dsa') delete fx.devices[n];
+    // A VLAN device on eth0 with VLAN id `vid`, a member of the bridge when `bridged`.
+    const vlanDev = (vid, bridged) => ({ devtype: 'vlan', parent: 'eth0', vid, present: true, up: true, carrier: true, macaddr: '94:83:c4:a2:15:c4', statistics: { rx_bytes: 100, tx_bytes: 100 }, ...(bridged ? { bridge: bridge } : {}) });
+    fx.devices['eth0.1'] = vlanDev(1, true);
+    fx.devices['eth0.2'] = vlanDev(2, false);
+    fx.devices[bridge]['bridge-members'] = ['eth0.1'];
+    fx.files['/etc/board.json'] = JSON.stringify({
+      model: { id: 'old,router', name: 'Old Router' },
+      network: { lan: { device: 'br-lan', protocol: 'static' }, wan: { device: 'eth0.2', protocol: 'dhcp' } },
+      switch: { switch0: { enable: true, reset: true, ports: [
+        { num: 0, device: 'eth0', need_tag: false, want_untag: false },
+        { num: 1, role: 'wan', index: 0 }, { num: 2, role: 'lan', index: 0 }, { num: 3, role: 'lan', index: 1 }, { num: 4, role: 'lan', index: 2 }, { num: 5, role: 'lan', index: 3 },
+      ], roles: [{ role: 'lan', ports: '2 3 4 5', device: 'eth0.1' }, { role: 'wan', ports: '1', device: 'eth0.2' }] } },
+    });
+    fx.raw['swconfig_list.txt'] = 'Found: switch0 - ag71xx-mdio.1\n';
+    fx.raw['swconfig_dev_switch0_help.txt'] = 'switch0: ar8327(ag71xx-mdio.1), ports: 6 (cpu @ 0), vlans: 128\n     --switch\n     Attribute 1 (int): enable_vlan (Enable VLAN mode)\n';
+    fx.raw['swconfig_dev_switch0_show.txt'] = [
+      'Global attributes:', '\tenable_vlan: 1', '\tarl_aging: 1',
+      'Port 0:', '\tpvid: 1', '\tlink: port:0 link:up speed:1000baseT full-duplex txflow rxflow',
+      'Port 1:', '\tpvid: 2', '\tlink: port:1 link:up speed:1000baseT full-duplex',
+      'Port 2:', '\tpvid: 1', '\tlink: port:2 link:up speed:100baseT half-duplex',
+      'Port 3:', '\tpvid: 1', '\tlink: port:3 link:down',
+      'Port 4:', '\tpvid: 1', '\tlink: port:4 link:down',
+      'Port 5:', '\tpvid: 1', '\tlink: port:5 link:down',
+      'VLAN 1:', '\tvlan: 1', '\tvid: 1', '\tports: 0t 2 3 4 5',
+      'VLAN 2:', '\tvlan: 2', '\tvid: 2', '\tports: 0t 1',
+      '',
+    ].join('\n');
+    return fx;
+  },
+  // The commands of the cable-test calls (run by cable-harness.uc, see CABLE_CASES): lan1 intact, lan2 pairs C and D open, lan3 a short
+  // 12.5 m away, lan4 a PHY that cannot test, lan5 output that is not a result. The ports that must be refused have an intact result
+  // as well, so a refused call that ran anyway shows up as ok.
+  'n-cable': fx => {
+    // The fixture file of the cable-test command of port `p`.
+    const file = p => `timeout_30_ethtool_cable_test_${p}_2_1.txt`;
+    // The output of a finished cable test of port `p` with the given result lines.
+    const done = (p, lines) => `Cable test started for device ${p}.\nCable test completed for device ${p}.\n${lines.join('\n')}\n`;
+    // The output for a port whose four pairs are intact.
+    const intact = p => done(p, ['A', 'B', 'C', 'D'].map(x => `Pair ${x} code OK`));
+    fx.raw[file('lan1')] = intact('lan1');
+    fx.raw[file('lan2')] = done('lan2', ['Pair A code OK', 'Pair B code OK', 'Pair C code Open Circuit', 'Pair D code Open Circuit']);
+    fx.raw[file('lan3')] = done('lan3', ['Pair A code OK', 'Pair B code Short within Pair', 'Pair B, fault length: 12.50m', 'Pair C code OK', 'Pair D code OK']);
+    fx.raw[file('lan4')] = 'netlink error: PHY driver does not support cable testing\nnetlink error: Not supported\n';
+    fx.raw[file('lan5')] = 'something odd happened\n';
+    for (const p of ['eth0', 'br-lan', 'nosuch']) fx.raw[file(p)] = intact(p);
+    fx.raw['cable-cases.json'] = JSON.stringify(CABLE_CASES);
     return fx;
   },
 

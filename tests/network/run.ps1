@@ -85,7 +85,7 @@ Invoke-Native 'node' @((Join-Path $here 'sensors.test.mjs'))
     #region Capture the real baseline
     Write-Host '2/5 Capturing real router state'
     Invoke-Remote "rm -rf $remote; mkdir -p $remote/fx-real"
-    Invoke-Native 'scp' (@('-O', '-r', $libs, (Join-Path $here 'harness.uc')) + @($plugins | ForEach-Object { Join-Path $root "rpcd\ucode\$_.uc" }) + "${Router}:$remote/")
+    Invoke-Native 'scp' (@('-O', '-r', $libs, (Join-Path $here 'harness.uc'), (Join-Path $here 'cable-harness.uc')) + @($plugins | ForEach-Object { Join-Path $root "rpcd\ucode\$_.uc" }) + "${Router}:$remote/")
     # The plugins record everything they read (FLAB_RECORD, see rpcd/lib/flab/util.uc), so the capture is
     # simply one real run of each plugin. Keys and passwords are blanked while recording. ucode -L puts the
     # uploaded libraries ahead of the deployed ones, so the repository code is what runs.
@@ -116,12 +116,16 @@ for sc in $($scenarios -join ' '); do
     if [ -s err-`$sc.`$p.txt ]; then echo "`$sc/`$p wrote to stderr:"; cat err-`$sc.`$p.txt; exit 1; fi
   done
 done
+# The cable-test calls (fixtures only: the harness refuses to run without them, so no cable is tested and no link drops).
+FLAB_PLUGIN=$remote/flab.network.uc FLAB_FIXTURES=$remote/n-cable FLAB_CASES=$remote/n-cable/cable-cases.json ucode -L "$remote/*.uc" cable-harness.uc > out-cable.json 2> err-cable.txt || { echo "cable test failed:"; cat err-cable.txt; exit 1; }
+if [ -s err-cable.txt ]; then echo "cable test wrote to stderr:"; cat err-cable.txt; exit 1; fi
 "@
     foreach ($sc in $scenarios) {
         foreach ($p in $plugins) {
             Invoke-Native 'scp' @('-O', "${Router}:$remote/out-$sc.$p.json", (Join-Path $work "out\$sc.$p.json"))
         }
     }
+    Invoke-Native 'scp' @('-O', "${Router}:$remote/out-cable.json", (Join-Path $work 'out\cable.json'))
     Copy-Item (Join-Path $work 'expect.json') (Join-Path $work 'out\expect.json')
     #endregion
 

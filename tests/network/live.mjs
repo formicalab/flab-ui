@@ -23,6 +23,11 @@ const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'
 
 const mock = { network: null, radio: null, mesh: null, wireguard: null, firewall: null, logs: null };   // null = pass through to the real router
 let tick = null;                                // optional per-poll mutation, used to simulate traffic and airtime
+// The cable-test answers by port (the harness results), or null; the ports a test was asked for; and any test that would have reached
+// the real router (a test can drop the link, so one must never get there).
+let cableMock = null;
+const cableCalls = [];
+const unsafeCable = [];
 const browser = await chromium.launch({ channel: 'msedge' });
 const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, colorScheme: 'light' });
 const page = await ctx.newPage();
@@ -32,17 +37,26 @@ page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
 // ubus object name -> the key of `mock` that may answer it.
 const PLUGINS = { 'flab.network': 'network', 'flab.radio': 'radio', 'flab.mesh': 'mesh', 'flab.wireguard': 'wireguard', 'flab.firewall': 'firewall', 'flab.logs': 'logs' };
-// Answers a plugin call with the staged scenario (after applying `tick`), lets every other call through.
-await page.route('**/ubus', async route => {
+// Answers a plugin call with the staged scenario (after applying `tick`), lets every other call through. A cable test is answered
+// from `cableMock` and never reaches the router.
+const handleUbus = async route => {
   let body = null;
   try { body = route.request().postDataJSON(); } catch { /* not JSON */ }
+  if (body?.params?.[1] === 'flab.network' && body.params[2] === 'cable_test') {
+    const port = body.params[3]?.port;
+    cableCalls.push(port);
+    if (!cableMock) unsafeCable.push(port);
+    const result = cableMock?.[port] ?? { ok: false, port, supported: null, error: 'no such test in the mock' };
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [0, result] }) });
+  }
   const plugin = PLUGINS[body?.params?.[1]] ?? null;
   if (plugin && mock[plugin]) {
     if (tick) tick(plugin, mock[plugin]);
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [0, mock[plugin]] }) });
   }
   return route.continue();
-});
+};
+await page.route('**/ubus', handleUbus);
 
 // Text of the i-th summary tile value.
 const tile = async i => (await page.locator('.tile .value').nth(i).innerText()).trim();
@@ -111,8 +125,9 @@ check(await page.locator('.port').count() === 0 && await tile(0) === '0 / 0', 'p
 
 await stage('back to normal', 'network', 'base');
 check(await page.locator('.topo .port').count() === livePorts, 'jacks are back (the CPU link is a MAC box, not a jack)', `${await page.locator('.topo .port').count()} / ${livePorts}`);
-check(/MT7531/.test(await text('.topo-box.chip')) && /CPU port 6/.test(await text('.vl-cap')), 'topology shows the switch chip and its CPU port');
-check((await page.locator('.topo .swnum').allInnerTexts()).join() === '5,0,1,2,3', 'switch port numbers under the chip, in jack order', (await page.locator('.topo .swnum').allInnerTexts()).join());
+check(/MT7531/.test(await text('.topo-box.chip')) && /^CPU port/.test(await text('.vl-cap')) && await text('.vl:has(.vl-cap) .swnum') === '6', 'topology shows the switch chip and its CPU port, whose number sits in a circle on the CPU link like the user ports');
+check(/\d+ user ports \(up to [\d.]+ [GM]bit\/s\)/.test(await text('.topo-box.chip')) && /up to [\d.]+ [GM]bit\/s/.test(await text('.topo-box.phy')), 'the lines under the switch and the external PHY are computed from what the router reports (user ports, fastest speed), not from a table of known chips', await text('.topo-box.chip') + ' | ' + await text('.topo-box.phy'));
+check((await page.locator('.topo .swport .swnum').allInnerTexts()).join() === '5,0,1,2,3', 'switch port numbers under the chip, in jack order', (await page.locator('.topo .swport .swnum').allInnerTexts()).join());
 check((await page.locator('.topo .port .pname').allInnerTexts()).join() === 'lan1,lan2,lan3,lan4,lan5,eth1' && /WAN/.test(await text('.topo .port:has(.pname:text-is("eth1")) .prole')), 'jacks follow the board order with LAN/WAN labels');
 check(await page.locator('.topo-box.phy').count() === 2 && /RTL8221B/.test(await text('.topo-box.phy')), 'external PHYs drawn for lan1 and eth1');
 
@@ -125,6 +140,137 @@ check(await page.locator('.topo-box.chip').count() === 0 && await page.locator('
 
 await stage('back to normal again', 'network', 'base');
 check(await page.locator('.port').count() === livePorts, 'ports are back');
+
+console.log('\n== MAC addresses in the diagram ==');
+const baseNet = scenario('base', 'network');
+// The MAC address of port `n` in the captured data.
+const macOf = n => baseNet.ports.find(p => p.name === n).mac;
+check(JSON.stringify(await page.locator('.topo .tb-mac').allInnerTexts()) === JSON.stringify([macOf('eth0'), macOf('eth1')]), 'the MAC boxes of the SoC show their addresses', JSON.stringify(await page.locator('.topo .tb-mac').allInnerTexts()));
+check(JSON.stringify(await page.locator('.topo .port .pmac').allInnerTexts()) === JSON.stringify(['lan1', 'lan2', 'lan3', 'lan4', 'lan5', 'eth1'].filter(n => macOf(n) !== macOf('eth0')).map(macOf)), 'a jack shows its MAC only when it differs from the MAC of the SoC port that feeds its switch (the switch ports inherit it, so the MAC box shows it once)', JSON.stringify(await page.locator('.topo .port .pmac').allInnerTexts()));
+check((await page.locator('.port:has(.pname:text-is("lan1"))').getAttribute('title')).includes(macOf('lan1')), 'the tooltip of every jack still gives its MAC');
+
+console.log('\n== the CPU link ==');
+check(/CPU link [\d.]+ [GM]bit\/s · [\d.]+% used/.test(await text('.topo-box.chip')), 'the switch box says how much of the CPU link is used', await text('.topo-box.chip'));
+const busy = scenario('base', 'network');
+tick = (plugin, d) => { if (plugin === 'network') for (const p of d.ports) { p.stats.rx_bytes += p.name === 'eth0' ? 600_000_000 : 1000; p.stats.tx_bytes += 1000; } };
+mock.network = busy;
+await refresh(); await refresh(); await refresh();
+check(/9\d% used|100% used/.test(await text('.topo-box.chip')) && /text-danger/.test(await page.locator('.topo-box.chip .tb-sub').last().getAttribute('class')) && /CPU is|between MediaTek MT7531 and the SoC is \d+% used/.test(await text('.net-health')), 'a busy CPU link is called out in the box and in the health banner', `${await text('.topo-box.chip')} | ${await text('.net-health')}`);
+tick = null;
+mock.network = scenario('base', 'network');
+await refresh();
+const oversub = scenario('base', 'network');
+for (const p of oversub.ports) if (p.role === 'switch') { p.carrier = true; p.speed = 2500; }
+mock.network = oversub;
+await refresh();
+check(/linked ports can send up to 12\.5 Gbit\/s \(5\.0× oversubscribed\)/.test(await text('.topo-box.chip')), 'ports that could send more than the CPU link carries are called oversubscribed', await text('.topo-box.chip'));
+
+await stage('an optical module with an alarm', 'network', 'n-sfp');
+check(/SFP/.test(await text('.topo .port:has(.pname:text-is("eth1")) .ptags')) && (await portClass('eth1')).includes('warn'), 'the port with a module is tagged SFP and turns amber on an alarm', await portClass('eth1'));
+check(/optical module in eth1 reports: Laser rx power low/.test(await text('.net-health')), 'the health banner names the alarm', await text('.net-health'));
+const eth1Row = page.locator('.port-table tr:has(strong:text-is("eth1"))');
+check(/Module\s+FS SFP-GE-LX · Ethernet: 1000BASE-LX · LC · 1310 nm/.test(await eth1Row.locator('.hw-lines').innerText()) && /Optics\s+Tx -3\.0 dBm · Rx -30\.0 dBm · 41\.5 °C · 3\.30 V · 18\.5 mA/.test(await eth1Row.locator('.hw-lines').innerText()), 'the port table lists the module and its optics', await eth1Row.locator('.hw-lines').innerText());
+check(await eth1Row.locator('.fl-badge.danger:text-is("optical alarm")').count() === 1 && await eth1Row.locator('.cable-btn').count() === 0, 'an alarm badge in the Link column, and no cable test for an optical port');
+check(/Module\s+none inserted/.test(await page.locator('.port-table tr:has(strong:text-is("lan3")) .hw-lines').innerText()) && /DAC-Maker DAC-10G-1M/.test(await page.locator('.port-table tr:has(strong:text-is("lan4")) .hw-lines').innerText()), 'an empty cage says so, a direct-attach cable shows its part', await page.locator('.port-table tr:has(strong:text-is("lan4")) .hw-lines').innerText());
+check(await page.locator('.port-table tr:has(strong:text-is("lan4")) .cable-btn').count() === 0 && await page.locator('.port-table tr:has(strong:text-is("lan3")) .cable-btn').count() === 0, 'optical cages have no cable test, even when empty');
+
+console.log('\n== energy-efficient Ethernet ==');
+await stage('back to normal', 'network', 'base');
+const eeeBadges = await page.locator('.port-table .neg .fl-badge').allInnerTexts();
+check(baseNet.ports.filter(p => p.eee).every(p => eeeBadges.some(t => /^EEE (active|idle|off)$/.test(t.trim()))) && (baseNet.ports.some(p => p.eee) ? eeeBadges.some(t => /^EEE/.test(t.trim())) : true), 'EEE shows as a badge next to the negotiation (active, idle or off) for ports that have it', eeeBadges.join(' | '));
+
+console.log('\n== VLAN tables ==');
+check(await page.locator('.vlan-table').count() === 0, 'a router without VLANs has no VLAN card');
+await stage('the bridge VLAN table from the kernel', 'network', 'n-vlantable');
+const vcard = page.locator('.card:has(.card-header:has-text("VLANs"))');
+check(/Bridge br-lan · VLANs/.test(await vcard.locator('.card-header').innerText()) && /VLAN filtering on/.test(await vcard.locator('.card-header').innerText()) && /bridge vlan show/.test(await vcard.locator('.card-header').innerText()), 'the card names the bridge, that VLAN filtering is on and where the table was read', await vcard.locator('.card-header').innerText());
+check((await vcard.locator('thead th').allInnerTexts()).join() === 'VLAN,lan1,lan2,lan5,br-lan' && (await vcard.locator('tbody tr').allInnerTexts()).length === 3, 'one column per port that is in a VLAN (members first, the bridge itself last), one row per VLAN', (await vcard.locator('thead th').allInnerTexts()).join());
+check(/untagged\s*PVID/.test(await vcard.locator('tbody tr').first().locator('td').nth(1).innerText()) && /^tagged$/.test((await vcard.locator('tbody tr').nth(1).locator('td').nth(1).innerText()).trim()) && /^–$/.test((await vcard.locator('tbody tr').nth(2).locator('td').nth(1).innerText()).trim()), 'tagged, untagged and PVID are told apart; a port outside the VLAN shows a dash');
+await stage('the bridge VLAN table from the network config', 'network', 'n-vlanconfig');
+check(/network config \(bridge-vlan sections\)/.test(await vcard.locator('.card-header').innerText()) && (await vcard.locator('tbody tr').allInnerTexts()).length === 2, 'without the bridge tool the card says the table comes from the config', await vcard.locator('.card-header').innerText());
+await stage('VLAN filtering without a VLAN', 'network', 'n-vlanfilter');
+check(/VLAN filtering is on but no VLAN is configured/.test(await text('main')), 'an empty table with filtering on is said so');
+
+console.log('\n== a switch driven through swconfig ==');
+await stage('an older board with swconfig', 'network', 'n-swconfig');
+check(/AR8327 switch/.test(await text('.topo-box.chip')) && (await page.locator('.topo .port .pname').allInnerTexts()).join() === 'port1,port2,port3,port4,port5,eth1', 'the switch is drawn with its user ports as jacks (eth0, the CPU netdev, is not one)', (await page.locator('.topo .port .pname').allInnerTexts()).join());
+check((await page.locator('.topo .swport .swnum').allInnerTexts()).join() === '1,2,3,4,5' && await text('.vl:has(.vl-cap) .swnum') === '0' && /CPU link [\d.]+ [GM]bit\/s/.test(await text('.topo-box.chip')), 'switch port numbers, the CPU port circle and the CPU link follow swconfig', `${(await page.locator('.topo .swport .swnum').allInnerTexts()).join()} | ${await text('.topo-box.chip')}`);
+check(/WAN/.test(await text('.topo .port:has(.pname:text-is("port1")) .prole')) && (await portClass('port2')).includes('up') && (await portClass('port3')).includes('down'), 'roles from board.json, link state from the switch');
+const p2row = page.locator('.port-table tr:has(strong:text-is("port2"))');
+check(/no per-port counters/.test(await text('.port:has(.pname:text-is("port2")) .prate')) && await page.locator('.port:has(.pname:text-is("port2")) .spark').count() === 0 && /no counters/.test(await p2row.locator('td.num').first().innerText()), 'a port without counters says so instead of "measuring" forever', await text('.port:has(.pname:text-is("port2")) .prate'));
+check(/link up/.test(await p2row.innerText()) && /100 Mbit\/s half/.test(await p2row.innerText()) && !/total/.test(await p2row.innerText()) && await p2row.locator('.cable-btn').count() === 0 && /br-lan/.test(await p2row.innerText()) && /eth0\.1/.test(await p2row.innerText()), 'the port table shows what swconfig reports, no counters, no cable test, and the bridge and VLAN device', await p2row.innerText());
+const sc = page.locator('.card:has(.card-header:has-text("VLAN groups"))');
+check(/Switch AR8327 · VLAN groups/.test(await sc.locator('.card-header').innerText()) && /VLANs on/.test(await sc.locator('.card-header').innerText()) && (await sc.locator('thead th').allInnerTexts()).join() === 'VLAN,port1,port2,port3,port4,port5' && (await sc.locator('tbody tr').allInnerTexts()).length === 2, 'the swconfig VLAN groups are a matrix of VLANs and ports', (await sc.locator('thead th').allInnerTexts()).join());
+check(/PVID/.test(await sc.locator('tbody tr').nth(1).locator('td').nth(1).innerText()) && /PVID/.test(await sc.locator('tbody tr').first().locator('td').nth(2).innerText()), 'the PVID of each port is marked in its VLAN');
+await stage('back to normal', 'network', 'base');
+check(await page.locator('.vlan-table').count() === 0 && await page.locator('.port').count() === livePorts, 'and the DSA board is back');
+
+console.log('\n== cable test (answered by the fixtures: no cable is ever tested) ==');
+cableMock = JSON.parse(fs.readFileSync(path.join(out, 'cable.json'), 'utf8'));
+// The cable-test button in the row of port `n`, the confirmation dialog, and a helper that runs the test of a port.
+const cableBtn = n => page.locator(`.port-table tr:has(strong:text-is("${n}")) .cable-btn`);
+const dlg = page.locator('dialog.fl-dialog[open]');
+// Runs the cable test of port `n` through the confirmation and waits for its result panel.
+const runCable = async n => {
+  await cableBtn(n).click();
+  await dlg.locator('button:has-text("Run the test")').click();
+  await page.locator(`.cable-panel:has-text("Cable test of ${n}")`).locator('table, .text-danger').first().waitFor();
+};
+check(await page.locator('.port-table .cable-btn').count() === baseNet.ports.filter(p => p.role !== 'conduit').length && await cableBtn('eth0').count() === 0, 'a cable test button on every twisted-pair port, none on the internal link to the switch');
+await cableBtn('lan1').click();
+await dlg.waitFor();
+check(/drops the link on lan1 for several seconds/.test(await dlg.innerText()) && /your connection to the router/.test(await dlg.innerText()) && cableCalls.length === 0, 'the confirmation says what the test does to a link that is up, and nothing has been asked yet', await dlg.innerText());
+await dlg.locator('button:has-text("Cancel")').click();
+check(await dlg.count() === 0 && cableCalls.length === 0, 'Cancel runs nothing');
+await stage('a link goes down', 'network', 'n-linkdown');
+await cableBtn('lan1').click();
+await dlg.waitFor();
+check(/lan1 has no link, so nothing is interrupted/.test(await dlg.innerText()), 'for a port without link the confirmation says nothing is interrupted', await dlg.innerText());
+await dlg.locator('button:has-text("Cancel")').click();
+await stage('back to normal', 'network', 'base');
+await runCable('lan1');
+check(cableCalls.join() === 'lan1' && await page.locator('.cable-panel tbody tr').count() === 4 && await page.locator('.cable-panel .fl-badge.success').count() === 4 && /All four pairs are intact/.test(await text('.cable-panel')), 'the result lists the four pairs and says the cable is intact', await text('.cable-panel'));
+await refresh();
+check(await page.locator('.cable-panel').count() === 1, 'the result survives the next poll');
+await page.click('.cable-panel button:has-text("Close")');
+check(await page.locator('.cable-panel').count() === 0, 'Close hides it');
+await runCable('lan2');
+check(await page.locator('.cable-panel .fl-badge.warning:text-is("Open Circuit")').count() === 2 && /enough for 10 and 100 Mbit\/s/.test(await text('.cable-panel')), 'open pairs C and D on a gigabit link are a plain warning', await text('.cable-panel'));
+await page.click('.cable-panel button:has-text("Close")');
+await stage('downshifted link', 'network', 'n-downshift');
+check(/A cable test on its row shows which pair is at fault/.test(await text('.net-health')), 'a downshifted link points to the cable test');
+await runCable('lan2');
+check(/cannot carry 1 Gbit\/s/.test(await text('.cable-panel')) && /Pairs A and B are intact and C and D are open/.test(await text('.cable-panel')), 'on a downshifted link open C and D are named as the reason', await text('.cable-panel'));
+await page.click('.cable-panel button:has-text("Close")');
+await runCable('lan3');
+check(await page.locator('.cable-panel .fl-badge.danger:text-is("Short within Pair")').count() === 1 && /fault at about 12\.5 m/.test(await text('.cable-panel')), 'a fault is shown with its distance', await text('.cable-panel'));
+await page.click('.cable-panel button:has-text("Close")');
+await runCable('lan4');
+check(/does not support cable testing/.test(await text('.cable-panel')), 'a PHY that cannot test is told so', await text('.cable-panel'));
+await page.click('.cable-panel button:has-text("Close")');
+await runCable('lan5');
+check(/did not complete: something odd happened/.test(await text('.cable-panel')), 'output that is not a result is an error');
+await page.click('.cable-panel button:has-text("Close")');
+check(cableCalls.join() === 'lan1,lan2,lan2,lan3,lan4,lan5' && unsafeCable.length === 0, 'every test went to the mock, none to the router', cableCalls.join());
+// A port that the plugin has found cannot be tested loses its button.
+const noTest = scenario('base', 'network');
+noTest.ports.find(p => p.name === 'lan4').cable_test = false;
+mock.network = noTest;
+await refresh();
+check(await cableBtn('lan4').count() === 0 && await cableBtn('lan5').count() === 1, 'a port known not to support the test has no button');
+// A login that may read but not run the test sees no buttons.
+const ro = await ctx.newPage();
+await ro.route('**/ubus', handleUbus);
+await ro.addInitScript(([id]) => {
+  sessionStorage.setItem('sid', id);
+  sessionStorage.setItem('acls', JSON.stringify({ ubus: { 'flab.network': ['status'], system: ['board', 'info'], service: ['list'], session: ['access', 'destroy'], 'network.interface': ['dump'] } }));
+}, [sid]);
+await ro.goto(`${baseUrl}#network`);
+await ro.waitForSelector('.port');
+check(await ro.locator('.port-table .cable-btn').count() === 0, 'a login that may not run the test sees no cable-test buttons');
+await ro.close();
+cableMock = null;
+await stage('back to normal', 'network', 'base');
 
 console.log('\n== live throughput ==');
 mock.network = scenario('base', 'network');
@@ -437,6 +583,7 @@ await refresh(); await refresh(); await refresh();
 check(/25\.0 %/.test(await text('.rd-air .big')), 'airtime counters become a utilization percentage', await text('.rd-air .big'));
 //#endregion
 
+check(unsafeCable.length === 0, 'no cable test reached the real router', unsafeCable.join());
 check(errors.length === 0, 'no console or page errors', errors.join(' | '));
 await browser.close();
 if (failed) { console.log(`\n${failed} check(s) FAILED`); process.exit(1); }

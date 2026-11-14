@@ -153,6 +153,60 @@ check(err.diagnostics.driver.rx_crc_errors === 5 && !('rx_pp_alloc_slow' in err.
 check(err.diagnostics.log.length === 2 && /Link is Down/.test(err.diagnostics.log[0]), 'recent log lines about the port', JSON.stringify(err.diagnostics.log));
 check(port(net('n-errors'), 'lan3').diagnostics === undefined, 'other ports unaffected');
 
+console.log('== network: EEE, optical modules, cable test state (captured router) ==');
+check(base.ports.every(p => p.eee === null || (typeof p.eee.enabled === 'boolean' && typeof p.eee.active === 'boolean')), 'the EEE state is a pair of booleans, or absent when the PHY has none', JSON.stringify(base.ports.map(p => [p.name, p.eee])));
+check(base.ports.filter(p => !p.carrier).every(p => p.eee === null), 'a port without link is not asked for its EEE state');
+check(base.ports.every(p => p.cable_test === null) && base.ports.every(p => p.sfp === null || typeof p.sfp.present === 'boolean'), 'nothing is known about cable tests until one has been tried, and a module is only reported for optical cages');
+check(base.ports.every(p => p.type !== 'swconfig') && base.switches.every(s => s.kind !== 'swconfig'), 'a DSA router has no swconfig switch (the swconfig command found nothing)');
+
+console.log('== network: optical modules ==');
+const sfp = net('n-sfp');
+const mod = port(sfp, 'eth1').sfp;
+check(mod.present && mod.vendor === 'FS' && mod.part === 'SFP-GE-LX' && mod.revision === 'A' && mod.serial === 'G2010001234' && mod.date === '200101' && mod.identifier === 'SFP' && mod.connector === 'LC' && mod.type === 'Ethernet: 1000BASE-LX' && mod.wavelength_nm === 1310, 'the module is identified (vendor, part, serial, type, connector, wavelength); a repeated key keeps its first value', JSON.stringify(mod));
+check(mod.diagnostics === true && mod.tx_power_dbm === -3.01 && mod.rx_power_dbm === -30 && mod.temperature_c === 41.5 && mod.voltage_v === 3.2958 && mod.tx_bias_ma === 18.502, 'the optical diagnostics are numbers');
+check(JSON.stringify(mod.alarms) === '["Laser rx power low"]' && JSON.stringify(mod.warnings) === '["Laser rx power low"]', 'flags that read On are listed without the word alarm or warning; Off ones are not', JSON.stringify([mod.alarms, mod.warnings]));
+check(JSON.stringify(port(sfp, 'lan3').sfp) === '{"present":false}', 'an empty cage is reported as no module');
+const dac = port(sfp, 'lan4').sfp;
+check(dac.present && dac.vendor === 'DAC-Maker' && dac.connector === 'Copper pigtail' && dac.diagnostics === false && dac.tx_power_dbm === null && dac.temperature_c === null, 'a direct-attach cable has no diagnostics, and what it lacks is null');
+check(['lan1', 'lan2', 'lan5'].every(n => port(sfp, n).sfp === null), 'ports that are not optical cages are never asked for a module');
+
+console.log('== network: VLAN tables ==');
+const vtab = bridgeOf(net('n-vlantable')).vlan_table;
+// VLAN `v` of the kernel table.
+const vlan = v => vtab.vlans.find(x => x.vid === v);
+check(vtab.source === 'kernel' && vtab.vlans.map(v => v.vid).join() === '1,20,30', 'the kernel table (bridge vlan show) lists each VLAN once, with continuation lines', JSON.stringify(vtab));
+check(vlan(1).ports.map(p => `${p.name}${p.pvid ? ':pvid' : ''}${p.tagged ? ':t' : ':u'}`).join() === `lan1:pvid:u,lan2:pvid:u,${expect.bridge}:pvid:u`, 'untagged and PVID flags of VLAN 1, the bridge itself included, a port that is not a member (eth9) left out', JSON.stringify(vlan(1).ports));
+check(JSON.stringify(vlan(20).ports.map(p => [p.name, p.tagged])) === '[["lan1",true],["lan2",false]]' && JSON.stringify(vlan(30).ports.map(p => [p.name, p.tagged])) === '[["lan5",true]]', 'a port without the Untagged flag is tagged in that VLAN');
+const vconf = bridgeOf(net('n-vlanconfig')).vlan_table;
+check(vconf.source === 'config' && vconf.vlans.map(v => v.vid).join() === '10,20', 'without the bridge tool the table comes from the bridge-vlan sections, and another bridge\'s sections are ignored', JSON.stringify(vconf));
+check(JSON.stringify(vconf.vlans[0].ports.map(p => `${p.name}:${p.tagged ? 't' : 'u'}${p.pvid ? '*' : ''}`)) === '["lan1:t","lan2:u*","lan3:u"]', 'flags of a bridge-vlan port: t tagged, u untagged, * PVID', JSON.stringify(vconf.vlans[0].ports));
+check(JSON.stringify(bridgeOf(net('n-vlanfilter')).vlan_table) === '{"source":null,"vlans":[]}', 'VLAN filtering without any VLAN is an empty table, not a missing one');
+
+console.log('== network: a switch driven through swconfig ==');
+const swc = net('n-swconfig');
+const sw0 = swc.switches[0];
+check(swc.switches.length === 1 && sw0.kind === 'swconfig' && sw0.label === 'AR8327' && sw0.node === 'swconfig:switch0' && sw0.vlan_enabled === true, 'the swconfig switch is found (no DSA switch remains), named after its driver', JSON.stringify(swc.switches.map(s => [s.node, s.label])));
+check(sw0.ports.join() === 'port1,port2,port3,port4,port5' && sw0.cpu_ports.length === 1 && sw0.cpu_ports[0].port === 0 && sw0.cpu_ports[0].conduit === 'eth0', 'its user ports are the switch ports except the CPU port, whose netdev (eth0) is the conduit', JSON.stringify([sw0.ports, sw0.cpu_ports]));
+check(port(swc, 'eth0').role === 'conduit' && swc.ports.filter(p => p.type === 'swconfig').length === 5 && swc.ports.filter(p => p.role === 'switch').length === 5, 'the CPU netdev is a conduit, not a jack, and each user port is a switch port');
+const [p1, p2, p3] = ['port1', 'port2', 'port3'].map(n => port(swc, n));
+check(p1.carrier && p1.speed === 1000 && p1.duplex === 'full' && p2.carrier && p2.speed === 100 && p2.duplex === 'half' && !p3.carrier && p3.speed === null && p3.duplex === null, 'link, speed and duplex come from the link attribute', JSON.stringify([p1, p2, p3].map(p => [p.carrier, p.speed, p.duplex])));
+check(p1.board.role === 'wan' && p2.board.role === 'lan' && p1.pvid === 2 && p2.pvid === 1, 'roles come from board.json and the PVID from the port');
+check(p2.vlans.map(v => v.name).join() === 'eth0.1' && p2.bridge === expect.bridge && p1.vlans.map(v => v.name).join() === 'eth0.2' && !p1.bridge, 'a port takes its bridge and VLAN devices from the VLAN devices that carry its VLAN groups');
+check(JSON.stringify(sw0.vlans) === '[{"vid":1,"ports":[{"name":"port2","tagged":false},{"name":"port3","tagged":false},{"name":"port4","tagged":false},{"name":"port5","tagged":false}]},{"vid":2,"ports":[{"name":"port1","tagged":false}]}]', 'VLAN groups list the user ports (the CPU port is left out)', JSON.stringify(sw0.vlans));
+check(swc.ports.filter(p => p.type === 'swconfig').every(p => p.stats && Object.keys(p.stats).length === 0 && p.hardware.driver === 'swconfig' && p.hardware.switch_node === 'swconfig:switch0'), 'swconfig ports have no counters and say which switch they belong to');
+
+console.log('== network: cable test (fixtures: no command runs) ==');
+const cab = read('cable.json');
+// The pairs of a cable-test result as "A:OK,B:OK,...".
+const pairsOf = r => r.pairs?.map(p => `${p.pair}:${p.code}`).join();
+check(cab.lan1.ok && cab.lan1.supported === true && pairsOf(cab.lan1) === 'A:OK,B:OK,C:OK,D:OK', 'an intact cable reads OK on all four pairs', JSON.stringify(cab.lan1));
+check(cab.lan2.ok && pairsOf(cab.lan2) === 'A:OK,B:OK,C:Open Circuit,D:Open Circuit', 'open pairs are reported');
+check(cab.lan3.ok && pairsOf(cab.lan3) === 'A:OK,B:Short within Pair,C:OK,D:OK' && cab.lan3.pairs[1].length_m === 12.5 && cab.lan3.pairs[0].length_m === null, 'a fault is reported with its distance', JSON.stringify(cab.lan3));
+check(!cab.lan4.ok && cab.lan4.supported === false && /does not support cable testing/.test(cab.lan4.error) && !cab.lan4.pairs && cab['lan4-again'].supported === false && cab['lan4-again'].error === cab.lan4.error, 'a PHY that cannot test says so, and is remembered');
+check(!cab.lan5.ok && cab.lan5.supported === null && /did not complete: something odd happened/.test(cab.lan5.error), 'output that is not a result is an error that quotes it');
+const refused = [['conduit', /internal link/, 'eth0'], ['bridge', /not a physical/, 'br-lan'], ['unknown', /not a physical/, 'nosuch'], ['injection', /not valid/, null], ['number', /not valid/, null], ['none', /not valid/, null]];
+check(refused.every(([id, re, name]) => cab[id].ok === false && re.test(cab[id].error) && cab[id].port === name && !cab[id].pairs), 'the SoC link, a bridge, an unknown name, a name with shell characters and missing or wrongly typed arguments are refused before any command (each has a fixture that would read intact), and an invalid name is not echoed', JSON.stringify(refused.map(([id]) => cab[id])));
+
 console.log('== radio: base (real captured state) ==');
 const rb = rad('base');
 check(same(rb.radios.map(r => r.name), expect.radios), 'every configured radio listed', rb.radios.map(r => r.name).join());

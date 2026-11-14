@@ -7,17 +7,25 @@ import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
 import { fmtSpeed, traffic, newFlaps, newErrors, errorsOf, dropsOf, hwLines, STP_ROLE, stpKind } from './util.js';
 import { diagnosticsPanel } from './diagnostics.js';
 import { topologyCard } from './topology.js';
+import { cableButton, cablePanel, hooks } from './cable.js';
+import { vlanCards } from './vlans.js';
 
 // Ports whose error breakdown is open; kept here so it survives the redraw on every poll.
 const expanded = new Set();
 
-// Autoneg badge plus the speed limits of both ends; only meaningful while the link is up.
+// Autoneg badge plus the speed limits of both ends and the EEE state; only meaningful while the link is up. A swconfig port
+// reports neither autonegotiation nor the speeds of the ends, so only what it does report is shown.
 function negotiation(p) {
   if (!p.carrier) return muted('–');
+  const limits = p.max_speed != null || p.partner_max != null || p.flow.length
+    ? `${p.max_speed != null ? `max ${fmtSpeed(p.max_speed)} · partner ${fmtSpeed(p.partner_max)}` : ''}${p.flow.length ? `${p.max_speed != null ? ' · ' : ''}pause ${p.flow.join('/')}` : ''}`
+    : null;
   return h('div', { className: 'neg' },
-    p.autoneg ? badge('auto-negotiated', '') : badge('forced', 'warning'),
+    p.autoneg == null ? null : p.autoneg ? badge('auto-negotiated', '') : badge('forced', 'warning'),
     p.downshifted ? badge(`downshifted from ${fmtSpeed(Math.min(p.max_speed, p.partner_max))}`, 'warning', 'Both ends can do better than the negotiated speed') : null,
-    h('div', { className: 'muted small' }, `max ${fmtSpeed(p.max_speed)} · partner ${fmtSpeed(p.partner_max)}${p.flow.length ? ` · pause ${p.flow.join('/')}` : ''}`));
+    p.eee ? badge(p.eee.enabled ? (p.eee.active ? 'EEE active' : 'EEE idle') : 'EEE off', p.eee.active ? 'info' : '',
+      'Energy-Efficient Ethernet lets the link sleep between frames. "Idle" means it is on but the link is not sleeping now; turn it off if it causes dropped frames or latency.') : null,
+    limits ? h('div', { className: 'muted small' }, limits) : null);
 }
 
 // PHY / switch / SoC / driver / medium lines from the device tree and sysfs (see hwLines).
@@ -42,19 +50,29 @@ function errorsCell(p) {
     }, 'btn-fl diag-btn')) : null);
 }
 
-// The table row(s) of one port: the port itself, plus the breakdown row while its Details are open.
+// The Link column: link state and speed, an alarm badge when the optical module raises one, and the cable-test button.
+function linkCell(p) {
+  const alarms = p.sfp?.alarms ?? [];
+  const cable = cableButton(p);
+  return h('div', {},
+    p.carrier
+      ? h('div', {}, badge('link up', 'success'), h('div', { className: 'mt-1' }, `${fmtSpeed(p.speed)} ${p.duplex ?? ''}`))
+      : badge(p.up ? 'no link' : 'disabled', ''),
+    alarms.length ? badge('optical alarm', 'danger', alarms.join(', ')) : null,
+    cable ? h('div', {}, cable) : null);
+}
+
+// The table row(s) of one port: the port itself, plus the breakdown row while its Details are open and the cable-test result.
 function row(p) {
   const t = traffic(p.name);
   const main = h('tr', {},
     h('td', {}, h('span', { className: `dot ${p.carrier ? 'up' : 'idle'}` }), h('strong', {}, ' ' + p.name),
       h('div', { className: 'muted small mono' }, p.mac ?? '')),
     h('td', {}, hardwareCell(p)),
-    h('td', {}, p.carrier
-      ? h('div', {}, badge('link up', 'success'), h('div', { className: 'mt-1' }, `${fmtSpeed(p.speed)} ${p.duplex ?? ''}`))
-      : badge(p.up ? 'no link' : 'disabled', '')),
+    h('td', {}, linkCell(p)),
     h('td', {}, negotiation(p)),
-    h('td', { className: 'num' }, p.carrier ? h('div', {}, h('div', {}, icon('arrow-down', 12), fmtLine(t.rxNow)), h('div', {}, icon('arrow-up', 12), fmtLine(t.txNow))) : h('div', { className: 'muted' }, '–'),
-      h('div', { className: 'muted small' }, `total ↓ ${fmtBytes(p.stats.rx_bytes)} ↑ ${fmtBytes(p.stats.tx_bytes)}`)),
+    h('td', { className: 'num' }, p.carrier && p.stats.rx_bytes != null ? h('div', {}, h('div', {}, icon('arrow-down', 12), fmtLine(t.rxNow)), h('div', {}, icon('arrow-up', 12), fmtLine(t.txNow))) : h('div', { className: 'muted' }, p.carrier ? 'no counters' : '–'),
+      p.stats.rx_bytes != null ? h('div', { className: 'muted small' }, `total ↓ ${fmtBytes(p.stats.rx_bytes)} ↑ ${fmtBytes(p.stats.tx_bytes)}`) : null),
     h('td', { className: 'num' }, errorsCell(p)),
     h('td', { className: 'num' }, h('div', {}, fmtNum(p.carrier_changes)), newFlaps(p) ? badge(`+${newFlaps(p)} now`, 'warning') : null),
     h('td', {}, p.bridge
@@ -63,8 +81,11 @@ function row(p) {
       : muted('not bridged')),
     h('td', { className: 'num' }, p.macs != null ? fmtNum(p.macs) : '–'),
     h('td', {}, (p.vlans ?? []).length ? p.vlans.map(v => badge(`${v.name} (${v.vid})`, v.up ? 'success' : 'danger')) : muted('–')));
-  if (!p.diagnostics || !expanded.has(p.name)) return [main];
-  return [main, h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, diagnosticsPanel(p)))];
+  const rows = [main];
+  if (p.diagnostics && expanded.has(p.name)) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, diagnosticsPanel(p))));
+  const cable = cablePanel(p);
+  if (cable) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, cable)));
+  return rows;
 }
 
 // Column headings of the details table; the breakdown row spans all of them.
@@ -83,10 +104,12 @@ function details(net) {
       h('tbody', {}, net.ports.flatMap(row)))));
 }
 
-// `redraw` repaints the page from cached data (used by the Details buttons).
+// `redraw` repaints the page from cached data (used by the Details and cable-test buttons). Below the port table come the VLAN cards
+// of the bridges and swconfig switches that have a VLAN table.
 export function portsPanel(net, redraw) {
   rerender = redraw;
+  hooks.rerender = redraw;
   // A port that vanished must not leave a stale open panel behind.
   for (const name of expanded) if (!net.ports.some(p => p.name === name)) expanded.delete(name);
-  return [topologyCard(net), details(net)];
+  return [topologyCard(net), details(net), ...vlanCards(net)];
 }

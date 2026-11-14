@@ -7,6 +7,7 @@ import { tile, tiles, healthBanner } from '../../core/ui.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
 import { fmtLine, fmtNum } from '../../core/format.js';
 import { portsPanel } from './ports.js';
+import { hooks } from './cable.js';
 import { loadWired } from './shared.js';
 import { traffic, portFindings, errorsOf, dropsOf, newFlaps } from './util.js';
 
@@ -45,6 +46,7 @@ export default {
   load: loadWired,
 
   controls({ reload }) {
+    hooks.reload = reload;
     return { nodes: [pauseControl(state), refreshControl(reload)] };
   },
 

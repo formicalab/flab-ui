@@ -50,6 +50,33 @@ export function fmtSpeed(mbit) {
   return mbit >= 1000 ? `${+(mbit / 1000).toFixed(1)} Gbit/s` : `${mbit} Mbit/s`;
 }
 
+// An optical power level in dBm as "-4.8 dBm"; "–" when the module does not report one.
+export const fmtDbm = v => (v == null ? '–' : `${v.toFixed(1)} dBm`);
+
+// The link between a switch and the SoC (its CPU port(s)): its capacity in Mbit/s (the CPU port's fixed speed, else what the
+// conduit MAC negotiated), how much of it the busier direction uses right now (percent, null until the rates are known), and
+// how many times the linked user ports could oversubscribe it (1 or less when the link can carry them all at line rate).
+export function cpuLink(net, sw) {
+  const byName = new Map(net.ports.map(p => [p.name, p]));
+  const conduits = (sw.cpu_ports ?? []).map(c => byName.get(c.conduit)).filter(Boolean);
+  const capacity = (sw.cpu_ports ?? []).reduce((sum, c) => sum + (c.speed ?? byName.get(c.conduit)?.speed ?? 0), 0);
+  if (!capacity) return null;
+  let rx = null, tx = null;
+  for (const c of conduits) {
+    const t = traffic(c.name);
+    if (t.rxNow != null) rx = (rx ?? 0) + t.rxNow * 8 / 1e6;
+    if (t.txNow != null) tx = (tx ?? 0) + t.txNow * 8 / 1e6;
+  }
+  const linked = sw.ports.map(n => byName.get(n)).filter(p => p?.carrier && p.speed);
+  const potential = linked.reduce((sum, p) => sum + p.speed, 0);
+  return {
+    capacity,
+    utilization: rx == null && tx == null ? null : Math.min(100, Math.max(rx ?? 0, tx ?? 0) / capacity * 100),
+    oversubscription: potential / capacity,
+    potential,
+  };
+}
+
 // Spanning-tree port roles and their labels.
 export const STP_ROLE = {
   root: 'Root port', designated: 'Designated', alternate: 'Alternate (blocked)', backup: 'Backup', disabled: 'Disabled',
@@ -68,19 +95,45 @@ export function hwLines(p) {
     hw.soc ? ['SoC MAC', `${hw.soc} Ethernet`] : null,
     hw.driver ? ['Driver', `${hw.driver}${hw.bus ? ` · ${hw.bus}` : ''}`] : null,
     hw.media ? ['Medium', hw.media === 'MII' ? 'MII (internal link)' : hw.media] : null,
+    ...sfpLines(p.sfp),
   ].filter(Boolean);
 }
 
-// Problems worth surfacing immediately, computed from the current poll plus what changed since opening.
+// The lines about an optical module: what it is, then what its diagnostics read (only the values it reports).
+function sfpLines(sfp) {
+  if (!sfp) return [];
+  if (!sfp.present) return [['Module', 'none inserted']];
+  const what = [[sfp.vendor, sfp.part].filter(Boolean).join(' '), sfp.type, sfp.connector, sfp.wavelength_nm ? `${sfp.wavelength_nm} nm` : null].filter(Boolean).join(' · ');
+  const optics = [
+    sfp.tx_power_dbm != null ? `Tx ${fmtDbm(sfp.tx_power_dbm)}` : null,
+    sfp.rx_power_dbm != null ? `Rx ${fmtDbm(sfp.rx_power_dbm)}` : null,
+    sfp.temperature_c != null ? `${sfp.temperature_c.toFixed(1)} °C` : null,
+    sfp.voltage_v != null ? `${sfp.voltage_v.toFixed(2)} V` : null,
+    sfp.tx_bias_ma != null ? `${sfp.tx_bias_ma.toFixed(1)} mA` : null,
+  ].filter(Boolean).join(' · ');
+  return [['Module', what || 'inserted'], optics ? ['Optics', optics] : null];
+}
+
+// Problems worth surfacing immediately, computed from the current poll plus what changed since opening: a downshifted link,
+// link flaps and new errors, optical module alarms, and a busy link between a switch and the SoC.
 export function portFindings(net) {
   const out = [];
   for (const p of net.ports) {
-    if (p.downshifted) out.push({ level: 'warn', text: `${p.name} runs at ${fmtSpeed(p.speed)} although both ends support ${fmtSpeed(Math.min(p.max_speed, p.partner_max))}: check the cable.` });
+    if (p.downshifted) out.push({ level: 'warn', text: `${p.name} runs at ${fmtSpeed(p.speed)} although both ends support ${fmtSpeed(Math.min(p.max_speed, p.partner_max))}: check the cable.${p.cable_test === false ? '' : ' A cable test on its row shows which pair is at fault.'}` });
     if (newFlaps(p)) out.push({ level: 'warn', text: `${p.name} changed link state ${newFlaps(p)} time${newFlaps(p) === 1 ? '' : 's'} since this page was opened.` });
     if (newErrors(p)) out.push({ level: 'bad', text: `${p.name} logged ${newErrors(p)} new error${newErrors(p) === 1 ? '' : 's'} since this page was opened.` });
+    if (p.sfp?.alarms?.length) out.push({ level: 'bad', text: `The optical module in ${p.name} reports: ${p.sfp.alarms.join(', ')}.` });
+    else if (p.sfp?.warnings?.length) out.push({ level: 'warn', text: `The optical module in ${p.name} warns about: ${p.sfp.warnings.join(', ')}.` });
+  }
+  for (const sw of net.switches ?? []) {
+    const link = cpuLink(net, sw);
+    if (link?.utilization >= CPU_LINK_BUSY) out.push({ level: 'warn', text: `The link between ${sw.label ?? 'the switch'} and the SoC is ${Math.round(link.utilization)}% used: traffic between the switch ports and the router itself shares it.` });
   }
   return out;
 }
+
+// The share of the CPU link (percent) above which the page calls it busy.
+const CPU_LINK_BUSY = 90;
 
 // Bridge problems: a bridge that is down, a topology change in progress, ports blocked or not yet forwarding
 // despite having link, and STP disabled while more than one member has link (a loop would go unnoticed).

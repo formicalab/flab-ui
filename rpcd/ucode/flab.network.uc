@@ -2,6 +2,7 @@
 //
 // rpcd ucode plugin reporting physical Ethernet ports, bridges, VLAN devices and the board's switch wiring as JSON:
 //   ubus call flab.network status
+//   ubus call flab.network cable_test '{"port":"lan1"}'   (on request: it can drop the link for a few seconds)
 //
 // Everything is discovered at run time (nothing is hard-coded to this router's port names), so a changed
 // board layout, a new bridge or a new VLAN device shows up on the next poll.
@@ -10,7 +11,8 @@
 //   - netifd (network.device status): device types, link speed and negotiation, bridge membership, counters
 //   - sysfs: carrier and link-flap counters, bridge/STP state (/sys/class/net/<if>/bridge and brport)
 //   - the bridge forwarding table (/sys/class/net/<bridge>/brforward): learned MAC addresses per port
-//   - ethtool, /sys/class/mdio_bus, /proc/device-tree and /etc/board.json: driver, PHY and switch wiring
+//   - ethtool, /sys/class/mdio_bus, /proc/device-tree and /etc/board.json: driver, PHY and switch wiring, EEE, optical modules (ethtool -m)
+//   - swconfig (older boards whose switch ports are not network devices) and `bridge vlan show` or the bridge-vlan sections of UCI network
 //   - UCI network, firewall and dhcp: tunnel links, zone membership and DHCP/RA service per interface
 //
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
@@ -307,7 +309,7 @@ function board_roles() {
 		for (let dev in conf.ports ?? (conf.device ? [conf.device] : []))
 			roles[dev] ??= { role: net, index: index++ };
 	}
-	return { roles, model: board?.model?.name };
+	return { roles, model: board?.model?.name, switch: board?.switch };
 }
 //#endregion
 
@@ -375,6 +377,9 @@ function hardware(name, d) {
 			phyad = +m[1];
 		if ((m = match(line, /^[[:space:]]+Port: (.+)$/)))
 			hw.media = m[1];
+		// "Supported ports: [ TP MII ]" or "[ FIBRE ]": a FIBRE port is an optical cage.
+		if ((m = match(line, /Supported ports: \[ ?([^\]]*)\]/)))
+			hw.ports = filter(split(trim(m[1]), ' '), (s) => s != '');
 	}
 
 	// OF_FULLNAME in the uevent is the device-tree path of the node that backs this netdev. Some drivers (the
@@ -385,6 +390,8 @@ function hardware(name, d) {
 	if (node) {
 		let dt = (path) => compat_label(sysfs('/proc/device-tree' + path + '/compatible'));
 		hw.of_node = node[1];
+		// A `sfp` property points at the optical cage that the port is wired to.
+		hw.sfp_dt = dt_exists(node[1] + '/sfp');
 		if (d.devtype == 'dsa') {
 			let sw = replace(node[1], /\/ports\/[^\/]+$/, '');
 			let pn = match(node[1], /\/port@([0-9]+)$/);
@@ -441,6 +448,297 @@ function diagnostics(name, stats) {
 	// Only the last 8 lines are kept.
 	let log = filter(split(run(`logread -e '${name}' 2>/dev/null`), '\n'), (l) => l != '');
 	return { counters, driver, log: slice(log, -8) };
+}
+//#endregion
+
+//#region EEE, optical modules, cable test
+
+// Energy-Efficient Ethernet state of a port from `ethtool --show-eee`: { enabled, active }, or null when the PHY or driver has
+// no EEE (a port that answered without it once is not asked again).
+let eee_unsupported = {};
+
+// Reads the EEE state of port `name`.
+function eee_view(name) {
+	if (eee_unsupported[name])
+		return null;
+	let m = match(run(`ethtool --show-eee ${name} 2>/dev/null`) ?? '', /EEE status: ([a-z]+)( - ([a-z]+))?/);
+	if (!m) {
+		eee_unsupported[name] = true;
+		return null;
+	}
+	return { enabled: m[1] == 'enabled', active: m[3] == 'active' };
+}
+
+// The number at the start of a text like "38.80 degrees C / 101.84 degrees F", or null.
+function first_number(text) {
+	let m = match(text ?? '', /^(-?[0-9]+(\.[0-9]+)?)/);
+	return m ? +m[1] : null;
+}
+
+// The dBm figure of a text like "0.3322 mW / -4.79 dBm" (null for "-inf" or when absent).
+function dbm_of(text) {
+	let m = match(text ?? '', /\/ (-?[0-9]+(\.[0-9]+)?) dBm/);
+	return m ? +m[1] : null;
+}
+
+// The text in parentheses of a value like "0x03 (SFP)", or the value itself.
+function paren_of(text) {
+	let m = match(text ?? '', /\(([^)]*)\)/);
+	return m ? m[1] : (text == '' ? null : text);
+}
+
+// Parses `ethtool -m` (the SFF-8472 module data) into the module and its optical diagnostics; null when the text is not
+// module data (no module inserted, or the port is not a cage). The key names are those of ethtool's output; a key that
+// appears twice keeps its first value, and every key that ends in "alarm" or "warning" and reads "On" is listed.
+function sfp_parse(text) {
+	let kv = {}, alarms = [], warnings = [];
+	for (let line in split(text, '\n')) {
+		let m = match(line, /^[[:space:]]*([^:]*[^:[:space:]])[[:space:]]*:[[:space:]]*(.*)$/);
+		if (!m)
+			continue;
+		let val = trim(m[2]);
+		kv[m[1]] ??= val;
+		if (val == 'On' && match(m[1], / (alarm|warning)$/))
+			push(match(m[1], / alarm$/) ? alarms : warnings, replace(m[1], / (alarm|warning)$/, ''));
+	}
+	if (kv.Identifier == null)
+		return null;
+	return {
+		present: true,
+		identifier: paren_of(kv.Identifier),
+		connector: paren_of(kv.Connector),
+		type: kv['Transceiver type'],
+		vendor: kv['Vendor name'],
+		part: kv['Vendor PN'],
+		revision: kv['Vendor rev'],
+		serial: kv['Vendor SN'],
+		date: kv['Date code'],
+		wavelength_nm: first_number(kv['Laser wavelength']),
+		diagnostics: kv['Optical diagnostics support'] == 'Yes',
+		temperature_c: first_number(kv['Module temperature']),
+		voltage_v: first_number(kv['Module voltage']),
+		tx_bias_ma: first_number(kv['Laser bias current']),
+		tx_power_dbm: dbm_of(kv['Laser output power']),
+		rx_power_dbm: dbm_of(kv['Receiver signal average optical power']),
+		alarms,
+		warnings,
+	};
+}
+
+// What is in the optical cage of port `name`: the module and its diagnostics, or { present: false } when nothing answers.
+function sfp_view(name) {
+	return sfp_parse(run(`ethtool -m ${name} 2>/dev/null`) ?? '') ?? { present: false };
+}
+
+// Whether a port (by its hardware facts) is an optical cage or a direct-attach cable port: the device tree wires it to an SFP,
+// ethtool lists FIBRE among its ports, or the port type is fibre or direct attach.
+function sfp_candidate(hw) {
+	return hw != null && (hw.sfp_dt == true || index(hw.ports ?? [], 'FIBRE') >= 0 || hw.media == 'FIBRE' || hw.media == 'Direct Attach');
+}
+
+// Ports whose PHY driver said it cannot test cables (asked once, then remembered).
+let cable_unsupported = {};
+
+// The reply of `cable_test`: runs `ethtool --cable-test` on one physical port and returns the result of each of the four
+// pairs. A PHY that supports it drops the link for a few seconds, so this is only called on request. Anything that is not a
+// physical Ethernet port (a bridge, a VLAN device, the SoC MAC that feeds a switch) is refused before a command is built.
+//   { ok, port, pairs: [{ pair, code, length_m }] } or { ok: false, port, supported, error }
+function cable_test(request) {
+	let port = request?.args?.port;
+	let fail = (error, supported) => ({ ok: false, port: type(port) == 'string' && safe_ifname(port) ? port : null, supported, error });
+	if (type(port) != 'string' || !safe_ifname(port))
+		return fail('The port name is not valid.', null);
+	let conn = connect();
+	let devices = ubus_call(conn, 'network.device', 'status', {}) ?? {};
+	let d = devices[port];
+	if (!d || !d.present || (d.devtype != 'dsa' && d.devtype != 'ethernet'))
+		return fail('That is not a physical Ethernet port.', null);
+	for (let n, other in devices)
+		if (other.conduit == port)
+			return fail('That is the internal link to the switch, not a cable.', null);
+	if (cable_unsupported[port])
+		return fail('The PHY driver of this port does not support cable testing.', false);
+
+	let out = run(`timeout 30 ethtool --cable-test ${port} 2>&1`) ?? '';
+	if (match(out, /not support|Operation not supported|Not supported/i)) {
+		cable_unsupported[port] = true;
+		return fail('The PHY driver of this port does not support cable testing.', false);
+	}
+	let pairs = {};
+	for (let line in split(out, '\n')) {
+		let code = match(line, /Pair ([A-D]) code (.+)$/);
+		if (code)
+			pairs[code[1]] = { pair: code[1], code: trim(code[2]), length_m: null };
+		let len = match(line, /Pair ([A-D]), fault length: ([0-9.]+)m/);
+		if (len) {
+			pairs[len[1]] ??= { pair: len[1], code: 'Fault', length_m: null };
+			pairs[len[1]].length_m = +len[2];
+		}
+	}
+	if (!length(keys(pairs))) {
+		let text = trim(replace(out, /[^ -~\n]+/g, ' '));
+		return fail(text == '' ? 'The test returned nothing.' : `The test did not complete: ${substr(text, 0, 200)}`, null);
+	}
+	return { ok: true, port, supported: true, pairs: map(sort(keys(pairs)), (k) => pairs[k]) };
+}
+//#endregion
+
+//#region Bridge VLAN tables
+
+// The VLANs the kernel has on each bridge port, from `bridge vlan show` (iproute2's `bridge`, which small builds leave out),
+// as { port: [{ vid, pvid, untagged }] }. The lines are "port  vid flags"; a continuation line has no port name.
+function bridge_vlan_live() {
+	let out = {}, port = null;
+	for (let line in split(run('bridge vlan show 2>/dev/null') ?? '', '\n')) {
+		let m = match(line, /^([^[:space:]]+)?[[:space:]]+([0-9]+)(.*)$/);
+		if (!m)
+			continue;
+		port = m[1] ?? port;
+		if (port == null)
+			continue;
+		out[port] ??= [];
+		push(out[port], { vid: +m[2], pvid: match(m[3], /PVID/) != null, untagged: match(m[3], /Untagged/) != null });
+	}
+	return out;
+}
+
+// The VLAN table of bridge `b` as { source, vlans: [{ vid, ports: [{ name, tagged, pvid }] }] }: from the kernel when `bridge`
+// is installed, else from the `bridge-vlan` sections of the network config ("lan1:t" is tagged, "lan2:u*" untagged and the
+// PVID). null when the bridge has no VLANs and does no VLAN filtering.
+function vlan_table(b, live, conf) {
+	let names = map(b.members, (m) => m.name);
+	let by_vid = {}, source = null;
+	// Adds a port to a VLAN of the table.
+	let add = (vid, name, tagged, pvid) => {
+		by_vid[vid] ??= { vid, ports: [] };
+		push(by_vid[vid].ports, { name, tagged, pvid });
+	};
+	for (let port, list in live) {
+		if (port != b.name && index(names, port) < 0)
+			continue;
+		for (let e in list) {
+			add(e.vid, port, !e.untagged, e.pvid);
+			source = 'kernel';
+		}
+	}
+	if (source == null) {
+		for (let name, s in conf) {
+			if (s['.type'] != 'bridge-vlan' || s.device != b.name || !+s.vlan)
+				continue;
+			for (let entry in as_list(s.ports)) {
+				let m = match(entry, /^([^:]+)(:(.*))?$/);
+				if (m) {
+					add(+s.vlan, m[1], match(m[3] ?? '', /t/) != null, match(m[3] ?? '', /\*/) != null);
+					source = 'config';
+				}
+			}
+		}
+	}
+	if (source == null && !b.vlan_filtering)
+		return null;
+	return { source, vlans: sort(map(keys(by_vid), (k) => by_vid[k]), (a, c) => a.vid - c.vid) };
+}
+//#endregion
+
+//#region swconfig switches
+
+// The attribute blocks of `swconfig dev <switch> show`: { global, ports: { n: {...} }, vlans: [{...}] }. Every line inside a
+// block is "name: value"; the blocks start with "Global attributes:", "Port N:" and "VLAN N:".
+function swconfig_show(text) {
+	let out = { global: {}, ports: {}, vlans: [] }, cur = out.global;
+	for (let line in split(text, '\n')) {
+		let p = match(line, /^Port ([0-9]+):/), v = match(line, /^VLAN ([0-9]+):/);
+		if (p)
+			cur = out.ports[p[1]] = { num: +p[1] };
+		else if (v) {
+			cur = { index: +v[1] };
+			push(out.vlans, cur);
+		}
+		else if (match(line, /^Global attributes:/))
+			cur = out.global;
+		else {
+			let kv = match(line, /^[[:space:]]+([A-Za-z0-9_]+): ?(.*)$/);
+			if (kv)
+				cur[kv[1]] = trim(kv[2]);
+		}
+	}
+	return out;
+}
+
+// The link of a swconfig port from its `link:` attribute ("port:1 link:up speed:1000baseT full-duplex txflow rxflow").
+function swconfig_link(text) {
+	let up = match(text ?? '', /link:up/) != null;
+	let speed = match(text ?? '', /speed:([0-9]+)base/);
+	let flow = [];
+	if (match(text ?? '', /rxflow/))
+		push(flow, 'rx');
+	if (match(text ?? '', /txflow/))
+		push(flow, 'tx');
+	return {
+		carrier: up,
+		speed: up && speed ? +speed[1] : null,
+		duplex: up ? (match(text, /half-duplex/) ? 'half' : match(text, /full-duplex/) ? 'full' : null) : null,
+		flow,
+	};
+}
+
+// Switches that the kernel drives through swconfig rather than DSA (older boards: the switch ports are not network devices, so
+// they only exist here). For each switch of `swconfig list` this returns the switch entry (with its VLAN groups) and one port
+// object per user port, shaped like a DSA port, plus the name of the netdev that is the switch's CPU conduit.
+// `board_switch` is the `switch` section of /etc/board.json, which names the CPU device and the role (lan/wan) of each port.
+function swconfig_switches(board_switch) {
+	let switches = [], ports = [];
+	for (let line in split(run('swconfig list 2>/dev/null') ?? '', '\n')) {
+		let f = match(line, /^Found: ([A-Za-z0-9_.-]+)/);
+		if (!f || !safe_ifname(f[1]))
+			continue;
+		let name = f[1];
+		let help = match(run(`swconfig dev ${name} help 2>/dev/null`) ?? '', /^[^:]+: ([^(]+)\(([^)]*)\), ports: ([0-9]+) \(cpu @ ([0-9]+)\), vlans: ([0-9]+)/);
+		let show = swconfig_show(run(`swconfig dev ${name} show 2>/dev/null`) ?? '');
+		let conf = board_switch?.[name] ?? {};
+		let cpu = help ? +help[4] : null, conduit = null;
+		for (let bp in conf.ports ?? []) {
+			if (bp.device) {
+				conduit = bp.device;
+				cpu ??= +bp.num;
+			}
+		}
+		let node = `swconfig:${name}`;
+		let label = help ? uc(trim(help[1])) : name;
+		let sw = { node, kind: 'swconfig', label, ports: [], cpu_ports: [{ port: cpu, conduit, mode: null, speed: null }], vlans: [], vlan_enabled: show.global.enable_vlan == '1' };
+
+		let position = 0;
+		for (let num in sort(map(keys(show.ports), (k) => +k))) {
+			let attrs = show.ports[`${num}`];
+			if (num == cpu)
+				continue;
+			let role = filter(conf.ports ?? [], (bp) => bp.num == num)[0];
+			let link = swconfig_link(attrs.link);
+			let port = `port${num}`;
+			push(sw.ports, port);
+			push(ports, {
+				name: port, type: 'swconfig', up: true, carrier: link.carrier, operstate: link.carrier ? 'up' : 'down',
+				mac: null, mtu: null, speed: link.speed, duplex: link.duplex, autoneg: null, max_speed: null, partner_max: null,
+				downshifted: false, flow: link.flow, carrier_changes: null, link_ups: null, link_downs: null, stats: {},
+				role: 'switch', conduit, pvid: attrs.pvid != null ? +attrs.pvid : null,
+				board: role?.role ? { role: role.role, index: 500 + position } : { index: 500 + position },
+				hardware: { driver: 'swconfig', switch: label, switch_node: node, switch_port: num, external_phy: false },
+			});
+			position++;
+		}
+		for (let v in show.vlans) {
+			let members = [];
+			for (let tok in split(v.ports ?? '', ' ')) {
+				let m = match(tok, /^([0-9]+)(t?)$/);
+				if (m && +m[1] != cpu)
+					push(members, { name: `port${m[1]}`, tagged: m[2] == 't' });
+			}
+			if (length(members))
+				push(sw.vlans, { vid: +(v.vid ?? v.index), ports: members });
+		}
+		push(switches, sw);
+	}
+	return { switches, ports };
 }
 //#endregion
 
@@ -530,18 +828,43 @@ function collect() {
 			p.role = d.devtype == 'dsa' ? 'switch' : conduits[name] ? 'conduit' : 'nic';
 			p.conduit = d.conduit;
 			p.hardware = hardware(name, d);
+			// Live state that the page shows next to the link: EEE, the optical module and whether a cable test is known to be
+			// impossible (null until it has been tried).
+			p.eee = p.carrier ? eee_view(name) : null;
+			p.sfp = sfp_candidate(p.hardware) ? sfp_view(name) : null;
+			p.cable_test = cable_unsupported[name] ? false : null;
 			if (has_problems(p.stats))
 				p.diagnostics = diagnostics(name, p.stats);
 			push(ports, p);
 		}
 	}
 
+	// Switches driven through swconfig have no network device per port: their ports are added here, and the netdev that carries
+	// them to the SoC becomes the switch's conduit instead of a jack of its own.
+	let board = board_roles();
+	let swc = swconfig_switches(board.switch);
+	for (let sw in swc.switches)
+		for (let cp in sw.cpu_ports)
+			for (let p in ports)
+				if (p.name == cp.conduit && p.role == 'nic')
+					p.role = 'conduit';
+	for (let sp in swc.ports)
+		push(ports, sp);
+
 	// Switch ports first (they are what is on the case), then standalone NICs, then the CPU conduit.
 	const order = { switch: 0, nic: 1, conduit: 2 };
 	ports = sort(ports, (a, b) => order[a.role] != order[b.role] ? order[a.role] - order[b.role] : natural_less(a.name, b.name));
 
-	// Attach bridge membership, learned-MAC counts and VLAN children to each port and bridge.
+	// Attach bridge membership, learned-MAC counts and VLAN children to each port and bridge. A swconfig port is not a bridge
+	// member itself: the VLAN devices of its switch (eth0.1, ...) that carry it are, so it takes the bridge and the VLANs from them.
 	for (let p in ports) {
+		if (p.type == 'swconfig') {
+			let groups = filter(swc.switches, (s) => s.node == p.hardware.switch_node)[0]?.vlans ?? [];
+			let mine = filter(groups, (g) => length(filter(g.ports, (m) => m.name == p.name)) > 0);
+			p.vlans = filter(vlans, (v) => v.parent == p.conduit && length(filter(mine, (g) => g.vid == v.vid)) > 0);
+			p.bridge = in_bridge[p.vlans[0]?.name]?.name;
+			continue;
+		}
 		let b = in_bridge[p.name];
 		let m = b ? filter(b.members, (x) => x.name == p.name)[0] : null;
 		p.bridge = b?.name;
@@ -549,14 +872,17 @@ function collect() {
 		p.macs = m?.macs;
 		p.vlans = filter(vlans, (v) => v.parent == p.name);
 	}
-	for (let b in bridges)
+	let live_vlans = bridge_vlan_live();
+	let conf_vlans = uci_all('network');
+	for (let b in bridges) {
 		b.vlans = filter(vlans, (v) => v.parent == b.name);
+		b.vlan_table = vlan_table(b, live_vlans, conf_vlans);
+	}
 
 	// Wiring of the board, all read from the device tree and /etc/board.json so it follows any router:
 	// which switch chip each DSA port belongs to, the switch's CPU ports and which SoC MAC they reach.
-	let board = board_roles();
 	for (let p in ports)
-		p.board = board.roles[p.name];
+		p.board = board.roles[p.name] ?? p.board;
 
 	// Device-tree nodes of the conduit MACs, used to match the switch CPU ports' "ethernet" phandles. A conduit
 	// whose node is unknown is still listed (with an empty node), so a single CPU port can be matched to it.
@@ -570,7 +896,7 @@ function collect() {
 	let seen = {};
 	for (let p in ports) {
 		let node = p.hardware?.switch_node;
-		if (!node || seen[node])
+		if (!node || seen[node] || p.type == 'swconfig')
 			continue;
 		seen[node] = true;
 		let members = filter(ports, (x) => x.hardware?.switch_node == node);
@@ -580,16 +906,24 @@ function collect() {
 			cpu_ports: switch_cpu_ports(node, conduit_nodes),
 		});
 	}
+	for (let sw in swc.switches)
+		push(switches, sw);
 
 	return { generated: time(), model: board.model, ports, bridges, vlans, switches, tunlinks: tunlinks(), zones: firewall_zones(), dhcp: dhcp_services() };
 }
 
-// rpcd registration: ubus object flab.network with the single method `status` (no arguments).
+// rpcd registration: ubus object flab.network. `status` takes no arguments; `cable_test` (port) runs one cable test on request.
 return {
 	'flab.network': {
 		status: {
 			call: function(request) {
 				return collect();
+			},
+		},
+		cable_test: {
+			args: { port: '' },
+			call: function(request) {
+				return cable_test(request);
 			},
 		},
 	},

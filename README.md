@@ -106,7 +106,7 @@ flab-ui/
       pages/
         index.js             Page registry and the page contract (read this first)
         overview/            index.js, cpu.js, temperatures.js
-        network/             Wired network: index.js, shared.js, topology.js, tile.js, chips.js, ports.js, diagnostics.js, util.js
+        network/             Wired network: index.js, shared.js, topology.js, tile.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), util.js
         bridges/             index.js, card.js
         wifi/                index.js (clients, and the editor of the channel), radios.js (radio cards), channels.js (pure model of
                              the channel change), picker.js (the channel picker); mesh interfaces are left to mesh/
@@ -268,7 +268,7 @@ return {
 | `flab.mesh.uc` | `flab.mesh` | `status` | uci wireless (`wifi-iface mode=mesh`), ubus `network.wireless`; `iw dev/station dump`, `iw mpath dump`, `iw mpp dump`, `iw get mesh_param`; sysfs counters |
 | `flab.wireguard.uc` | `flab.wireguard` | `status` | uci network (`proto wireguard` interfaces and `wireguard_<if>` peer sections), uci firewall (zone); `wg show <if> public-key/listen-port/peers/endpoints/allowed-ips/latest-handshakes/transfer/persistent-keepalive` (the single-field forms never print the private or pre-shared key); sysfs MTU and counters |
 | `flab.firewall.uc` | `flab.firewall` | `status` | uci firewall (defaults, zones, forwardings, `rule`, `redirect`, `nat`, `include`, `ipset`), uci network (interface names); `nft -j list ruleset` (per-rule hit counters matched through the `!fw4: <name>` comment, reject/drop chain counters per zone, the devices behind each zone, flowtable devices, base chain policies); procfs conntrack count and limit |
-| `flab.network.uc` | `flab.network` | `status` | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles and port order); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines) |
+| `flab.network.uc` | `flab.network` | `status`; `cable_test` (`port`) | ubus `network.device status` (netifd); sysfs `/sys/class/net/<if>/{carrier,bridge,brport}`; the bridge forwarding table `brforward`; `ethtool -i/-S`, `ethtool --show-eee` (EEE), `ethtool -m` (optical modules, only for ports that are optical cages), `/sys/class/mdio_bus`, `/proc/device-tree` (hardware and switch wiring), `/etc/board.json` (LAN/WAN roles, port order, swconfig switches); `swconfig list` / `dev <switch> help` / `dev <switch> show` (switches that are not DSA); `bridge vlan show` (when iproute2's `bridge` is installed) and uci network `bridge-vlan` sections (the VLAN tables); uci network (`tunlink`), uci firewall (zones, forwardings), uci dhcp (DHCP/RA service per interface); `logread` (error log lines). `cable_test` runs `timeout 30 ethtool --cable-test <port>` on one physical port after strict validation, only when asked (its ACL grant is under `write`; see [Wired network](#wired-network-route-network)) |
 | `flab.diag.uc` | `flab.diag` | `status`, `start` (`tool`, `host`, options), `read` (`id`, `from`), `stop` (`id`), `wake` (`mac`, `iface`) | busybox `ping` and `traceroute`, `mtr --raw`, `iperf3 -s`, `kdig` for the DNS trace, the first of `dig`, `kdig`, `drill`, `nslookup`, and `openssl s_client` / `x509`, run detached under `timeout` with their output in `/tmp/flab-diag/<id>/out`; `ip route get` and `ip route show default` for the connectivity check; `etherwake` or `socat` for Wake-on-LAN, with the host list from uci dhcp hosts, `dhcp ipv4leases`, `/tmp/dhcp.leases`, `/etc/ethers` and `/proc/net/arp`; ubus `network.interface dump` and uci firewall for the iperf3 server's addresses and zones; `command -v` for the tools, `/sys/class/net` for the interface names, `/tmp/resolv.conf.d/resolv.conf.auto` for the upstream resolvers; every argument validated before a command line is built |
 | `flab.ipsec.uc` | `flab.ipsec` | `status` | `swanctl --raw` (via `flab.vici`), `ip -s xfrm state`, `network.device`, uci network |
 | `flab.bgp.uc` | `flab.bgp` | `status` | `birdc` (`show status`, `show protocols all`, `show route all`, `show route export <peer>`, `show memory`), `ip -4 route show proto bird` |
@@ -512,16 +512,18 @@ address helpers the three network pages share.
 - **Summary tiles and health banner**: ports linked, live throughput of the external ports, switch chip,
   errors and drops, link changes. The banner lists what needs attention: a downshifted link (negotiated speed
   below what both ends support), link flaps and new errors since the page was opened.
-- **Port topology** (`topology.js`, `tile.js`, `chips.js`): the wiring of the Ethernet ports, drawn from what
+- **Port topology** (`topology.js`, `tile.js`): the wiring of the Ethernet ports, drawn from what
   the router reports: SoC, its MAC(s), the CPU port and link speed into the switch chip, the chip with its
   numbered switch ports, an external PHY where one exists, and one jack per column (green/amber/gray by link
-  state, LAN/WAN label, speed, live rate, chart, bridge, STP role, VLAN devices). Jacks follow the order
+  state, LAN/WAN label, speed, live rate, chart, bridge, STP role, VLAN devices). The SoC MAC boxes show their MAC; a
+  jack shows its own only when it differs from the MAC of the SoC port feeding its switch (DSA user ports inherit it,
+  so every LAN jack of a typical router would repeat the same address; the tooltip always gives it). Jacks follow the order
   `/etc/board.json` lists its ports (usually the order on the case) with each switch's ports kept together; a
   switch's CPU port and the SoC MAC behind it come from the device tree (`ports/port@N` with an `ethernet`
   property, matched to the MAC by phandle); a port has an external PHY when its node has a `phy-handle`,
-  otherwise the switch's internal one. A router without a switch gets MAC, PHY and jack columns. `chips.js`
-  adds a one-line description for a few well-known chips (MT7531, RTL8221B, ...); an unknown chip shows only
-  its name.
+  otherwise the switch's internal one. A router without a switch gets MAC, PHY and jack columns. Nothing is assumed about the chips: the boxes show
+  the names the router reports, and the lines under them are computed from its data (the fastest speed the ports of a switch
+  or an external PHY advertise, the number of user ports, the CPU port's mode and speed), so any hardware is described the same way.
 - **Port table** (`ports.js`): the hardware, link, speed and duplex, negotiation (auto/forced, max speed,
   partner speed, pause), live and total traffic, errors and drops, link-change counter, STP state and role,
   learned MACs and VLAN devices per port. A missing link is shown in neutral gray, not red: an unplugged port
@@ -541,6 +543,36 @@ address helpers the three network pages share.
   error counters (`ethtool -S`, error-like names only), recent system-log lines that mention the port, and
   whether anything is new since the page was opened. The backend only computes this for ports that have
   errors or drops.
+- **The CPU link**: the switch box says how much of the link into the SoC is in use (the busier direction, from the conduit MAC's
+  counters) and, when the linked user ports could send more than it carries, how many times it is oversubscribed (for example
+  five 2.5 Gbit/s ports into a 2.5 Gbit/s CPU port). A link above 90% used is a finding. It is computed from data the page
+  already has, so it works for any switch.
+- **EEE**: ports with Energy-Efficient Ethernet show a badge (active, idle or off) next to the negotiation, from
+  `ethtool --show-eee`; a port that answers without it is not asked again.
+- **Optical modules** (SFP and SFP+ cages: the device tree wires the port to an `sfp`, ethtool lists FIBRE among its ports, or the
+  port type is fibre or direct attach): the module (vendor, part, type, connector, wavelength) and its diagnostics (Tx and Rx
+  power, temperature, voltage, laser bias) from `ethtool -m`, shown with the hardware, an `SFP` tag on the jack and an
+  alarm badge. Module alarms and warnings that read On are listed and are findings; an empty cage says so; a direct-attach
+  cable shows no diagnostics. Optical ports have no cable test.
+- **VLAN tables**: a card per bridge that filters VLANs or has VLANs (a matrix of VLANs against ports: tagged, untagged and the
+  PVID), read with `bridge vlan show` when iproute2's `bridge` is installed and otherwise built from the `bridge-vlan` sections of
+  the network config (the card says which); and a card per swconfig switch with its VLAN groups.
+- **swconfig switches** (older boards whose switch ports are not network devices): `swconfig list` finds them, `dev <switch>
+  help` gives the driver and the CPU port, `dev <switch> show` the link, speed, duplex and PVID of each port and the VLAN
+  groups; `/etc/board.json` names the CPU netdev and the LAN/WAN role of each port. Each user port becomes a port named
+  `port<N>` (the switch port number) with no counters (swconfig has none per port); the CPU netdev is the switch's conduit
+  rather than a jack, and a port takes its bridge and VLAN devices from the VLAN devices (`eth0.1`, ...) that carry its VLAN
+  groups. This follows the documented output of swconfig and is covered by fixtures only: this repository's router has no
+  swconfig switch.
+- **Cable test**: a button in the Link column of each twisted-pair port (not the internal link to a switch, a swconfig port or an
+  optical cage) runs `ethtool --cable-test` after a confirmation that says the PHY drops the link for several seconds (and
+  that nothing is interrupted for a port without link). The result lists the four pairs (OK, open circuit, short within a pair,
+  short to another pair) with the distance of a fault, stays under the port's row until closed, and says what it means: for
+  a link at 100 Mbit/s or less, open pairs C and D are the reason it cannot reach 1 Gbit/s. The downshift finding points to
+  it. Not every PHY driver supports it: the plugin remembers a port that does not (`cable_test: false`) and the button goes
+  away. `cable_test` accepts only a physical Ethernet port that exists (never a bridge, a VLAN device or the SoC link into a
+  switch) and builds no command otherwise; it is the only method of this plugin under `write` in the ACL fragment, so a login
+  that may read but not write sees no buttons.
 
 ### Bridges (route `#bridges`)
 Same data as the Wired network page (one `flab.network` call, plus an optional `flab.mesh` call for the mesh peers),
@@ -1654,12 +1686,28 @@ tests the throughput history (rates, counter resets, gaps, pauses, per-SA keys, 
   against a fake transport).
 - **Scenarios**: `n-linkdown`, `n-downshift`, `n-root`, `n-blocked`, `n-nostp`, `n-vlanfilter`, `n-newbridge`,
   `n-highport`, `n-nodevices`, `n-board` (a different router: other model, four LAN ports in reverse order, no
-  external PHY), `n-nodsa` (no switch), `n-errors`; radios `r-down`, `r-dfs`, `r-channel`, `r-disabled`,
+  external PHY), `n-nodsa` (no switch), `n-errors`; `n-sfp` (an optical module with an alarm, an empty cage and a
+  direct-attach cable), `n-vlantable` (the kernel's `bridge vlan show`, with continuation lines and a port that is not a
+  member), `n-vlanconfig` (no `bridge` tool: the `bridge-vlan` sections, one of another bridge), `n-swconfig` (an older
+  board: the DSA ports removed, `swconfig list/help/show` fixtures, VLAN devices `eth0.1` and `eth0.2`, a swconfig
+  `board.json`), `n-cable` (see below); radios `r-down`, `r-dfs`, `r-channel`, `r-disabled`,
   `r-newssid`; mesh `m-twopeers`, `m-weak`, `m-fwdoff`, `m-nopeer`, `m-down`, `m-nomesh`; WireGuard `w-stale`,
   `w-down`, `w-newpeer`, `w-noroutes`, `w-nozone`, `w-nowg`; firewall `f-stopped`, `f-redirect`, `f-exposed`,
   `f-disabled`, `f-anonymous`, `f-unzoned`, `f-conntrack`; logs `l-odd` (a secret, an unparsable line, an
   unknown severity, another kernel facility) and `l-empty`. A capture's handshake times age while the test
   runs, so the base scenario pins the connected WireGuard peer to "30 s ago".
+- **Cable test**: `cable-harness.uc` makes the calls of `n-cable` (an intact cable, open pairs, a short with its distance, a PHY
+  that cannot test (asked twice, the second time answered from memory), output that is not a result, and the refusals: the
+  SoC link, a bridge, an unknown name, `lan1; reboot`, a number, no argument). Every refused port also has a fixture that would
+  read intact, so a refused call that ran anyway would show up as ok. The harness refuses to run without fixtures, so no
+  cable is ever tested and no link ever drops during the suite; the browser test answers the call from the same results and
+  fails if one would reach the real router.
+- **Browser** (`live.mjs`) additions: the MAC boxes and which jacks show a MAC, the CPU link (percent used, a busy link
+  in the box and the banner, oversubscription), an optical module (tag, amber tile, banner, module and optics lines, no cable
+  test on a cage), EEE badges, the VLAN cards (kernel table, config table, filtering with no VLAN, none at all), an older swconfig
+  board (jacks, circles, CPU link, port table, VLAN groups), and the whole cable-test flow (confirmation text for a port
+  with and without link, Cancel, the four results, survival of a poll, Close, the downshift hint, a PHY that cannot test, a
+  port known not to support it, and a login without write permission).
 
 ### Settings suite
 Unlike the other suites it has no backend part: the page reads rpcd's `uci` object, which is not ours to fake on

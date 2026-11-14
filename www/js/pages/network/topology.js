@@ -11,8 +11,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { card } from '../../core/ui.js';
 import { fmtLine } from '../../core/format.js';
-import { fmtSpeed, traffic } from './util.js';
-import { chipNote } from './chips.js';
+import { fmtSpeed, traffic, cpuLink } from './util.js';
 import { portTile } from './tile.js';
 
 // Grid row of each layer in the topology diagram, top to bottom (SoC, MACs, CPU links, switch chip,
@@ -32,8 +31,10 @@ const span = (node, rowFrom, rowTo, from, to = from) => {
   return node;
 };
 
-// A vertical connector, green when `on`, with an optional caption beside it.
-const vline = (on, caption) => h('div', { className: `vl ${on ? 'on' : ''}` }, caption ? h('span', { className: 'vl-cap' }, caption) : null);
+// A vertical connector, green when `on`, with an optional caption beside it and an optional number in a circle on it (`num`,\n// with `numTitle` as its tooltip), the way a switch port is shown.
+const vline = (on, caption, num, numTitle) => h('div', { className: `vl ${on ? 'on' : ''}` },
+  num != null ? h('span', { className: 'swnum', title: numTitle }, num) : null,
+  caption ? h('span', { className: 'vl-cap' }, caption) : null);
 
 // The ports in jack order, each switch's ports contiguous, plus the conduits (SoC MACs) that feed a switch.
 // Ports without a board index sort after the indexed ones, in discovery order.
@@ -57,21 +58,31 @@ function arrange(net) {
   return { ordered, switches, switchOf };
 }
 
-// MAC box for port `p` (null draws an empty placeholder MAC); shows live speed and rate while the link is up.
+// MAC box for port `p` (null draws an empty placeholder MAC); shows its address and, while the link is up, live speed and rate.
 function macBox(p, note) {
   const t = p ? traffic(p.name) : null;
   return h('div', { className: `topo-box mac ${p?.carrier ? 'on' : ''}` },
     h('div', { className: 'tb-title' }, p?.name ?? 'MAC'),
+    p?.mac ? h('div', { className: 'tb-mac' }, p.mac) : null,
     h('div', { className: 'tb-sub' }, note ?? 'Ethernet MAC'),
     p?.carrier ? h('div', { className: 'tb-live' }, `${fmtSpeed(p.speed)} · ↓ ${fmtLine(t.rxNow)} ↑ ${fmtLine(t.txNow)}`) : null);
 }
 
-// External PHY box for a port that has `hardware.phy`; the chip description comes from chips.js.
+// External PHY box for a port that has `hardware.phy`. The line under the name is what the router reports for the port: the
+// fastest speed its PHY advertises (ethtool).
 function phyBox(p) {
   const phy = p.hardware?.phy;
   return h('div', { className: `topo-box phy ${p.carrier ? 'on' : ''}`, title: phy.id ? `PHY ID ${phy.id}` : '' },
     h('div', { className: 'tb-title' }, phy.name ?? 'PHY'),
-    chipNote(phy.name) ? h('div', { className: 'tb-sub' }, chipNote(phy.name)) : null);
+    p.max_speed ? h('div', { className: 'tb-sub' }, `up to ${fmtSpeed(p.max_speed)}`) : null);
+}
+
+// The line about the link between a switch and the SoC: its capacity, how much of it is in use now, and (when the linked user ports
+// could send more than it carries) how many times it is oversubscribed.
+function cpuLinkText(link) {
+  const used = link.utilization == null ? null : `${link.utilization < 10 ? link.utilization.toFixed(1) : Math.round(link.utilization)}% used`;
+  const over = link.oversubscription > 1 ? `linked ports can send up to ${fmtSpeed(link.potential)} (${link.oversubscription.toFixed(1)}× oversubscribed)` : null;
+  return [`CPU link ${fmtSpeed(link.capacity)}`, used, over].filter(Boolean).join(' · ');
 }
 
 // The "Port topology" card: a CSS grid with one column per jack, built layer by layer. Each cell is placed
@@ -96,18 +107,22 @@ export function topologyCard(net) {
     if (!members.length) continue;
     const from = col.get(members[0].name), to = col.get(members.at(-1).name);
     const cpu = sw.cpu_ports?.length ? sw.cpu_ports : [{ port: null }];
+    // The fastest speed any user port of the switch advertises, as the router reports it (0 when none does).
+    const fastest = Math.max(0, ...members.map(p => p.max_speed ?? 0));
+    const link = cpuLink(net, sw);
 
     const macs = h('div', { className: 'topo-row' }, cpu.map(c => c.conduit ? macBox(byName.get(c.conduit), `to ${sw.label ?? 'switch'}`) : h('div')));
     add(at(macs, GRID_ROWS.mac, from, to));
     add(at(h('div', { className: 'topo-row' }, cpu.map(c => {
       const mac = byName.get(c.conduit);
-      return vline(mac?.carrier ?? true, [c.port != null ? `CPU port ${c.port}` : 'CPU port', c.mode, c.speed ? fmtSpeed(c.speed) : null].filter(Boolean).join(' · '));
+      // The switch's port number sits on the link in a circle, like the numbers of the user ports below the chip.
+      return vline(mac?.carrier ?? true, ['CPU port', c.mode, c.speed ? fmtSpeed(c.speed) : null].filter(Boolean).join(' · '), c.port, `CPU port ${c.port} of ${sw.label ?? 'the switch'}`);
     })), GRID_ROWS.cpu, from, to));
 
     add(at(h('div', { className: 'topo-box chip' },
       h('div', { className: 'tb-title' }, icon('diagram-2', 16), ` ${sw.label ?? 'Switch'} switch`),
-      chipNote(sw.label) ? h('div', { className: 'tb-sub' }, chipNote(sw.label)) : null,
-      h('div', { className: 'tb-sub' }, `${sw.ports.length} user port${sw.ports.length === 1 ? '' : 's'}${cpu[0].port != null ? ` · CPU port${cpu.length > 1 ? 's' : ''} ${cpu.map(c => c.port).join(', ')}` : ''}`)),
+      h('div', { className: 'tb-sub' }, `${sw.ports.length} user port${sw.ports.length === 1 ? '' : 's'}${fastest ? ` (up to ${fmtSpeed(fastest)})` : ''}${cpu[0].port != null ? ` · CPU port${cpu.length > 1 ? 's' : ''} ${cpu.map(c => c.port).join(', ')}` : ''}`),
+      link ? h('div', { className: `tb-sub${link.utilization >= 90 ? ' text-danger' : ''}` }, cpuLinkText(link)) : null),
     GRID_ROWS.chip, from, to));
   }
 
@@ -127,7 +142,9 @@ export function topologyCard(net) {
       else add(at(vline(on), GRID_ROWS.phy, c));
     }
     add(at(vline(on), GRID_ROWS.link, c));
-    add(at(portTile(p), GRID_ROWS.jack, c));
+    // A switch port with the same MAC as the SoC port that feeds its switch (the usual DSA default) does not repeat it: the MAC box above shows it once.
+    const inherits = sw && (sw.cpu_ports ?? []).some(cp => p.mac && byName.get(cp.conduit)?.mac === p.mac);
+    add(at(portTile(p, !inherits), GRID_ROWS.jack, c));
   }
 
   const linked = net.ports.filter(p => p.carrier).length;

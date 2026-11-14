@@ -1,11 +1,15 @@
 {
   "flab": {
-    "description": "flab-ui Network page (ports and bridges)",
+    "description": "flab-ui Network page (ports, bridges and VLANs); the write grant is the cable test, which the page only runs when asked",
     "read": {
       "ubus": {
         "flab.network": ["status"]
       }
     },
-    "write": {}
+    "write": {
+      "ubus": {
+        "flab.network": ["cable_test"]
+      }
+    }
   }
 }
