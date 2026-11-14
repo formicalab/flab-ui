@@ -24,11 +24,13 @@ edit its configuration through UCI: System settings (`/etc/config/system`), DHCP
 5. [Security model](#security-model)
 6. [Configuration changes](#configuration-changes)
 7. [Deploy, test, clean up](#deploy-test-clean-up)
-8. [How to add a page](#how-to-add-a-page)
-9. [Pages](#pages)
-10. [Testing](#testing)
-11. [Implementation notes](#implementation-notes)
-12. [Conventions](#conventions)
+8. [OpenWrt package](#openwrt-package)
+9. [License](#license)
+10. [How to add a page](#how-to-add-a-page)
+11. [Pages](#pages)
+12. [Testing](#testing)
+13. [Implementation notes](#implementation-notes)
+14. [Conventions](#conventions)
 
 ## Architecture at a glance
 
@@ -481,6 +483,29 @@ Things to know:
   `pwsh -File flab-ui\tools\router-lock.ps1 -Mode Read -Suite ddns -Command 'pwsh -NoProfile -File flab-ui\tests\ddns\run.ps1 -Browser'`.
 - To test a plugin without rpcd: copy it and `rpcd/lib/flab/` to `/tmp`, then run it with
   `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile).
+
+## OpenWrt package
+
+The `flab-ui` package (`admin/flab-ui` in the [openwrt/packages](https://github.com/openwrt/packages) feed) installs the
+same files `deploy.ps1` copies, but permanently:
+
+| Source | Installed to |
+|---|---|
+| `www/` | `/www/flab/` (served by uhttpd at `https://<router>/flab/`) |
+| `rpcd/ucode/*.uc` | `/usr/share/rpcd/ucode/` |
+| `rpcd/acl.d/*.json` | `/usr/share/rpcd/acl.d/` |
+| `rpcd/lib/flab/*.uc` | `/usr/share/ucode/flab/` |
+
+It depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`, `ucode-mod-fs`, `ucode-mod-ubus`, `ucode-mod-uci`, `uhttpd` and
+`uhttpd-mod-ubus`. The programs the pages read from (`swanctl`, `birdc`, `wg`, `nft`, `iw`, `nlbw`, ...) are optional
+runtime tools, not dependencies: install the ones for the pages you use. Installing and removing the package reloads rpcd.
+The package is built from the `v<version>` tag of this repository; `tests/`, `tools/` and `deploy.ps1` are not installed.
+`deploy.ps1` and the package both use `/www/flab`, so remove the package before a Deploy, and run Cleanup before installing it.
+
+## License
+
+flab-ui is MIT licensed (see `LICENSE`). `www/vendor/bootstrap.min.css` is Bootstrap 5.3.3 and the icon paths in
+`www/js/core/icons.js` are Bootstrap Icons 1.11.3; both are MIT licensed (Copyright the Bootstrap Authors).
 
 ## How to add a page
 
