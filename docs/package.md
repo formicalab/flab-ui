@@ -66,6 +66,25 @@ ssh root@<router> 'apk add --allow-untrusted /tmp/flab-ui-*.apk'
 Installing and removing (`apk del flab-ui`) reload rpcd. apk does not reinstall the version that is already installed,
 so to try a rebuilt package of the same version, remove the installed one first.
 
+## Releasing
+
+The tag and the package Makefile have to name the same version, and the Makefile cannot live in this repository:
+`PKG_HASH` is the hash of the tag's tarball, which would contain the Makefile. `tools/release.ps1` keeps them aligned,
+so a release is one command and the version is chosen only there:
+
+```powershell
+pwsh -File tools/release.ps1 -Version 0.1.1 -Router root@192.168.1.1 -PackagesDir ../packages -Amend
+```
+
+It checks that this repository is on a clean, pushed `main`, tags `v<Version>`, downloads the tag's tarball, writes
+`PKG_VERSION`, `PKG_HASH` and `PKG_RELEASE:=1` into `admin/flab-ui/Makefile` of the packages checkout, builds the apk
+from that tarball (so the SDK checks the hash; `apk-deploy.ps1 -UseFeedSource`), installs it on the router as a check
+(`-SkipInstallCheck` to skip), commits and pushes the Makefile to the fork (`-Remote`, default `fork`), and creates the
+GitHub release with the apk and its SHA-256 file. `-Amend` folds the Makefile change into the single package commit
+while the package is not merged; without it the script adds a commit `flab-ui: update to <Version>`. If a step before
+the release fails, the tag the run created is deleted and the Makefile restored. It needs `git` and an authenticated
+`gh`.
+
 ## Development script
 
 `tools/apk-deploy.ps1` does the "from a local checkout" build and the install in one command. It needs PowerShell 7 and,

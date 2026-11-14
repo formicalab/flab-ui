@@ -35,6 +35,10 @@ match is used.
 
 .PARAMETER OutDir
 Folder that receives the built apk.
+
+.PARAMETER UseFeedSource
+Build from the source the feed Makefile names (the tag tarball, whose hash the SDK checks) instead of the working tree.
+Used for releases, so the apk is exactly what the Makefile builds.
 #>
 [CmdletBinding()]
 param(
@@ -42,7 +46,8 @@ param(
     [string]$Router = $(if ($env:FLAB_ROUTER) { $env:FLAB_ROUTER } else { 'root@192.168.1.1' }),
     [ValidatePattern('^[A-Za-z0-9._-]+$')][string]$Distro = 'Ubuntu-26.04',
     [ValidatePattern('^[A-Za-z0-9._/$*~-]+$')][string]$Sdk = '$HOME/sdk/openwrt-sdk-*',
-    [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'flab-apk')
+    [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'flab-apk'),
+    [switch]$UseFeedSource
 )
 
 Set-StrictMode -Version Latest
@@ -150,11 +155,16 @@ if [ ! -f .config ] || ! grep '^CONFIG_PACKAGE_flab-ui=m' .config > /dev/null ||
   exit 1
 fi
 STAGE="$SDK/tmp/flab-ui-src"
-rm -rf "$STAGE"
-mkdir -p "$STAGE" "$OUT"
-cp -a "$SRC/www" "$SRC/rpcd" "$SRC/LICENSE" "$STAGE/"
 make package/flab-ui/clean > "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
-make package/flab-ui/compile USE_SOURCE_DIR="$STAGE" >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
+if [ '@@FEED@@' = 1 ]; then
+  make package/flab-ui/compile >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
+else
+  rm -rf "$STAGE"
+  mkdir -p "$STAGE"
+  cp -a "$SRC/www" "$SRC/rpcd" "$SRC/LICENSE" "$STAGE/"
+  make package/flab-ui/compile USE_SOURCE_DIR="$STAGE" >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
+fi
+mkdir -p "$OUT"
 APK=$(ls -t bin/packages/*/*/flab-ui-*.apk 2>/dev/null | head -n 1 || true)
 [ -n "$APK" ] || { echo "The build produced no flab-ui apk (is this an apk-based SDK?). Log: $LOG" >&2; exit 1; }
 rm -f "$OUT"/flab-ui-*.apk
@@ -170,8 +180,9 @@ function Build-Package {
     String.
     #>
     New-Item -ItemType Directory $OutDir -Force | Out-Null
-    Write-Host 'Building the package from the working tree...'
-    $script = $buildScript.Replace('@@SRC@@', (ConvertTo-BuildPath $root)).Replace('@@OUT@@', (ConvertTo-BuildPath (Resolve-Path $OutDir).Path)).Replace('@@SDK@@', $Sdk)
+    Write-Host $(if ($UseFeedSource) { 'Building the package from the source the feed Makefile names...' } else { 'Building the package from the working tree...' })
+    $feed = if ($UseFeedSource) { '1' } else { '0' }
+    $script = $buildScript.Replace('@@SRC@@', (ConvertTo-BuildPath $root)).Replace('@@OUT@@', (ConvertTo-BuildPath (Resolve-Path $OutDir).Path)).Replace('@@SDK@@', $Sdk).Replace('@@FEED@@', $feed)
     $apk = Join-Path $OutDir @(Invoke-Bash $script)[-1]
     if (-not (Test-Path $apk)) { throw "The built package is missing: $apk" }
     Write-Host "Built $apk"
