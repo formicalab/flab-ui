@@ -136,9 +136,10 @@ flab-ui/
 ## Security model
 
 - **The router's own login.** The UI signs in with rpcd's `session login`, as `root` (the login every OpenWrt
-  router has, with read and write `*` on everything). flab-ui creates no login, installs no
-  ACL and changes no rpcd configuration, so it can never grant itself or anyone else more than root already has,
-  and nothing about it persists in `/etc/config/rpcd`.
+  router has, with read and write `*` on everything). flab-ui creates no login and changes no rpcd configuration. The
+  package ships ACL fragments (in `/usr/share/rpcd/acl.d`) that list the calls of its pages; root's `*` already covers
+  every installed fragment, so they can never grant more than root already has, and nothing about it persists in
+  `/etc/config/rpcd`.
 - **What protects the router** is therefore the root password, HTTPS, the ACL fragments (each lists exactly the
   ubus calls and uci configs its page uses; each editing fragment grants `uci` write on the configs of its page only, for example `system` for the settings fragment and `nlbwmon` for the Traffic one), and the
   care the pages take: input is validated before it is staged, changes are applied with an automatic rollback,

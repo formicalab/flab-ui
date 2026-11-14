@@ -33,7 +33,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 `-Browser` needs the UI installed (`tools/apk-deploy.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
 password is needed. Every suite removes its local temp folder when it finishes, and the BGP, IPsec, Routing and network
-suites also remove their `/tmp/flab-*-test` folder on the router. When several people or agents share one router, run a suite through `tools/router-lock.ps1` (see [OpenWrt package](package.md#openwrt-package)).
+suites also remove their `/tmp/flab-*-test` folder on the router. When several people or agents share one router, run a suite through `tools/router-lock.ps1` (see [Development script](package.md#development-script)).
 
 ## Common mechanism (BGP, IPsec, Routing and network suites)
 

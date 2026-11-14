@@ -56,8 +56,9 @@ apk del flab-ui
 
 ## Safety
 
-- **No login of its own.** The UI signs in with the router's `root` login through rpcd. It installs nothing that grants
-  more access than root already has. The session lives in `sessionStorage` and expires after 15 minutes without use.
+- **No login of its own.** The UI signs in with the router's `root` login through rpcd. The package adds rpcd ACL
+  fragments for its own calls but no login, and it changes no rpcd configuration, so it grants nothing that root doesn't
+  already have. The session lives in `sessionStorage` and expires after 15 minutes without use.
 - **Changes are staged, reviewed and rolled back.** Editing pages stage changes in rpcd's `uci` object, show a review
   list, then apply with an automatic rollback: the page checks that the router is still reachable and confirms within
   30 seconds. If it cannot, for example because the change cut the connection, rpcd restores the previous
@@ -74,6 +75,8 @@ Details are in the [security model](docs/architecture.md#security-model).
 - `tools/apk-deploy.ps1` (PowerShell 7) builds the package from the working tree with an OpenWrt SDK, on Linux or in
   WSL on Windows, and installs it on a router (`-Action Deploy`) or removes it (`-Action Remove`); `-Action Build` only
   builds the apk. See [Development script](docs/package.md#development-script).
+- `tools/release.ps1` publishes a release: it tags the source, updates the package Makefile to the same version and
+  hash, builds the apk from the tag and creates the GitHub release. See [Releasing](docs/package.md#releasing).
 - Tests live in `tests/` and need Node.js, PowerShell 7 and, for most suites, ssh access to a test router. They use
   fixtures and mocks and do not change the router's configuration; `-Browser` also drives a browser. See
   [Testing](docs/testing.md).
