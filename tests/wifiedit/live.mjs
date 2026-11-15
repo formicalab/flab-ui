@@ -235,8 +235,8 @@ const shotOf = async (loc, label) => { if (shots) await loc.screenshot({ path: p
 const outcome = async () => { const n = page.locator('.set-bar .set-outcome.ok, .set-bar .set-outcome.bad').first(); await n.waitFor({ timeout: 40000 }); return (await n.innerText()).trim(); };
 // Clicks Refresh and waits for the page to settle.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
-// Throws away the edits in the form.
-const discard = async () => { await page.click('button:has-text("Discard edits")'); await page.waitForTimeout(600); };
+// The banner disappears only after the discarded draft has been reloaded from the router.
+const discard = async () => { await page.click('button:has-text("Discard edits")'); await bar().waitFor({ state: 'hidden' }); };
 // The text of the whole page without the nodes that hold the live values.
 const bodyText = () => page.locator('main').innerText();
 
@@ -480,6 +480,8 @@ check(mock.calls.includes('uci.rollback') && !mock.calls.includes('uci.confirm')
 check(await input(settings('radio0'), 'Transmit power (dBm)').inputValue() === '15', 'the edit stays in the form for a retry');
 mock.dropWrites = false;
 await discard();
+check(await input(settings('radio0'), 'Transmit power (dBm)').inputValue() === '' && await saveBtn().isHidden(),
+  'discard reloads the unchanged radio settings before the next edit');
 
 console.log('\n== a radio or a network that does not come back ==');
 mock.radioDown = true;

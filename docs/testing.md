@@ -33,7 +33,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Pure/syntax aggregate | `node tests/run-pure.mjs` | All pure regression files, JavaScript syntax, ACL JSON and the lazy application-shell tests |
 | Native execution | `node tests/execution/run.mjs [root@router]` | Disposable chroot/private ubus, not the installed rpcd: deferred workers, timer responsiveness, error statuses, deadlines, saturation, command and diagnostic-output limits |
 | Release recovery | `pwsh -File tests/tooling/release.test.ps1` | Failure injection with disposable local Git remotes, recovery after commit/push failure and release-note validation |
-| Fresh installed image | `bash tests/installation/run.sh` | Linux SDK build and isolated OpenWrt rootfs: actual apk dependencies, installed ACLs, normal root/editor/reader logins, denied permissions and browser lazy loading; never contacts a router |
+| Fresh installed image | `bash tests/installation/run.sh /absolute/path/flab-ui.apk` | Consume an APK built by the official SDK action or developer script, then test an isolated OpenWrt rootfs: actual dependencies, installed ACLs, normal root/editor/reader logins, denied permissions and browser lazy loading; never contacts a router |
 
 `-Browser` needs the UI installed (`tools/package.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no

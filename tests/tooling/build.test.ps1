@@ -89,3 +89,6 @@ finally {
     Remove-Item -LiteralPath $workspace -Recurse -Force
 }
 #endregion
+
+# Expected native failures must not leak their exit status after every assertion and cleanup succeeded.
+exit 0

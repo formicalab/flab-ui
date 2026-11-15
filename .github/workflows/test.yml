@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0, Node 24 runtime
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0, Node 24 runtime
         with:
           node-version: '22.16.0'
       - run: node tests/run-pure.mjs
@@ -38,8 +38,8 @@ jobs:
     env:
       FLAB_SDK_WORK: ${{ github.workspace }}/../flab-sdk-work
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0, Node 24 runtime
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0, Node 24 runtime
         with:
           node-version: '22.16.0'
       - name: Prepare isolated feed with the current source snapshot
@@ -51,7 +51,7 @@ jobs:
           CONTAINER: docker.io/openwrt/sdk
           ARCH: x86_64-25.12.0@sha256:0061d8c6bb7559a79931074ffb50fb0d71add1d26840d314397b50ebbc3bf7be
           FEED_DIR: ${{ env.FLAB_SDK_WORK }}/feed
-          FEEDNAME: flab-ci
+          FEEDNAME: flab_ci
           PACKAGES: flab-ui
           ARTIFACTS_DIR: ${{ env.FLAB_SDK_WORK }}/artifacts
           BUILD_LOG: '1'

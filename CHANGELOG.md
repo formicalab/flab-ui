@@ -26,5 +26,6 @@
 ### Packaging and testing
 
 - Declare `ucode-mod-uloop` and include the bundled Bootstrap license notices in package metadata and installed files.
-- Add regression tests, CI and disposable-image checks for installed ACLs and the normal login path.
+- Add regression tests, official OpenWrt SDK-action CI builds and disposable-image checks for installed ACLs and the
+  normal login path.
 - Refresh the README files, developer documentation and comments to describe the actual behavior and limitations.

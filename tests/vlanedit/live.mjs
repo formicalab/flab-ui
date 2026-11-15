@@ -402,9 +402,10 @@ await done().click();
 await page.waitForSelector('button:has-text("Edit VLANs")');
 await openEditor();
 check(/1 change\(s\) are already staged in this session/.test(await page.locator('main').innerText()), 'changes staged earlier are said so above the cards');
-await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
+const discardStaged = page.getByRole('button', { name: "Discard this page's staged changes", exact: true });
+await discardStaged.click();
+await discardStaged.waitFor({ state: 'hidden' });
 await page.waitForSelector('.vlan-edit');
-await page.waitForTimeout(500);
 check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), "Discard reverts this page's staged changes");
 
 console.log('\n== the kernel table differs from the config ==');
