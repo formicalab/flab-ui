@@ -16,7 +16,13 @@ address helpers the Ethernet, Devices and Interfaces and Traffic pages share.
   ports kept together; the SoC MAC that only feeds a switch (its conduit) comes last, labeled "CPU link". Each row has:
   - **Port**: a jack icon tinted by link state (green up, amber when downshifted, flapping, erroring since the page was
     opened or an optical alarm, gray without link: an unplugged port is normal, not red), the name, the LAN/WAN role from the
-    board, an SFP tag for a port with an optical module, and the MAC (always shown; the icon's tooltip lists the hardware).
+    board, an SFP tag for a port with an optical module, the MAC (always shown; the icon's tooltip lists the hardware) and a
+    **Settings** button on every front-panel port. Settings goes to Devices and Interfaces and opens that port in the board's
+    drawer, with the same editing panel as a click on the port's card there (link speed, duplex, auto-negotiation, pause, EEE,
+    MTU, MAC and the advanced options of the port's device section; read only for a login that may not change the
+    configuration). The editing stays on the board: it is the one place that holds the network config's draft, the review
+    banner and the rollback, so the Ethernet page only hands the port over (`openBoardItem` in `pages/index.js`).
+    The internal CPU link has no button.
   - **Hardware**, **Link** (state, speed and duplex, how many times the link changed state and how many since the page was
     opened, an optical alarm, the cable-test button), **Negotiation** (auto/forced, max speed, partner speed, pause, EEE).
   - **Throughput**: the live rate in each direction, a graph of the recent rates and the totals; a port without counters of

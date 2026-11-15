@@ -65,13 +65,15 @@ const before = (a, b) => page.evaluate(([x, y]) => { const A = document.querySel
 // All visible text of every element matching a selector, joined by newlines.
 const text = sel => page.locator(sel).allInnerTexts().then(t => t.join('\n'));
 // Clicks Refresh and gives the page a moment to redraw.
-// Clicks Refresh and waits for the page to redraw from the new reply (the explicit reload is always the newest request, so the
-// first redraw after the click is its own), instead of sleeping a fixed time that a busy router can outlast.
+// Clicks Refresh and waits until the shell has finished that reload. The shell rewrites the "Updated hh:mm:ss" stamp (the last child of the
+// command bar) only after a load was drawn, and the explicit reload is always the newest request, so the first rewrite after the click is its
+// own. A fixed sleep would be outlasted by a busy router; watching `main` would also fire for unrelated redraws.
 const refresh = async () => {
   await page.evaluate(() => {
     window.__redrawn = false;
+    const stamp = document.querySelector('.cmdbar').lastElementChild;
     const observer = new MutationObserver(() => { window.__redrawn = true; observer.disconnect(); });
-    observer.observe(document.querySelector('main'), { childList: true });
+    observer.observe(stamp, { childList: true, characterData: true, subtree: true });
   });
   await page.click('button:has-text("Refresh")');
   await page.waitForFunction(() => window.__redrawn, null, { timeout: 8000 }).catch(() => {});

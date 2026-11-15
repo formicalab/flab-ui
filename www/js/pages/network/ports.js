@@ -6,6 +6,7 @@ import { badge, button, card, muted, sparkline } from '../../core/ui.js';
 import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
 import { fmtSpeed, traffic, newFlaps, newErrors, errorsOf, dropsOf, hwLines, jackOrder, switchLine, STP_ROLE, stpKind } from './util.js';
 import { diagnosticsPanel } from './diagnostics.js';
+import { openBoardItem } from '../index.js';
 import { cableButton, cablePanel, hooks } from './cable.js';
 import { vlanCards } from './vlans.js';
 
@@ -78,8 +79,9 @@ function roleOf(p) {
   return p.role === 'conduit' ? 'CPU link' : null;
 }
 
-// The Port column: the jack icon (green up, amber warning, gray no link), the name, its LAN/WAN role and its MAC. The tooltip of the
-// icon lists the hardware.
+// The Port column: the jack icon (green up, amber warning, gray no link), the name, its LAN/WAN role, its MAC and, for a front-panel
+// port, a Settings button that opens the port in the drawer of the Devices and Interfaces board (where its device settings are edited). The
+// tooltip of the icon lists the hardware.
 function portCell(p) {
   const title = [`${p.name} · ${p.mac ?? ''}`, p.carrier ? `Link ${fmtSpeed(p.speed)} ${p.duplex ?? ''}` : 'No link', ...hwLines(p).map(([k, v]) => `${k}: ${v}`)].join('\n');
   const role = roleOf(p);
@@ -89,7 +91,8 @@ function portCell(p) {
       h('div', {},
         h('div', {}, h('strong', {}, p.name), role ? h('span', { className: 'port-role' }, role) : null,
           p.sfp?.present ? badge('SFP', p.sfp.alarms?.length ? 'danger' : 'info', [p.sfp.vendor, p.sfp.part].filter(Boolean).join(' ')) : null),
-        h('div', { className: 'muted small mono' }, p.mac ?? ''))));
+        h('div', { className: 'muted small mono' }, p.mac ?? ''),
+        p.role === 'conduit' ? null : button('Settings', 'gear', () => openBoardItem(`port:${p.name}`), 'btn-fl port-settings'))));
 }
 
 // The Throughput column: the live rate in each direction, the totals and a graph of the recent rates. A port without counters of its

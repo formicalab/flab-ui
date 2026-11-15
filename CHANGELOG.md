@@ -12,6 +12,8 @@
   the learned-MAC count under the bridge state. One line per switch above the table keeps what the diagram said about it:
   user ports, CPU ports, the CPU link's capacity and use, and how oversubscribed it is. The Hardware column gives each
   switch port's number.
+- Add a **Settings** button to every front-panel port on the Ethernet page. It opens that port in the drawer of Devices and
+  Interfaces, with the same editing panel as a click on the port's card there. The editing itself stays on the board.
 - Remove the "All ports look healthy." banner from the Ethernet page. It only looked at changes since the page was opened,
   so it appeared next to a port with thousands of old errors. The findings banner now shows only when there is something
   to report (a downshifted link, flaps, new errors, an optical alarm or a busy CPU link).

@@ -44,7 +44,7 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } 
       const id = specifier.split('/')[1].replace('.js', '');
       calls.push(`import:${id}`);
       if (imports[id]) await imports[id].promise;
-      return synthetic({ openTool: (tool, host) => calls.push(`tool:${tool}:${host}`), default: {
+      return synthetic({ openTool: (tool, host) => calls.push(`tool:${tool}:${host}`), openBoardItem: item => calls.push(`item:${item}`), default: {
         id, label: id, interval: 1000, css: `css/${id}.css`, isPaused: () => paused.on,
         load: () => { calls.push(`load:${id}`); return loads[id]?.() ?? Promise.resolve({ value: id }); },
         controls: ctl => { controls[id] = ctl; return { nodes: [] }; },
@@ -74,7 +74,7 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } 
   module.namespace.start();
   await tick();
   return {
-    app, calls, renders, styles, timers, controls, paused, AuthError, context, openTool: registry.namespace.openTool,
+    app, calls, renders, styles, timers, controls, paused, AuthError, context, openTool: registry.namespace.openTool, openBoardItem: registry.namespace.openBoardItem,
     navigate: async hash => { context.location.hash = hash; await events.hashchange(); },
     signedOut: async () => { signedIn = false; await events.hashchange(); },
     signIn: async () => { signedIn = true; await onLogin(); },
@@ -177,6 +177,31 @@ test('a poll reply that arrives after the page became paused is dropped, an expl
   [...s.timers.values()][0]();
   await tick();
   assert.equal(text(s.app).includes('load 4'), true);
+});
+
+test('openBoardItem opens the board item after the board import, keeps only the newest request and ignores a stale navigation', async () => {
+  const pending = deferred();
+  const s = await shell({ imports: { interfaces: pending } });
+  s.openBoardItem('port:lan1');
+  assert.equal(s.context.location.hash, '#interfaces');
+  assert.equal(s.calls.includes('import:interfaces'), false, 'the bridge must not fetch the board itself');
+  const navigation = s.navigate('#interfaces');
+  await tick();
+  s.openBoardItem('port:lan2');
+  pending.resolve();
+  await navigation;
+  assert.deepEqual(s.calls.filter(call => call.startsWith('item:')), ['item:port:lan2']);
+  assert.ok(s.calls.lastIndexOf('item:port:lan2') < s.calls.lastIndexOf('load:interfaces'), 'the item is requested before the page loads and draws');
+  // A navigation that was superseded must not activate a request made for it.
+  const late = deferred();
+  const t = await shell({ imports: { interfaces: late } });
+  t.openBoardItem('port:lan3');
+  const stale = t.navigate('#interfaces');
+  await tick();
+  await t.navigate('#wifi');
+  late.resolve();
+  await stale;
+  assert.equal(t.calls.some(call => call.startsWith('item:')), false);
 });
 
 test('openTool still retains its target/autorun state across a lazy Toolbox import', async () => {

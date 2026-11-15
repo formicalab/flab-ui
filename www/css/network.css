@@ -22,8 +22,8 @@
 .neg { min-width: 8rem; max-width: 12rem; white-space: normal; }
 
 /* ── Error breakdown: expandable row under a port with counters, driver statistics and log excerpt ── */
-.diag-btn, .cable-btn { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }
-.diag-btn svg, .cable-btn svg { margin-right: .3rem; }
+.diag-btn, .cable-btn, .port-settings { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }
+.diag-btn svg, .cable-btn svg, .port-settings svg { margin-right: .3rem; }
 .port-table tr.diag-row > td { padding: 0; background: color-mix(in srgb, var(--fl-surface-hover) 60%, transparent); }
 .diag { display: grid; gap: .9rem; padding: 1rem 1.25rem 1.25rem; white-space: normal; }
 .diag-head { display: flex; align-items: center; gap: .6rem; }

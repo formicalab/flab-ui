@@ -19,6 +19,7 @@
 //   css       stylesheet (or array of stylesheets) loaded the first time the page opens
 
 let pendingTool = null;
+let pendingBoardItem = null;
 
 // Lightweight deep-link bridge: importing this from another page must not fetch Toolbox's implementation.
 export function openTool(tool, host) {
@@ -32,6 +33,21 @@ function activateToolbox(module) {
   const { tool, host } = pendingTool;
   pendingTool = null;
   module.openTool(tool, host);
+}
+
+// The same kind of bridge for the Devices and Interfaces board: opens the item `id` (a board item such as `port:lan1`) in its drawer
+// once the page has loaded, so another page can offer "Settings" for a thing the board edits.
+export function openBoardItem(id) {
+  pendingBoardItem = id;
+  location.hash = '#interfaces';
+}
+
+// Called by the shell only after the board's import completes and this navigation is still current.
+function activateInterfaces(module) {
+  if (!pendingBoardItem) return;
+  const id = pendingBoardItem;
+  pendingBoardItem = null;
+  module.openBoardItem(id);
 }
 
 // Network pages go from the physical layer up (ports, radios, tunnels, firewall); DHCP and router
@@ -53,7 +69,7 @@ export const pages = [
   { id: 'dhcp', label: 'DHCP', icon: 'signpost-split', resolve: () => import('./dhcp/index.js') },
   { id: 'dns', label: 'DNS', icon: 'hdd-network', resolve: () => import('./dns/index.js') },
   { id: 'ddns', label: 'Dynamic DNS', icon: 'cloud', resolve: () => import('./ddns/index.js') },
-  { id: 'interfaces', label: 'Devices and Interfaces', icon: 'diagram-3', resolve: () => import('./interfaces/index.js') },
+  { id: 'interfaces', label: 'Devices and Interfaces', icon: 'diagram-3', resolve: () => import('./interfaces/index.js'), activate: activateInterfaces },
   { id: 'routing', label: 'Routing', icon: 'globe2', resolve: () => import('./routing/index.js') },
   { id: 'traffic', label: 'Traffic', icon: 'activity', resolve: () => import('./traffic/index.js') },
   { id: 'services', label: 'Services', icon: 'hdd-stack', resolve: () => import('./services.js') },

@@ -1,6 +1,6 @@
 # Devices and Interfaces (route `#interfaces`)
 The network as a **board**: how it is built, from the cable up, on one screen, and the one place where the network configuration is edited. The bridges are part of it (the old
-`#bridges` route opens this page: `aliases` in `pages/index.js`). Refreshed every 5 s. `boardmodel.js` is the pure model, `board.js` draws it. Data: `flab.network` (status and,
+`#bridges` route opens this page: `aliases` in `pages/index.js`). The Ethernet page's **Settings** button on a port opens that port's drawer here (`openBoardItem` in `pages/index.js`, taken by the first view after the page loads). Refreshed every 5 s. `boardmodel.js` is the pure model, `board.js` draws it. Data: `flab.network` (status and,
 for editing, `config`), netifd's interface dump, `flab.radio` and `flab.mesh` (both optional: without them the page shows the wired layers, and a bridge shows no mesh peers).
 OpenWrt builds a network in layers, and the board has one lane for each, left to right:
 1. **Ports and radios** (physical): the front-panel Ethernet ports (link dot, speed, LAN or WAN position, a mark when the port has device settings), and the radios

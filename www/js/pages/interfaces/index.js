@@ -27,6 +27,11 @@ import { wizardOpen } from './wizard.js';
 // 'globals'), `handle` the drawer, `editable` whether the open panel holds a form.
 const state = { paused: false, open: null, handle: null, editable: false };
 
+// An item another page asked to open (pages/index.js openBoardItem), taken by the first view after it: controls() closes the drawer when the
+// page is built, so the request cannot set `state.open` directly.
+let pendingOpen = null;
+export function openBoardItem(id) { pendingOpen = id; }
+
 // What the current view was built from, for the handlers of the board and the drawer.
 const cur = { board: null, ctx: null, data: null, node: null };
 
@@ -197,6 +202,7 @@ export default {
   // Summary tiles, the findings banner, the board and, over it, the drawer of the open item.
   view(data, rerender) {
     shell.rerender = rerender;
+    if (pendingOpen) { state.open = pendingOpen; pendingOpen = null; }
     const before = focusedInput(state.handle, cur.ctx?.inputs ?? {});
     const ctx = editContext(data, rerender, shell);
     const board = buildBoard(data, ctx ? editSource(ctx.base, ctx.draft) : null);
