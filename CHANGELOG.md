@@ -1,13 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.1.5 - 2026-11-15
 
 ### Routing
 
 - Show the policy rules, the static-route editor and the routing tables in lookup order (full-width rules card, then the
-  static routes, then the tables overview, then the final list). The static-route description is part of "How the kernel
-  picks a route": static routes are not a stage before or after the rules; each is an entry in a table (its Table option,
-  else its interface's table) and is reached only through the rules that consult that table.
+  static routes, then the tables overview, then the final list). "How the kernel picks a route" is now a foldable card
+  (folded at first) that also explains where static routes fit and how the metric breaks ties: static routes are not a
+  stage before or after the rules; each is an entry in a table (its Table option, else its interface's table) and is
+  reached only through the rules that consult that table.
 - Merge the four static-route tiles into one tile with the other tiles at the top: the number configured, and how many are
   installed, not installed and disabled.
 - Fix a false "gateway is not inside a subnet of <interface>" warning in the static-route editor on point-to-point links such
