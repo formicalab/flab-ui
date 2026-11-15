@@ -286,7 +286,8 @@ await page.click('button:has-text("Add IPv6 route")');
 await page.locator('tr.rt-s-new [title="Target"]').fill('2001:db8:5::/48');
 await page.locator('tr.rt-s-new [title="Gateway"]').fill('fd00::fe');
 await page.locator('tr.rt-s-new [title="Interface"]').selectOption('lan');
-await saveBtn().click();
+// Diagnostic for an intermittent failure: say what the page shows when the button cannot be used.
+try { await saveBtn().click({ timeout: 8000 }); } catch (e) { console.log('SAVE BUTTON UNUSABLE', JSON.stringify({ bar: await bar().innerText().catch(() => null), rows: await page.locator('tr.rt-s-new').count(), targets: await page.locator('tr.rt-s-new [title="Target"]').evaluateAll(n => n.map(x => x.value)), main: (await page.locator('.rt-static').innerText()).slice(0, 600) })); throw e; }
 await outcome();
 check(sectionOf('2001:db8:5::/48')?.[1]['.type'] === 'route6', 'an IPv6 route is added as a route6 section');
 await (await rowOf('172.16.0.0/12')).locator('button[title="Remove this route"]').click();
