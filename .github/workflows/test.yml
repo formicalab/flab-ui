@@ -1,0 +1,40 @@
+name: Test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.16.0'
+      - run: node tests/run-pure.mjs
+      - run: bash tests/installation/workdir.test.sh
+      - name: Release recovery (local disposable Git remotes only)
+        shell: pwsh
+        run: ./tests/tooling/release.test.ps1
+
+  installed:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.16.0'
+      - name: SDK and isolated-image tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap gawk rsync zstd
+      - run: npm ci --prefix tests/installation
+      - run: npm exec --prefix tests/installation -- playwright install --with-deps chromium
+      - name: Build APK, install into fresh image, test installed ACLs and real login
+        run: bash tests/installation/run.sh

@@ -1,8 +1,8 @@
 # flab-ui
 
 A lightweight web administration UI for OpenWrt. It is a static single-page app served by `uhttpd` that talks to the
-router through the standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins. There is no build step and
-no framework, and Bootstrap is bundled, so it works offline and fits comfortably in a small router's RAM.
+router through the standard `ubus` JSON-RPC endpoint and `rpcd` ucode plugins. There is no frontend build step or
+runtime framework, and Bootstrap is bundled, so the interface assets need no external CDN.
 
 Developed and tested on a GL.iNet GL-MT6000 running an OpenWrt snapshot. Ports, bridges, radios, tunnels, zones and
 peers are discovered at run time, so other boards are shown as they are, but they are untested.
@@ -13,18 +13,18 @@ peers are discovered at run time, so other boards are shown as they are, but the
 |---|---|
 | Overview | Uptime, CPU, load, memory and temperatures. |
 | Wired network | Physical ports and VLANs; edit the VLAN sections. |
-| Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. |
 | Wi-Fi | Radios, wireless networks and clients; edit channels and settings. |
 | Mesh | 802.11s mesh peers and paths (read only). |
-| Firewall | Zones, rules and port forwards with live nftables counters; edit them. |
-| Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |
 | IPsec VPN | strongSwan connections, tunnels, traffic and a security score (read only). |
 | WireGuard | Interfaces and peers; edit them. |
+| Firewall | Zones, rules and port forwards with live nftables counters; edit them. |
 | DHCP | odhcpd and dnsmasq leases, reservations and pools; edit them. |
 | DNS | Unbound or dnsmasq state, options and zones; edit them. |
 | Dynamic DNS | ddns-scripts services, status and logs; edit them. |
+| Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. |
+| Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |
 | Traffic | Bandwidth, connections and nlbwmon usage; edit the nlbwmon settings. |
-| Services | List, start, stop and restart services. |
+| Services | List, start, stop, restart, enable and disable services. |
 | Toolbox | Ping, traceroute, MTR, DNS, TLS checks, an iperf3 server and Wake-on-LAN. |
 | Logs | System and kernel log. |
 | System settings | `/etc/config/system`: general, time zone and NTP, logging, kernel and cron. |
@@ -32,23 +32,30 @@ peers are discovered at run time, so other boards are shown as they are, but the
 Each page reads from the program it manages (`swanctl`, `birdc`, `wg`, `nft`, `iw`, `nlbw`, `unbound-control` and so
 on). These are optional: install the ones for the pages you use.
 
+Use a current Chrome, Edge, Firefox or Safari: the frontend needs native ES modules, BigInt, `structuredClone` and
+`<dialog>`. Browser suites target Edge and headless Chromium; other browsers and boards have not been certified.
+
 ## Install
 
 flab-ui is an architecture-independent apk package that depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`
-(`ucode-mod-fs`, `ucode-mod-ubus`, `ucode-mod-uci`), `uhttpd` and `uhttpd-mod-ubus`. It is not in an OpenWrt feed yet.
+(`ucode-mod-fs`, `ucode-mod-ubus`, `ucode-mod-uci`, `ucode-mod-uloop`), `uhttpd` and `uhttpd-mod-ubus`. It is not in an OpenWrt feed yet.
 Download the apk (and its `.sha256`) from the [latest release](https://github.com/formicalab/flab-ui/releases/latest),
-copy it to the router and install it. The package is unsigned, so apk needs `--allow-untrusted`:
+copy both to the router, verify the checksum and install it. The package is unsigned, so apk needs `--allow-untrusted`:
 
 ```sh
-scp -O flab-ui-<version>.apk root@<router>:/tmp/
-ssh root@<router> 'apk add --allow-untrusted /tmp/flab-ui-<version>.apk'
+scp -O flab-ui-<version>-r1.apk flab-ui-<version>-r1.apk.sha256 root@<router>:/tmp/
+ssh root@<router> 'cd /tmp && sha256sum -c flab-ui-<version>-r1.apk.sha256 && apk add --allow-untrusted ./flab-ui-<version>-r1.apk'
 ```
 
 It targets apk-based OpenWrt (a snapshot, or a release built with apk). To build it yourself, see
 [Package](docs/package.md#building-the-package).
 
+The router must already serve `/www` and `/ubus` through uhttpd. Configure HTTPS, its certificate and an HTTP-to-HTTPS
+redirect before signing in; flab-ui does not configure TLS or firewall access. Manage it from a trusted LAN or VPN,
+not an exposed WAN port.
+
 Installing reloads `rpcd`, so no reboot is needed. Then open `https://<router>/flab/` and sign in as `root` with the
-router's root password. To remove it:
+router's root password. Do not install or remove the package during a configuration apply. To remove it:
 
 ```sh
 apk del flab-ui
@@ -58,17 +65,23 @@ apk del flab-ui
 
 - **No login of its own.** The UI signs in with the router's `root` login through rpcd. The package adds rpcd ACL
   fragments for its own calls but no login, and it changes no rpcd configuration, so it grants nothing that root doesn't
-  already have. The session lives in `sessionStorage` and expires after 15 minutes without use.
-- **Changes are staged, reviewed and rolled back.** Editing pages stage changes in rpcd's `uci` object, show a review
-  list, then apply with an automatic rollback: the page checks that the router is still reachable and confirms within
-  30 seconds. If it cannot, for example because the change cut the connection, rpcd restores the previous
-  configuration by itself.
-- **Secrets stay on the router.** Keys, passwords and tokens are never sent to the browser (only whether they are set),
-  and secret-looking values in logs are redacted.
+  already have. The session lives in `sessionStorage` and expires after 15 minutes without RPC activity; an open,
+  polling page keeps it alive. Sign out explicitly on a shared browser.
+- **Changes use rpcd's rollback.** Editing pages show a review list, stage changes and apply with a rollback timer
+  (normally 30 seconds; Devices and Interfaces uses 90). They read back the configuration and confirm automatically.
+  Static-route edits also verify installation on running interfaces. This does not prove that the internet or every
+  affected service works. Saves reject existing staged changes anywhere in the session; ambiguous transport failures
+  are reported as uncertain, not as confirmed rollback. Keep alternate access for network changes, and see the
+  [limitations](docs/architecture.md#configuration-change-limitations).
+- **Stored credentials are filtered.** Config plugins omit recognized secret options, and logs redact recognizable
+  secret-looking text. This is not a guarantee for arbitrary custom options or free text. Secrets you type, and
+  WireGuard keys generated in the browser, necessarily exist there and are sent to the router when saved.
 
 Details are in the [security model](docs/architecture.md#security-model).
 
 ## Development
+
+- [Changelog](CHANGELOG.md) records the changes in each new release.
 
 - [docs/](docs/README.md) covers the architecture, the frontend and backend, the behavior of every page, how to add a
   page, the test suites and the coding conventions.
@@ -84,3 +97,4 @@ Details are in the [security model](docs/architecture.md#security-model).
 ## License
 
 MIT, see [LICENSE](LICENSE). The bundled Bootstrap 5.3.3 CSS and Bootstrap Icons 1.11.3 paths are also MIT licensed.
+The [distributed notices](www/LICENSE) cover all three and are installed with the web files.

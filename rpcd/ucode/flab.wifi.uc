@@ -1,7 +1,6 @@
 #!/usr/bin/ucode
 //
-// rpcd ucode plugin exposing the Wi-Fi client report of
-// utilities/list_connected_devices.uc as JSON: ubus call flab.wifi clients
+// rpcd ucode plugin exposing Wi-Fi client state as JSON: ubus call flab.wifi clients
 //
 // Only sanitized client data is returned; Wi-Fi keys from `network.wireless status`
 // are never copied into the result.
@@ -14,6 +13,7 @@
 // serves (any rpcd plugin object): the call would block on rpcd's own event loop.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { cursor } from 'uci';
 import { connect } from 'ubus';
@@ -441,7 +441,7 @@ function collect() {
 }
 
 // rpcd registration: ubus object flab.wifi with the single method `clients` (no arguments).
-return {
+return deferred({
 	'flab.wifi': {
 		clients: {
 			call: function(request) {
@@ -449,4 +449,4 @@ return {
 			},
 		},
 	},
-};
+});

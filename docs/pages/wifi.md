@@ -89,7 +89,7 @@ no longer fits the chosen channel is an error on both controls.
   channel by hand). A channel the regulatory domain disables, or whose block does not fit, is an error that
   blocks Save.
 
-**Clients** (`flab.wifi`, a port of `utilities/list_connected_devices.uc`): clients per radio and SSID with
+**Clients** (`flab.wifi`): clients per radio and SSID with
 MAC, IPv4/IPv6, hostname, signal, Wi-Fi standard, bandwidth, TX/RX bitrate, security label, AKM/SAE
 group/cipher/PMF details and the 0-100 security score (AKM, cipher, SAE group and PMF scoring). Filter, radio
 selector, sortable columns, pause and a legend above the tables.

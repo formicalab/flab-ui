@@ -32,30 +32,29 @@ const defaultPageId = pages[0].id;
 // Renders the page named by the URL hash (shell, navigation, command bar) and starts its refresh loop.
 // Runs on start and on every hashchange; shows the login form first when there is no session.
 async function route() {
+  clearInterval(timer);
+  refresh = null;
+  const mine = ++routeNo;
+  // Invalidate pending imports and requests even when this navigation opens login or redirects an alias.
+  const current = () => mine === routeNo;
   if (!hasSession()) return showLogin(route);
   // A route that moved to another page (see `aliases` in pages/index.js): the hash is replaced, which runs this function again.
   const alias = aliases[location.hash.slice(1)];
   if (alias) { location.replace(`#${alias}`); return; }
-  clearInterval(timer);
-  refresh = null;
-  const mine = ++routeNo;
-  // Whether this render is still the active route (false once the user navigated elsewhere).
-  const current = () => mine === routeNo;
-
-  const page = pages.find(p => p.id === location.hash.slice(1)) ?? pages[0];
-  ensureCss(page.css);
+  const entry = pages.find(p => p.id === location.hash.slice(1)) ?? pages[0];
 
   // The board info feeds the navigation header on every page, and is read on every route so a renamed router
   // shows its new hostname; failing to read it is not fatal (the last reply stays).
   try {
-    board = await ubus('system', 'board');
+    const fresh = await ubus('system', 'board');
+    if (current()) board = fresh;
   } catch (e) {
-    if (e instanceof AuthError) return expire();
+    if (current() && e instanceof AuthError) return expire();
   }
   if (!current()) return;
 
   // Pages marked nav: 'bottom' (Settings) sit under the spacer with Sign out; the rest fill the main list.
-  const link = p => h('a', { href: `#${p.id}`, className: `nav-link-fl ${p === page ? 'active' : ''}` }, icon(p.icon), p.label);
+  const link = p => h('a', { href: `#${p.id}`, className: `nav-link-fl ${p === entry ? 'active' : ''}` }, icon(p.icon), p.label);
   const nav = h('nav', { className: 'nav-pane' },
     h('div', { className: 'brand' }, h('strong', {}, board ? board.hostname : 'Router'), h('span', {}, board ? board.model : '')),
     ...pages.filter(p => p.nav !== 'bottom').map(link),
@@ -65,14 +64,30 @@ async function route() {
 
   const results = h('main', {}, h('div', { className: 'text-center muted p-5' }, h('div', { className: 'spinner-border spinner-border-sm' })));
   const stamp = h('span', { className: 'muted small' });
+  const cmdbar = h('header', { className: 'cmdbar' }, h('h1', {}, entry.label), stamp);
+  byId('app').replaceChildren(h('div', { className: 'shell' }, nav, h('div', { className: 'content' }, cmdbar, results)));
+
+  let module;
+  try {
+    module = await entry.resolve();
+  } catch (e) {
+    if (!current()) return;
+    results.replaceChildren(card(null, h('div', { className: 'card-body text-danger', role: 'alert' },
+      `Unable to load ${entry.label}. Check your connection, then retry or reload the browser. `,
+      h('button', { type: 'button', className: 'btn btn-sm btn-outline-secondary', onclick: route }, 'Retry'),
+      h('div', { className: 'small' }, e.message))));
+    return;
+  }
+  if (!current()) return;
+  entry.activate?.(module);
+  const page = module.default;
+  ensureCss(page.css);
   let data = null;
 
   // Redraws the page from the last data without polling; controls call it so filter changes apply instantly.
-  const rerender = () => { if (data) results.replaceChildren(...page.view(data, rerender)); };
+  const rerender = () => { if (current() && data) results.replaceChildren(...page.view(data, rerender)); };
   const ctl = page.controls ? page.controls({ rerender, reload: () => load() }) : { nodes: [] };
-  const cmdbar = h('header', { className: 'cmdbar' }, h('h1', {}, page.title ?? page.label), ...ctl.nodes, stamp);
-
-  byId('app').replaceChildren(h('div', { className: 'shell' }, nav, h('div', { className: 'content' }, cmdbar, results)));
+  cmdbar.replaceChildren(h('h1', {}, page.title ?? page.label), ...ctl.nodes, stamp);
 
   // Polls the page once and redraws it. A failed poll shows the error in place of the content; an expired session
   // returns to the login form. Only the newest request counts: an older reply that arrives late (a slow router, an
@@ -81,6 +96,7 @@ async function route() {
   let loading = false;
   // One poll cycle: fetches the page data and redraws, unless a newer request or a navigation superseded it.
   async function load() {
+    if (!current()) return;
     const n = ++requests;
     loading = true;
     try {
@@ -110,6 +126,7 @@ async function route() {
 
 // Stops polling, drops the stored session and returns to the login form with an explanation.
 function expire() {
+  ++routeNo;
   clearInterval(timer);
   refresh = null;
   clearSession();
@@ -118,10 +135,11 @@ function expire() {
 
 // Ends the session on the router, then shows the login form.
 async function signOut() {
+  const mine = ++routeNo;
   clearInterval(timer);
   refresh = null;
   await logout();
-  showLogin(route);
+  if (mine === routeNo) showLogin(route);
 }
 
 // Entry point: picks the default page, routes on hash changes, refreshes the open page when the tab comes back to

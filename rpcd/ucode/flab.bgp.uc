@@ -12,6 +12,7 @@
 // rpcd runs plugins in-process; this plugin deliberately calls no ubus objects.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { readfile } from 'fs';
 import { run, num } from 'flab.util';
@@ -598,7 +599,7 @@ function collect() {
 //#endregion
 
 // rpcd registration: ubus object flab.bgp with the single method `status` (no arguments).
-return {
+return deferred({
 	'flab.bgp': {
 		status: {
 			call: function(request) {
@@ -606,4 +607,4 @@ return {
 			},
 		},
 	},
-};
+});

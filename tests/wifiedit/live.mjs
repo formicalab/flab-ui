@@ -72,11 +72,14 @@ function commit() {
 // One uci method of the mock: [ubus status, data].
 function uci(method, args) {
   if (method === 'get') { mock.gets.push(`${args.config}${args.section ? '.' + args.section : ''}`); return [0, { values: {} }]; }
-  if (method === 'changes') return [0, { changes: mock.staged.flatMap(o => (o.op === 'set' ? Object.entries(o.values).map(([k, v]) => ['set', o.section, k, v]) : [[o.op, o.section]])) }];
+  if (method === 'changes') {
+    const list = args.config && args.config !== 'wireless' ? [] : mock.staged.flatMap(o => (o.op === 'set' ? Object.entries(o.values).map(([k, v]) => ['set', o.section, k, v]) : [[o.op, o.section]]));
+    return [0, { changes: args.config ? list : (list.length ? { wireless: list } : {}) }];
+  }
   if (method === 'set') { mock.staged.push({ op: 'set', section: args.section, values: args.values }); return [0, {}]; }
   if (method === 'add') { mock.staged.push({ op: 'add', type: args.type, name: args.name, values: args.values }); return [0, { section: args.name }]; }
   if (method === 'delete') { mock.staged.push({ op: 'delete', section: args.section, options: args.options }); return [0, {}]; }
-  if (method === 'revert') { mock.staged = []; return [0, {}]; }
+  if (method === 'revert') { if (args.config !== 'wireless') return [4]; mock.staged = []; return [0, {}]; }
   if (method === 'apply') {
     mock.snapshot = clone(mock.secs);
     mock.restage = mock.staged;
@@ -85,12 +88,14 @@ function uci(method, args) {
     return [0, {}];
   }
   if (method === 'confirm') {
-    if (mock.confirmFails) { mock.secs = mock.snapshot; mock.staged = mock.restage; return [1]; }
+    if (!mock.snapshot) return [5];
+    if (mock.confirmFails) { mock.secs = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null; return [1]; }
     mock.snapshot = null;
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) { mock.secs = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null; }
+    if (!mock.snapshot) return [5];
+    mock.secs = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null;
     return [0, {}];
   }
   return [0, {}];
@@ -504,7 +509,8 @@ await openAll(settings('radio0'));
 await type(settings('radio0'), 'Transmit power (dBm)', '15');
 await saveBtn().click();
 const nc = await outcome();
-check(/did not accept the confirmation, so the change was rolled back/.test(nc) && !mock.secs.find(s => s.section === 'radio0').values.txpower, 'a confirmation the router refuses is reported and the change is undone', nc);
+check(/^Confirmation failed; the outcome is uncertain\./.test(nc) && /Rollback could not be confirmed/.test(nc) && !/was rolled back/.test(nc)
+  && !mock.secs.find(s => s.section === 'radio0').values.txpower, 'the mock restored the config, but the page reports uncertainty without a rollback acknowledgement', nc);
 mock.confirmFails = false;
 await discard();
 
@@ -512,9 +518,9 @@ console.log('\n== leftovers from an earlier attempt ==');
 mock.staged = [{ op: 'set', section: 'radio0', values: { channel: '1' } }];
 await refresh();
 check(/1 change\(s\) are already staged/.test(await bodyText()), 'staged changes in the session are shown');
-await page.click('button:has-text("Discard them")');
+await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
 await page.waitForTimeout(700);
-check(mock.staged.length === 0 && !/already staged/.test(await bodyText()), 'Discard them clears the session\'s staging area');
+check(mock.staged.length === 0 && !/already staged/.test(await bodyText()), "Discard clears this page's staged changes");
 //#endregion
 
 //#region Logins and plugins

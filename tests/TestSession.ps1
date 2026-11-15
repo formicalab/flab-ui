@@ -6,9 +6,9 @@ Helpers for the browser tests: a temporary rpcd session that needs no password a
 .DESCRIPTION
 The UI signs in with the router's root login. rpcd gives root read and write '*', which means every ACL group
 installed on the router, so what root may call is exactly what the ACL fragments (rpcd/acl.d) grant. The browser
-tests must not need root's password, so they create a session on the router over ssh and grant it the same
-things as those fragments, no more: a fragment that is missing or wrong makes a test fail here just as it makes
-a page fail for root. The session id and the ACLs go to the browser, which stores them as a real sign-in does.
+tests must not need root's password, so they create a session on the router over ssh and grant it the permissions
+declared in the checkout's fragments. This does not verify installed ACL files or the router's login configuration.
+The session id and the ACLs go to the browser, which stores them as a real sign-in does.
 The session lives in rpcd's memory and is destroyed when the test ends. Dot-source this file from a run.ps1; it also
 provides Invoke-Native, which every run.ps1 uses.
 #>

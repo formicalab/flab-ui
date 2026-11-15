@@ -92,7 +92,10 @@ const restore = () => { mock.cfg = mock.snapshot; mock.staged = mock.restage; mo
 // One uci method of the mock: [ubus status, data].
 function uci(method, args) {
   if (method === 'get') { mock.reads.push(`${args.config}`); return [6]; }
-  if (method === 'changes') return [0, { changes: mock.staged.map(c => c.slice(0, 4)) }];
+  if (method === 'changes') {
+    const list = args.config && args.config !== 'network' ? [] : mock.staged.map(c => c.slice(0, 4));
+    return [0, { changes: args.config ? list : (list.length ? { network: list } : {}) }];
+  }
   if (method === 'set') { for (const [k, v] of Object.entries(args.values)) mock.staged.push(['set', args.section, k, v]); return [0, {}]; }
   if (method === 'add') {
     const name = args.name ?? `cfg${(0x100000 + nextId++).toString(16)}`;
@@ -100,7 +103,7 @@ function uci(method, args) {
     return [0, { section: name }];
   }
   if (method === 'delete') { for (const o of args.options ?? [undefined]) mock.staged.push(['delete', args.section, o, undefined]); return [0, {}]; }
-  if (method === 'revert') { mock.staged = []; return [0, {}]; }
+  if (method === 'revert') { if (args.config !== 'network') return [4]; mock.staged = []; return [0, {}]; }
   if (method === 'apply') {
     mock.snapshot = clone(mock.cfg);
     mock.restage = mock.staged;
@@ -109,12 +112,14 @@ function uci(method, args) {
     return [0, {}];
   }
   if (method === 'confirm') {
+    if (!mock.snapshot) return [5];
     if (mock.confirmFails) { restore(); return [1]; }
     mock.snapshot = null;
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) restore();
+    if (!mock.snapshot) return [5];
+    restore();
     return [0, {}];
   }
   return [0, {}];
@@ -497,7 +502,9 @@ mock.confirmFails = true;
 await openSettings('wg0');
 await input(card('wg0'), 'Listen port').fill('51823');
 await saveBtn().click();
-check(/did not accept the confirmation/.test(await outcome()) && mock.cfg.wg0.listen_port === '51821', 'the router\'s refusal to confirm rolls the change back');
+const refused = await outcome();
+check(/^Confirmation failed; the outcome is uncertain\./.test(refused) && /Rollback could not be confirmed/.test(refused) && !/was rolled back/.test(refused)
+  && mock.cfg.wg0.listen_port === '51821', 'the mock restored the config, but the page reports uncertainty without a rollback acknowledgement', refused);
 mock.confirmFails = false;
 await page.click('button:has-text("Discard edits")');
 await page.waitForTimeout(600);
@@ -506,9 +513,9 @@ console.log('\n== leftovers from an earlier attempt ==');
 mock.staged = [['set', 'wg0', 'mtu', '1400']];
 await refresh();
 check(/1 change\(s\) are already staged/.test(await page.locator('main').innerText()), 'staged changes in the session are shown');
-await page.click('button:has-text("Discard them")');
+await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
 await page.waitForTimeout(700);
-check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), 'Discard them clears the session\'s staging area');
+check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), "Discard clears this page's staged changes");
 
 console.log('\n== other states ==');
 mock.kernelOnly = true;

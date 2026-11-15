@@ -12,6 +12,7 @@
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
 import { cursor } from 'uci';
@@ -551,7 +552,7 @@ function collect() {
 //#endregion
 
 // rpcd registration: ubus object flab.ipsec with the single method `status` (no arguments).
-return {
+return deferred({
 	'flab.ipsec': {
 		status: {
 			call: function(request) {
@@ -559,4 +560,4 @@ return {
 			},
 		},
 	},
-};
+});

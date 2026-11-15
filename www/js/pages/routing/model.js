@@ -165,7 +165,8 @@ export function filterRoutes(routes, { q = '', family = 'all', table = 'all' }, 
     if (family !== 'all' && String(r.family) !== String(family)) return false;
     if (table !== 'all' && r.table !== table) return false;
     if (!words.length) return true;
-    const hay = [r.prefix, destination(r), r.type, r.from, r.proto, r.scope, r.src, r.table, r.pref,
+    const hay = [r.prefix, destination(r), r.type, r.from, r.proto, r.scope, r.src, r.table, r.pref, r.configState,
+      ...(r.configured ? ['configured static'] : []),
       ...r.nexthops.flatMap(n => [n.via, n.dev, names.get(n.dev)])].filter(Boolean).join(' ').toLowerCase();
     return words.every(w => hay.includes(w));
   });

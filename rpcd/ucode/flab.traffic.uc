@@ -31,6 +31,7 @@
 // on a slow router cannot hold up rpcd.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
 import { realpath, lsdir, stat, open } from 'fs';
@@ -1000,7 +1001,7 @@ function nlbwmon_paths(args) {
 //#endregion
 
 // rpcd registration: ubus object flab.traffic. The args objects name the accepted fields and their types.
-return {
+return deferred({
 	'flab.traffic': {
 		status: {
 			call: function(request) {
@@ -1031,4 +1032,4 @@ return {
 			},
 		},
 	},
-};
+});

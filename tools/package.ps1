@@ -14,14 +14,15 @@ Release   tags the source, updates the package Makefile to match, builds the apk
                checkout (-PackagesDir, a checkout of the openwrt/packages feed branch that holds admin/flab-ui) is clean;
             2. creates and pushes the tag v<Version>;
             3. downloads the tag's source tarball and writes PKG_VERSION, PKG_HASH (its SHA-256) and PKG_RELEASE:=1 into
-               the Makefile;
+               the Makefile; when this source has www/LICENSE, also sets PKG_LICENSE_FILES:=LICENSE www/LICENSE;
             4. builds the apk from that tarball, so the SDK checks the hash, and installs it on -Router as a check
                (skipped with -SkipInstallCheck);
             5. commits the Makefile in the packages checkout and pushes it to -Remote;
             6. creates the GitHub release with the apk and its SHA-256 file.
           The Makefile cannot live in this repository: PKG_HASH is the hash of the tag's tarball, which would contain
-          the Makefile. If a step before the release fails, the tag created by this run is deleted again and the
-          Makefile is restored. The tag and the packages commit use your git identity (git config, or
+          the Makefile. If the package push fails, its local branch, index and Makefile are restored to the recorded
+          baseline. Published tags are retained, including when a push's outcome is uncertain; remote branches are
+          never rolled back. The tag and the packages commit use your git identity (git config, or
           GIT_COMMITTER_NAME and GIT_COMMITTER_EMAIL); it must match the Signed-off-by line of the package commit.
 
 The OpenWrt SDK only runs on Linux. On Linux the build runs directly in bash; on Windows it runs inside WSL (-Distro)
@@ -72,6 +73,10 @@ Release only: build only; do not install the apk on a router.
 
 .PARAMETER Draft
 Release only: create the GitHub release as a draft.
+
+.PARAMETER NotesFile
+Release only, required: UTF-8 file containing the actual changelog for this version. Installation instructions and
+asset/source SHA-256 notes are appended automatically. Read and validated before any Git state is changed.
 #>
 [CmdletBinding()]
 param(
@@ -79,14 +84,15 @@ param(
     [string]$Router = $(if ($env:FLAB_ROUTER) { $env:FLAB_ROUTER } else { 'root@192.168.1.1' }),
     [ValidatePattern('^[A-Za-z0-9._-]+$')][string]$Distro = 'Ubuntu-26.04',
     [ValidatePattern('^[A-Za-z0-9._/$*~-]+$')][string]$Sdk = '$HOME/sdk/openwrt-sdk-*',
-    [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'flab-apk'),
+    [string]$OutDir = (Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts\packages'),
     [switch]$UseFeedSource,
     [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [string]$PackagesDir = $(if ($env:FLAB_PACKAGES) { $env:FLAB_PACKAGES } else { Join-Path (Split-Path $PSScriptRoot -Parent | Split-Path -Parent) 'packages' }),
     [string]$Remote = 'fork',
     [switch]$Amend,
     [switch]$SkipInstallCheck,
-    [switch]$Draft
+    [switch]$Draft,
+    [string]$NotesFile
 )
 
 Set-StrictMode -Version Latest
@@ -156,6 +162,8 @@ function Invoke-Native {
     <#
     .SYNOPSIS
     Runs a native command, returns its output lines and throws on a nonzero exit code.
+    .DESCRIPTION
+    Checks the native exit status immediately, including Git operations used by release recovery.
     .PARAMETER File
     The program.
     .PARAMETER Arguments
@@ -223,10 +231,10 @@ $buildScript = @'
 set -eu
 SRC='@@SRC@@'
 OUT='@@OUT@@'
-LOG=/tmp/flab-ui-build.log
 SDK=$(ls -d @@SDK@@ 2>/dev/null | head -n 1 || true)
 [ -n "$SDK" ] || { echo "No OpenWrt SDK found at: @@SDK@@" >&2; exit 1; }
 cd "$SDK"
+LOG="$SDK/.flab-ui-build.log"
 if [ ! -f .config ] || ! grep '^CONFIG_PACKAGE_flab-ui=m' .config > /dev/null || ! ls -d package/feeds/*/flab-ui > /dev/null 2>&1; then
   echo "The SDK at $SDK is not set up for flab-ui: install the feed that holds admin/flab-ui and set CONFIG_PACKAGE_flab-ui=m (see docs/package.md)." >&2
   exit 1
@@ -308,15 +316,45 @@ rm -f /tmp/$apkName
 #endregion
 
 #region Release
+function Restore-PackageCheckout {
+    <#
+    .SYNOPSIS
+    Restores the unpublished package change to its pre-release baseline.
+    .DESCRIPTION
+    Compare-and-swap updates only this run's branch tip, then restores only the Makefile in the index and worktree.
+    No remote ref or unrelated path is changed. Refuses to overwrite a branch moved by another process.
+    .PARAMETER Baseline
+    The package branch's original commit.
+    .PARAMETER ExpectedHead
+    This run's new commit, or the baseline when no commit was made.
+    .PARAMETER Branch
+    The package branch recorded before tagging.
+    .PARAMETER OriginalBytes
+    The original worktree bytes, including its encoding and line endings.
+    #>
+    param([string]$Baseline, [string]$ExpectedHead, [string]$Branch, [byte[]]$OriginalBytes)
+
+    if ((Invoke-Native git @('-C', $PackagesDir, 'branch', '--show-current')) -ne $Branch) {
+        throw 'Package branch changed during release; refusing automatic recovery.'
+    }
+    $null = Invoke-Native git @('-C', $PackagesDir, 'update-ref', "refs/heads/$Branch", $Baseline, $ExpectedHead)
+    $null = Invoke-Native git @('-C', $PackagesDir, 'restore', "--source=$Baseline", '--staged', '--worktree', '--', 'admin/flab-ui/Makefile')
+    [IO.File]::WriteAllBytes((Join-Path $PackagesDir 'admin\flab-ui\Makefile'), $OriginalBytes)
+}
+
 function Publish-Release {
     <#
     .SYNOPSIS
     Tags the source, aligns the package Makefile, builds the apk from the tag and creates the GitHub release.
     .DESCRIPTION
-    See the Release action in the script help. Throws when a check fails or a step fails; before the release is
-    published the tag created by this run is deleted again and the Makefile is restored.
+    Records source/package heads and the remote package tip before publishing. Failed unpublished package changes
+    are restored locally; published or possibly published tags and all remote branch work are retained.
+    Updates the web license file metadata together with the version and hash, only when this source contains it.
     #>
     if (-not $Version) { throw '-Version is required for Release.' }
+    if (-not $NotesFile) { throw '-NotesFile containing the release changelog is required for Release.' }
+    $changelog = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $NotesFile).Path).Trim()
+    if (-not $changelog) { throw '-NotesFile must contain a nonempty release changelog.' }
     $tag = "v$Version"
     $makefile = Join-Path (Join-Path (Join-Path $PackagesDir 'admin') 'flab-ui') 'Makefile'
 
@@ -326,28 +364,38 @@ function Publish-Release {
     if (-not (Test-Path $makefile)) { throw "No Makefile at $makefile; set -PackagesDir." }
     if ((Invoke-Native git @('-C', $root, 'branch', '--show-current')) -ne 'main') { throw 'Release from the main branch.' }
     if (Invoke-Native git @('-C', $root, 'status', '--porcelain')) { throw 'The working tree is not clean.' }
-    $null = Invoke-Native git @('-C', $root, 'fetch', '--quiet', 'origin', 'main')
-    if ((Invoke-Native git @('-C', $root, 'rev-parse', 'HEAD')) -ne (Invoke-Native git @('-C', $root, 'rev-parse', 'origin/main'))) { throw 'main is not the same as origin/main: push or pull first.' }
-    if (Invoke-Native git @('-C', $root, 'tag', '--list', $tag)) { throw "The tag $tag already exists." }
-    if (Invoke-Native git @('-C', $root, 'ls-remote', '--tags', 'origin', "refs/tags/$tag")) { throw "The tag $tag already exists on origin." }
+    $sourceHead = Invoke-Native git @('-C', $root, 'rev-parse', 'HEAD')
     if (Invoke-Native git @('-C', $PackagesDir, 'status', '--porcelain')) { throw "The packages checkout $PackagesDir is not clean." }
+    $packagesHead = Invoke-Native git @('-C', $PackagesDir, 'rev-parse', 'HEAD')
     $packagesBranch = Invoke-Native git @('-C', $PackagesDir, 'branch', '--show-current')
     if (-not $packagesBranch -or $packagesBranch -in 'master', 'main') { throw "Check out a feature branch in $PackagesDir first (now: '$packagesBranch')." }
     if ((Invoke-Native git @('-C', $PackagesDir, 'remote', 'get-url', $Remote)) -match 'github\.com[:/]openwrt/') { throw "Remote $Remote is openwrt/packages itself; use a fork." }
+    $remoteTip = @(Invoke-Native git @('-C', $PackagesDir, 'ls-remote', '--heads', $Remote, "refs/heads/$packagesBranch"))
+    $remoteHead = if ($remoteTip.Count) { ($remoteTip[0] -split '\s+')[0] } else { '' }
+    if ($Amend -and $remoteHead -and $remoteHead -ne $packagesHead) { throw 'The package branch must match its remote before -Amend; synchronize it first.' }
+    $null = Invoke-Native git @('-C', $root, 'fetch', '--quiet', 'origin', 'main')
+    if ($sourceHead -ne (Invoke-Native git @('-C', $root, 'rev-parse', 'origin/main'))) { throw 'main is not the same as origin/main: push or pull first.' }
+    if (Invoke-Native git @('-C', $root, 'tag', '--list', $tag)) { throw "The tag $tag already exists." }
+    if (Invoke-Native git @('-C', $root, 'ls-remote', '--tags', 'origin', "refs/tags/$tag")) { throw "The tag $tag already exists on origin." }
     $null = Invoke-Native gh @('auth', 'status')
 
     $originalMakefile = [IO.File]::ReadAllText($makefile)
-    $tagPushed = $false
+    $originalBytes = [IO.File]::ReadAllBytes($makefile)
+    $tagCreated = $false
+    $tagPushAttempted = $false
+    $packagesCommit = $packagesHead
     $packagesPushed = $false
     $released = $false
     try {
         Write-Host "Tagging $tag..."
         $null = Invoke-Native git @('-C', $root, 'tag', '-a', $tag, '-m', "flab-ui $Version")
+        $tagCreated = $true
+        $tagPushAttempted = $true
         $null = Invoke-Native git @('-C', $root, 'push', '--quiet', 'origin', $tag)
-        $tagPushed = $true
 
         # The hash is taken from the tarball GitHub serves for the tag, the same file the SDK downloads.
-        $tarball = Join-Path ([IO.Path]::GetTempPath()) "flab-ui-$Version.tar.gz"
+        New-Item -ItemType Directory $OutDir -Force | Out-Null
+        $tarball = Join-Path $OutDir "flab-ui-$Version.tar.gz"
         Invoke-WebRequest -Uri "https://codeload.github.com/$slug/tar.gz/$tag" -OutFile $tarball
         $sourceHash = (Get-FileHash $tarball -Algorithm SHA256).Hash.ToLower()
         Write-Host "Source tarball SHA-256: $sourceHash"
@@ -356,11 +404,12 @@ function Publish-Release {
         $text = Set-MakeVariable $text 'PKG_VERSION' $Version
         $text = Set-MakeVariable $text 'PKG_RELEASE' '1'
         $text = Set-MakeVariable $text 'PKG_HASH' $sourceHash
+        if (Test-Path -LiteralPath (Join-Path $root 'www\LICENSE') -PathType Leaf) {
+            $text = Set-MakeVariable $text 'PKG_LICENSE_FILES' 'LICENSE www/LICENSE'
+        }
         [IO.File]::WriteAllText($makefile, $text, [Text.UTF8Encoding]::new($false))
 
         # Build from the tarball the Makefile now names, so the SDK checks PKG_HASH; install it when asked to.
-        $script:OutDir = Join-Path ([IO.Path]::GetTempPath()) 'flab-release'
-        Remove-Item $OutDir -Recurse -Force -ErrorAction SilentlyContinue
         $builtApk = Build-Package -FromFeed
         $apkName = Split-Path $builtApk -Leaf
         if ($apkName -ne "flab-ui-$Version-r1.apk") { throw "Expected flab-ui-$Version-r1.apk, built $apkName" }
@@ -370,19 +419,27 @@ function Publish-Release {
         [IO.File]::WriteAllText($sumFile, "$apkHash  $apkName`n", [Text.UTF8Encoding]::new($false))
 
         Write-Host 'Committing the Makefile in the packages checkout...'
+        if ((Invoke-Native git @('-C', $PackagesDir, 'rev-parse', 'HEAD')) -ne $packagesHead) { throw 'Package HEAD changed during release.' }
+        $otherChanges = @(Invoke-Native git @('-C', $PackagesDir, 'status', '--porcelain') | Where-Object { $_ -notmatch '^ M admin/flab-ui/Makefile$' })
+        if ($otherChanges.Count) { throw 'Other package changes appeared during release; refusing to commit them.' }
         $null = Invoke-Native git @('-C', $PackagesDir, 'add', 'admin/flab-ui/Makefile')
         if ($Amend) {
             $null = Invoke-Native git @('-C', $PackagesDir, 'commit', '--quiet', '--amend', '--no-edit')
-            $null = Invoke-Native git @('-C', $PackagesDir, 'push', '--quiet', '--force-with-lease', $Remote, $packagesBranch)
         }
         else {
             $null = Invoke-Native git @('-C', $PackagesDir, 'commit', '--quiet', '--signoff', '-m', "flab-ui: update to $Version")
-            $null = Invoke-Native git @('-C', $PackagesDir, 'push', '--quiet', $Remote, $packagesBranch)
         }
+        $packagesCommit = Invoke-Native git @('-C', $PackagesDir, 'rev-parse', 'HEAD')
+        # Pin the lease to the pre-release remote tip, not a tracking ref a background fetch can advance.
+        $pushArgs = @('-C', $PackagesDir, 'push', '--quiet')
+        if ($Amend) { $pushArgs += "--force-with-lease=refs/heads/${packagesBranch}:$remoteHead" }
+        $null = Invoke-Native git ($pushArgs + @($Remote, "HEAD:refs/heads/$packagesBranch"))
         $packagesPushed = $true
 
         $notes = @"
 flab-ui $Version
+
+$changelog
 
 An architecture-independent apk (``noarch``) for apk-based OpenWrt. Install it on the router:
 
@@ -409,13 +466,14 @@ It was built by the OpenWrt SDK from the source tarball of this tag (SHA-256 ``$
         }
         elseif (-not $released) {
             Write-Warning "Release failed: $($_.Exception.Message)"
-            [IO.File]::WriteAllText($makefile, $originalMakefile, [Text.UTF8Encoding]::new($false))
-            if ($tagPushed) {
-                Write-Warning "Deleting the tag $tag created by this run."
-                & git -C $root push --quiet origin ":refs/tags/$tag"
-                & git -C $root tag -d $tag | Out-Null
+            try {
+                Restore-PackageCheckout -Baseline $packagesHead -ExpectedHead $packagesCommit -Branch $packagesBranch -OriginalBytes $originalBytes
             }
-            else { & git -C $root tag -d $tag 2>$null | Out-Null }
+            catch { Write-Warning "Automatic local package recovery failed: $($_.Exception.Message). Baseline: $packagesHead; release commit: $packagesCommit." }
+            if ($tagPushAttempted) {
+                Write-Warning "Retaining ${tag}: a published feed may reference it even if push reported failure. Remote package work was not modified by recovery. Inspect both remotes before retrying."
+            }
+            elseif ($tagCreated) { $null = Invoke-Native git @('-C', $root, 'tag', '-d', $tag) }
         }
         throw
     }
@@ -423,6 +481,7 @@ It was built by the OpenWrt SDK from the source tarball of this tag (SHA-256 ``$
 #endregion
 
 #region Actions
+if ($MyInvocation.InvocationName -eq '.') { return }
 switch ($Action) {
     'Build' { $null = Build-Package -FromFeed:$UseFeedSource }
     'Deploy' { Install-Package (Build-Package -FromFeed:$UseFeedSource) }

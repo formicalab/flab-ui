@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-Tests the Static routes tab of the Routing page without changing the router.
+Tests static-route editing on the combined Routing view without changing the router.
 
 .DESCRIPTION
 1. Unit tests of the tab's model (reading the route and route6 sections of the network config, the draft, the review list, validation

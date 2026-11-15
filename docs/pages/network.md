@@ -26,7 +26,8 @@ address helpers the Wired network, Devices and Interfaces and Traffic pages shar
 - **Hardware** (when known): the PHY chip (driver name, ID, MDIO address and bus), the switch chip (from the
   device tree of the DSA switch node), the SoC Ethernet MAC, the kernel driver and bus, and the medium. The
   backend reads it once per port (`ethtool -i`, `ethtool`, `/sys/class/mdio_bus`, device-tree `compatible`)
-  and caches it. `ethtool` is optional: without it (small repeaters leave it out) the driver comes from the
+  and reuses it within that request. Deferred-worker caches do not persist across polls. `ethtool` is optional:
+  without it (small repeaters leave it out) the driver comes from the
   device's `driver` link in sysfs and the switch is still found from the device tree. A SoC MAC whose netdev has
   no device-tree node (the IPQ4019 Ethernet MAC) takes it from its parent device, so a switch's CPU port is still
   matched to its conduit and the diagram draws that MAC as the link into the switch, not as a port with a jack

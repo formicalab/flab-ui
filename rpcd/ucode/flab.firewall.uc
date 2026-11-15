@@ -21,9 +21,10 @@
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
-import { run, ubus_call, uci_all, sysfs, num, as_list } from 'flab.util';
+import { command_result, ubus_call, uci_all, sysfs, num, as_list } from 'flab.util';
 
 // Accumulator helper for reduce-style loops: adds the packet and byte counts of nft counter `c` to `acc`.
 const sum_counter = (acc, c) => {
@@ -59,8 +60,8 @@ function match_devices(rule) {
 // What the kernel has loaded, from `nft -j list ruleset`, restricted to firewall4's inet "fw4" table:
 // chain/rule counts, base-chain policies, per-comment and per-chain hit counters, the devices behind each
 // zone and the flowtable. Null when nftables or the fw4 table is not there.
-function nft_state() {
-	let doc = json(run('nft -j list ruleset 2>/dev/null') || 'null');
+function nft_state(text) {
+	let doc = json(text || 'null');
 	if (!doc?.nftables)
 		return null;
 
@@ -241,7 +242,8 @@ function unzoned(nets, all_zone_networks) {
 // the loaded nftables state.
 function collect() {
 	let all = uci_all('firewall');
-	let nft = nft_state();
+	let kernel = command_result('nft -j list ruleset 2>/dev/null');
+	let nft = kernel.ok ? nft_state(kernel.output) : null;
 	let sections = sort(values(all), (a, b) => (a['.index'] ?? 0) - (b['.index'] ?? 0));
 
 	// Only the first defaults section counts. Without one, or without a policy in it, firewall4 drops.
@@ -288,8 +290,9 @@ function collect() {
 
 	return {
 		generated: time(),
-		engine: nft ? 'nftables' : 'none',
-		running: nft != null,
+		...(kernel.ok ? {} : { ok: false, error: `The firewall state query failed (exit ${kernel.code ?? 'unknown'}).` }),
+		engine: kernel.ok ? (nft ? 'nftables' : 'none') : 'unknown',
+		running: kernel.ok ? nft != null : null,
 		defaults, zones, rules, redirects, includes, ipsets,
 		hooks: nft ? { input: nft.policy.input, forward: nft.policy.forward, output: nft.policy.output } : null,
 		flowtable: nft?.flowtable,
@@ -306,7 +309,7 @@ function collect() {
 }
 
 // rpcd registration: ubus object flab.firewall with the single method `status` (no arguments).
-return {
+return deferred({
 	'flab.firewall': {
 		status: {
 			call: function(request) {
@@ -314,4 +317,4 @@ return {
 			},
 		},
 	},
-};
+});

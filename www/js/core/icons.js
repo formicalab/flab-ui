@@ -1,4 +1,5 @@
 // Bootstrap Icons 1.11.3 (MIT) path data, inlined so the UI needs no icon font or network access.
+// Copyright (c) 2019-2024 The Bootstrap Authors; permission notice ships in www/LICENSE.
 // To add an icon, copy its <path> markup from https://icons.getbootstrap.com into PATHS.
 const PATHS = {
   'toggle-on': '<path d="M5 3a5 5 0 0 0 0 10h6a5 5 0 0 0 0-10zm6 9a4 4 0 1 1 0-8 4 4 0 0 1 0 8"/>',

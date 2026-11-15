@@ -1,6 +1,10 @@
 # Firewall (route `#firewall`)
 Refreshed every 5 s, from `flab.firewall` (firewall4 / nftables) and, to edit, rpcd's `uci` object. The live state comes from `nft -j list ruleset` (about 10 ms, ~30 KB), so a new zone, rule or port forward shows
-up on the next poll and every number is a real kernel counter; the configuration is read with `uci get firewall` (it holds no secrets), so every section is known by its own name (an anonymous one is `cfgXXXXXX`, never "rule 3": positions change when sections are added or removed). The plugin's reply is joined to the config by that name; when the two do not agree (a reply made for another config, a change between the two reads, a rule with another enabled state) the page shows the plugin's own data read only.
+up on the next poll and every number is a real kernel counter; the configuration is read with `uci get firewall`
+(standard firewall options are not credentials; custom options are not filtered), so every section is known by its own name
+(an anonymous one is `cfgXXXXXX`, never "rule 3": positions change when sections are added or removed). The plugin's reply
+is joined to the config by that name; when the two do not agree (a reply made for another config, a change between the two
+reads, a rule with another enabled state) the page shows the plugin's own data read only.
 - **Tiles**: zones, traffic rules (enabled / total), port forwards, packets turned away from the Internet
   (with a live rate), connection tracking usage, flow offloading (off, software or hardware, and the flowtable
   devices).

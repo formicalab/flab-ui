@@ -28,6 +28,7 @@ export function howCard() {
     h('div', { className: 'card-body rt-how' },
       h('ol', {},
         item(h('strong', {}, 'Rules first. '), 'The policy rules are checked from the lowest priority number to the highest. The first rule whose conditions match names a routing table to consult. A priority is only an order; it is not a table number (rule 0 looks up table 255, ', mono('local'), ').'),
+        item(h('strong', {}, 'Then the longest prefix. '), 'Within that table the most specific matching destination wins; equally specific alternatives use the lower metric. Static routes are not a separate stage before or after BGP, DHCP or connected routes: all installed routes compete in the same lookup. A daemon such as BIRD first chooses its own best paths before exporting them to the kernel.'),
         item(h('strong', {}, 'No route in that table? '), 'The kernel goes on to the next rule. If no rule produces a route, the destination is unreachable.'),
         item(h('strong', {}, 'Exceptions. '), 'A matching blackhole, unreachable or prohibit route, or a rule with such an action, ends the lookup at once. A throw route means "not in this table, keep going". ', mono('suppress_prefixlength'), ' counts a too-short match, such as a default route, as a miss.'))));
 }
@@ -147,6 +148,7 @@ function cell(col, r, data, names) {
         r.expires != null ? tag(`expires in ${fmtSpan(r.expires)}`) : null,
         r.pref ? tag(`pref ${r.pref}`) : null,
         r.mtu != null ? tag(`mtu ${r.mtu}`) : null,
+        ...(r.configured ? [tag('configured static', r.configured.join(', ')), badge(r.configState ?? 'installed', r.configState === 'disabled' ? '' : r.configState ? 'warning' : 'success')] : []),
         ...[...new Set(r.nexthops.flatMap(n => n.flags))].map(flagChip),
       ].filter(Boolean);
       return bits.length ? h('span', { className: 'chips' }, bits) : muted('–');
@@ -167,12 +169,13 @@ export function routesCard(data, state, rerender, names, hitKey) {
     return h('th', { className: 'sortable', title: 'Sort', onclick: () => { state.rsort = { key: col.sort, dir: active ? -state.rsort.dir : 1 }; rerender(); } },
       col.label, active ? (state.rsort.dir > 0 ? ' ▲' : ' ▼') : '');
   });
-  const rows = shown.map(r => h('tr', { className: `${hitKey === routeKey(r) ? 'rt-hit' : ''} ${r.nexthops.some(n => n.flags.includes('dead') || n.flags.includes('linkdown')) ? 'rt-down' : ''}` },
+  const rows = shown.map(r => h('tr', { className: `${!r.configState && hitKey === routeKey(r) ? 'rt-hit' : ''} ${r.nexthops.some(n => n.flags.includes('dead') || n.flags.includes('linkdown')) ? 'rt-down' : ''}` },
     COLS.map(c => h('td', { className: c.key === 'details' ? 'wrap' : '' }, cell(c, r, data, names)))));
 
   const scope = state.table === 'all' ? 'all tables' : `table ${tableLabel(state.table, data.table_ids)}`;
   return card([icon('signpost-split'), 'Routes', h('span', { className: 'sub' }, `${filtered.length} of ${data.routes.length} routes · ${scope}`)],
     h('div', {},
+      h('div', { className: 'set-legend muted small' }, 'Installed routes of every origin, plus configured static routes. Entries labeled disabled, not installed or state unknown are configuration only, not active forwarding entries. The table and family filters also apply to static routes.'),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover fixed-grid rt-routes', style: 'min-width:1100px' },
         h('colgroup', {}, COLS.map(c => h('col', { style: `width:${(c.w / total * 100).toFixed(2)}%` }))),
         h('thead', {}, h('tr', {}, head)),

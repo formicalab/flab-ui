@@ -28,9 +28,10 @@
 // in-process, so this must not call ubus objects served by rpcd itself.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
-import { run, sysfs, sysfs_raw, ubus_call, uci_all, safe_ifname } from 'flab.util';
+import { run, command_result, sysfs, sysfs_raw, ubus_call, uci_all, safe_ifname } from 'flab.util';
 
 // The uci config of the ddns client.
 const CONFIG = 'ddns';
@@ -57,14 +58,11 @@ const MAX_ERROR = 300;
 // How many of the newest log lines are searched for the latest problem.
 const PROBLEM_LINES = 60;
 // How long `control` waits for the init script, in seconds, and the most output it returns.
-const RUN_TIMEOUT = 30;
+const RUN_TIMEOUT = 20;
 const MAX_OUTPUT = 4096;
-// Where the output of the init script is collected while it runs (one call runs at a time inside rpcd).
-const OUTPUT_FILE = '/tmp/flab-ddns.out';
-// How long the list of providers is kept before the files are read again, in seconds. It only changes when a package is installed,
-// and reading the ~70 provider files costs about half of a status call.
+// Process-local memo lifetime. Fresh production workers still read the providers on every status request.
 const PROVIDER_TTL = 60;
-// The providers read last and when (rpcd keeps the plugin loaded, so this survives between calls).
+// The providers read last and when; worker changes are not merged into rpcd's module state.
 let provider_cache = { at: 0, list: null };
 
 //#region Helpers
@@ -332,7 +330,7 @@ function read_providers() {
 	return sort(map(keys(by_name), (k) => by_name[k]), (a, b) => a.name < b.name ? -1 : (a.name > b.name ? 1 : 0));
 }
 
-// The providers, read again at most every PROVIDER_TTL seconds.
+// The providers, reused within one worker or a repeated direct-call harness until PROVIDER_TTL expires.
 function providers() {
 	let now = time();
 	if (provider_cache.list == null || now - provider_cache.at >= PROVIDER_TTL || now < provider_cache.at)
@@ -454,23 +452,23 @@ function control(request) {
 	let rundir = valid_dir(glob.values.ddns_rundir) ? glob.values.ddns_rundir : DEFAULT_RUNDIR;
 	if (action == 'force')
 		run(`rm -f ${rundir}/${name}.update`);
-	let code = trim(run(`timeout ${RUN_TIMEOUT} /etc/init.d/ddns stop ${name} </dev/null >${OUTPUT_FILE} 2>&1; timeout ${RUN_TIMEOUT} /etc/init.d/ddns start ${name} </dev/null >>${OUTPUT_FILE} 2>&1; echo $?`) ?? '');
-	let output = trim(run(`head -c ${MAX_OUTPUT} ${OUTPUT_FILE} 2>/dev/null; rm -f ${OUTPUT_FILE}`) ?? '');
-	if (match(code, /^[0-9]+$/) == null)
+	let result = command_result(`/etc/init.d/ddns stop ${name} </dev/null && /etc/init.d/ddns start ${name} </dev/null`, { timeout: RUN_TIMEOUT, max_output: MAX_OUTPUT });
+	let code = result.code, output = trim(result.output);
+	if (code == null)
 		return refuse(name, action, 'The init script did not report a result.');
-	code = +code;
 	return {
-		ok: code == 0,
+		ok: result.ok,
 		section: name,
 		action,
 		code,
 		output,
-		error: code == 0 ? null : (code == 124 ? `The init script did not finish within ${RUN_TIMEOUT} seconds.` : `The init script failed with exit code ${code}.`),
+		truncated: result.truncated,
+		error: result.truncated ? 'The init script exceeded its output budget.' : (result.ok ? null : (result.timed_out ? `The init script did not finish within ${RUN_TIMEOUT} seconds.` : `The init script failed with exit code ${code}.`)),
 	};
 }
 
 // rpcd registration: ubus object flab.ddns.
-return {
+return deferred({
 	'flab.ddns': {
 		status: {
 			call: function() {
@@ -490,4 +488,4 @@ return {
 			},
 		},
 	},
-};
+});

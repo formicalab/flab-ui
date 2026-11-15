@@ -107,12 +107,14 @@ function uci(method, args) {
     return [0, {}];
   }
   if (method === 'confirm') {
+    if (!mock.snapshot) return [5];
     if (mock.confirmFails) { restore(); return [1]; }
     mock.snapshot = null;
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) restore();
+    if (!mock.snapshot) return [5];
+    restore();
     return [0, {}];
   }
   return [0, {}];
@@ -372,7 +374,7 @@ await saveBtn().click();
 const done = await outcome();
 check(/^Saved/.test(done), 'a successful save says so', done);
 KEYS = { flabn01: 'h0', renamed: 'h0', 'SkyQ-Mesh': 'h1', soundbar: 'h2', printer: 'h3' };
-check(/^uci\.changes uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+ uci\.confirm/.test(mock.calls.join(' ')), 'checked both configs for leftovers, staged, applied, read back, confirmed', mock.calls.join(' '));
+check(/^uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+ uci\.confirm/.test(mock.calls.join(' ')), 'checked the whole session for leftovers, staged, applied, read back, confirmed', mock.calls.join(' '));
 const cfg = mock.cfg;
 check(cfg.cfg1.ip === '192.168.1.20' && cfg.cfg1.mac === '88:AE:DD:66:16:05' && cfg.cfg2.name === 'SkyQ-Mesh' && !cfg.cfg3, 'changed reservations were written, a removed one is gone, untouched options kept', JSON.stringify([cfg.cfg1, cfg.cfg2, cfg.cfg3]));
 const added = Object.values(cfg).filter(s => s['.type'] === 'host' && ['printer', 'laptop'].includes(s.name));
@@ -400,9 +402,9 @@ console.log('\n== leftovers from an earlier attempt ==');
 mock.staged = [['set', 'cfg1', 'name', 'stale'], ['delete', 'cfg2', undefined]];
 await refresh();
 check(/2 change\(s\) are already staged/.test(await page.locator('main').innerText()), 'staged changes in the session are shown');
-await page.click('button:has-text("Discard them")');
+await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
 await page.waitForTimeout(700);
-check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), 'Discard them clears the session\'s staging area');
+check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), "Discard clears this page's staged changes");
 //#endregion
 
 //#region Pools, network boot entries and the server DUID
@@ -455,7 +457,7 @@ mock.calls = [];
 await saveBtn().click();
 const doneP = await outcome();
 check(/^Saved/.test(doneP), 'a change across both configs is saved', doneP);
-check(/^uci\.changes uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+ uci\.confirm/.test(mock.calls.join(' ')), 'both configs were checked for leftovers, staged, applied, read back and confirmed', mock.calls.join(' '));
+check(/^uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+ uci\.confirm/.test(mock.calls.join(' ')), 'the whole session was checked for leftovers, staged, applied, read back and confirmed', mock.calls.join(' '));
 check(mock.cfg.guest?.['.type'] === 'dhcp' && mock.cfg.guest.interface === 'guest' && mock.cfg.guest.dhcpv4 === 'server' && mock.cfg.guest.start === '50' && mock.cfg.guest.limit === undefined && !mock.cfg.spare, 'the new pool was added as a dhcp section named after the interface, with only the options that differ from the defaults, and the removed one is gone', JSON.stringify(mock.cfg.guest));
 check(mock.net.globals.dhcp_default_duid === '0004aabbccdd' && mock.net.globals.ula_prefix === 'fd00::/48', 'the DUID was written to the network config and its other options were left alone', JSON.stringify(mock.net));
 const boots = Object.values(mock.cfg).filter(s => s['.type'] === 'boot6');

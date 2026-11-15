@@ -11,8 +11,9 @@
 // the shell, so only an address and an interface name can ever be interpolated.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
-import { run, sysfs_raw, num, safe_ifname, uci_all } from 'flab.util';
+import { run, command_result, sysfs_raw, num, safe_ifname, uci_all } from 'flab.util';
 
 // Route types `ip` prints in front of the prefix (a plain unicast route has no type word).
 const TYPES = ['unicast', 'local', 'broadcast', 'multicast', 'anycast', 'blackhole', 'unreachable', 'prohibit', 'throw', 'nat', 'unspec', 'xresolve'];
@@ -180,22 +181,32 @@ function configured_rules() {
 function collect() {
 	let routes = [];
 	let truncated = false;
-	for (let family in [4, 6])
-		if (parse_routes(run(`/sbin/ip -${family} route show table all 2>/dev/null`), family, routes, MAX_ROUTES))
+	let errors = [];
+	for (let family in [4, 6]) {
+		let result = command_result(`/sbin/ip -${family} route show table all 2>/dev/null`);
+		if (!result.ok)
+			push(errors, `IPv${family} route query failed (exit ${result.code ?? 'unknown'}).`);
+		if (parse_routes(result.output, family, routes, MAX_ROUTES) || result.truncated)
 			truncated = true;
+	}
 
 	let rules = [];
-	for (let family in [4, 6])
-		for (let line in split(run(`/sbin/ip -${family} rule show 2>/dev/null`), '\n')) {
+	for (let family in [4, 6]) {
+		let result = command_result(`/sbin/ip -${family} rule show 2>/dev/null`);
+		if (!result.ok)
+			push(errors, `IPv${family} rule query failed (exit ${result.code ?? 'unknown'}).`);
+		for (let line in split(result.output, '\n')) {
 			let r = parse_rule(line, family);
 			if (r)
 				push(rules, r);
 		}
+	}
 
 	return {
 		generated: time(),
 		// No routes at all means `ip` could not be run (or reported nothing), which the page says instead of an empty table.
-		available: length(routes) > 0,
+		available: length(errors) == 0 && length(routes) > 0,
+		...(length(errors) ? { ok: false, error: join(' ', errors) } : {}),
 		truncated,
 		routes, rules,
 		table_ids: parse_table_ids(sysfs_raw('/etc/iproute2/rt_tables')),
@@ -276,17 +287,18 @@ function lookup(args) {
 
 	let family = index(dst, ':') >= 0 ? 6 : 4;
 	let cmd = `/sbin/ip -${family} route get ${dst}` + (src != null ? ` from ${src}` : '') + (iif != null ? ` iif ${iif}` : '');
-	let got = run(cmd + ' 2>&1');
-	let fib = run(cmd + ' fibmatch 2>&1');
+	let got_result = command_result(cmd + ' 2>&1');
+	let fib_result = command_result(cmd + ' fibmatch 2>&1');
+	let got = got_result.output, fib = fib_result.output;
 
-	let match_error = failure(fib);
+	let match_error = !fib_result.ok ? (failure(fib) ?? `The FIB query failed (exit ${fib_result.code ?? 'unknown'}).`) : failure(fib);
 	let entries = [];
 	if (match_error == null)
 		parse_routes(fib, family, entries, 1);
 
 	return {
 		...out, ok: true, family,
-		get: parse_get(got, family),
+		get: got_result.ok ? parse_get(got, family) : { ok: false, error: failure(got) ?? `The route query failed (exit ${got_result.code ?? 'unknown'}).` },
 		match: entries[0],
 		match_error,
 		raw: { get: trim(got ?? ''), match: trim(fib ?? '') },
@@ -296,7 +308,7 @@ function lookup(args) {
 //#endregion
 
 // rpcd registration: ubus object flab.routing with `status` (no arguments) and `lookup` (dst, src, iif).
-return {
+return deferred({
 	'flab.routing': {
 		status: {
 			call: function(request) {
@@ -310,4 +322,4 @@ return {
 			},
 		},
 	},
-};
+});

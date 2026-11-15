@@ -18,6 +18,7 @@
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { run, sysfs, num } from 'flab.util';
 
@@ -126,7 +127,7 @@ function collect(request) {
 	return out;
 }
 
-return {
+return deferred({
 	'flab.logs': {
 		read: {
 			args: { lines: 0, source: '' },
@@ -135,4 +136,4 @@ return {
 			},
 		},
 	},
-};
+});

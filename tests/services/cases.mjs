@@ -38,7 +38,7 @@ udp        0      0 0.0.0.0:51583           0.0.0.0:*                           
 udp        0      0 :::32767                :::*                                4576/squid
 `;
 // The command line that runs `action` on init script `name` and prints its exit code.
-export const waitCmd = (name, action) => `timeout 45 /etc/init.d/${name} ${action} </dev/null >/tmp/flab-service.out 2>&1; echo $?`;
+export const waitCmd = (name, action) => `/etc/init.d/${name} ${action} </dev/null`;
 export const OUTPUT_CMD = 'head -c 4096 /tmp/flab-service.out 2>/dev/null; rm -f /tmp/flab-service.out';
 // The fixture file name of a command.
 export const slug = cmd => cmd.replace(/ 2>\/dev\/null$/, '').replace(/[^A-Za-z0-9]+/g, '_') + '.txt';

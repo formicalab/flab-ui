@@ -14,7 +14,7 @@ Example: an `ntp` page.
      ```
      A page that reads or writes a config through rpcd's `uci` object needs a fragment too, listing the config
      in its `uci` read (and write) lists, like `flab-settings.json`.
-   - Prefer direct data sources (see the hard rule above), and rpcd's own `uci`, `system` and
+   - Prefer direct data sources, and rpcd's own `uci`, `system` and
      `service` objects where they are enough: no plugin is needed for those.
 2. **Frontend.** Create `www/js/pages/ntp.js` (or an `ntp/` folder with `index.js` plus helpers):
    ```js
@@ -27,8 +27,8 @@ Example: an `ntp` page.
    };
    ```
    Add `css: 'css/ntp.css'` and the file if the page needs its own styles.
-3. **Register.** Import it in `www/js/pages/index.js` and add it to the `pages` array. Array order is
-   navigation order.
+3. **Register.** Add navigation metadata and a dynamic importer to `www/js/pages/index.js`, following its existing
+   entries. Do not statically import page implementations into the registry; array order is navigation order.
 4. **Icons.** If you need a new icon, paste its `<path>` markup from icons.getbootstrap.com into the
    `PATHS` map in `core/icons.js`.
 5. **Tests.** Add the plugin to `$plugins` in `tests/network/run.ps1`, scenarios to `tests/network/mkfx.mjs`,
@@ -36,13 +36,15 @@ Example: an `ntp` page.
 6. **Install and test** with `tools/package.ps1`; every file in `rpcd/` and `www/` is picked up automatically.
 
 Reuse before writing new code: if two pages need the same widget, move it to `core/ui.js`; if the same
-parsing is needed by two plugins, move it to `rpcd/lib/flab/`. Comment every function and lookup table, put
+parsing is needed by two plugins, move it to `rpcd/lib/flab/`. Comment non-obvious contracts, units and safety constraints, put
 legends at the top of the card they explain, and keep pure logic (models, filters) in a DOM-free module with a
 unit test.
 
 ## Implementation notes
 
-- **rpcd reads its plugins and ACL fragments only at start**: copy them and `restart` rpcd (`reload` is not enough).
+- **rpcd loads plugins and ACL fragments at startup.** The standard init script's `reload` sends SIGHUP, which makes
+  rpcd re-execute and load them again; the package uses that path. Do not reload or restart rpcd during a pending
+  apply: its rollback timer is in process memory.
 - **A session without a password**: `ubus call session create` plus `session grant` (scopes `ubus` and `uci`)
   over ssh gives a session that works through `/ubus` like a real sign-in; the browser tests grant it what the
   ACL fragments list.
@@ -58,7 +60,8 @@ unit test.
   uses the rule. `uci apply` on `system` triggers procd to reload `system` (rewrites `/etc/TZ`) and `sysntpd`.
 - **UCI file order**: deleting and re-adding an option moves it within the section, and an explicit default
   (`enabled '1'`) stays in the file, so a change and its undo are equivalent but not byte-identical.
-- **BusyBox** has no `od`; `scp` needs `-O`; shell snippets sent over ssh must be LF-only.
+- **BusyBox applets depend on the image.** Do not assume optional applets or full GNU options. The tested router's
+  dropbear setup needs `scp -O` because it has no SFTP server; shell snippets sent over ssh must be LF-only.
 - **Splatting a single path** in PowerShell iterates its characters; wrap it in `@(...)`.
 - **hostapd rate units**: `ubus hostapd.<if> get_clients` reports rates in units of 10 bit/s, so divide by
   100000 to get Mbit/s.
@@ -79,8 +82,8 @@ unit test.
 
 ## Conventions
 
-- Every function, lookup table and non-obvious block has a comment saying what it does and, where it is not
-  obvious, why. Comments describe current behavior, never history; neither do these docs. Text, comments and
+- Comment non-obvious behavior, data contracts, units and safety assumptions, not self-explanatory statements.
+  Comments describe current behavior and limitations rather than promising outcomes that were not checked. Text, comments and
   these docs and the README use American English (color, center, gray, synchronize).
 - PowerShell follows `Set-StrictMode -Version Latest`, `$ErrorActionPreference = 'Stop'`, comment-based help
   on functions and scripts, and `#region` blocks.
@@ -88,5 +91,5 @@ unit test.
 - Everything shown is discovered from the router at run time; nothing is hard-coded to one board.
 - Legends sit at the top of the card or section they explain.
 - Code in `rpcd/` and `www/` is deployed as is; there is no build step to keep in sync.
-- When the router configuration is changed outside this folder, the corresponding files under
-  `build/MT6000/` in this repository must be updated as well and pushed.
+- Tests must not change the router's configuration. Use fixture or mock transports for write paths and document
+  separately any deliberate real-router validation; never present a mock save as a real network change.

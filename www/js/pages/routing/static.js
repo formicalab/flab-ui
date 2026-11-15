@@ -1,22 +1,22 @@
-// The Static routes tab of the Routing page: the `route` and `route6` sections of /etc/config/network as two editable tables (IPv4 and
+// Static routes on the Routing page: the `route` and `route6` sections of /etc/config/network as two editable tables (IPv4 and
 // IPv6), with what the kernel holds of each. What a route may hold, the validation, the review list, the UCI operations and the check
 // after a save are in static-model.js; the draft, the review banner and saving are shared with the other editing pages
 // (core/editpage.js).
 //
 // It reads the sections by type (core/uci.js getByType): the network config also holds the keys and passwords of the interfaces, so
 // the page never asks for the whole config. It writes through core/uci.js applyChange(): stage, apply with the rollback countdown, read
-// the sections back, confirm. A router that does not keep the change goes back to its previous routes by itself. The page redraws on
+// the sections back, verify installation on running interfaces, confirm. This does not prove end-to-end connectivity. The page redraws on
 // every poll, so polling is suspended while there is something to lose: unsaved edits, a focused control or a save in progress (the
 // Routing page's isPaused asks `staticEditor.paused`). A change to a default route is confirmed first.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { optional, ubus } from '../../core/ubus.js';
+import { AuthError, optional, ubus } from '../../core/ubus.js';
 import { badge, button, card, tile, tiles } from '../../core/ui.js';
 import { legend, note } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
 import { openDialog } from '../../core/modal.js';
 import { APPLY_TIMEOUT_S, uci } from '../../core/uci.js';
-import { CONFIG, FAMILIES, FIELDS, ROUTE_TYPES, changesOf, checkApplied, counts, draftFrom, interfaceChoices, isDirty, kernelState, newRow, plan, problems, readStatic, risksOf } from './static-model.js';
+import { CONFIG, FAMILIES, FIELDS, ROUTE_TYPES, changesOf, checkApplied, checkInstalled, counts, draftFrom, interfaceChoices, isDirty, kernelState, newRow, plan, problems, readStatic, risksOf } from './static-model.js';
 
 // Asks before a change to a default route: lists what it does to the router's way out and resolves to whether the admin wants to go on.
 // A change that touches no default route is saved without a question.
@@ -33,7 +33,7 @@ function confirmSave(base, draft) {
       staticBackdrop: true,
       body: h('div', {},
         h('ul', {}, risks.map(r => h('li', {}, r))),
-        h('p', { className: 'muted small' }, `The router applies the change and this page then checks that the routes were kept. If they were not, or if you close the page, the router restores the previous configuration by itself after ${APPLY_TIMEOUT_S} seconds. The page itself stays reachable through your LAN, but anything that goes through the default route (the internet) is affected until the change is undone.`)),
+        h('p', { className: 'muted small' }, `This page checks the saved configuration and installation of changed, enabled routes on running interfaces, not that the gateway or internet works. Unless the page confirms the apply, rpcd is set to restore the previous configuration after ${APPLY_TIMEOUT_S} seconds. A default-route change can also interrupt a routed management connection. Keep a second way to reach the router.`)),
       footer: [cancel, apply],
       onClose: () => resolve(go),
     });
@@ -42,8 +42,21 @@ function confirmSave(base, draft) {
 
 // Reads the route and route6 sections by type. Used for the check after a save, so a failed read is an error, not a missing config.
 async function readSections() {
-  const [cfg4, cfg6] = await Promise.all([uci.getByType(CONFIG, 'route'), uci.getByType(CONFIG, 'route6')]);
-  return readStatic(cfg4, cfg6);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const [cfg4, cfg6, status, dump] = await Promise.all([
+        uci.getByType(CONFIG, 'route'), uci.getByType(CONFIG, 'route6'),
+        ubus('flab.routing', 'status'), ubus('network.interface', 'dump'),
+      ]);
+      const data = readStatic(cfg4, cfg6, { status, dump });
+      checkApplied(data, staticEditor.state.draft);
+      checkInstalled(staticEditor.state.base, staticEditor.state.draft, data);
+      return data;
+    } catch (e) {
+      if (e instanceof AuthError || attempt === 5) throw e;
+      await new Promise(resolve => setTimeout(resolve, 750));
+    }
+  }
 }
 
 // The editor: the draft, the review banner, saving and discarding (core/editpage.js).
@@ -51,7 +64,7 @@ export const staticEditor = createEditor({
   config: CONFIG,
   readAfter: readSections,
   model: { draftFrom, changesOf, isDirty, problems, plan },
-  verify: (base, draft, after) => checkApplied(after, draft),
+  verify: (base, draft, after) => { checkApplied(after, draft); checkInstalled(base, draft, after); },
   confirmSave,
 });
 const editor = staticEditor;
@@ -61,14 +74,14 @@ const editor = staticEditor;
 // Reads what the tab shows: the two kinds of route section (null where the login may not read them), the kernel's routes and the
 // interface list (both optional: without them the page still edits, but cannot say what is installed or check a gateway), and how
 // many changes are already staged in this session.
-export async function loadStatic() {
+export async function loadStatic(live) {
   const [cfg4, cfg6, status, dump] = await Promise.all([
     optional(uci.getByType(CONFIG, 'route')),
     optional(uci.getByType(CONFIG, 'route6')),
-    optional(ubus('flab.routing', 'status')),
-    optional(ubus('network.interface', 'dump')),
+    live ? live.status : optional(ubus('flab.routing', 'status')),
+    live ? live.dump : optional(ubus('network.interface', 'dump')),
   ]);
-  return editor.withStaged({ ...readStatic(cfg4, cfg6, { status, dump }), tab: 'static' });
+  return editor.withStaged(readStatic(cfg4, cfg6, { status, dump }));
 }
 
 //#endregion
@@ -141,7 +154,9 @@ function routeRow(ctx, row, choices) {
       else row.removed = true;
       ctx.redraw();
     } }, icon('x-lg'));
-  return h('tr', { id: `rt-static-${row.key}`, className: row.removed ? 'rt-s-removed' : row.section == null ? 'rt-s-new' : '' }, ...cells, h('td', {}, stateBadge(ctx, row)), h('td', {}, action));
+  const state = h('td', {}, stateBadge(ctx, row));
+  ctx.states.set(row, state);
+  return h('tr', { id: `rt-static-${row.key}`, className: row.removed ? 'rt-s-removed' : row.section == null ? 'rt-s-new' : '' }, ...cells, state, h('td', {}, action));
 }
 
 // The card of one address family: its routes, and a button that adds one.
@@ -173,7 +188,7 @@ function summary(data) {
   return tiles(
     tile('Static routes', String(c.total), `${v4} IPv4 · ${c.total - v4} IPv6`),
     tile('Installed', data.kernel ? String(c.active) : '–', data.kernel ? 'held by the kernel now' : 'the kernel state is not available'),
-    tile('Not installed', data.kernel ? String(c.missing) : '–', c.missing ? 'configured, but not in the kernel' : 'every enabled route is installed', c.missing ? 'text-warning' : ''),
+    tile('Not installed', data.kernel ? String(c.missing) : '–', data.kernel ? c.missing ? 'configured, but not in the kernel' : 'every enabled route is installed' : 'the kernel state is not available', c.missing ? 'text-warning' : ''),
     tile('Disabled', String(c.disabled), 'switched off in the config'));
 }
 
@@ -183,18 +198,21 @@ export function staticView(data, rerender) {
     return [note('bad', 'The routes in /etc/config/network cannot be read: this login may not read the network configuration, or the router did not answer.')];
   }
   const canEdit = editor.begin(data, rerender);
-  const ctx = { data, base: editor.state.base, draft: editor.state.draft, canEdit, inputs: {}, sync: () => {}, touched: () => {}, redraw: () => editor.redraw() };
+  const ctx = { data, base: editor.state.base, draft: editor.state.draft, canEdit, inputs: {}, states: new Map(), sync: () => {}, touched: () => {}, redraw: () => editor.redraw() };
   ctx.touched = editor.touched(ctx);
   // Called after every edit: marks the controls that hold an error and refreshes the banner (the form itself is not redrawn, so the
   // focus stays where it is).
-  ctx.sync = () => editor.markErrors(ctx.inputs, canEdit);
+  ctx.sync = () => {
+    editor.markErrors(ctx.inputs, canEdit);
+    for (const [row, cell] of ctx.states) cell.replaceChildren(...[stateBadge(ctx, row)].filter(Boolean));
+  };
   const choices = interfaceChoices(ctx.base, ctx.draft);
   // The wrapper is what the page's isPaused looks in for a focused control.
   const form = h('div', { className: 'rt-static' },
     legend([
-      'Static routes are the route and route6 sections of /etc/config/network. netifd installs a route while its interface is up. Routes learned by a routing daemon (BGP, OSPF), by DHCP or by the kernel itself show on the Routes tab and are not edited here. Changes are applied with the review banner at the top.',
+      'Static routes are the route and route6 sections of /etc/config/network. Save and apply commits them; netifd installs enabled routes when their interface is up and removes them when it goes down. They appear together with connected, DHCP and routing-daemon routes in the final Routes list below. Disabled or not-yet-installed entries are labeled and do not forward traffic. Changes are applied with the review banner at the top.',
       'A target without a prefix length is one host. Leave the gateway empty for a network that is directly connected to the interface. A route in another table is only used where a policy rule sends traffic to that table; "From" limits the route to packets from one source.']),
     ...FAMILIES.map(fam => familyCard(ctx, fam, choices)));
   ctx.sync();
-  return [summary(data), ...editor.notes(data).filter(Boolean), form];
+  return [h('section', { className: 'rt-static-section' }, summary(data), ...editor.notes(data).filter(Boolean), form)];
 }

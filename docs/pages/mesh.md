@@ -9,7 +9,8 @@ so a router without mesh shows an empty page and a second mesh interface gets it
   expected throughput, connected time, retries and failed transmissions, mesh gate flag.
 - **Paths**: destination, next hop, hop count, metric, lifetime and the decoded flags (active, resolving,
   sequence-number valid, fixed, resolved). Entries appear and disappear as the mesh converges.
-- **Mesh parameters** (`iw get mesh_param`, cached 60 s in the plugin) with findings, e.g. forwarding off.
+- **Mesh parameters** (`iw get mesh_param`) with findings, e.g. forwarding off. Discovery caches are private to each
+  deferred worker and do not persist across production requests.
 - **STP note**: when the bridge's root is reached through the mesh port, the root bridge MAC is matched to a
   peer by its first five octets (the bridge MAC and the radio MAC differ in the last octet).
 - The mesh key (`key` / SAE password) is never read into the output; the tests plant a canary to prove it.

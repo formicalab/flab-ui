@@ -93,7 +93,7 @@ const fail = load('fail');
 check(RUN.every(([s, a]) => { const x = fail[`run:${s}:${a}`]; return x.ok === false && x.code === 1 && /exit code 1/.test(x.error) && /bad config/.test(x.output); }), 'a failing init script is a failure that carries the code and its output');
 refusals('fail', fail);
 const timeout = load('timeout');
-check(RUN.every(([s, a]) => { const x = timeout[`run:${s}:${a}`]; return x.ok === false && x.code === 124 && /30 seconds/.test(x.error); }), 'an init script that hangs is reported as such');
+check(RUN.every(([s, a]) => { const x = timeout[`run:${s}:${a}`]; return x.ok === false && x.code === 124 && /20 seconds/.test(x.error); }), 'an init script that hangs is reported as such');
 const noresult = load('noresult');
 check(RUN.every(([s, a]) => { const x = noresult[`run:${s}:${a}`]; return x.ok === false && x.code === null && /did not report/.test(x.error); }), 'a missing exit code is a failure, not a success');
 refusals('timeout', timeout);

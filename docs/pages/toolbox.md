@@ -126,7 +126,7 @@ again. The form remembers its values while the page is open; Run is disabled for
   poll (it re-reads what the router has once a minute, and not while the form has focus); Refresh redraws it and the job
   carries on.
 
-`flab.diag` runs the tools detached (`timeout -k 2 <limit> <tool> ... >out 2>&1 &`, with the exit code written to a file)
+`flab.diag` runs the tools detached under `timeout -k 2`, with a bounded FIFO output pump and exit status file,
 under `/tmp/flab-diag/<id>/`: a ping may run its count plus 10 seconds, a traceroute 60 (with the AS lookups up to 108 more),
 MTR its rounds plus 15, a DNS trace 60, a DNS lookup of one server 15, a certificate check 25, a lookup of several servers
 (the plugin's `compare` tool) 60, the connectivity check 75 and the iperf3 server the minutes asked for. The check, the
@@ -138,7 +138,10 @@ splits and reads; a block without an END line is still running. Every command in
 a TERM sent to the script (Stop) ends the command at once. `read` returns the output from a byte offset (`from`), cut at the last
 complete line while more is still being written, with `size` for the next call and `truncated` when more is pending, so a long
 iperf3 server's output is fetched in pieces. At most three jobs run at once,
-twelve directories are kept, and a finished job is removed after ten minutes. Everything that reaches the shell is
+twelve finished directories are retained and old jobs are swept on a subsequent start request after ten minutes.
+Each output file is capped at 256 KiB; the producer is stopped when it reaches that budget and the page reports it.
+The browser independently caps retained text at 256 KiB, so an older or incompatible backend cannot grow it indefinitely.
+Everything that reaches the shell is
 validated: the tool, the record type and the STARTTLS protocol come from allow-lists, the host, the server name and the DNS
 servers are made of letters, digits and `. : _ -` and do not start with `-` (they could be taken for an option), the port is
 clamped to 1 to 65535 (1024 to 65535 for the iperf3 server), a `compare` request takes one to six servers that are each such a name (or `router`), the source is such

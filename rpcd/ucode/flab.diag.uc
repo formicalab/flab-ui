@@ -33,13 +33,15 @@
 // router's own, only one runs at a time and `timeout` ends it after the minutes chosen.
 
 'use strict';
+import { deferred } from 'flab.worker';
+import { launch_job, MAX_JOB_OUTPUT } from 'flab.jobs';
 
-import { run, safe_ifname, uci_all, ubus_call, as_list } from 'flab.util';
+import { run, command_result, safe_ifname, uci_all, ubus_call, as_list } from 'flab.util';
 import { connect } from 'ubus';
 import { mkdir, readfile, writefile, lsdir, stat, access, open } from 'fs';
 
 // Where the jobs live (tmpfs): one directory per job with `out` (the output), `pid` and `rc` (the exit code).
-const ROOT = '/tmp/flab-diag';
+const ROOT = getenv('FLAB_DIAG_ROOT') ?? '/tmp/flab-diag';
 // At most this many jobs run at once, and only this many job directories are kept.
 const MAX_RUNNING = 3;
 const MAX_JOBS = 12;
@@ -722,8 +724,10 @@ function start(request) {
 		// A script is written with LF line endings only: BusyBox sh rejects a carriage return, and the source file may carry CRLF
 	// (a Windows checkout) inside the multi-line parts of the templates.
 	writefile(`${ROOT}/${id}/job.sh`, replace(built.script, /\r/g, ''));
-	run(`cd ${ROOT}/${id} && ( timeout -k 2 ${built.limit} ${command} >out 2>&1 & echo $! >pid; wait $!; echo $? >rc ) </dev/null >/dev/null 2>&1 &`);
-	return { ok: true, id, tool, command: built.display ?? command, limit: built.limit, dns_tool: built.tool ?? null, started: time() };
+	let launched = command_result(`cd ${ROOT}/${id} || exit 1\n${launch_job(command, built.limit)}`);
+	if (!launched.ok)
+		return { ok: false, error: 'Could not launch the diagnostic job.' };
+	return { ok: true, id, tool, command: built.display ?? command, limit: built.limit, max_output: MAX_JOB_OUTPUT, dns_tool: built.tool ?? null, started: time() };
 }
 
 // The reply of `read`: the output of a job from byte offset `from` (at most MAX_OUTPUT bytes, ending at a line break when
@@ -759,8 +763,10 @@ function read(request) {
 		ok: true, id, running: s.running, exit: s.exit,
 		size: from + length(text), text,
 		truncated: from + length(text) < total,
-		timed_out: s.exit == 124 || s.exit == 137,
-		stopped: s.exit == 143,
+		output_limited: stat(`${ROOT}/${id}/truncated`) != null,
+		max_output: MAX_JOB_OUTPUT,
+		timed_out: stat(`${ROOT}/${id}/timed_out`) != null || s.exit == 124 || s.exit == 137,
+		stopped: s.exit == 143 && stat(`${ROOT}/${id}/timed_out`) == null && stat(`${ROOT}/${id}/truncated`) == null,
 	};
 }
 
@@ -910,10 +916,9 @@ function wake(request) {
 		command = `printf '${magic_format(mac)}' | timeout 5 socat - UDP-DATAGRAM:255.255.255.255:9,broadcast,so-bindtodevice=${iface} 2>&1`;
 		display = `UDP broadcast to 255.255.255.255:9 on ${iface} (socat)`;
 	}
-	let lines = split(trim(run(`${command}; echo rc=$?`) ?? ''), '\n');
-	let rc = match(pop(lines) ?? '', /^rc=([0-9]+)$/);
-	let output = trim(join('\n', lines));
-	if (rc == null || +rc[1] != 0)
+	let result = command_result(command, { timeout: 7, max_output: 4096 });
+	let output = trim(result.output);
+	if (!result.ok)
 		return { ok: false, error: output != '' ? output : 'The magic packet could not be sent.', method, iface, mac, command: display };
 	return { ok: true, mac, iface, method, command: display, output, sent: time() };
 }
@@ -939,7 +944,7 @@ function status() {
 //#endregion
 
 // rpcd registration: ubus object flab.diag.
-return {
+return deferred({
 	'flab.diag': {
 		status: {
 			call: function(request) {
@@ -971,4 +976,4 @@ return {
 			},
 		},
 	},
-};
+});

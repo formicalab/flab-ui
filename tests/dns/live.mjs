@@ -103,7 +103,7 @@ const uciMock = {
     ];
   },
   // Answers one call of the uci object, or null for a method the mock does not know.
-  call(method, args, ok, denied, invalid) {
+  call(method, args, ok, denied, invalid, noData) {
     const sec = mock.reply.config_section;
     const own = sec && args?.config === sec.config;
     this.log.push({ method, args: clone(args ?? {}) });
@@ -115,9 +115,9 @@ const uciMock = {
     if (method === 'changes') {
       const list = this.staged.flatMap(op => op.kind === 'add' ? [['add', op.section, op.type]]
         : op.kind === 'set' ? Object.entries(op.values).map(([k, v]) => ['set', op.section, k, v]) : (op.options ?? [null]).map(o => (o ? ['remove', op.section, o] : ['remove', op.section])));
-      return ok({ changes: own ? list : [] });
+      return ok({ changes: args.config ? (own ? list : []) : (sec && list.length ? { [sec.config]: list } : {}) });
     }
-    if (method === 'revert') { this.staged = []; return ok({}); }
+    if (method === 'revert') { if (!own) return denied; this.staged = []; return ok({}); }
     if (method === 'apply') {
       if (this.failApply) return invalid;
       this.backup = clone(this.applied);
@@ -125,8 +125,14 @@ const uciMock = {
       this.staged = [];
       return ok({});
     }
-    if (method === 'confirm') { this.backup = null; return ok({}); }
-    if (method === 'rollback') { if (this.backup) this.applied = this.backup; this.backup = null; return ok({}); }
+    if (method === 'confirm') { if (!this.backup) return noData; this.backup = null; return ok({}); }
+    if (method === 'rollback') {
+      if (!this.backup) return noData;
+      this.staged = this.applied.slice(this.backup.length);
+      this.applied = this.backup;
+      this.backup = null;
+      return ok({});
+    }
     return null;
   },
 };
@@ -138,8 +144,9 @@ function answer(body) {
   const ok = data => ({ jsonrpc: '2.0', id: body.id, result: [0, data] });
   const denied = { jsonrpc: '2.0', id: body.id, result: [6] };
   const invalid = { jsonrpc: '2.0', id: body.id, result: [2] };
+  const noData = { jsonrpc: '2.0', id: body.id, result: [5] };
   if (obj === 'uci') {
-    const r = uciMock.call(method, args ?? {}, ok, denied, invalid);
+    const r = uciMock.call(method, args ?? {}, ok, denied, invalid, noData);
     return r ?? ok({});
   }
   if (obj === 'flab.dns') {
@@ -616,16 +623,18 @@ await ctl('Log verbosity').locator('select').selectOption('2');
 await saveBtn().click();
 const rolled = await outcome(/rolled back/);
 const m2 = uciMock.log.map(c => c.method);
-check(/The change was rolled back: Unbound is not running after the change/.test(rolled) && m2.includes('apply') && m2.includes('rollback') && !m2.includes('confirm'), 'a change after which the resolver does not run is rolled back, not confirmed', `${rolled} / ${m2.join()}`);
+check(/^The change was rolled back \(confirmed by the router\) after verification failed: Unbound is not running after the change/.test(rolled) && m2.includes('apply') && m2.includes('rollback') && !m2.includes('confirm'), 'a change after which the resolver does not run is rolled back, not confirmed', `${rolled} / ${m2.join()}`);
 check(uciMock.applied.length === 3 && uciMock.staged.length === 0 && await rbar().locator('.set-bar-summary:has-text("1 unsaved change")').count() === 1 && await ctl('Log verbosity').locator('select').inputValue() === '2', 'the router keeps its previous settings, nothing stays staged and the edit stays in the form so it can be fixed');
 uciMock.engineDown = false;
 // A router that refuses the apply: the staged edits are thrown away and nothing is confirmed.
 uciMock.failApply = true;
 uciMock.log.length = 0;
 await saveBtn().click();
-await outcome(/uci\.apply failed \(ubus code 2\)/);
+const applyFailed = await outcome(/uci\.apply failed \(ubus code 2\)/);
 const m3 = uciMock.log.map(c => c.method);
-check(m3.includes('apply') && m3.includes('revert') && !m3.includes('confirm') && uciMock.staged.length === 0 && await rbar().locator('.set-note.bad').count() >= 1, 'an apply the router refuses reverts what was staged and says so', m3.join());
+check(/^Apply failed; the outcome is uncertain\./.test(applyFailed) && /Rollback could not be confirmed/.test(applyFailed) && !/was rolled back/.test(applyFailed)
+  && m3.includes('apply') && m3.includes('rollback') && m3.includes('revert') && !m3.includes('confirm') && uciMock.staged.length === 0
+  && await rbar().locator('.set-note.bad').count() >= 1, 'a refused apply cleans up staging but does not claim rollback without an acknowledgement', `${applyFailed} / ${m3.join()}`);
 uciMock.failApply = false;
 await rbar().locator('button:has-text("Discard edits")').click();
 await page.waitForTimeout(600);
@@ -634,7 +643,7 @@ await page.waitForTimeout(600);
 uciMock.staged = [{ kind: 'set', section: 'ub_main', values: { verbosity: '3' } }];
 await refresh(900);
 check(/1 change\(s\) are already staged in this session/.test(await text(page.locator('main'))), 'changes left staged in the session are reported');
-await page.locator('main button:has-text("Discard them")').click();
+await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
 await page.waitForTimeout(700);
 check(uciMock.staged.length === 0 && !/already staged/.test(await text(page.locator('main'))), 'and can be discarded');
 
@@ -848,7 +857,7 @@ uciMock.log.length = 0;
 await saveBtn().click();
 const zrolled = await outcome(/rolled back/);
 const zm = uciMock.log.map(c => c.method);
-check(/The change was rolled back: Unbound is not running after the change/.test(zrolled) && zm.includes('rollback') && !zm.includes('confirm') && /1 unsaved change: fwd_lab: Servers/.test(await text(rbar().locator('.set-bar-summary'))), 'a zone change that stops the resolver is rolled back, and the edit stays in the banner', zrolled);
+check(/^The change was rolled back \(confirmed by the router\) after verification failed: Unbound is not running after the change/.test(zrolled) && zm.includes('rollback') && !zm.includes('confirm') && /1 unsaved change: fwd_lab: Servers/.test(await text(rbar().locator('.set-bar-summary'))), 'a zone change that stops the resolver is rolled back, and the edit stays in the banner', zrolled);
 uciMock.engineDown = false;
 await rbar().locator('button:has-text("Discard edits")').click();
 await page.waitForTimeout(700);

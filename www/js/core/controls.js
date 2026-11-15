@@ -45,7 +45,7 @@ export const refreshControl = reload => button('Refresh', 'arrow-clockwise', rel
 
 // A strip of tab buttons bound to state[key]; options are [value, label] pairs. A click selects the tab and calls
 // onchange(value). Returns { node, setOptions(options) } so a page can offer only the tabs that make sense
-// (the selection falls back to the first tab when its own disappears; the node is empty below two tabs).
+// (the selection falls back to the first tab when its own disappears; the strip is hidden below two tabs).
 export function tabsControl(state, key, onchange) {
   const node = h('div', { className: 'seg', role: 'tablist' });
   let options = [];

@@ -6,6 +6,7 @@
 // involved. Sensors that appear both as a thermal zone and as its hwmon twin are reported once.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { lsdir, readfile } from 'fs';
 import { num } from 'flab.util';
@@ -112,7 +113,7 @@ function collect() {
 }
 
 // rpcd registration: ubus object flab.sensors with the single method `status` (no arguments).
-return {
+return deferred({
 	'flab.sensors': {
 		status: {
 			call: function(request) {
@@ -120,4 +121,4 @@ return {
 			},
 		},
 	},
-};
+});

@@ -44,7 +44,10 @@ function commit() {
 // One uci method of the mock: [ubus status, data].
 function uci(method, args) {
   if (method === 'get') return [0, { values: clone(mock.cfg) }];
-  if (method === 'changes') return [0, { changes: mock.staged.map(c => c.slice(0, 4)) }];
+  if (method === 'changes') {
+    const list = args.config && args.config !== 'system' ? [] : mock.staged.map(c => c.slice(0, 4));
+    return [0, { changes: args.config ? list : (list.length ? { system: list } : {}) }];
+  }
   if (method === 'set') { for (const [k, v] of Object.entries(args.values)) mock.staged.push(['set', args.section, k, v]); return [0, {}]; }
   if (method === 'add') {
     const name = args.name ?? `cfg${nextId++}`;
@@ -52,7 +55,7 @@ function uci(method, args) {
     return [0, { section: name }];
   }
   if (method === 'delete') { for (const o of args.options ?? [undefined]) mock.staged.push(['delete', args.section, o]); return [0, {}]; }
-  if (method === 'revert') { mock.staged = []; return [0, {}]; }
+  if (method === 'revert') { if (args.config !== 'system') return [4]; mock.staged = []; return [0, {}]; }
   if (method === 'apply') {
     mock.snapshot = clone(mock.cfg);
     mock.restage = mock.staged;
@@ -61,12 +64,14 @@ function uci(method, args) {
     return [0, {}];
   }
   if (method === 'confirm') {
-    if (mock.confirmFails) { mock.cfg = mock.snapshot; mock.staged = mock.restage; return [1]; }
+    if (!mock.snapshot) return [5];
+    if (mock.confirmFails) { mock.cfg = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null; return [1]; }
     mock.snapshot = null;
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) { mock.cfg = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null; }
+    if (!mock.snapshot) return [5];
+    mock.cfg = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null;
     return [0, {}];
   }
   return [0, {}];
@@ -302,7 +307,10 @@ mock.confirmFails = true;
 mock.calls = [];
 await saveBtn().click();
 const late = await outcome();
-check(/did not accept the confirmation/.test(late) && mock.calls.lastIndexOf('uci.revert') > mock.calls.indexOf('uci.confirm') && await tile(1) === 'router2', 'a rejected confirmation is reported, the leftovers discarded, and the router stays as it was', `${late} / ${mock.calls.join(' ')}`);
+check(/^Confirmation failed; the outcome is uncertain\./.test(late) && /Rollback could not be confirmed/.test(late) && !/was rolled back/.test(late)
+  && mock.calls.filter(c => c === 'uci.confirm').length === 1 && mock.calls.indexOf('uci.rollback') > mock.calls.indexOf('uci.confirm')
+  && mock.calls.lastIndexOf('uci.revert') > mock.calls.indexOf('uci.rollback') && await tile(1) === 'router2',
+  'a late confirmation is reported as uncertain without retrying it; the mock restored the config and cleanup discards the leftovers', `${late} / ${mock.calls.join(' ')}`);
 mock.confirmFails = false;
 await page.click('button:has-text("Discard edits")');
 await page.waitForTimeout(500);
@@ -311,9 +319,9 @@ console.log('\n== leftovers from an earlier attempt ==');
 mock.staged = [['set', 'cfg0', 'hostname', 'stale'], ['set', 'cfg0', 'description', 'stale']];
 await refresh();
 check(/2 change\(s\) are already staged/.test(await page.locator('main').innerText()), 'staged changes in the session are shown');
-await page.click('button:has-text("Discard them")');
+await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
 await page.waitForTimeout(700);
-check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), 'Discard them clears the session\'s staging area');
+check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), "Discard clears this page's staged changes");
 //#endregion
 
 //#region A login that may not write, theme, expiry

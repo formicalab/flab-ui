@@ -30,8 +30,8 @@ const CFG6 = {
 };
 // The router's live state: the interfaces with their subnets, and the kernel's routes.
 const DUMP = { interface: [
-  { interface: 'lan', up: true, 'ipv4-address': [{ address: '192.168.1.1', mask: 24 }], 'ipv6-address': [{ address: 'fd00::1', mask: 64 }] },
-  { interface: 'wan', up: true, 'ipv4-address': [{ address: '192.0.2.50', mask: 24 }], 'ipv6-address': [] },
+  { interface: 'lan', up: true, l3_device: 'br-lan', 'ipv4-address': [{ address: '192.168.1.1', mask: 24 }], 'ipv6-address': [{ address: 'fd00::1', mask: 64 }] },
+  { interface: 'wan', up: true, l3_device: 'wan', 'ipv4-address': [{ address: '192.0.2.50', mask: 24 }], 'ipv6-address': [] },
   { interface: 'wan2', up: false, 'ipv4-address': [], 'ipv6-address': [] },
   { interface: 'loopback', up: true, 'ipv4-address': [{ address: '127.0.0.1', mask: 8 }], 'ipv6-address': [] },
 ] };
@@ -252,6 +252,43 @@ check(c.total === 8 && c.active === 4 && c.disabled === 1 && c.missing === 3, 't
 draft = m.draftFrom(data);
 rowOf(draft, 'cfg05').values.table = '100';
 check(m.kernelState(rowOf(draft, 'cfg05'), data) === 'active', 'a table given by number matches the kernel\'s table by name');
+
+console.log('== complete route identity and combined inventory ==');
+draft = m.draftFrom(data);
+const original = rowOf(draft, 'cfg01');
+for (const [field, value] of [['metric', '200'], ['source', '192.168.1.0/24'], ['interface', 'lan'], ['gateway', '']]) {
+  const changed = { ...original, values: { ...original.values, [field]: value } };
+  check(m.kernelState(changed, data) === 'missing', `a different ${field} does not match an installed route`);
+}
+check(m.kernelState(rowOf(draft, 'cfg04'), read({})) === 'disabled', 'disabled configuration is known even without a kernel reply');
+check(!m.matchesKernel(original, { ...STATUS.routes[0], proto: 'bird' }, data), 'a daemon route is not mislabeled as configured static even when its forwarding tuple matches');
+const inherited = read({ status: { ...STATUS, routes: [{ ...STATUS.routes[0], metric: 77, table: 'voip' }] }, dump: {
+  interface: [{ ...DUMP.interface[1], metric: 77, ip4table: 100 }],
+} });
+const inheritedRow = { ...original, values: { ...original.values, metric: '', table: '' } };
+check(m.kernelState(inheritedRow, inherited) === 'active', 'an unset metric and table inherit netifd interface defaults');
+check(['0', '254', 'main'].every(table => m.kernelState({ ...inheritedRow, values: { ...inheritedRow.values, table } }, inherited) === 'active'),
+  'netifd main/zero table spellings also inherit the interface table');
+const inventory = m.routeInventory({ ...STATUS, rules: [] }, data);
+check(inventory.routes.length === 8 && inventory.routes.filter(r => r.configState === 'disabled').length === 1,
+  'combined list includes installed static routes once and appends disabled or absent configured routes', j(inventory.routes));
+check(inventory.routes.filter(r => r.configured?.includes('cfg01')).length === 1 && inventory.routes[0].configured[0] === 'cfg01',
+  'an installed configured route annotates the existing kernel entry instead of duplicating it');
+const changedDraft = m.draftFrom(data);
+rowOf(changedDraft, 'cfg01').values.metric = '22';
+const stored = m.readStatic({ ...CFG4, cfg01: { ...CFG4.cfg01, metric: '22' } }, CFG6, { status: STATUS, dump: DUMP });
+thrown = null;
+try { m.checkInstalled(data, changedDraft, stored); } catch (e) { thrown = e; }
+check(/installation.*could not be verified/.test(thrown?.message ?? ''), 'saving the config alone cannot confirm a changed route on a running interface');
+const installed = { ...stored, kernel: stored.kernel.map((r, i) => i ? r : { ...r, metric: 22 }) };
+thrown = null;
+try { m.checkInstalled(data, changedDraft, installed); } catch (e) { thrown = e; }
+check(thrown === null, 'the exact changed route in the kernel passes installation verification', thrown?.message);
+const dormant = m.draftFrom(data);
+rowOf(dormant, 'cfg02').values.metric = '44';
+thrown = null;
+try { m.checkInstalled(data, dormant, data); } catch (e) { thrown = e; }
+check(thrown === null, 'a route on a down interface may be saved for later without blocking on installation');
 
 console.log('== the interface choices ==');
 draft = m.draftFrom(data);

@@ -87,13 +87,13 @@ function restore() {
 function uci(method, args) {
   if (method === 'get') { mock.reads.push(args.config); return mock.noConfig ? [4] : [0, { values: withStaged() }]; }
   if (method === 'changes') {
-    const list = mock.staged.map(c => c.slice(0, 4));
+    const list = args.config && args.config !== 'nlbwmon' ? [] : mock.staged.map(c => c.slice(0, 4));
     return [0, { changes: args.config ? list : (list.length ? { nlbwmon: list } : {}) }];
   }
   if (method === 'set') { mock.log.push(`set ${JSON.stringify(args.values)}`); for (const [k, v] of Object.entries(args.values)) mock.staged.push(['set', args.section, k, v]); return [0, {}]; }
   if (method === 'add') { mock.log.push(`add ${JSON.stringify(args.values)}`); mock.staged.push(['add', 'cfg9', args.type, args.values ?? {}]); return [0, { section: 'cfg9' }]; }
   if (method === 'delete') { mock.log.push(`delete ${JSON.stringify(args.options)}`); for (const o of args.options ?? [undefined]) mock.staged.push(['delete', args.section, o, undefined]); return [0, {}]; }
-  if (method === 'revert') { mock.staged = []; return [0, {}]; }
+  if (method === 'revert') { if (args.config !== 'nlbwmon') return [4]; mock.staged = []; return [0, {}]; }
   if (method === 'apply') {
     mock.snapshot = clone(mock.cfg);
     mock.restage = mock.staged;
@@ -102,12 +102,14 @@ function uci(method, args) {
     return [0, {}];
   }
   if (method === 'confirm') {
+    if (!mock.snapshot) return [5];
     if (mock.confirmFails) { restore(); return [1]; }
     mock.snapshot = null;
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) restore();
+    if (!mock.snapshot) return [5];
+    restore();
     return [0, {}];
   }
   return [0, {}];
@@ -499,7 +501,7 @@ await input('Commit interval').fill('6h');
 mock.calls = [];
 await saveBtn().click();
 let lost = await outcome();
-check(/^The change was rolled back: Commit interval was not saved/.test(lost), 'a change that does not read back is rolled back and named', lost);
+check(/^The change was rolled back \(confirmed by the router\) after verification failed: Commit interval was not saved/.test(lost), 'a change that does not read back is rolled back and named', lost);
 check(mock.calls.includes('uci.rollback') && !mock.calls.includes('uci.confirm') && mock.staged.length === 0 && mock.cfg.cfg0.commit_interval === '24h', 'rollback is called, confirm is not, nothing stays staged, and the router is unchanged', mock.calls.join(' '));
 mock.dropWrites = false;
 check(await input('Commit interval').inputValue() === '6h', 'the edit is still in the form');
@@ -514,7 +516,7 @@ await input('Commit interval').fill('6h');
 mock.calls = [];
 await saveBtn().click();
 lost = await outcome();
-check(/^The change was rolled back: nlbwmon is not running with the new settings: it stopped or could not start$/.test(lost), 'a change after which nlbwmon is not running is rolled back', lost);
+check(/^The change was rolled back \(confirmed by the router\) after verification failed: nlbwmon is not running with the new settings: it stopped or could not start$/.test(lost), 'a change after which nlbwmon is not running is rolled back', lost);
 check(mock.calls.includes('uci.rollback') && !mock.calls.includes('uci.confirm') && mock.cfg.cfg0.commit_interval === '24h' && mock.daemon.running && mock.daemon.command.includes('24h') && mock.staged.length === 0, 'the old config is back and the daemon runs on it', `${mock.calls.join(' ')} ${mock.daemon.running}`);
 
 console.log('\n== a daemon that keeps the old settings ==');
@@ -523,7 +525,7 @@ mock.mode = 'stale';
 await input('Entry limit').fill('5000');
 await saveBtn().click();
 lost = await outcome();
-check(/^The change was rolled back: nlbwmon is running with other settings than the saved ones \(Entry limit: 10000\)$/.test(lost), 'a daemon that does not pick up the change is rolled back, naming the option', lost);
+check(/^The change was rolled back \(confirmed by the router\) after verification failed: nlbwmon is running with other settings than the saved ones \(Entry limit: 10000\)$/.test(lost), 'a daemon that does not pick up the change is rolled back, naming the option', lost);
 
 console.log('\n== a daemon that keeps restarting ==');
 await fresh();
@@ -531,7 +533,7 @@ mock.mode = 'flap';
 await input('Entry limit').fill('5000');
 await saveBtn().click();
 lost = await outcome();
-check(/^The change was rolled back: nlbwmon does not stay running with the new settings$/.test(lost), 'a daemon that crashes and restarts over and over is rolled back', lost);
+check(/^The change was rolled back \(confirmed by the router\) after verification failed: nlbwmon does not stay running with the new settings$/.test(lost), 'a daemon that crashes and restarts over and over is rolled back', lost);
 mock.mode = 'follow';
 
 console.log('\n== a confirmation the router refuses ==');
@@ -540,7 +542,8 @@ mock.confirmFails = true;
 await input('Commit interval').fill('6h');
 await saveBtn().click();
 lost = await outcome();
-check(/^The router did not accept the confirmation, so the change was rolled back/.test(lost) && mock.cfg.cfg0.commit_interval === '24h' && mock.staged.length === 0, 'a refused confirmation is a rollback', lost);
+check(/^Confirmation failed; the outcome is uncertain\./.test(lost) && /Rollback could not be confirmed/.test(lost) && !/was rolled back/.test(lost)
+  && mock.cfg.cfg0.commit_interval === '24h' && mock.staged.length === 0, 'the mock restored the old config, but a refused confirmation without a rollback acknowledgement is reported as uncertain', lost);
 //#endregion
 
 //#region Other states
@@ -549,9 +552,9 @@ await fresh();
 mock.staged = [['set', 'cfg0', 'commit_interval', '1h']];
 await refresh();
 check(/1 change\(s\) are already staged/.test(await page.locator('main').innerText()), 'staged changes in the session are shown');
-await page.click('button:has-text("Discard them")');
+await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
 await page.waitForTimeout(900);
-check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), 'Discard them clears the session\'s staging area');
+check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), "Discard clears this page's staged changes");
 
 console.log('\n== the daemon differs from the file ==');
 await fresh();

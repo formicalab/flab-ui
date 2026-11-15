@@ -135,7 +135,10 @@ function uci(method, args) {
     if (!args.type) { mock.whole.push(args.config); return [0, { values: mock.cfg }]; }
     return [0, { values: Object.fromEntries(Object.entries(mock.cfg).filter(([, s]) => s['.type'] === args.type).map(([name, s]) => [name, { '.anonymous': false, '.name': name, '.index': Object.keys(mock.cfg).indexOf(name), ...s }])) }];
   }
-  if (method === 'changes') return [0, { changes: mock.staged.map(c => c.slice(0, 4)) }];
+  if (method === 'changes') {
+    const list = args.config && args.config !== 'network' ? [] : mock.staged.map(c => c.slice(0, 4));
+    return [0, { changes: args.config ? list : (list.length ? { network: list } : {}) }];
+  }
   if (method === 'set') { for (const [k, v] of Object.entries(args.values)) mock.staged.push(['set', args.section, k, v]); return [0, {}]; }
   if (method === 'add') {
     const name = args.name ?? `cfg${100 + nextId++}`;
@@ -143,7 +146,7 @@ function uci(method, args) {
     return [0, { section: name }];
   }
   if (method === 'delete') { for (const o of args.options ?? [undefined]) mock.staged.push(['delete', args.section, o, undefined]); return [0, {}]; }
-  if (method === 'revert') { mock.staged = []; return [0, {}]; }
+  if (method === 'revert') { if (args.config !== 'network') return [4]; mock.staged = []; return [0, {}]; }
   if (method === 'apply') {
     mock.snapshot = clone(mock.cfg);
     mock.restage = mock.staged;
@@ -152,12 +155,14 @@ function uci(method, args) {
     return [0, {}];
   }
   if (method === 'confirm') {
+    if (!mock.snapshot) return [5];
     if (mock.confirmFails) { restore(); return [1]; }
     mock.snapshot = null;
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) restore();
+    if (!mock.snapshot) return [5];
+    restore();
     return [0, {}];
   }
   return [0, {}];
@@ -317,7 +322,7 @@ await shot('edited');
 mock.calls = [];
 await saveBtn().click();
 check(/^Saved/.test(await outcome()), 'a successful save says so');
-check(/^uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+ uci\.confirm/.test(mock.calls.join(' ')) || /^uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+/.test(mock.calls.join(' ')), 'it checked for leftovers, staged, applied, read back by type and confirmed', mock.calls.join(' '));
+check(/^uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+ uci\.confirm/.test(mock.calls.join(' ')), 'it checked the whole session for leftovers, staged, applied, read back by type and confirmed', mock.calls.join(' '));
 check(JSON.stringify(mock.cfg.v20.ports) === JSON.stringify([`${eth[2]}:t`, `${eth[3]}:t`, `${eth[0]}:t`]) && mock.cfg.v1.ports.join() === `${eth[0]}:u*,${eth[1]}:u*,${eth[2]},${eth[3]}:t`, 'only the ports of that VLAN changed, in the notation of the file (an untouched untagged port kept its spelling)', JSON.stringify(mock.cfg.v20.ports));
 check(mock.gets.every(g => g.type) && mock.whole.length === 0 && await stateOf('20', eth[0]) === 't' && await page.locator('.set-outcome.ok').count() === 1 && await done().isEnabled(), 'afterwards the form shows the stored state, the outcome stays and the editor can be closed');
 
@@ -385,7 +390,8 @@ mock.dropWrites = false;
 mock.confirmFails = true;
 await saveBtn().click();
 const refused = await outcome();
-check(/did not accept the confirmation/.test(refused) && !mock.cfg.v20.ports.some(p => p.startsWith(eth[1])), 'a router that refuses the confirmation puts the old config back', refused);
+check(/^Confirmation failed; the outcome is uncertain\./.test(refused) && /Rollback could not be confirmed/.test(refused) && !/was rolled back/.test(refused)
+  && !mock.cfg.v20.ports.some(p => p.startsWith(eth[1])), 'the mock restores the config, but the page reports uncertainty without a rollback acknowledgement', refused);
 mock.confirmFails = false;
 await saveBtn().click();
 check(/^Saved/.test(await outcome()) && mock.cfg.v20.ports.some(p => p === `${eth[1]}:t`), 'and the retry succeeds');
@@ -396,10 +402,10 @@ await done().click();
 await page.waitForSelector('button:has-text("Edit VLANs")');
 await openEditor();
 check(/1 change\(s\) are already staged in this session/.test(await page.locator('main').innerText()), 'changes staged earlier are said so above the cards');
-await page.click('button:has-text("Discard them")');
+await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
 await page.waitForSelector('.vlan-edit');
 await page.waitForTimeout(500);
-check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), 'Discard them reverts them');
+check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), "Discard reverts this page's staged changes");
 
 console.log('\n== the kernel table differs from the config ==');
 mock.kernel = true;

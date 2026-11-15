@@ -18,6 +18,7 @@
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
 import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label, iw_channel_info } from 'flab.util';
@@ -131,8 +132,8 @@ function proxied(ifname) {
 	return out;
 }
 
-// Mesh parameters change only when someone edits the configuration, so they are read at most once a minute.
-// Per-interface cache of { at: epoch seconds, values }; it lives as long as rpcd keeps the plugin loaded.
+// Per-interface memo of { at: epoch seconds, values }, valid for 60 seconds within this process.
+// Production requests fork fresh workers, so this does not suppress reads across separate polls.
 let param_cache = {};
 
 // Values of the PARAMS mesh parameters for `ifname` as { name: value string }; unreadable ones are left out.
@@ -198,7 +199,7 @@ function collect() {
 }
 
 // rpcd registration: ubus object flab.mesh with the single method `status` (no arguments).
-return {
+return deferred({
 	'flab.mesh': {
 		status: {
 			call: function(request) {
@@ -206,4 +207,4 @@ return {
 			},
 		},
 	},
-};
+});

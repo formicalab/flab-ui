@@ -26,8 +26,9 @@
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
-import { run, uci_all, sysfs, sysfs_raw, safe_ifname, num, as_list } from 'flab.util';
+import { run, uci_all, sysfs, sysfs_raw, safe_ifname, num, as_list, fixture_time } from 'flab.util';
 
 // A WireGuard session is rekeyed every 120 s while traffic flows and is rejected after 180 s without a
 // handshake, so a peer whose last handshake is older than this is not currently connected.
@@ -247,7 +248,7 @@ function admin_sessions() {
 // netifd has the wireguard protocol handler, `sessions` the administration connections (see admin_sessions()).
 function collect() {
 	let all = uci_all('network');
-	let now = time();
+	let now = fixture_time();
 
 	let names = [], configured = {};
 	for (let n, s in all)
@@ -278,7 +279,7 @@ function collect() {
 }
 
 // rpcd registration: ubus object flab.wireguard with the single method `status` (no arguments).
-return {
+return deferred({
 	'flab.wireguard': {
 		status: {
 			call: function(request) {
@@ -286,4 +287,4 @@ return {
 			},
 		},
 	},
-};
+});

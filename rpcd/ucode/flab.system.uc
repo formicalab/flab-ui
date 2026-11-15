@@ -8,6 +8,7 @@
 // Reads procfs only; no other tool is involved.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { readfile } from 'fs';
 
@@ -64,7 +65,7 @@ function collect() {
 }
 
 // rpcd registration: ubus object flab.system with the single method `cpu` (no arguments).
-return {
+return deferred({
 	'flab.system': {
 		cpu: {
 			call: function(request) {
@@ -72,4 +73,4 @@ return {
 			},
 		},
 	},
-};
+});

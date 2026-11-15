@@ -1,5 +1,5 @@
 // Assertions of the Firewall backend test: the output of the repository's flab.firewall plugin for every scenario of mkfx.mjs (run on the router
-// against fixtures, so nothing was executed), and a read-only run of the plugin on the real router. Usage: node assert.mjs <dir with out/>
+// against fixtures, so nothing was executed), and an optional read-only run on the real router. Usage: node assert.mjs <dir with out/>
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -55,8 +55,8 @@ console.log('\n== other routers ==');
   check(j(read('partial').loaded_zones) === j(['lan', 'wan']), 'a zone the firewall did not load is missing from loaded_zones');
 }
 
-console.log('\n== the real router (read only) ==');
-{
+if (fs.existsSync(path.join(dir, 'out', 'real.json'))) {
+  console.log('\n== the real router (read only) ==');
   const real = read('real');
   const facts = Object.fromEntries(fs.readFileSync(path.join(dir, 'out', 'real-facts.txt'), 'utf8').split('\n').filter(Boolean).map(l => l.split('=')));
   check(real.rules.length === +facts.rules && real.zones.length === +facts.zones && real.redirects.length === +facts.redirects, 'the plugin finds as many rules, zones and port forwards as uci show does', j([real.rules.length, facts.rules, real.zones.length, facts.zones, real.redirects.length, facts.redirects]));

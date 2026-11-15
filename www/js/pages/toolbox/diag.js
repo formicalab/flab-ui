@@ -19,6 +19,7 @@ import { iperfBody } from './iperfview.js';
 import { dnsTraceBody } from './dnstraceview.js';
 import { asnLine, asPathView, mtrBody } from './pathview.js';
 import { parseAsn } from './pathmodel.js';
+import { retainOutput } from './output.js';
 
 // How often a running job is read, in milliseconds.
 const READ_EVERY = 500;
@@ -85,7 +86,7 @@ async function start(state) {
       const r = await ubus('flab.diag', 'wake', { mac: req.args.mac, ...(req.args.iface ? { iface: req.args.iface } : {}) });
       job.wake = r;
       job.command = r.command ?? '';
-      job.text = r.output ?? '';
+      job.text = retainOutput('', r.output).text;
       job.exit = r.ok ? 0 : 1;
       if (!r.ok) job.error = r.error;
     } catch (e) {
@@ -128,12 +129,21 @@ export function track(state) {
       const r = await ubus('flab.diag', 'read', { id: job.id, from: job.size });
       if (!r.ok) { job.running = false; job.error = r.error; }
       else {
-        job.text += r.text;
+        const retained = retainOutput(job.text, r.text);
+        job.text = retained.text;
         job.size = r.size;
-        job.running = r.running;
+        // Drain already-finished jobs too: "truncated" historically means another chunk remains.
+        job.running = r.running || r.truncated;
         job.exit = r.exit;
         job.stopped = r.stopped;
         job.timedOut = r.timed_out;
+        if (retained.limited || (r.output_limited && !r.truncated)) {
+          if (r.running) {
+            try { await ubus('flab.diag', 'stop', { id: job.id }); } catch { /* the server also caps every job */ }
+          }
+          job.running = false;
+          job.error = 'Output limit reached. The diagnostic was stopped and its output was truncated.';
+        }
       }
     } catch (e) {
       job.running = false; job.error = e instanceof AuthError ? 'The session has expired. Sign in again.' : e.message;

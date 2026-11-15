@@ -29,8 +29,9 @@
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
-import { run } from 'flab.util';
+import { run, command_result } from 'flab.util';
 
 // Actions `control` accepts. enable and disable only add or remove the start-at-boot links (the script's own `enable` and
 // `disable`); they never start or stop the running service.
@@ -40,13 +41,11 @@ const PROTECTED = [ 'boot', 'done', 'umount' ];
 // Init scripts whose stop or restart cuts the reply or the browser connection: run detached.
 const DETACHED = [ 'rpcd', 'uhttpd', 'network' ];
 // How long `control` waits for an init script, in seconds (shorter than the web server's own limit).
-const RUN_TIMEOUT = 45;
+const RUN_TIMEOUT = 20;
 // Seconds a detached call waits before running the script, so the reply can leave first.
 const DETACH_DELAY = 2;
 // The most output of an init script that is returned.
 const MAX_OUTPUT = 4096;
-// Where the output of a script is collected while it runs (one call runs at a time inside rpcd).
-const OUTPUT_FILE = '/tmp/flab-service.out';
 
 // A plain file name: starts with a letter or digit, then letters, digits, "_", "." and "-". No "/", no spaces
 // and no shell metacharacters.
@@ -124,26 +123,25 @@ function refuse(name, action, error) {
 
 // Runs a script in the background after DETACH_DELAY seconds and returns at once.
 function control_detached(name, action) {
-	run(`(sleep ${DETACH_DELAY}; /etc/init.d/${name} ${action}) </dev/null >/dev/null 2>&1 &`);
+	run(`(sleep ${DETACH_DELAY}; timeout -k 1 ${RUN_TIMEOUT} /etc/init.d/${name} ${action}) </dev/null >/dev/null 2>&1 &`);
 	return { name, action, ok: true, code: null, detached: true, output: '', error: null };
 }
 
-// Runs a script, waits for it and returns its exit code and output. The output goes to a file first, so a
-// daemon that keeps the script's output open cannot hold this call up.
+// Waits only inside the deferred worker; no shared output file can mix concurrent results.
 function control_wait(name, action) {
-	let code = trim(run(`timeout ${RUN_TIMEOUT} /etc/init.d/${name} ${action} </dev/null >${OUTPUT_FILE} 2>&1; echo $?`) ?? '');
-	let output = trim(run(`head -c ${MAX_OUTPUT} ${OUTPUT_FILE} 2>/dev/null; rm -f ${OUTPUT_FILE}`) ?? '');
-	if (match(code, /^[0-9]+$/) == null)
+	let result = command_result(`/etc/init.d/${name} ${action} </dev/null`, { timeout: RUN_TIMEOUT, max_output: MAX_OUTPUT });
+	let code = result.code, output = trim(result.output);
+	if (code == null)
 		return refuse(name, action, 'The service script did not report a result.');
-	code = +code;
 	return {
 		name,
 		action,
-		ok: code == 0,
+		ok: result.ok,
 		code,
 		detached: false,
 		output,
-		error: code == 0 ? null : (code == 124 ? `The service script did not finish within ${RUN_TIMEOUT} seconds.` : `The service script failed with exit code ${code}.`),
+		truncated: result.truncated,
+		error: result.truncated ? 'The service script exceeded its output budget.' : (result.ok ? null : (result.timed_out ? `The service script did not finish within ${RUN_TIMEOUT} seconds.` : `The service script failed with exit code ${code}.`)),
 	};
 }
 
@@ -162,7 +160,7 @@ function control(request) {
 	return ((action == 'stop' || action == 'restart') && index(DETACHED, name) >= 0) ? control_detached(name, action) : control_wait(name, action);
 }
 
-return {
+return deferred({
 	'flab.services': {
 		list: {
 			call: function() {
@@ -176,4 +174,4 @@ return {
 			},
 		},
 	},
-};
+});

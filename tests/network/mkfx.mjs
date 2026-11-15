@@ -41,8 +41,9 @@ if (wgPeers.length < 2) throw new Error('the router needs at least two WireGuard
 const wgSite = wgPeers.find(p => p.route_allowed_ips === '1') ?? wgPeers[0];
 // The name of the captured `wg show` output file for field `f` (e.g. latest_handshakes) of the WireGuard interface.
 const wgFile = f => `wg_show_${wgIf}_${f}.txt`;
-// The current time in whole seconds since the epoch.
-const nowS = () => Math.floor(Date.now() / 1000);
+// Every replay uses this same instant, even when generating and running all scenarios takes several minutes.
+const CLOCK = Math.floor(Date.now() / 1000);
+const nowS = () => CLOCK;
 const NEWKEY = `${'B'.repeat(43)}=`;
 
 // Rewrites (or adds) the "key<TAB>value" line of a `wg show <if> <field>` capture.
@@ -377,7 +378,7 @@ const scenarios = {
   // A radio on a PCIe card, whose UCI path has no `platform/` prefix while the phy's device path in sysfs does
   // (like the AVM FRITZ!Repeater 3000): the radio is down, so the phy can only be found from the path.
   'r-pci': fx => {
-    const link = Object.keys(fx.raw).find(k => /readlink.*ieee80211.*phy1.*device/.test(k));
+    const link = Object.keys(fx.raw).find(k => /readlink.*ieee80211.*phy1.*device.*\.txt$/.test(k));
     if (!link) throw new Error('no readlink fixture for phy1');
     fx.raw[link] = '/sys/devices/platform/soc/40000000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0\n';
     fx.uci.radio1.path = 'soc/40000000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0';
@@ -497,6 +498,7 @@ function writeScenario(name, build) {
   // Writes `data` to `file` in this scenario's directory.
   const put = (file, data) => fs.writeFileSync(path.join(dir, file), data);
   for (const [file, data] of Object.entries(fx.raw)) put(file, data);
+  put('clock.txt', `${CLOCK}\n`);
   put('files.json', JSON.stringify(fx.files));
   put('network_device_status.json', JSON.stringify(fx.devices));
   put('uci_wireless.json', JSON.stringify({ values: fx.uci }));

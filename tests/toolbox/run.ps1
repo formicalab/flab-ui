@@ -18,8 +18,8 @@ Tests the Toolbox page (connectivity check, ping, traceroute, DNS lookup and com
    router's configuration.
 
 Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action Deploy) and
-installs playwright-core into the temporary work folder. Everything created on the router (/tmp/flab-toolbox-test,
-/tmp/flab-diag) and locally is removed afterwards.
+installs playwright-core into the project work folder. Everything created on the router
+(/root/flab-ui-tests/toolbox, including its private diagnostic jobs) and locally is removed afterwards.
 
 .PARAMETER Router
 SSH destination of the router.
@@ -32,7 +32,7 @@ Also run the browser test.
 
 .PARAMETER KeepWork
 Keep the local work folder (the plugin outputs and the browser test's node modules) after the run, so the browser test
-can be repeated by hand. The folder is %TEMP%\flab-toolbox-test.
+can be repeated by hand. The folder is tests\toolbox\.work.
 #>
 [CmdletBinding()]
 param(
@@ -51,8 +51,8 @@ $sid = $null
 $root = (Resolve-Path (Join-Path $here '..\..')).Path
 $diagPlugin = Join-Path $root 'rpcd\ucode\flab.diag.uc'
 $libs = Join-Path $root 'rpcd\lib\flab'
-$work = Join-Path ([IO.Path]::GetTempPath()) 'flab-toolbox-test'
-$remote = '/tmp/flab-toolbox-test'
+$work = Join-Path $here '.work'
+$remote = '/root/flab-ui-tests/toolbox'
 
 #region Helpers
 function Invoke-Remote {
@@ -77,6 +77,7 @@ try {
     Write-Host '1/3 Unit tests: the Toolbox model and the newer tools'
     Invoke-Native 'node' @((Join-Path $here 'model.test.mjs'))
     Invoke-Native 'node' @((Join-Path $here 'tools.test.mjs'))
+    Invoke-Native 'node' @((Join-Path $here 'output.test.mjs'))
 
     Write-Host '2/3 Running the diagnostics plugin on the router (real jobs against loopback)'
     Invoke-Remote "rm -rf $remote; mkdir -p $remote"
@@ -91,10 +92,10 @@ sed 's/`$/\r/' flab.diag.uc > flab.diag.uc.l && mv flab.diag.uc.l flab.diag.uc
     $diagScript = @'
 set -e
 cd @REMOTE@
-d() { FLAB_PLUGIN=@REMOTE@/flab.diag.uc FLAB_METHOD="$1" FLAB_ARGS="$2" ucode -L "@REMOTE@/*.uc" harness.uc; }
+d() { FLAB_DIAG_ROOT=@REMOTE@/jobs FLAB_PLUGIN=@REMOTE@/flab.diag.uc FLAB_METHOD="$1" FLAB_ARGS="$2" ucode -L "@REMOTE@/*.uc" harness.uc; }
 idof() { sed -n 's/.*"id": "\([0-9a-f]*\)".*/\1/p'; }
 sizeof() { sed -n 's/.*"size": \([0-9]*\).*/\1/p'; }
-rm -rf /tmp/flab-diag /tmp/flab-diag-canary
+rm -rf @REMOTE@/jobs
 d status '' > out-diag-status.json
 
 # A ping read while it runs, after it ended, from its end and from an offset.
@@ -140,7 +141,7 @@ d start '{"tool":"compare","host":"localhost","type":"A","servers":["router","12
 id=$(idof < out-diag-compare.start.json); sleep 4; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-compare.read.json
 d start '{"tool":"check","host":"localhost"}' > out-diag-check.start.json
 id=$(idof < out-diag-check.start.json); sleep 26; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-check.read.json
-grep -c "$(printf '\r')" /tmp/flab-diag/$id/job.sh > out-diag-check.cr || true
+grep -c "$(printf '\r')" @REMOTE@/jobs/$id/job.sh > out-diag-check.cr || true
 d start '{"tool":"check"}' > out-diag-check2.start.json
 sleep 1; d stop "{\"id\":\"$(idof < out-diag-check2.start.json)\"}" > /dev/null
 sleep 1; d read "{\"id\":\"$(idof < out-diag-check2.start.json)\",\"from\":0}" > out-diag-check2.read.json
@@ -151,10 +152,10 @@ d start '{"tool":"mtr","host":"127.0.0.1","cycles":3}' > out-diag-mtr.start.json
 id=$(idof < out-diag-mtr.start.json); sleep 7; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-mtr.read.json
 d start '{"tool":"traceroute","host":"127.0.0.1","hops":3,"probes":1,"asn":true}' > out-diag-asn.start.json
 id=$(idof < out-diag-asn.start.json); sleep 4; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-asn.read.json
-grep -c "$(printf '\r')" /tmp/flab-diag/$id/job.sh > out-diag-asn.cr || true
+grep -c "$(printf '\r')" @REMOTE@/jobs/$id/job.sh > out-diag-asn.cr || true
 d start '{"tool":"trace","host":"example.com"}' > out-diag-dnstrace.start.json
 id=$(idof < out-diag-dnstrace.start.json); sleep 20; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-dnstrace.read.json
-grep -c "$(printf '\r')" /tmp/flab-diag/$id/job.sh > out-diag-dnstrace.cr || true
+grep -c "$(printf '\r')" @REMOTE@/jobs/$id/job.sh > out-diag-dnstrace.cr || true
 
 # An iperf3 server on a spare port, a client on loopback, a second server refused, then stopping the first.
 d start '{"tool":"iperf","minutes":1,"port":5399}' > out-diag-iperf.start.json
@@ -167,7 +168,7 @@ sleep 1; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-iperf.after.json
 pidof iperf3 | wc -w > out-diag-iperf.procs.txt || true
 
 # Requests that must be refused: nothing may run, no job may appear, the canary file must not be created.
-before=$(ls /tmp/flab-diag | wc -l)
+before=$(ls @REMOTE@/jobs | wc -l)
 i=0
 while IFS= read -r line; do i=$((i + 1)); d start "$line" > out-diag-refused-$i.json; done < refusals.txt
 # Wake-on-LAN: one packet out of the loopback device, where nothing hears it, then every refused request (the canary is
@@ -176,7 +177,7 @@ d wake '{"mac":"02:00:00:00:00:01","iface":"lo"}' > out-diag-wake.json
 d wake '{"mac":"02-00-00-00-00-02","iface":"lo"}' > out-diag-wake2.json
 i=0
 while IFS= read -r line; do i=$((i + 1)); d wake "$line" > out-diag-wakerefused-$i.json; done < wake-refusals.txt
-after=$(ls /tmp/flab-diag | wc -l)
+after=$(ls @REMOTE@/jobs | wc -l)
 echo "$before $after" > out-diag-refused.count
 if [ -e /tmp/flab-diag-canary ]; then echo yes > out-diag-canary.txt; else echo no > out-diag-canary.txt; fi
 n=0
@@ -189,7 +190,7 @@ done
 # At most three jobs at once; then stop them all. Wait for every earlier job to end first, and record how many were still running.
 running_jobs() {
   n=0
-  for j in /tmp/flab-diag/*; do
+  for j in @REMOTE@/jobs/*; do
     [ -d "$j" ] || continue
     [ -f "$j/rc" ] && continue
     pid=$(cat "$j/pid" 2>/dev/null); [ -n "$pid" ] && [ -d "/proc/$pid" ] && n=$((n + 1))
@@ -207,7 +208,7 @@ sleep 1
 for id in $ids; do d stop "{\"id\":\"$id\"}" > /dev/null; done
 sleep 1
 ps | grep -c '[p]ing -c 10' > out-diag-cap.procs.txt || true
-rm -rf /tmp/flab-diag /tmp/flab-diag-canary
+rm -rf @REMOTE@/jobs
 '@
     Invoke-Remote ($diagScript.Replace('@REMOTE@', $remote))
     Invoke-Native 'scp' @('-O', "${Router}:$remote/out-diag-*", (Join-Path $work 'out'))
@@ -238,6 +239,6 @@ rm -rf /tmp/flab-diag /tmp/flab-diag-canary
 finally {
     # Always remove the router-side work folder and the local one, even after a failure.
     Remove-TestSession -Router $Router -Sid $sid
-    ssh $Router "rm -rf $remote /tmp/flab-diag /tmp/flab-diag-canary" 2>$null
+    ssh $Router "rm -rf $remote" 2>$null
     if (-not $KeepWork) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
 }

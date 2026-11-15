@@ -42,17 +42,19 @@ the configs they touch (in `rpcd/acl.d/`; the page and plugin sections name them
 | `flab-firewall.json` | `firewall` (with `order`) |
 | `flab-traffic.json` | `nlbwmon` |
 | `flab-vlan.json` | `network` (with `order`; the VLAN editor of the Wired network page) |
-| `flab-routing.json` | `network` (the Static routes tab of the Routing page; also ubus `flab.routing` `status` and `lookup`) |
+| `flab-routing.json` | `network` (the static-route editor on the Routes view; also ubus `flab.routing` `status` and `lookup`) |
 | `flab-network.json` | `network`: `changes` and the write methods only, no `get` (Devices and Interfaces, which reads the config through `flab.network config`) |
 | `flab-radio.json` | `wireless`: `changes` and the write methods only, no `get` (the Wi-Fi page reads it through `flab.radio config`) |
 | `flab-wireguard.json` | `network`: `changes` and the write methods only, no `get` (WireGuard reads it through `flab.wireguard status`) |
 | `flab-ddns.json` | `ddns`: `changes` and the write methods only, no `get` (Dynamic DNS reads it through `flab.ddns status`) |
 
 **Secrets.** A config that holds secrets is never read by the browser with `uci get` where the page can avoid it: `wireless` (Wi-Fi keys),
-`network` (PPPoE passwords, WireGuard keys) and `ddns` (passwords and tokens) are read through the plugin of the page, which leaves
-every secret out and reports only whether it is set, and the read-back after a save goes through the same plugin. Their password and key fields are
+`network` (PPPoE passwords, WireGuard keys) and `ddns` (passwords and tokens) are read through the plugin of the page, which omits
+recognized secret options and reports only whether they are set; the read-back after a save goes through the same plugin. Their password and key fields are
 write-only: empty keeps the stored value, a typed value replaces it, and the review list shows "new value (hidden)" or nothing. The
-configs a page reads with `uci get` itself (`system`, `dhcp`, `unbound`, `firewall`, `nlbwmon`) hold none. The VLAN editor and the Static routes tab read the network config
+standard options edited through raw `uci get` (`system`, `dhcp`, `unbound`, `firewall`, `nlbwmon`) are not intended
+to hold credentials, but custom options in those configs are not filtered. Secret-name filtering and log redaction are
+heuristics, not a guarantee for arbitrary option names or free text. The VLAN and static-route editors read the network config
 with `uci get` filtered by section type (`bridge-vlan`, `device`, `switch`, `switch_vlan`, `switch_port`; `route`, `route6`), never the whole config, and a test checks
 that. rpcd cannot restrict `uci get` to section types, and root holds every fragment, so a root login can still call `uci get network` (through
 `flab-dhcp.json`, `flab-vlan.json` or `flab-routing.json`); the pages never do.
@@ -93,6 +95,18 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 - **Shell safety.** Anything interpolated into a command line must be validated (`safe_ifname`).
 - **Speed.** Collect once per call and cache in local variables. The UI polls every 3 to 10 s; the logs
   plugin returns at most 2000 lines per source (500 by default) so a poll stays small.
+- **Blocking and errors.** All production plugin handlers run in deferred `uloop.task` workers, leaving rpcd free to
+  serve requests and rollback timers. Workers have a 24-second deadline; commands have a 20-second maximum, a 256 KiB
+  per-command output cap and a 1 MiB request output budget. At most four workers run per plugin module, with no queue
+  (this is not a global four-worker limit). Mutation calls are serialized per object. `command_result()` preserves
+  exit status, timeout and truncation; routing/firewall queries and controls use it where success matters. `run()` is
+  a compatibility reader for optional probes, not a way to prove a command succeeded.
+- **Worker state.** A worker is a fork snapshot, not a persistent service. Module-local mesh, provider, hardware/EEE
+  and cable-support caches are request-scoped in production and are not merged back into rpcd. This trades more
+  repeated discovery work for isolation and responsiveness; test memory and polling cost on smaller devices.
+- **Diagnostic storage.** Output-file and retained browser text are each capped at 256 KiB, independently of the
+  64 KiB read chunks. Reaching the job limit terminates the producer and reports the cap explicitly. Cleanup of old
+  finished jobs runs on another start request, not from a periodic timer.
 - **ucode specifics.** Arrays have no methods (`push(arr, x)`, `slice(arr, 1)`, not `arr.push`). Function
   declarations are not hoisted: define a helper before its caller. Redeclaring a `let` makes rpcd silently
   skip the plugin. Regular expressions are POSIX ERE (no `(?:` non-capturing groups, no lazy quantifiers); the

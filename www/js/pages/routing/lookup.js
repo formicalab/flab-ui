@@ -9,7 +9,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, button, card, kv, mono, muted } from '../../core/ui.js';
-import { openTool } from '../toolbox/index.js';
+import { openTool } from '../index.js';
 import { DROPS, interpret, isAddress, routeText, rulesFor, tableLabel } from './model.js';
 
 // The device name with its logical interface (netifd name) next to it when that differs.

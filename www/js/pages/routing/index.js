@@ -1,9 +1,8 @@
 // Routing page (route #routing): the kernel's routing state and, when BIRD is installed, BGP.
 //
-// Up to three tabs share the page and its command bar:
+// Routes combines live routing and static-route editing; BGP has its own optional tab.
 //   Routes       the next-hop lookup, the policy rules and routing tables, and the route list (flab.routing, see
 //                rpcd/ucode/flab.routing.uc; the logical interface names come from `network.interface dump`)
-//   Static routes  the route and route6 sections of /etc/config/network, edited through uci (static.js, static-model.js)
 //   BGP          the BIRD state (flab.bgp; the sections are in bgp/): sessions, learned and announced routes
 // Only the open tab is polled. The BGP tab is offered only when the router has birdc. A forwarded lookup answer offers
 // Ping and Traceroute buttons that open the Toolbox page with the destination filled in.
@@ -17,6 +16,7 @@ import { searchControl, selectControl, pauseControl, refreshControl, toggleContr
 import { loadBgp, peerOptions, bgpView } from './bgp/tab.js';
 import { lookupCard } from './lookup.js';
 import { loadStatic, staticEditor, staticView } from './static.js';
+import { routeInventory } from './static-model.js';
 import { routesCard, rulesCard, tablesCard, howCard } from './tables.js';
 import { defaultRoutes, findings, interfaceNames, isKernelRule, routeKey, tableLabel, tablesOf } from './model.js';
 
@@ -26,7 +26,7 @@ const state = {
   q: '', peer: 'all', best: false, sort: { key: 'prefix', dir: 1 },
   // Routes tab: route filter text, address family ('all', '4', '6'), table ('all' or a name), route list sort,
   // whether the whole list is drawn, the lookup form, the active lookup query and the form's error.
-  rq: '', family: 'all', table: 'main', rsort: { key: 'prefix', dir: 1 }, all: false,
+  rq: '', family: 'all', table: 'all', rsort: { key: 'prefix', dir: 1 }, all: false,
   form: { dst: '', src: '', iif: '' }, query: null, formError: null,
   // Set by the command-bar controls: redraw from the cached data, poll again (used by the lookup form).
   rerender: () => {}, reload: () => {},
@@ -46,14 +46,14 @@ const ask = query => ubus('flab.routing', 'lookup', query).catch(e => {
 // Routes tab, the BIRD state on the BGP tab.
 async function load() {
   if (state.tab === 'bgp') return { tab: 'bgp', bgp: await loadBgp() };
-  if (state.tab === 'static') return loadStatic();
   const [status, dump, lookup] = await Promise.all([
     ubus('flab.routing', 'status'),
     optional(ubus('network.interface', 'dump')),
     state.query ? ask(state.query) : null,
   ]);
   hasBird = Boolean(status.bird);
-  return { tab: 'routes', status, dump, lookup };
+  const configured = await loadStatic({ status, dump });
+  return { tab: 'routes', status, dump, lookup, configured, inventory: routeInventory(status, configured) };
 }
 
 //#region The Routes tab
@@ -93,7 +93,7 @@ function routesView(data) {
   const s = data.status;
   const names = interfaceNames(data.dump);
   const banner = healthBanner(findings(s), 'The routing tables look healthy.');
-  if (!s.available) return [banner];
+  if (!s.available) return [banner, ...staticView(data.configured, rerender), routesCard(data.inventory, state, rerender, names, null)];
   const devices = [...new Set([...names.keys(), ...s.routes.flatMap(r => r.nexthops.map(n => n.dev))].filter(Boolean))].sort();
   const hit = state.query && data.lookup?.match ? routeKey(data.lookup.match) : null;
   return [
@@ -103,8 +103,9 @@ function routesView(data) {
     howCard(),
     h('div', { className: 'row g-3' },
       h('div', { className: 'col-12 col-xxl-7' }, rulesCard(s)),
-      h('div', { className: 'col-12 col-xxl-5' }, tablesCard(s, state, rerender))),
-    routesCard(s, state, rerender, names, hit),
+      h('div', { className: 'col-12 col-xxl-5' }, tablesCard(data.inventory, state, rerender))),
+    ...staticView(data.configured, rerender),
+    routesCard(data.inventory, state, rerender, names, hit),
   ];
 }
 
@@ -119,8 +120,8 @@ export default {
   interval: 5000,
   css: ['css/forms.css', 'css/bgp.css', 'css/routing.css'],
   // Polling stops while the lookup form is being typed in, because the redraw would take the focus away, and while the
-  // Static routes tab holds unsaved edits, a focused control or a save in progress.
-  isPaused: () => state.paused || Boolean(document.activeElement?.closest?.('.rt-lookup')) || (state.tab === 'static' && staticEditor.paused('.rt-static')),
+  // Static-route editor holds unsaved edits, a focused control or a save in progress.
+  isPaused: () => state.paused || Boolean(document.activeElement?.closest?.('.rt-lookup')) || (state.tab === 'routes' && staticEditor.paused('.rt-static')),
 
   load,
 
@@ -134,7 +135,7 @@ export default {
     const family = selectControl(state, 'family', rerender, 'Address family');
     family.setOptions([['all', 'IPv4 and IPv6'], ['4', 'IPv4 only'], ['6', 'IPv6 only']]);
     const table = selectControl(state, 'table', rerender, 'Routing table');
-    table.setOptions([['main', 'main table'], ['all', 'All tables']]);
+    table.setOptions([['all', 'All tables'], ['main', 'main table']]);
     // The cards also change the table (a click on one of the tables, "Show this table"); the selector follows.
     state.rerender = () => { table.node.value = state.table; family.node.value = state.family; rerender(); };
     state.reload = reload;
@@ -146,15 +147,15 @@ export default {
     bgpNodes.push(bsearch, peer.node, best);
     show();
     // The tabs offered: BGP only on a router with BIRD.
-    const tabOptions = () => [['routes', 'Routes'], ['static', 'Static routes'], ...(hasBird ? [['bgp', 'BGP']] : [])];
-    // The review banner of the Static routes tab.
+    const tabOptions = () => [['routes', 'Routes'], ...(hasBird ? [['bgp', 'BGP']] : [])];
+    // The review banner for static-route edits.
     const banner = staticEditor.attach(reload);
     return {
       nodes: [tabs.node, rsearch, family.node, table.node, bsearch, peer.node, best, pauseControl(state), refreshControl(reload), banner],
       update(data) {
         tabs.setOptions(tabOptions());
         if (data.tab === 'routes') {
-          table.setOptions([['all', 'All tables'], ...tablesOf(data.status).map(t => [t.name, tableLabel(t.name, data.status.table_ids)])]);
+          table.setOptions([['all', 'All tables'], ...tablesOf(data.inventory).map(t => [t.name, tableLabel(t.name, data.status.table_ids)])]);
         } else if (data.tab === 'bgp') {
           peer.setOptions(peerOptions(data.bgp));
         }
@@ -165,7 +166,6 @@ export default {
 
   view(data, rerender) {
     if (data.tab === 'bgp') return bgpView(data.bgp, state, rerender);
-    if (data.tab === 'static') return staticView(data, rerender);
     return routesView(data);
   },
 };

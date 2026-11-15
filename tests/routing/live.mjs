@@ -41,6 +41,7 @@ function answer(body) {
   const [, obj, method, args] = body.params;
   // A successful ubus reply carrying `data`.
   const ok = data => ({ jsonrpc: '2.0', id: body.id, result: [0, data] });
+  if (obj === 'uci' && method === 'get') return ok({ values: {} });
   if (obj === 'uci' && ['set', 'add', 'delete', 'apply', 'commit'].includes(method)) { mock.writes.push(`${obj}.${method}`); return { jsonrpc: '2.0', id: body.id, result: [6] }; }
   if (obj === 'flab.routing' && method === 'status') { mock.statusCalls++; return ok(mock.status); }
   if (obj === 'flab.routing' && method === 'lookup') {
@@ -121,7 +122,9 @@ console.log('== the Routes tab ==');
 const nav = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
 check(nav.includes('Routing') && !nav.includes('BGP') && (await page.locator('.nav-pane a.active').innerText()).trim() === 'Routing', 'the navigation has a Routing entry and no separate BGP one', nav.join(' | '));
 check((await page.locator('.cmdbar h1').innerText()).trim() === 'Routing', 'the page title');
-check((await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes,Static routes,BGP' && await page.locator('.seg-tab.active').innerText() === 'Routes', 'three tabs, Routes open: Routes, Static routes and (because BIRD is installed) BGP');
+check((await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes,BGP' && await page.locator('.seg-tab.active').innerText() === 'Routes', 'Routes combines editing and kernel state; BGP has its own tab');
+check(await rows().count() === 22, 'all tables are listed initially, including static routes');
+await select('All tables').selectOption('main');
 check(await tile(0) === 'internet' && /via 192\.0\.2\.1 · wan/.test(await tileSub(0)) && /1 more/.test(await tileSub(0)), 'the IPv4 default route tile: logical interface, next hop and device, and that a second default route exists', `${await tile(0)} | ${await tileSub(0)}`);
 check(await tile(1) === 'internet' && /via fe80::1/.test(await tileSub(1)), 'the IPv6 default route tile');
 check(await tile(2) === '16' && /10 IPv4 · 6 IPv6/.test(await tileSub(2)), 'routes in the main table, by family', `${await tile(2)} | ${await tileSub(2)}`);
@@ -260,7 +263,7 @@ check(await page.locator('.cmdbar input[placeholder="Filter routes…"]').isVisi
 console.log('\n== a router without BIRD, without ip, and a long route list ==');
 mock.status.bird = false;
 await refresh();
-check((await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes,Static routes', 'without birdc the BGP tab is not offered');
+check((await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes', 'without birdc the BGP tab is not offered');
 mock.status.bird = true;
 mock.status.routes.push(...Array.from({ length: 500 }, (_, i) => ({ ...clone(rich.routes[2]), prefix: `172.20.${i >> 8}.${i & 255}/32`, len: 32 })));
 await refresh();

@@ -14,6 +14,7 @@
 // reply null and adds a warning, it never fails the call.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
 import { run, sysfs_raw, ubus_call, uci_all, num } from 'flab.util';
@@ -709,7 +710,7 @@ function status() {
 //#endregion
 
 // rpcd registration: ubus object flab.dns. `status` takes no arguments.
-return {
+return deferred({
 	'flab.dns': {
 		status: {
 			call: function(request) {
@@ -717,4 +718,4 @@ return {
 			},
 		},
 	},
-};
+});

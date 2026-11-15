@@ -1,5 +1,14 @@
 # Frontend
 
+## Browser requirements
+
+The UI ships native ES modules without transpilation or a bundler. It uses BigInt for IP addresses, optional
+chaining, `Array.prototype.at`, `structuredClone` and native `<dialog>`. Use a current browser; the automated browser
+suites use Edge, with headless Chromium for the disposable-image smoke test. No browser compatibility matrix is
+established yet. HTTPS is required operationally for credentials;
+clipboard and WebCrypto capabilities also depend on the browser and secure context. WireGuard has a JavaScript X25519
+fallback, but key generation still requires `crypto.getRandomValues`.
+
 ## Boot and routing (`js/core/app.js`)
 
 - `main.js` calls `initTheme()` then `start()`.
@@ -11,7 +20,10 @@
   one is still running and while the browser tab is in the background (the tab refreshes when it is shown again).
   Only the newest request counts: a late reply that was overtaken, or one for a page that was left, is dropped.
 - Page CSS (`page.css`) is added once to `<head>` the first time the page opens.
-- An `AuthError` anywhere returns the user to the sign-in screen ("Session expired").
+- The registry contains navigation metadata and dynamic imports. The shell loads the selected page only after sign-in,
+  caches successful imports and rejects stale navigation results; page styles remain loaded on demand.
+- An `AuthError` from the shell's load path returns the user to the sign-in screen ("Session expired"); action
+  handlers must explicitly trigger that path or display their own session error.
 
 ## Page contract
 
@@ -59,9 +71,14 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   resolves to `null` for data a page can do without (a missing plugin or ACL) but still raises
   `AuthError`. `can(object, method)` answers from the ACLs returned at sign-in (root's `*` allows everything),
   so a page can disable controls the login may not use.
+  An optional fourth argument supplies `timeoutMs`: native/UCI requests are capped at five seconds, plugin requests
+  at 27 seconds, including response-body reads. Backend error details from nonzero ubus results are included in the
+  exception with a bounded length. Mutating requests are not retried automatically.
 - **`uci.js`**: the only code that calls rpcd's `uci` object, see [Configuration changes](architecture.md#configuration-changes).
   `applyChange()` runs a whole change with its safety net; pages should call that, not the single steps.
-- The session id and ACLs live in `sessionStorage` (cleared when the tab closes). Login timeout is 900 s.
+- The session id and ACLs live in `sessionStorage`; browser session restoration may restore that storage. Login timeout
+  is 900 s without RPC activity, not 900 s from sign-in. Polling keeps the session alive; Sign out clears local storage
+  and attempts to destroy the router-side session.
 
 ## Styling
 
@@ -96,7 +113,8 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
 - **Routing**: `index.js` owns the page state, the tabs and the command bar (the tab strip, the filters of each
   tab) and loads only the open tab; `model.js` holds the pure parts (address and prefix math, the table overview,
   findings, filtering and sorting, what a lookup answer means, who added a rule); `lookup.js` and `tables.js` build the
-  Routes tab cards; `static.js` and `static-model.js` are the Static routes tab (the editor wiring, and the pure model of the `route` and `route6` sections). The Toolbox page (`toolbox/`) is separate: `index.js` is the page and exports `openTool`, which the
+  Routes tab cards; `static.js` and `static-model.js` embed static-route editing and a combined configured/kernel
+  inventory in the same Routes view. The Toolbox page (`toolbox/`) is separate: `index.js` is the page and exports `openTool`, which the
   lookup answer's buttons use; `diag.js` is the form, job polling and the choice of result view, `diagviews.js`
   the ping, traceroute, DNS, check, comparison and certificate views, `diagmodel.js` the pure parts (the request a form may
   build, the parsers for the classic tools' output, the check's verdict), and the newer tools have a model and a view each

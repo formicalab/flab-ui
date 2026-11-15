@@ -13,8 +13,8 @@ Tests the BGP tab of the Routing page against captured and synthetic BIRD states
    that peers, routes, announcements, health findings and colors update without a reload.
 
 Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action
-Deploy) and installs playwright-core into the temporary work folder. Everything it creates on the router
-(/tmp/flab-bgp-test) and locally is removed afterwards.
+Deploy) and installs playwright-core into the project work folder. Everything it creates on the router
+(/root/flab-ui-tests/bgp) and locally is removed afterwards.
 
 .PARAMETER Router
 SSH destination of the router.
@@ -38,9 +38,11 @@ $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 . (Join-Path $here '..\TestSession.ps1')
 $sid = $null
-$plugin = (Resolve-Path (Join-Path $here '..\..\rpcd\ucode\flab.bgp.uc')).Path
-$work = Join-Path ([IO.Path]::GetTempPath()) 'flab-bgp-test'
-$remote = '/tmp/flab-bgp-test'
+$root = (Resolve-Path (Join-Path $here '..\..')).Path
+$plugin = Join-Path $root 'rpcd\ucode\flab.bgp.uc'
+$libs = Join-Path $root 'rpcd\lib\flab'
+$work = Join-Path $here '.work'
+$remote = '/root/flab-ui-tests/bgp'
 # Scenario directories built by mkfx.mjs (base = unchanged capture); each is also the name of its output JSON.
 $scenarios = 'base', 'down', 'dual', 'announce'
 
@@ -87,15 +89,16 @@ for p in `$(birdc show protocols | awk '/ BGP /{print `$1}'); do birdc show rout
 
     Write-Host '3/4 Running flab.bgp against each scenario on the router'
     Invoke-Native 'scp' (@('-O', '-r') + @($scenarios | ForEach-Object { Join-Path $work $_ }) + "${Router}:$remote/")
-    Invoke-Native 'scp' @('-O', $plugin, (Join-Path $here 'harness.uc'), "${Router}:$remote/")
+    Invoke-Native 'scp' @('-O', '-r', $libs, $plugin, (Join-Path $here 'harness.uc'), "${Router}:$remote/")
     Invoke-Remote @"
 set -e
 cd $remote
 tr -d '\r' < flab.bgp.uc > p.uc; tr -d '\r' < harness.uc > h.uc
+for f in flab/*.uc; do tr -d '\r' < `$f > `$f.l && mv `$f.l `$f; done
 sed -i "s#/tmp/flab.bgp.uc#$remote/p.uc#" h.uc
 for sc in $($scenarios -join ' '); do
   for f in `$sc/*.txt; do tr -d '\r' < `$f > `$f.l && mv `$f.l `$f; done
-  FLAB_BGP_FIXTURES=$remote/`$sc ucode h.uc > out-`$sc.json 2> err-`$sc.txt || { echo "`$sc failed:"; cat err-`$sc.txt; exit 1; }
+  FLAB_BGP_FIXTURES=$remote/`$sc ucode -L "$remote/*.uc" h.uc > out-`$sc.json 2> err-`$sc.txt || { echo "`$sc failed:"; cat err-`$sc.txt; exit 1; }
   if [ -s err-`$sc.txt ]; then echo "`$sc wrote to stderr:"; cat err-`$sc.txt; exit 1; fi
 done
 "@

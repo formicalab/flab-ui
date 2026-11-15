@@ -32,7 +32,8 @@ function scenario(name, { code, output }) {
   put(RANGE_CMD, '32768\t60999\n');
   put(OUTPUT_CMD, output);
   for (const c of CASES) {
-    if (typeof c.args.name === 'string' && typeof c.args.action === 'string') put(waitCmd(c.args.name, c.args.action), code);
+    if (typeof c.args.name === 'string' && typeof c.args.action === 'string')
+      fs.writeFileSync(path.join(dir, slug(waitCmd(c.args.name, c.args.action)).replace(/\.txt$/, '.result.json')), JSON.stringify({ code: code === '' ? null : Number(code), output }));
   }
 }
 

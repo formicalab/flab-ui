@@ -57,9 +57,12 @@ function commit() {
 // One uci method of the mock: [ubus status, data].
 function uci(method, args) {
   if (method === 'get') return [0, { values: clone(args.section ? mock.cfg[args.section] : mock.cfg) }];
-  if (method === 'changes') return [0, { changes: mock.staged.map(c => c.slice(0, 4)) }];
+  if (method === 'changes') {
+    const list = args.config && args.config !== 'wireless' ? [] : mock.staged.map(c => c.slice(0, 4));
+    return [0, { changes: args.config ? list : (list.length ? { wireless: list } : {}) }];
+  }
   if (method === 'set') { for (const [k, v] of Object.entries(args.values)) mock.staged.push(['set', args.section, k, v]); return [0, {}]; }
-  if (method === 'revert') { mock.staged = []; return [0, {}]; }
+  if (method === 'revert') { if (args.config !== 'wireless') return [4]; mock.staged = []; return [0, {}]; }
   if (method === 'apply') {
     mock.snapshot = clone(mock.cfg);
     mock.restage = mock.staged;
@@ -68,12 +71,14 @@ function uci(method, args) {
     return [0, {}];
   }
   if (method === 'confirm') {
-    if (mock.confirmFails) { mock.cfg = mock.snapshot; mock.staged = mock.restage; return [1]; }
+    if (!mock.snapshot) return [5];
+    if (mock.confirmFails) { mock.cfg = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null; return [1]; }
     mock.snapshot = null;
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) { mock.cfg = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null; }
+    if (!mock.snapshot) return [5];
+    mock.cfg = mock.snapshot; mock.staged = mock.restage; mock.snapshot = null;
     return [0, {}];
   }
   return [0, {}];
@@ -314,9 +319,9 @@ console.log('\n== leftovers from an earlier attempt ==');
 mock.staged = [['set', 'radio0', 'channel', '1']];
 await refresh();
 check(/1 change\(s\) are already staged/.test(await page.locator('main').innerText()), 'staged changes in the session are shown');
-await page.click('button:has-text("Discard them")');
+await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
 await page.waitForTimeout(700);
-check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), 'Discard them clears the session\'s staging area');
+check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), "Discard clears this page's staged changes");
 //#endregion
 
 //#region A login that may not write, theme, expiry

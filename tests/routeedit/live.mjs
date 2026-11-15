@@ -43,8 +43,8 @@ const makeConfig = () => ({
 
 // netifd's interface list of the mock router (wan2 is down).
 const interfaces = () => [
-  { interface: 'lan', up: true, 'ipv4-address': [{ address: '192.168.1.1', mask: 24 }], 'ipv6-address': [{ address: 'fd00::1', mask: 64 }] },
-  { interface: 'wan', up: true, 'ipv4-address': [{ address: '192.0.2.50', mask: 24 }], 'ipv6-address': [] },
+  { interface: 'lan', up: true, l3_device: 'br-lan', 'ipv4-address': [{ address: '192.168.1.1', mask: 24 }], 'ipv6-address': [{ address: 'fd00::1', mask: 64 }] },
+  { interface: 'wan', up: true, l3_device: 'wan', 'ipv4-address': [{ address: '192.0.2.50', mask: 24 }], 'ipv6-address': [] },
   { interface: 'wan2', up: false, 'ipv4-address': [], 'ipv6-address': [] },
   { interface: 'loopback', up: true, 'ipv4-address': [{ address: '127.0.0.1', mask: 8 }], 'ipv6-address': [] },
 ];
@@ -55,12 +55,12 @@ const maskLen = m => m.split('.').reduce((n, o) => n + (+o).toString(2).replace(
 // The kernel's routes of the mock router: every enabled route whose interface is up.
 function kernelRoutes() {
   const up = new Set(interfaces().filter(i => i.up).map(i => i.interface));
-  return Object.values(mock.cfg).filter(s => ['route', 'route6'].includes(s['.type']) && s.disabled !== '1' && up.has(s.interface)).map(s => {
+  return Object.values(mock.cfg).filter(s => ['route', 'route6'].includes(s['.type']) && s.disabled !== '1' && up.has(s.interface) && s.target !== mock.hideRoute).map(s => {
     const v6 = s['.type'] === 'route6';
     const prefix = s.target.includes('/') ? s.target : `${s.target}/${s.netmask ? maskLen(s.netmask) : v6 ? 128 : 32}`;
     return {
-      family: v6 ? 6 : 4, table: s.table ?? 'main', type: s.type ?? 'unicast', prefix, len: +prefix.split('/')[1], from: null, proto: 'static', metric: null,
-      nexthops: s.type ? [] : [{ via: s.gateway ?? null, dev: 'br-lan' }],
+      family: v6 ? 6 : 4, table: s.table ?? 'main', type: s.type ?? 'unicast', prefix, len: +prefix.split('/')[1], from: s.source ?? null, proto: 'static', metric: Number(s.metric ?? (v6 ? 1024 : 0)), flags: [],
+      nexthops: s.type ? [] : [{ via: s.gateway ?? null, dev: s.interface === 'lan' ? 'br-lan' : s.interface, flags: [] }],
     };
   });
 }
@@ -83,7 +83,10 @@ function uci(method, args) {
     if (!args.type) { mock.whole.push(args.config); return [0, { values: mock.cfg }]; }
     return [0, { values: Object.fromEntries(Object.entries(mock.cfg).filter(([, s]) => s['.type'] === args.type).map(([name, s]) => [name, { '.anonymous': true, '.name': name, '.index': Object.keys(mock.cfg).indexOf(name), ...s }])) }];
   }
-  if (method === 'changes') return [0, { changes: mock.staged.map(c => c.slice(0, 4)) }];
+  if (method === 'changes') {
+    const changes = mock.staged.map(c => c.slice(0, 4));
+    return [0, { changes: args.config ? changes : changes.length ? { network: changes } : {} }];
+  }
   if (method === 'set') { for (const [k, v] of Object.entries(args.values)) mock.staged.push(['set', args.section, k, v]); return [0, {}]; }
   if (method === 'add') {
     const name = args.name ?? `cfg${100 + nextId++}`;
@@ -105,7 +108,8 @@ function uci(method, args) {
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) restore();
+    if (!mock.snapshot) return [5];
+    restore();
     return [0, {}];
   }
   return [0, {}];
@@ -132,7 +136,7 @@ async function answer(body, route) {
   if (obj === 'flab.routing' && method === 'status') {
     // The real answer (rules, tables) with the kernel's routes replaced by those of the mocked config.
     const real = (await (await route.fetch()).json()).result[1];
-    return ok([0, { ...real, routes: kernelRoutes(), table_ids: { main: 254, local: 255, default: 253, voip: 100 } }]);
+    return ok([0, { ...real, available: !mock.noKernel, routes: mock.noKernel ? [] : kernelRoutes(), table_ids: { main: 254, local: 255, default: 253, voip: 100 } }]);
   }
   return null;
 }
@@ -157,10 +161,7 @@ const open = async acls => {
     sessionStorage.setItem('acls', JSON.stringify(a));
   }, [sid, acls ?? rootAcls]);
   await p.goto(`${baseUrl}#routing`);
-  await p.waitForSelector('.seg-tab, .login-form', { timeout: 20000 });
-  if (await p.locator('.login-form').count()) return p;
-  await p.locator('.seg-tab', { hasText: 'Static routes' }).click();
-  await p.waitForSelector('.rt-static, .set-note.bad', { timeout: 20000 });
+  await p.waitForSelector('.rt-static, .set-note.bad, .login-form', { timeout: 20000 });
   return p;
 };
 // The ACLs of a login that may read the config but not change it, and of one that may change it but not read it.
@@ -200,7 +201,7 @@ const sectionOf = target => Object.entries(mock.cfg).find(([, s]) => s.target ==
 
 //#region The real router (read only)
 console.log('== the real router (read only: nothing is written, nothing is staged) ==');
-check(await page.locator('.rt-static-table').count() === 2 && await page.locator('.seg-tab.active').innerText() === 'Static routes', 'the Static routes tab shows an IPv4 and an IPv6 table', await page.locator('main').innerText());
+check(await page.locator('.rt-static-table').count() === 2 && await page.locator('.rt-routes').count() === 1, 'one Routes view shows static editors and the final route list', await page.locator('main').innerText());
 check(await bar().isHidden() && await page.locator('.rt-static button:has-text("Add IPv4 route")').count() === 1, 'nothing is pending, and a route can be added');
 const realTypes = mock.realGets.filter(g => g.config === 'network').map(g => g.type);
 check(realTypes.length >= 2 && realTypes.every(Boolean) && realTypes.includes('route') && realTypes.includes('route6'), 'the tab read the network config only by section type (route, route6) and never the whole config', JSON.stringify(mock.realGets));
@@ -224,11 +225,20 @@ check(await cell(rDef, 'Interface').inputValue() === 'wan' && await cell(rBh, 'T
 check(await boxes(rOff).nth(1).isChecked() === false && await boxes(rDef).nth(1).isChecked() === true, 'a disabled route has Enabled unchecked');
 const states = [await badgeOf(rDef), await badgeOf(rOld), await badgeOf(rOff), await badgeOf(rBh), await badgeOf(r6)];
 check(states.join() === 'installed,installed,disabled,installed,installed', 'the state column says what the kernel holds of each route', states.join());
-const tileTexts = await page.locator('.tile').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+const tileTexts = await page.locator('.rt-static-section .tile').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 check(/Static routes 5 4 IPv4 · 1 IPv6/.test(tileTexts[0]) && /Installed 4/.test(tileTexts[1]) && /Not installed 0/.test(tileTexts[2]) && /Disabled 1/.test(tileTexts[3]), 'the tiles count the routes', tileTexts.join(' | '));
 check(mock.gets.length >= 2 && mock.gets.every(g => g.type) && mock.whole.length === 0 && !(await page.locator('main').innerHTML()).includes(SECRET), 'in the mock too the config is read by section type only, and a secret is never in the page');
-check((await page.locator('.seg-tab').allInnerTexts()).join().startsWith('Routes,Static routes'), 'the tab strip offers Routes and Static routes');
+check(!(await page.locator('.seg-tab').allInnerTexts()).includes('Static routes'), 'static routes are not hidden on a separate tab');
+const finalRoutes = await page.locator('.rt-routes tbody').innerText();
+check(/172\.16\.0\.0\/12[\s\S]*disabled/.test(finalRoutes) && /203\.0\.113\.0\/24/.test(finalRoutes),
+  'the final list includes disabled and custom-table static routes', finalRoutes);
 await shot('reading');
+mock.noKernel = true;
+await refresh();
+check(await page.locator('.rt-static-table').count() === 2 && /10\.9\.0\.0\/16[\s\S]*state unknown/.test(await page.locator('.rt-routes tbody').innerText()),
+  'configured routes remain visible in the final list when kernel state is unavailable');
+mock.noKernel = false;
+await refresh();
 //#endregion
 
 //#region Editing
@@ -244,7 +254,7 @@ await shot('edited');
 mock.calls = [];
 await saveBtn().click();
 check(/^Saved/.test(await outcome()), 'a successful save says so');
-check(/^uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+/.test(mock.calls.join(' ')), 'it checked for leftovers, staged, applied and read back by type', mock.calls.join(' '));
+check(/^uci\.changes( uci\.(set|add|delete))+ uci\.apply( uci\.get)+/.test(mock.calls.join(' ')), 'it checked all leftovers, staged, applied and read back by type', mock.calls.join(' '));
 check(mock.cfg.cfg03.target === '10.9.0.0/24' && !('netmask' in mock.cfg.cfg03) && mock.cfg.cfg03.mtu === '1400', 'the prefix went into target, the older netmask option was removed and the other options kept', JSON.stringify(mock.cfg.cfg03));
 
 console.log('\n== adding and removing routes ==');
@@ -312,16 +322,27 @@ mock.dropWrites = false;
 mock.confirmFails = true;
 await saveBtn().click();
 const refused = await outcome();
-check(/did not accept the confirmation/.test(refused) && mock.cfg.cfg05.mtu === undefined, 'a router that refuses the confirmation puts the old config back', refused);
+check(/confirmation failed/i.test(refused) && /outcome is uncertain/.test(refused) && mock.cfg.cfg05.mtu === undefined,
+  'an expired confirmation with no active rollback snapshot is reported as uncertain, not as acknowledged recovery', refused);
 mock.confirmFails = false;
 await saveBtn().click();
 check(/^Saved/.test(await outcome()) && mock.cfg.cfg05.mtu === '1300', 'and the retry succeeds');
+
+console.log('\n== a saved route that never reaches the kernel ==');
+mock.hideRoute = '10.9.0.0/24';
+await cell(await rowOf('10.9.0.0/24'), 'Metric').fill('13');
+await saveBtn().click();
+const absent = await outcome();
+check(/installation.*could not be verified/.test(absent) && /confirmed by the router/.test(absent)
+  && mock.cfg.cfg03.metric === undefined, 'failed kernel installation is detected and rolled back even though UCI saved it', absent);
+mock.hideRoute = null;
+await discard();
 
 console.log('\n== leftovers staged in the session ==');
 mock.staged = [['set', 'cfg05', 'metric', '5']];
 await refresh();
 check(/1 change\(s\) are already staged in this session/.test(await page.locator('main').innerText()), 'changes staged earlier are said so above the tables');
-await page.click('button:has-text("Discard them")');
+await page.click('button:has-text("Discard this page\'s staged changes")');
 await page.waitForTimeout(800);
 check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), 'Discard them reverts them');
 //#endregion

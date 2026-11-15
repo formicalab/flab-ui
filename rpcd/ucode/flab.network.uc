@@ -2,7 +2,8 @@
 //
 // rpcd ucode plugin reporting physical Ethernet ports, bridges, VLAN devices and the board's switch wiring as JSON:
 //   ubus call flab.network status
-//   ubus call flab.network config   (the editable part of /etc/config/network, without secrets)//   ubus call flab.network cable_test '{"port":"lan1"}'   (on request: it can drop the link for a few seconds)
+//   ubus call flab.network config   (the editable part of /etc/config/network, recognized secret options omitted)
+//   ubus call flab.network cable_test '{"port":"lan1"}'   (on request: it can drop the link for a few seconds)
 //
 // Everything is discovered at run time (nothing is hard-coded to this router's port names), so a changed
 // board layout, a new bridge or a new VLAN device shows up on the next poll.
@@ -18,10 +19,11 @@
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
 import { readfile } from 'fs';
-import { fixture, record_file, run, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname, num, as_list } from 'flab.util';
+import { fixture, record_file, run, command_result, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname, num, as_list } from 'flab.util';
 
 // Names of the kernel's bridge port STP states, indexed by the number in brport/state.
 const STP_STATES = [ 'disabled', 'listening', 'learning', 'forwarding', 'blocking' ];
@@ -313,7 +315,7 @@ function board_roles() {
 }
 //#endregion
 
-// PHY chips on the MDIO buses with the netdev each one is attached to (static, so read once).
+// PHY chips on the MDIO buses with the netdev each one is attached to (read once per worker).
 // Each entry is { bus, address (PHY address as a number), id (null when 0), name (driver), attached (netdev) }.
 let mdio_cache = null;
 
@@ -346,7 +348,7 @@ function mdio_phys() {
 }
 
 // Chipset information of a port that does not change while the router runs: driver, switch or SoC MAC,
-// and the PHY. Cached per device; null when ethtool reports no driver.
+// and the PHY. Cached per device within this worker; null when ethtool reports no driver.
 let hardware_cache = {};
 
 // Gathers the hardware facts of netdev `name` (netifd entry `d`) from `ethtool -i`, `ethtool`, the
@@ -454,7 +456,7 @@ function diagnostics(name, stats) {
 //#region EEE, optical modules, cable test
 
 // Energy-Efficient Ethernet state of a port from `ethtool --show-eee`: { enabled, active }, or null when the PHY or driver has
-// no EEE (a port that answered without it once is not asked again).
+// no EEE (an unsupported port is not asked again within the same worker).
 let eee_unsupported = {};
 
 // Reads the EEE state of port `name`.
@@ -536,7 +538,7 @@ function sfp_candidate(hw) {
 	return hw != null && (hw.sfp_dt == true || index(hw.ports ?? [], 'FIBRE') >= 0 || hw.media == 'FIBRE' || hw.media == 'Direct Attach');
 }
 
-// Ports whose PHY driver said it cannot test cables (asked once, then remembered).
+// Process-local unsupported-port memo. It persists in direct-call harnesses, not across production workers.
 let cable_unsupported = {};
 
 // The reply of `cable_test`: runs `ethtool --cable-test` on one physical port and returns the result of each of the four
@@ -559,11 +561,14 @@ function cable_test(request) {
 	if (cable_unsupported[port])
 		return fail('The PHY driver of this port does not support cable testing.', false);
 
-	let out = run(`timeout 30 ethtool --cable-test ${port} 2>&1`) ?? '';
+	let result = command_result(`timeout 30 ethtool --cable-test ${port} 2>&1`);
+	let out = result.output;
 	if (match(out, /not support|Operation not supported|Not supported/i)) {
 		cable_unsupported[port] = true;
 		return fail('The PHY driver of this port does not support cable testing.', false);
 	}
+	if (!result.ok)
+		return fail(result.timed_out ? 'The cable test timed out.' : (result.truncated ? 'The cable test exceeded its output budget.' : `The cable test failed (exit ${result.code ?? 'unknown'}).`), null);
 	let pairs = {};
 	for (let line in split(out, '\n')) {
 		let code = match(line, /Pair ([A-D]) code (.+)$/);
@@ -969,7 +974,7 @@ function network_config() {
 
 // rpcd registration: ubus object flab.network. `status` takes no arguments; `config` returns the editable part of the network config
 // without secrets; `cable_test` (port) runs one cable test on request.
-return {
+return deferred({
 	'flab.network': {
 		status: {
 			call: function(request) {
@@ -988,4 +993,4 @@ return {
 			},
 		},
 	},
-};
+});

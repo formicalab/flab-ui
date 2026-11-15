@@ -1,4 +1,4 @@
-// The part every page that edits a config has in common (System settings, DHCP): the draft of the form and the data
+// The part configuration editors share: the draft of the form and the data
 // it was made from, whether there are unsaved edits, the review banner, saving (stage, apply with the rollback
 // countdown, read back, confirm), discarding edits or leftovers staged in the session, and the notes about a
 // read-only login and about leftovers. The page keeps what is specific to it: its schema, its model, its controls.
@@ -16,11 +16,13 @@
 //   timeoutS    optional seconds of the rollback countdown for this page's changes (default: core/uci.js APPLY_TIMEOUT_S)
 //   settleMs    optional milliseconds to wait after the apply before verifying (default: core/uci.js SETTLE_MS)
 //   confirmSave optional async (base, draft) => boolean    asks before the change is applied; false cancels the save
-import { AuthError, can, optional } from './ubus.js';
+import { AuthError, can } from './ubus.js';
 import { button } from './ui.js';
 import { note, reviewBanner } from './forms.js';
 import { stageOps } from './ops.js';
 import { applyChange, uci } from './uci.js';
+
+let editorBusy = false;
 
 // Creates the editor for one page; see the description of `spec` above.
 export function createEditor(spec) {
@@ -41,6 +43,14 @@ export function createEditor(spec) {
   // Whether the form has edits that are not saved yet.
   const dirty = () => Boolean(state.base && state.draft && model.isDirty(state.base, state.draft));
 
+  // Acquire before opening a confirmation dialog, including across different page editors.
+  async function exclusive(action) {
+    if (editorBusy) return;
+    editorBusy = state.busy = true;
+    try { return await action(); }
+    finally { editorBusy = state.busy = false; redraw(); }
+  }
+
   // Updates the review banner from the draft.
   const renderBar = canEdit => {
     const ready = state.base && state.draft;
@@ -48,55 +58,60 @@ export function createEditor(spec) {
     bar.render({
       changes: ready ? model.changesOf(state.base, state.draft) : [],
       errors: found.errors, warnings: found.warnings, message: state.message,
-      busy: state.busy, canEdit, dirty: dirty(),
+      busy: state.busy, canEdit: canEdit && !editorBusy, dirty: dirty(),
       dismiss: () => { state.message = null; renderBar(canEdit); },
     });
   };
 
-  // Throws away the changes staged in this session (they would be applied together with this page's).
+  // Discards this page's staged configurations only, leaving other editors' changes untouched.
   async function discardStaged() {
-    try {
-      for (const config of configNames()) await uci.revert(config);
-      state.message = { kind: 'ok', text: 'The staged changes were discarded.' };
-    } catch (e) {
-      state.message = { kind: 'bad', text: e.message };
-    }
-    await reloadPage();
+    return exclusive(async () => {
+      redraw();
+      try {
+        for (const config of configNames()) await uci.revert(config);
+        state.message = { kind: 'ok', text: "This page's staged changes were discarded; other configurations were left untouched." };
+      } catch (e) {
+        if (e instanceof AuthError) return location.reload();
+        state.message = { kind: 'bad', text: `Staged changes could not all be discarded; check them before saving again. ${e.message}` };
+      }
+      await reloadPage();
+    });
   }
 
   // Forgets the edits and shows what the router has.
   async function discardEdits() {
-    state.draft = null;
-    state.message = null;
-    await reloadPage();
+    return exclusive(async () => {
+      state.draft = null;
+      state.message = null;
+      await reloadPage();
+    });
   }
 
   // Saves the form: stage, apply with the rollback countdown, read the config back to prove it was stored, then
-  // confirm. Any failure leaves the router on its previous config and the edits in the form.
+  // confirm. Failures keep the edits in the form; recovery is best-effort if the router cannot be reached.
   async function save() {
-    const { base, draft } = state;
-    // A page whose changes can cut its own connection asks first (it shows the risks and resolves to false on Cancel).
-    if (spec.confirmSave && !(await spec.confirmSave(base, draft))) return;
-    const configs = configNames();
-    state.busy = true;
-    state.message = { kind: 'info', text: 'Applying the change…' };
-    redraw();
-    try {
-      // A page that changes something that can cut its own connection asks for a longer countdown for its calls only.
-      const ed = spec.timeoutS ? { ...uci, apply: () => uci.apply(spec.timeoutS) } : uci;
-      await applyChange(ed, configs,
-        ed => stageOps(ed, model.plan(base, draft)),
-        async () => spec.verify(base, draft, spec.readAfter ? await spec.readAfter() : spec.readBack(await uci.get(configs[0]))),
-        spec.settleMs ? { settleMs: spec.settleMs } : undefined);
-      state.message = { kind: 'ok', text: 'Saved: the router applied the change and it was confirmed.' };
-      state.draft = null;
-    } catch (e) {
-      // An expired session needs a new sign-in: reloading lets the shell show the sign-in screen.
-      if (e instanceof AuthError) return location.reload();
-      state.message = { kind: 'bad', text: e.message };
-    }
-    state.busy = false;
-    if (!spec.afterSave?.(base, draft)) await reloadPage();
+    return exclusive(async () => {
+      const { base, draft } = state;
+      redraw();
+      try {
+        // A page whose changes can cut its own connection asks first (it shows the risks and resolves to false on Cancel).
+        if (spec.confirmSave && !(await spec.confirmSave(base, draft))) return;
+        const configs = configNames();
+        state.message = { kind: 'info', text: 'Applying the change…' };
+        redraw();
+        await applyChange(uci, configs,
+          ed => stageOps(ed, model.plan(base, draft)),
+          async () => spec.verify(base, draft, spec.readAfter ? await spec.readAfter() : spec.readBack(await uci.get(configs[0]))),
+          { timeoutS: spec.timeoutS, settleMs: spec.settleMs });
+        state.message = { kind: 'ok', text: 'Saved: the router applied the change and it was confirmed.' };
+        state.draft = null;
+      } catch (e) {
+        // An expired session needs a new sign-in: reloading lets the shell show the sign-in screen.
+        if (e instanceof AuthError) return location.reload();
+        state.message = { kind: 'bad', text: e.message };
+      }
+      if (!spec.afterSave?.(base, draft)) await reloadPage();
+    });
   }
 
   return {
@@ -116,11 +131,11 @@ export function createEditor(spec) {
     // whether the controls may be used (the login may write and no save is running).
     begin(data, rerender) {
       redraw = rerender;
-      if (!state.draft || !dirty()) {
+      if (!state.draft || (!state.busy && !dirty())) {
         state.base = data;
         state.draft = spec.model.draftFrom(data);
       }
-      return can('uci', 'set') && !state.busy;
+      return can('uci', 'set') && !editorBusy;
     },
 
     // The page's own redraw, for controls that change the shape of the form (a list row added or removed).
@@ -129,18 +144,20 @@ export function createEditor(spec) {
     // Adds how many changes are already staged in this session to the loaded data (applying would commit those too).
     async withStaged(data) {
       const configs = configNames();
-      data.staged = configs.length && can('uci', 'set')
-        ? (await Promise.all(configs.map(c => optional(uci.pending(c))))).reduce((n, v) => n + (v ?? 0), 0) : 0;
+      const changes = configs.length && can('uci', 'set') ? await uci.changes() : {};
+      data.staged = Object.values(changes).reduce((n, list) => n + list.length, 0);
+      data.stagedHere = configs.reduce((n, name) => n + (changes[name]?.length ?? 0), 0);
       return data;
     },
 
     // For the page's `isPaused`: no polling over unsaved edits, a save in progress or a focused control of the form.
-    paused: selector => state.busy || dirty() || Boolean(document.activeElement?.closest?.(selector)),
+    paused: selector => editorBusy || dirty() || Boolean(document.activeElement?.closest?.(selector)),
 
     // The notes above the form: a read-only login, and changes already staged in this session.
     notes: data => [
       can('uci', 'set') ? null : note('warn', 'This login is not allowed to change the configuration, so the settings are shown read-only.'),
-      data.staged ? note('warn', `${data.staged} change(s) are already staged in this session (for example from an attempt that was rolled back); saving would apply them too.`, button('Discard them', 'x-lg', discardStaged)) : null,
+      data.staged ? note('warn', `${data.staged} change(s) are already staged in this session; saving would apply them too and is blocked. Only this page's staged changes can be discarded here; resolve other configurations in their own editor.`,
+        data.stagedHere ? button("Discard this page's staged changes", 'x-lg', discardStaged) : null) : null,
     ],
 
     // Called after every edit to a control: forgets the outcome of the last save (it no longer describes the form),

@@ -1,5 +1,5 @@
 # Services (route `#services`)
-Refreshed every 5 s. Lists the router's services and starts, stops and restarts them. Two sources are merged by
+Refreshed every 5 s. Lists the router's services and starts, stops, restarts, enables and disables them. Two sources are merged by
 name: the init scripts in `/etc/init.d` (`flab.services list`: whether each starts at boot and in which position,
 from the `S<NN><name>` links of `/etc/rc.d`), which is why a service that is stopped but installed still appears, and
 the daemons procd reports (`service list`: state and PIDs). procd's own `service` object cannot start or stop
@@ -40,8 +40,9 @@ anything, so the init scripts do the work, as they do for `/etc/init.d/<name> re
   returns `ok: false` and an `error`, and runs nothing. `reload` is not offered because whether a script supports
   it is not known without running it. The reply is `{ name, action, ok, code, detached, output, error }`; `output`
   is the script's output, at most 4096 bytes.
-- **Waiting and background**: a call waits for the script (`timeout 45`, shorter than uhttpd's limit) with its
-  output going to a file, so a daemon that keeps the output open cannot hold the call up. `stop` and `restart`
+- **Waiting and background**: a deferred worker waits for the script (at most 20 seconds), preserving its exit
+  status and at most 4096 bytes of output while rpcd stays responsive. Timeout or output exhaustion is an explicit
+  failure, not a successful empty reply. `stop` and `restart`
   of `rpcd`, `uhttpd` and `network`, which carry the reply or the connection, instead run in the background two
   seconds later and return `detached: true` at once; their result cannot be reported, so the page says the action
   was requested and refreshes a few seconds later. `enable` and `disable` of those services only touch the boot links

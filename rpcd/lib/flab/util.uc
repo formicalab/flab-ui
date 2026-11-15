@@ -3,8 +3,9 @@
 
 'use strict';
 
-import { popen, readfile, writefile } from 'fs';
+import { readfile, writefile } from 'fs';
 import { cursor } from 'uci';
+import { command_result as execute } from 'flab.exec';
 
 // Test seam: with FLAB_FIXTURES=<dir> set (never the case inside rpcd) run() returns saved command
 // output instead of executing anything. The file is named after the command with every run of
@@ -45,20 +46,27 @@ export function fixture(name) {
 	return FIXTURES ? (readfile(`${FIXTURES}/${name}`) ?? '') : null;
 }
 
-// Run a shell command and return its stdout ('' on failure). Callers must pass only trusted strings.
+// Replay wall-clock-dependent state against the same instant at which its synthetic timestamps were built.
+export function fixture_time() {
+	let fixed = FIXTURES ? trim(fixture('clock.txt') ?? '') : '';
+	return match(fixed, /^[0-9]+$/) ? +fixed : time();
+}
+
+// Bounded compatibility reader for optional probes. Empty output alone cannot distinguish failure from success;
+// callers which require success must use command_result(). All real rpcd calls run in deferred workers.
 export function run(cmd) {
 	// Replay mode: the command is never executed, only looked up by name.
 	if (FIXTURES)
 		return fixture(slug(replace(cmd, / 2>\/dev\/null$/, '')) + '.txt');
 
-	let p = popen(cmd, 'r');
-	if (!p)
-		return '';
-	let out = p.read('all') ?? '';
-	p.close();
-	if (RECORD)
-		record_file(slug(replace(cmd, / 2>\/dev\/null$/, '')) + '.txt', out);
-	return out;
+	let result = execute(cmd);
+	if (result.truncated || result.timed_out)
+		die(result.truncated ? 'The command output budget was exhausted.' : 'The command timed out.');
+	return result.output;
+}
+
+export function command_result(cmd, options) {
+	return execute(cmd, options);
 }
 
 // Call a ubus object served by another daemon (netifd, hostapd, ...); null on failure. rpcd runs

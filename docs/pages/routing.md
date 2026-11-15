@@ -1,6 +1,6 @@
 # Routing (route `#routing`)
-The kernel's routing state, the static routes of the network config and, when the router has BIRD, BGP, in up to three
-tabs on one page (the tab strip sits in the command bar; the BGP tab shows only when `birdc` is installed, which
+The Routes view combines kernel routing state and static-route editing. BGP is a separate optional tab
+(the tab strip sits in the command bar; the BGP tab shows only when `birdc` is installed, which
 `flab.routing status` reports as `bird`). Only the open tab is polled (every 5 s), and each tab has its own filters in
 the command bar.
 
@@ -35,12 +35,21 @@ Reads `flab.routing status` (and `network.interface dump` for the logical interf
   `iif`). Anything else is flagged "unknown".
 - **Routing tables:** every table that holds a route or is named by a rule or in `rt_tables` (name, number, what it
   is for, the rules that consult it, route counts per family). A click selects the table in the route list.
-- **Routes:** the routes of the selected table (default: main) for the selected family, filtered by text (any
+- **Static routes:** the editable IPv4 and IPv6 sections described below, on this same view.
+- **Routes:** the routes of the selected table (default: all tables) for the selected family, filtered by text (any
   destination, next hop, device, logical interface, protocol, ...), sortable by destination, type, next hop,
   interface, protocol, metric and table. A route shows its type (blackhole, unreachable, prohibit, throw, local,
   broadcast, ...), every next hop with its weight and interface, protocol, metric, preferred source address, table
   and details (scope, expiry, `pref`, MTU, `onlink`, `linkdown`, `dead`). Routes with a dead or link-down next hop
-  are tinted. A long list draws its first 400 rows with a "Show all" button.
+  are tinted. Configured static routes are annotated; disabled, missing or unverified entries also appear, explicitly
+  labeled as configuration rather than active kernel routes. Installed static routes are not duplicated. A long list
+  draws its first 400 rows with a "Show all" button.
+
+Static routes are applied when Save and apply commits the network configuration. netifd installs enabled routes while
+their interface is up. They have no special precedence over connected, DHCP or BGP routes: policy rules choose a table,
+the longest matching destination prefix wins within it, and lower metrics choose between equally specific alternatives.
+A routing daemon chooses its own best paths before exporting them into the kernel. A default route is a `/0` fallback,
+not an override for more-specific routes.
 
 `flab.routing` parses the text of `ip` (iproute2; every router here has `ip-full` or `ip-tiny`): routes keep
 their table, type, prefix (normalized to `address/length`, `default` becomes the zero prefix), source prefix,
@@ -48,13 +57,13 @@ protocol, scope, metric, preferred source, expiry, MTU, flags and next hops (the
 route, `via inet6`, `mtu lock`); rules keep their selectors in order and the action (lookup, goto or a drop type).
 At most 4000 routes per family are returned (`truncated`). `lookup` accepts only an IPv4 or IPv6 address, an optional
 source address and an interface name, and refuses anything else before a command is built, so nothing but those
-three strings can reach the shell. The plugin is read-only: the Static routes tab edits through rpcd's `uci` object, not
+three strings can reach the shell. The plugin is read-only: the static-route editor writes through rpcd's `uci` object, not
 through the plugin, and the ACL fragment `rpcd/acl.d/flab-routing.json` grants `status` and `lookup` plus `uci` on `network`.
 
-## Static routes tab
+## Static-route editor
 The `route` (IPv4) and `route6` (IPv6) sections of `/etc/config/network`, as one editable table per family, with what the
 kernel holds of each. Files: `routing/static.js` (the view and the editor wiring), `routing/static-model.js` (pure: reading,
-draft, review list, validation, risks, UCI operations, check after a save, kernel state). The tab reads the sections by
+draft, review list, validation, risks, UCI operations, check after a save, kernel state). The editor reads the sections by
 type (`uci get` with `type: route` and `route6`), never the whole network config (it holds passwords and keys), plus
 `flab.routing status` and `network.interface dump` for the kernel's routes and the interfaces' subnets.
 - **Tiles:** routes configured (by family), installed in the kernel, configured but not installed, disabled.
@@ -65,15 +74,21 @@ type (`uci get` with `type: route` and `route6`), never the whole network config
   with "Add IPv4 route" / "Add IPv6 route" and starts enabled; Remove marks a saved route for removal (Undo takes it
   back).
 - **Validation** (errors block Save): target, gateway and source must be addresses of the row's family, the metric
-  0 to 4294967295, the MTU 68 to 65535, the table a number or a name from `rt_tables`, the type a known one, the interface
+  0 to 4294967295, the MTU 68 to 65535 for IPv4 or 1280 to 65535 for IPv6, the table a number or a name from `rt_tables`, the type a known one, the interface
   one the router has. **Warnings** (Save stays possible): a gateway outside the subnets of its interface without
   on-link, and two routes that are the same to the kernel.
 - **Saving** uses the same review banner and safety net as the other editing pages: stage, `uci apply` with the
-  rollback countdown, read the sections back, compare, confirm. A router that does not keep the change goes back to its
-  previous configuration by itself. Adding, removing, disabling or changing a **default route** (a zero prefix in the
+  rollback countdown, read the sections back, compare and verify changed enabled routes on running interfaces against
+  the kernel before confirming. netifd is given a short bounded settling period. Routes on down interfaces may be saved
+  for later; untouched pre-existing missing routes do not block unrelated changes. Adding, removing, disabling or changing a **default route** (a zero prefix in the
   main table, blackhole defaults included) first shows a confirmation that says what it does to the way out.
 - Polling pauses while there are unsaved edits, a control has focus or a save is running.
 - Out of scope: policy rules (`rule`, `rule6`, shown on the Routes tab) and routes learned by a daemon, DHCP or the kernel.
+- **Matching:** installed status compares family, effective table, destination, route type, source prefix, metric,
+  gateway and outgoing device. Empty metrics/tables inherit the interface defaults; IPv6 metric zero is normalized to
+  the kernel's 1024 default. Disabled state is known even if the kernel reply is unavailable.
+- **Limits:** installation does not prove that the gateway answers or that internet access works. Keep alternate access when
+  editing a default route; see [configuration-change limitations](../architecture.md#configuration-change-limitations).
 
 ## BGP tab
 Status of BIRD 3 (`flab.bgp`). Sections, top to bottom:

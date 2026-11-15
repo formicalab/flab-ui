@@ -1,7 +1,6 @@
 // Wi-Fi page: radios (state, configuration, SSIDs; radios.js) followed by connected clients per radio and
-// SSID, from the flab.wifi plugin, which ports utilities/list_connected_devices.uc. The table columns
-// mirror that tool (MAC, addresses, hostname, signal, standard, bandwidth, bitrate, security,
-// AKM/cipher/PMF details, 0-100 score).
+// SSID, from the flab.wifi plugin. The table columns show MAC, addresses, hostname, signal, standard, bandwidth, bitrate, security,
+// AKM/cipher/PMF details and the 0-100 score.
 // The wireless configuration (/etc/config/wireless) is edited on the radio cards: the channel through the picker (picker.js),
 // the radio's other settings and its wireless networks (SSIDs) through the forms of editors.js, whose options are in
 // schema.js and whose rules, review list and UCI operations are in model.js. The configuration is read through the flab.radio
@@ -64,7 +63,7 @@ const state = { q: '', radio: 'all', sort: { key: 'signal', dir: -1 }, paused: f
 const clip = (text, title) => h('span', { className: 'mono clip', title: title || text }, text);
 
 // Each column pairs a header with a width (% of the fixed table layout, so every SSID table aligns),
-// a sort key extractor and a cell renderer (same fields as utilities/list_connected_devices.uc).
+// a sort key extractor and a cell renderer.
 const COLS = [
   { key: 'mac', label: 'MAC address', w: 10, sort: c => c.mac, cell: c => h('span', { className: 'mono' }, c.mac) },
   { key: 'ipv4', label: 'IPv4', w: 8, sort: c => ipNum(c.ipv4), cell: c => c.ipv4 || muted('N/A') },

@@ -1,4 +1,4 @@
-// The model of the Routing page's Static routes tab: the `route` (IPv4) and `route6` (IPv6) sections of /etc/config/network as an
+// The model of the Routing page's static-route editor: the `route` (IPv4) and `route6` (IPv6) sections of /etc/config/network as an
 // editable table. Pure functions with no DOM and no network, so they are unit-tested directly (tests/routeedit/model.test.mjs).
 //
 // What netifd reads from a route section (netifd's interface-ip.c): interface, target, netmask, gateway, metric, mtu, valid, table,
@@ -121,7 +121,8 @@ export function readStatic(cfg4, cfg6, { status = null, dump = null } = {}) {
   const available = cfg4 != null && cfg6 != null;
   const routes = FAMILIES.flatMap(f => sectionsOf(f.family === 4 ? cfg4 : cfg6, f.type).map(s => ({ section: s.section, family: f.family, values: s.values })));
   const interfaces = (dump?.interface ?? []).filter(i => i.interface).map(i => ({
-    name: i.interface, up: Boolean(i.up),
+    name: i.interface, up: Boolean(i.up), device: i.l3_device ?? i.device ?? null,
+    metric: Number(i.metric ?? 0), table4: i.ip4table || 'main', table6: i.ip6table || 'main',
     v4: (i['ipv4-address'] ?? []).map(a => parseCidr(`${a.address}/${a.mask}`, 4)).filter(Boolean),
     v6: (i['ipv6-address'] ?? []).map(a => parseCidr(`${a.address}/${a.mask}`, 6)).filter(Boolean),
   })).sort((a, b) => a.name.localeCompare(b.name));
@@ -284,7 +285,7 @@ const isDefault = (v, family, ids) => {
 };
 
 // The warnings to confirm before saving: what a change does to the default routes, in plain words. Changing them can leave the
-// router without a way to the internet (the admin's own connection through a LAN interface is not affected).
+// router without a way to the internet or interrupt a routed management connection.
 export function risksOf(data, draft) {
   const out = [];
   const base = new Map(data.routes.map(r => [r.section, r]));
@@ -365,24 +366,85 @@ export function checkApplied(after, draft) {
 
 //#region The kernel
 
-// Whether the kernel holds a configured route: 'active', 'missing', 'disabled', or null when it cannot tell (no kernel data, or the row
-// is not saved). A route matches by family, table, prefix and type, and by next hop when it has a gateway.
-export function kernelState(row, data) {
-  if (row.section == null || row.removed || !data.kernel) return null;
+// netifd inherits the interface's metric/table; Linux turns an IPv6 metric of zero into 1024.
+function effectiveRoute(row, data) {
   const v = norm(row.values, row.family);
-  if (!v.enabled) return 'disabled';
+  const iface = data.interfaces.find(i => i.name === (v.interface || 'loopback'));
+  const explicitTable = v.table ? tableKey(v.table, data.tableIds) : null;
+  const table = explicitTable && !['0', '254'].includes(explicitTable) ? explicitTable : (row.family === 6 ? iface?.table6 : iface?.table4) ?? 'main';
+  const metric = Number(v.metric || iface?.metric || 0);
+  return { v, iface, table: tableKey(table, data.tableIds), metric: row.family === 6 && metric === 0 ? 1024 : metric };
+}
+
+// A configured route's full identity, not just another route to the same destination.
+export function matchesKernel(row, r, data) {
+  const { v, iface, table, metric } = effectiveRoute(row, data);
+  const raw = data.routes.find(s => s.section === row.section)?.values;
+  const protocols = { unspec: '0', kernel: '2', boot: '3', static: '4', ra: '9', dhcp: '16', bird: '192' };
+  const protocol = p => protocols[p] ?? String(p ?? '');
+  if (protocol(r.proto) !== protocol(raw?.proto || 'static')) return false;
   const target = parseCidr(v.target, row.family);
-  if (!target) return null;
+  const prefix = parseCidr(r.prefix, row.family);
+  if (!target || !prefix || r.family !== row.family || cidrKey(prefix) !== cidrKey(target)) return false;
+  if (r.type !== (v.type || 'unicast') || tableKey(r.table, data.tableIds) !== table || Number(r.metric ?? (row.family === 6 ? 1024 : 0)) !== metric) return false;
+  const source = parseCidr(v.source || (row.family === 6 ? '::/0' : '0.0.0.0/0'), row.family);
+  const actualSource = parseCidr(r.from || (row.family === 6 ? '::/0' : '0.0.0.0/0'), row.family);
+  if (!source || !actualSource || cidrKey(source) !== cidrKey(actualSource)) return false;
+  if (NO_GATEWAY.includes(v.type)) return true;
+  if (v.interface && !iface?.device) return false;
+  const gateway = v.gateway ? parseAddress(v.gateway) : null;
+  return r.nexthops.some(n => (!v.interface || n.dev === iface.device)
+    && (gateway ? parseAddress(n.via)?.value === gateway.value : !n.via));
+}
+
+export function kernelState(row, data) {
+  if (row.section == null || row.removed) return null;
+  const { v, iface } = effectiveRoute(row, data);
+  if (!v.enabled) return 'disabled';
+  if (iface && !iface.up) return 'missing';
+  if (!data.kernel || !parseCidr(v.target, row.family)) return null;
   const wantType = v.type || 'unicast';
-  const gw = v.gateway ? parseAddress(v.gateway) : null;
-  const table = tableKey(v.table, data.tableIds);
-  const found = data.kernel.some(r => {
-    if (r.family !== row.family || r.type !== wantType || tableKey(r.table, data.tableIds) !== table) return false;
-    const p = parseCidr(r.prefix, row.family);
-    if (!p || cidrKey(p) !== cidrKey(target)) return false;
-    return !gw || r.nexthops.some(n => n.via && parseAddress(n.via)?.value === gw.value);
-  });
-  return found ? 'active' : 'missing';
+  if (v.interface && !iface?.device && !NO_GATEWAY.includes(wantType)) return null;
+  return data.kernel.some(r => matchesKernel(row, r, data)) ? 'active' : 'missing';
+}
+
+// Changed, enabled routes on running interfaces must actually reach the FIB before automatic confirmation.
+// Routes on a down interface may be saved for later; untouched pre-existing failures do not block unrelated edits.
+export function checkInstalled(base, draft, after) {
+  const rows = draftFrom(after).rows;
+  for (const row of liveRows(draft)) {
+    if (!row.values.enabled || !changesOf(base, { rows: [row] }).length) continue;
+    const iface = after.interfaces.find(i => i.name === row.values.interface);
+    if (iface && !iface.up) continue;
+    const saved = rows.find(r => signature(r.values, r.family) === signature(row.values, row.family));
+    if (!saved || kernelState(saved, after) !== 'active') throw new Error(`${title(row)} was saved but its installation in the kernel could not be verified`);
+  }
+}
+
+// Include configured-but-inactive routes without pretending they are kernel entries, or duplicating installed ones.
+export function routeInventory(status, data) {
+  if (!data?.available) return status;
+  const routes = status.routes.map(r => ({ ...r }));
+  for (const row of draftFrom(data).rows) {
+    const state = kernelState(row, data);
+    const installed = state === 'active' ? routes.find(r => matchesKernel(row, r, data)) : null;
+    if (installed) {
+      installed.configured = [...(installed.configured ?? []), row.section];
+      continue;
+    }
+    const { v, iface, table, metric } = effectiveRoute(row, data);
+    const target = parseCidr(v.target, row.family);
+    if (!target) continue;
+    const tableName = Object.keys(status.table_ids ?? {}).find(n => String(status.table_ids[n]) === table) ?? table;
+    routes.push({
+      family: row.family, prefix: v.target.includes('/') ? v.target : `${v.target}/${target.len}`, len: target.len,
+      table: tableName, type: v.type || 'unicast', metric, from: v.source || null, proto: 'static',
+      scope: null, src: null, pref: null, expires: null, mtu: v.mtu ? Number(v.mtu) : null, flags: [],
+      nexthops: NO_GATEWAY.includes(v.type) ? [] : [{ via: v.gateway || null, dev: iface?.device ?? v.interface, flags: [] }],
+      configured: [row.section], configState: state === 'disabled' ? 'disabled' : state === 'missing' ? 'not installed' : 'state unknown',
+    });
+  }
+  return { ...status, routes };
 }
 
 // The interfaces the Interface drop-down offers: the router's logical interfaces, plus any name a route already uses that the

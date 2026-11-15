@@ -147,7 +147,10 @@ function uci(method, args) {
     if (mock.noConfigRead || args.config !== 'firewall') return [6];
     return [0, { values: clone(mock.cfg) }];
   }
-  if (method === 'changes') return [0, { changes: changesOf() }];
+  if (method === 'changes') {
+    const list = args.config && args.config !== 'firewall' ? [] : changesOf();
+    return [0, { changes: args.config ? list : (list.length ? { firewall: list } : {}) }];
+  }
   if (method === 'set') { mock.staged.push({ method, args }); return [0, {}]; }
   if (method === 'add') {
     const assigned = args.name ?? `cfg${mock.added++}`;
@@ -155,7 +158,7 @@ function uci(method, args) {
     return [0, { section: assigned }];
   }
   if (method === 'delete' || method === 'order') { mock.staged.push({ method, args }); return [0, {}]; }
-  if (method === 'revert') { mock.staged = []; return [0, {}]; }
+  if (method === 'revert') { if (args.config !== 'firewall') return [4]; mock.staged = []; return [0, {}]; }
   if (method === 'apply') {
     mock.snapshot = clone(mock.cfg);
     mock.restage = mock.staged;
@@ -164,12 +167,14 @@ function uci(method, args) {
     return [0, {}];
   }
   if (method === 'confirm') {
+    if (!mock.snapshot) return [5];
     if (mock.confirmFails) { restore(); return [1]; }
     mock.snapshot = null;
     return [0, {}];
   }
   if (method === 'rollback') {
-    if (mock.snapshot) restore();
+    if (!mock.snapshot) return [5];
+    restore();
     return [0, {}];
   }
   return [0, {}];
@@ -619,7 +624,8 @@ await row('Zones', /^lan/).locator('button[title="Edit zone lan"]').click();
 await dcheck('MSS clamping').check();
 await dsave().click();
 await saveBtn().click();
-check(/did not accept the confirmation/.test(await outcome()), 'a refused confirmation is reported');
+const refused = await outcome();
+check(/^Confirmation failed; the outcome is uncertain\./.test(refused) && /Rollback could not be confirmed/.test(refused) && !/was rolled back/.test(refused), 'a refused confirmation without an active rollback is reported as uncertain, not as confirmed recovery', refused);
 mock.confirmFails = false;
 await discard();
 
@@ -628,9 +634,9 @@ mock.staged = [{ method: 'set', args: { config: 'firewall', section: 'cfg02', va
 await page.click('button:has-text("Refresh")');
 await page.waitForTimeout(700);
 check(/1 change\(s\) are already staged/.test(await page.locator('main').innerText()), 'staged changes in the session are shown');
-await page.click('button:has-text("Discard them")');
+await page.getByRole('button', { name: "Discard this page's staged changes", exact: true }).click();
 await page.waitForTimeout(700);
-check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), 'Discard them clears the session\'s staging area');
+check(mock.staged.length === 0 && !/already staged/.test(await page.locator('main').innerText()), "Discard clears this page's staged changes");
 //#endregion
 
 //#region Lock-out

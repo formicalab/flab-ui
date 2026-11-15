@@ -135,7 +135,10 @@ function scenario(name, { code, output, config }) {
   // answered and shows up in the checks.
   for (const c of CASES) {
     // A name that makes a file name too long for a file system has no fixture; it is refused before any command anyway.
-    if (typeof c.args.section === 'string' && slug(restartCmd(c.args.section)).length < 200) { put(restartCmd(c.args.section), code); put(forceCmd(c.args.section), ''); }
+    if (typeof c.args.section === 'string' && slug(restartCmd(c.args.section)).length < 200) {
+      putJson(slug(restartCmd(c.args.section)).replace(/\.txt$/, '.result.json'), { code: code === '' ? null : Number(code), output });
+      put(forceCmd(c.args.section), '');
+    }
   }
 }
 

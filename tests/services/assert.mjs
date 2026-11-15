@@ -66,7 +66,7 @@ refusals('fail', fail);
 
 console.log('\n== control: a script that hangs, or reports nothing ==');
 const to = load('timeout')['run:dropbear:restart'];
-check(to.ok === false && to.code === 124 && /45 seconds/.test(to.error), 'a script that does not finish in time is reported as such', j(to));
+check(to.ok === false && to.code === 124 && /20 seconds/.test(to.error), 'a script that does not finish in time is reported as such', j(to));
 const nr = load('noresult')['run:dropbear:restart'];
 check(nr.ok === false && nr.code === null && /did not report/.test(nr.error), 'a missing exit code is a failure, not a success', j(nr));
 background('timeout', load('timeout'));

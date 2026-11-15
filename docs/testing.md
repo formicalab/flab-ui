@@ -4,7 +4,7 @@ The suites below are driven by `run.ps1` scripts that never change the router's 
 network suites share one mechanism (the "Common mechanism" below): the repository's plugins run **on the router**
 against saved fixtures (`FLAB_FIXTURES`, with `ucode -L` so the uploaded libraries win over the deployed ones), and
 an optional browser pass opens the deployed UI in Edge through `playwright-core` (installed into a temporary
-folder) with the plugin calls intercepted and answered with the scenario JSON. The Settings, DHCP, VLAN editor and Network panels suites have no
+folder) with the plugin calls intercepted and answered with the scenario JSON. The Settings, DHCP, VLAN editor, Static routes, Network board and Network panels suites have no
 plugin: they unit-test their models and, with `-Browser`, drive the page against a mock (of rpcd's `uci` object; the Network panels suite also needs no router). The other editing suites (Wi-Fi editing, Network editors, Firewall editing, WireGuard editing, nlbwmon settings, Dynamic DNS, DNS, Services) also run their plugin on the router against fixtures.
 
 | Suite | Command | Covers |
@@ -30,11 +30,31 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | nlbwmon settings | `pwsh -File flab-ui\tests\nlbwedit\run.ps1 [-Browser]` | The nlbwmon settings model (reading, every option's validation, the accounting window and the periods a lower count deletes, effects, warnings, the UCI plan, the check after a save, the daemon check); `flab.traffic nlbwmon_paths` against fixtures (RAM, flash, USB, read-only, network share, a missing or blocked directory, 100+ files, no `/proc/mounts`, refused paths) and once for real; the Settings tab against the router's own config, then the whole editing flow against a mock router |
 | Services | `pwsh -File flab-ui\tests\services\run.ps1 [-Browser]` | Services model; `flab.services` against fixtures (nothing is executed) and a read-only `list` on the router; the page against the router's own services, then the whole start, stop and restart flow against a mock |
 | Dynamic DNS | `pwsh -File flab-ui\tests\ddns\run.ps1 [-Browser]` | Dynamic DNS model (reading, draft, validation, change plan, check after a save, verdicts, intervals, log parsing); `flab.ddns` against fixtures (nothing is executed) and a read-only `status` and `log` on the router; the page against the router's own services, then the whole editing and action flow against a mock |
+| Pure/syntax aggregate | `node tests/run-pure.mjs` | All pure regression files, JavaScript syntax, ACL JSON and the lazy application-shell tests |
+| Native execution | `node tests/execution/run.mjs [root@router]` | Disposable chroot/private ubus, not the installed rpcd: deferred workers, timer responsiveness, error statuses, deadlines, saturation, command and diagnostic-output limits |
+| Release recovery | `pwsh -File tests/tooling/release.test.ps1` | Failure injection with disposable local Git remotes, recovery after commit/push failure and release-note validation |
+| Fresh installed image | `bash tests/installation/run.sh` | Linux SDK build and isolated OpenWrt rootfs: actual apk dependencies, installed ACLs, normal root/editor/reader logins, denied permissions and browser lazy loading; never contacts a router |
 
 `-Browser` needs the UI installed (`tools/package.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
 password is needed. Every suite removes its local temp folder when it finishes, and the BGP, IPsec, Routing and network
 suites also remove their `/tmp/flab-*-test` folder on the router. Do not run two suites of the same name at once on one router, because they share those folders, and do not run `tools/package.ps1` while a browser suite is running.
+
+## What these tests do not establish
+
+- Mocked writes do not test real netifd/firewall reload timing, runtime connectivity, or a rollback after losing the
+  browser connection. Do deliberate real-router checks only with alternate management access.
+- Temporary sessions use grants assembled from the checkout's ACL JSON, not the installed fragments. A package that
+  omitted an ACL can still pass a browser suite; separately verify package contents and a normal login on a fresh image.
+- Backend fixtures and `ucode -c` do not establish compatibility with every board, ucode version or optional daemon.
+  The current hardware baseline is one GL-MT6000. Hardware-suite browser automation uses Edge; the disposable-image
+  smoke test uses headless Chromium.
+- A green test is not a substitute for checking the intended contract. The UCI regressions exercise session-wide
+  preflight, transport deadlines, uncertain outcomes and cleanup failures; static-route tests distinguish full FIB
+  identity and require installation verification for changed routes on running interfaces.
+- CI runs pure/syntax and release-recovery checks and builds/installs into a disposable image for the installed-ACL
+  and normal-login smoke tests. The full hardware/fixture/browser suites remain explicit; `-Action Release` builds
+  and checks installation but does not run the application test suites.
 
 ## Common mechanism (BGP, IPsec, Routing and network suites)
 

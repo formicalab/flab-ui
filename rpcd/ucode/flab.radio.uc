@@ -24,6 +24,7 @@
 // is why the iwinfo command is used).
 
 'use strict';
+import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
 import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label, iw_channel_info } from 'flab.util';
@@ -454,7 +455,7 @@ function config() {
 //#endregion
 
 // rpcd registration: ubus object flab.radio with the methods `status` and `config` (no arguments).
-return {
+return deferred({
 	'flab.radio': {
 		status: {
 			call: function(request) {
@@ -467,4 +468,4 @@ return {
 			},
 		},
 	},
-};
+});
