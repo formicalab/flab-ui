@@ -28,6 +28,9 @@ const state = {
   // whether the whole list is drawn, the lookup form, the active lookup query and the form's error.
   rq: '', family: 'all', table: 'all', rsort: { key: 'prefix', dir: 1 }, all: false,
   form: { dst: '', src: '', iif: '' }, query: null, formError: null,
+  // Whether the "How the kernel picks a route" card is folded (kept across the redraws of the poll); folded at first, since
+  // it is a reference rather than something to read on every visit.
+  howFolded: true,
   // Set by the command-bar controls: redraw from the cached data, poll again (used by the lookup form).
   rerender: () => {}, reload: () => {},
 };
@@ -102,7 +105,7 @@ function routesView(data) {
     routeTiles(s, names, staticTop),
     banner,
     lookupCard(data, state, devices, names),
-    howCard(),
+    howCard(state.howFolded, folded => { state.howFolded = folded; }),
     // In lookup order: the rules, then the static routes (entries of the tables the rules consult), then the tables overview.
     rulesCard(s),
     ...staticView(data.configured, rerender),

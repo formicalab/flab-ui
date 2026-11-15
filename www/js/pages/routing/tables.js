@@ -2,6 +2,7 @@
 // (every route of the selected table, with its next hops, interface, protocol and metric).
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
+import { chevron, foldable } from '../../core/fold.js';
 import { badge, card, mono, muted } from '../../core/ui.js';
 import { fmtSpan } from '../../core/format.js';
 import { deviceText } from './lookup.js';
@@ -20,22 +21,24 @@ const TYPE_KIND = { local: 'info', broadcast: 'info', multicast: 'info', anycast
 
 // The short explanation above the rules and tables: the order the kernel works in, and the cases that do not simply
 // fall through to the next rule. Priority and table number are different things, which is easy to mix up because the
-// well-known ones (0 and 255 for the local table, 32766 and 254 for main) are close.
-export function howCard() {
+// well-known ones (0 and 255 for the local table, 32766 and 254 for main) are close. The card folds to its header;
+// `folded` is whether it starts folded and `onFold(folded)` tells the page, which keeps the choice across redraws.
+export function howCard(folded, onFold) {
   // One numbered step of the explanation.
   const item = (...kids) => h('li', {}, ...kids);
-  return card([icon('info-circle'), 'How the kernel picks a route'],
+  const el = card([chevron(), icon('info-circle'), 'How the kernel picks a route'],
     h('div', { className: 'card-body rt-how' },
       h('ol', {},
         item(h('strong', {}, 'Rules first. '), 'The policy rules are checked from the lowest priority number to the highest. The first rule whose conditions match names a routing table to consult. A priority is only an order; it is not a table number (rule 0 looks up table 255, ', mono('local'), ').'),
         item(h('strong', {}, 'Routes live in tables. '), 'Every route, whatever its origin (static, connected, DHCP, BGP), sits in exactly one table, and it is considered only when a rule sends the lookup to that table.'),
-        item(h('strong', {}, 'Then the longest prefix. '), 'Within the table the most specific matching destination wins, whatever its metric. Static routes are not a separate stage before or after BGP, DHCP or connected routes: the routes of one table compete in the same lookup. A daemon such as BIRD first chooses its own best paths before exporting them to the kernel.'),
+        item(h('strong', {}, 'Then the longest prefix. '), 'Within the table the most specific matching destination wins, whatever its metric. A daemon such as BIRD first chooses its own best paths before exporting them to the kernel.'),
         item(h('strong', {}, 'Then the metric. '), 'Only between routes to the same destination in the same table, the lower metric wins; a higher metric makes a backup route that is used when the better one is gone (for example because its interface went down). A metric is never compared across tables: the table a rule selects is searched first, whatever the metrics elsewhere. A blank metric on a static route inherits the interface\'s.'),
         item(h('strong', {}, 'No route in that table? '), 'The kernel goes on to the next rule. If no rule produces a route, the destination is unreachable.'),
         item(h('strong', {}, 'Exceptions. '), 'A matching blackhole, unreachable or prohibit route, or a rule with such an action, ends the lookup at once. A throw route means "not in this table, keep going". ', mono('suppress_prefixlength'), ' counts a too-short match, such as a default route, as a miss.')),
       h('p', { className: 'rt-how-static' },
         h('strong', {}, 'Where static routes fit. '),
-        'Static routes are the ', mono('route'), ' and ', mono('route6'), ' sections of ', mono('/etc/config/network'), ', edited below the rules. They are not a stage before or after the rules: each is an entry in one table, and the Consulted by column shows which table that is and which rules look it up. A static route goes in the table named by its Table option or, when that is blank, in its interface\'s table, which is ', mono('main'), ' unless the interface sets its own (', mono('ip4table'), ', ', mono('ip6table'), '). The kernel\'s rule 32766 consults ', mono('main'), ' after every rule with a lower number, so a rule with a lower number that matches the packet and finds a matching route in its own table wins over all static routes in ', mono('main'), ', even more specific ones; a static route in a table that no rule consults is never used. Save and apply commits them; netifd installs enabled ones while their interface is up and removes them when it goes down. Installed ones then compete by longest prefix and then metric with the connected, DHCP and routing-daemon routes of the same table (give a backup static route a higher metric than the route it backs up), and all appear in the final Routes list. Disabled or not-yet-installed entries are labeled and do not forward traffic. Changes are applied with the review banner at the top.')));
+        'Static routes are not a stage before or after the rules: each is an entry in one table, shown in the Consulted by column with the rules that look that table up. Its table is the Table option or, when blank, its interface\'s table: ', mono('main'), ' unless the interface sets ', mono('ip4table'), ' or ', mono('ip6table'), '. Rule 32766 consults ', mono('main'), ' after every lower-numbered rule, so a lower-numbered rule that matches and whose table has a matching route wins over all static routes in ', mono('main'), ', even more specific ones, and a table no rule consults is never used. Once applied, netifd installs enabled routes while their interface is up; they compete with the other routes of the same table by longest prefix, then metric (give a backup route a higher metric). Disabled or not-installed entries are labeled and carry no traffic.')));
+  return foldable(el, folded, onFold);
 }
 
 //#endregion
