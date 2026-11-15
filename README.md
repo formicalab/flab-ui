@@ -82,6 +82,8 @@ Details are in the [security model](docs/architecture.md#security-model).
 ## Development
 
 - [Changelog](CHANGELOG.md) records the changes in each new release.
+- [CI](.github/workflows/test.yml) runs regression checks, builds with the official
+  [OpenWrt SDK action](https://github.com/openwrt/gh-action-sdk), and tests installation/login in a disposable image.
 
 - [docs/](docs/README.md) covers the architecture, the frontend and backend, the behavior of every page, how to add a
   page, the test suites and the coding conventions.

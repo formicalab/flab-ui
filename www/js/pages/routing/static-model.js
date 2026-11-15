@@ -44,7 +44,7 @@ export const FIELDS = [
   { key: 'target', label: 'Target', placeholder: '10.0.0.0/8', hint: 'The destination network as address/prefix length; 0.0.0.0/0 or ::/0 is the default route, an address without a length is one host.' },
   { key: 'gateway', label: 'Gateway', placeholder: 'next hop', hint: 'The next hop. Leave it empty for a network that is directly connected on the interface. Not used by blackhole, unreachable, prohibit and throw routes.' },
   { key: 'interface', label: 'Interface', hint: 'The network interface the route belongs to; the route exists while it is up.' },
-  { key: 'metric', label: 'Metric', placeholder: '0', hint: 'The lower metric wins when several routes match equally. Give a backup route a higher metric.' },
+  { key: 'metric', label: 'Metric', placeholder: 'inherit', hint: 'Blank inherits the interface metric; IPv6 metric zero becomes the kernel default of 1024. Lower metrics win between equally specific routes. Give a backup route a higher metric.' },
   { key: 'table', label: 'Table', placeholder: 'main', hint: 'The routing table the route goes into: a number or a name from /etc/iproute2/rt_tables. Empty is the main table.' },
   { key: 'type', label: 'Type', hint: 'What the route does with matching packets.' },
   { key: 'mtu', label: 'MTU', placeholder: 'default', hint: 'Limits the size of packets sent over this route.' },

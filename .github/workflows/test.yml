@@ -18,23 +18,47 @@ jobs:
           node-version: '22.16.0'
       - run: node tests/run-pure.mjs
       - run: bash tests/installation/workdir.test.sh
+      - run: bash tests/installation/source.test.sh
+      - run: bash tests/installation/feed.test.sh
       - name: Release recovery (local disposable Git remotes only)
         shell: pwsh
         run: ./tests/tooling/release.test.ps1
+      - name: Working-tree build source isolation and SDK-entry recovery
+        shell: pwsh
+        run: ./tests/tooling/build.test.ps1
 
   installed:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      FLAB_SDK_WORK: ${{ github.workspace }}/../flab-sdk-work
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22.16.0'
-      - name: SDK and isolated-image tools
+      - name: Prepare isolated feed with the current source snapshot
+        run: bash tests/installation/stage-feed.sh "$FLAB_SDK_WORK"
+      - name: Build APK with the official OpenWrt SDK action
+        uses: openwrt/gh-action-sdk@f5813d30eeef3534b58ac7e79c5d8842b6035434
+        env:
+          # Official apk-based 25.12.0 amd64 SDK, pinned by release tag and image digest.
+          CONTAINER: docker.io/openwrt/sdk
+          ARCH: x86_64-25.12.0@sha256:0061d8c6bb7559a79931074ffb50fb0d71add1d26840d314397b50ebbc3bf7be
+          FEED_DIR: ${{ env.FLAB_SDK_WORK }}/feed
+          FEEDNAME: flab-ci
+          PACKAGES: flab-ui
+          ARTIFACTS_DIR: ${{ env.FLAB_SDK_WORK }}/artifacts
+          BUILD_LOG: '1'
+          V: s
+      - name: Isolated-image tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bubblewrap gawk rsync zstd
+          sudo apt-get install -y --no-install-recommends bubblewrap
       - run: npm ci --prefix tests/installation
       - run: npm exec --prefix tests/installation -- playwright install --with-deps chromium
-      - name: Build APK, install into fresh image, test installed ACLs and real login
-        run: bash tests/installation/run.sh
+      - name: Install built APK into fresh image, test installed ACLs and real login
+        run: |
+          mapfile -t apks < <(find "$FLAB_SDK_WORK/artifacts/bin/packages" -type f -name 'flab-ui-*.apk' -print)
+          test "${#apks[@]}" -eq 1
+          bash tests/installation/run.sh "${apks[0]}"

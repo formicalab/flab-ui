@@ -10,10 +10,15 @@ mkdir "$TEST/bin"
 printf '#!/bin/sh\nexit 77\n' > "$TEST/bin/curl"
 chmod +x "$TEST/bin/curl"
 export PATH="$TEST/bin:$PATH"
+printf 'explicit APK fixture\n' > "$TEST/flab-ui.apk"
+if bash tests/installation/run.sh > "$TEST/output" 2>&1; then
+  echo 'The runtime runner must require an explicit built APK.' >&2
+  exit 1
+fi
 
 expect_status() {
   local expected=$1 directory=$2 result=0
-  FLAB_INSTALL_WORK="$directory" bash tests/installation/run.sh > "$TEST/output" 2>&1 || result=$?
+  FLAB_INSTALL_WORK="$directory" bash tests/installation/run.sh "$TEST/flab-ui.apk" > "$TEST/output" 2>&1 || result=$?
   if [ "$result" -ne "$expected" ]; then
     cat "$TEST/output" >&2
     echo "Expected exit $expected, got $result for $directory" >&2

@@ -20,8 +20,8 @@ Tests the Network, Devices and Interfaces (with its bridges), Wi-Fi radio, Mesh,
    matrix and findings follow without a reload.
 
 Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action
-Deploy) and installs playwright-core into the project work folder. Everything it creates on the router
-(/root/flab-ui-tests/network) and locally is removed afterwards.
+Deploy) and installs playwright-core into the temporary work folder. Everything it creates on the router
+(/tmp/flab-net-test) and locally is removed afterwards.
 
 .PARAMETER Router
 SSH destination of the router.
@@ -49,8 +49,8 @@ $root = (Resolve-Path (Join-Path $here '..\..')).Path
 # Every rpcd plugin the suite exercises; each is captured once and then run against every scenario.
 $plugins = 'flab.network', 'flab.radio', 'flab.mesh', 'flab.wireguard', 'flab.firewall', 'flab.logs'
 $libs = Join-Path $root 'rpcd\lib\flab'
-$work = Join-Path $here '.work'
-$remote = '/root/flab-ui-tests/network'
+$work = Join-Path ([IO.Path]::GetTempPath()) 'flab-net-test'
+$remote = '/tmp/flab-net-test'
 
 #region Helpers
 function Invoke-Remote {

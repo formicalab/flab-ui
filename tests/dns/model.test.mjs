@@ -144,7 +144,9 @@ check(f(d).find(x => x.key === 'no-stats')?.level === 'warn' && /option unbound_
 d = clone(dm); d.stats = null;
 check(f(d).find(x => x.key === 'no-stats')?.level === 'info', 'dnsmasq without metrics is information');
 d = clone(ub); d.stats.rcodes = { NOERROR: 900, SERVFAIL: 60, NXDOMAIN: 40 };
-check(f(d).find(x => x.key === 'servfail')?.text.startsWith('6.0% of the answers are SERVFAIL (60 of 1000)'), 'SERVFAIL above 5% of the answers is a warning', j(f(d)));
+const servfail = f(d).find(x => x.key === 'servfail');
+check(servfail?.level === 'warn' && /^6\.0% of the answers are SERVFAIL \(60 of 1[,. \u00a0\u202f]?000\)/.test(servfail.text),
+  'SERVFAIL above 5% of the answers is a warning with the correct counts regardless of grouping separator', j(f(d)));
 d = clone(ub); d.stats.rcodes = { NOERROR: 950, SERVFAIL: 50 };
 check(!f(d).some(x => x.key === 'servfail'), 'exactly 5% is not');
 d = clone(ub); d.stats.rcodes = { NOERROR: 10, SERVFAIL: 5 };

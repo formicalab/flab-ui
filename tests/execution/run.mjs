@@ -138,6 +138,18 @@ chroot ${jail} /sbin/rpcd -s /run/bus -t 30 >rpcd.log 2>&1 & echo $! >rpcd.pid
   assert.ok(performance.now() - t < 1000, 'rpcd must answer during a two-second sleeper');
   assert.ok(during > before, 'rpcd timers must advance while the worker waits');
   assert.equal((await sleeper).output, 'awake');
+  const statusRequest = pending('status');
+  await new Promise(resolve => setTimeout(resolve, 250));
+  assert.deepEqual(call('config'), { interfaces: [], devices: [] }, 'parallel status and config reads must not acquire the mutation lock');
+  assert.equal((await statusRequest).output, 'status');
+  const controlRequest = pending('control');
+  await new Promise(resolve => setTimeout(resolve, 250));
+  assert.deepEqual(call('config'), { interfaces: [], devices: [] }, 'read methods remain available while a control worker runs');
+  failure('control', /busy/);
+  failure('cable_test', /busy/);
+  assert.equal((await controlRequest).output, 'control');
+  assert.equal(call('cable_test').ok, true, 'the per-object mutation lock is released after completion');
+  console.log('PASS parallel status/config reads and same-object control serialization');
   assert.equal(call('fail').code, 9);
   assert.equal(call('timeout').timed_out, true);
   assert.equal(call('flood').truncated, true);

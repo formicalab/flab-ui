@@ -12,8 +12,8 @@ export const REQUEST_TIMEOUT_MS = 5000;
 // Flab workers have a 24s deadline; allow their result to arrive before rpcd's own 30s request timeout.
 export const PLUGIN_REQUEST_TIMEOUT_MS = 27000;
 
-let sid = sessionStorage.getItem('sid');
-let acls = JSON.parse(sessionStorage.getItem('acls') ?? '{}');
+let sid = globalThis.sessionStorage?.getItem('sid') ?? null;
+let acls = JSON.parse(globalThis.sessionStorage?.getItem('acls') ?? '{}');
 
 // Raised when the session is gone (expired or destroyed); the shell answers by showing the sign-in screen.
 export class AuthError extends Error {}
@@ -100,19 +100,21 @@ export function can(obj, method) {
 
 // Signs in with the rpcd login, keeps the session id (and the granted ACLs) for this tab only.
 export async function login(username, password) {
+  const storage = globalThis.sessionStorage;
+  if (!storage) throw new Error('Browser session storage is required to sign in.');
   const r = await rpc('session', 'login', { username, password, timeout: SESSION_TIMEOUT_S }, NULL_SID);
   sid = r.ubus_rpc_session;
   acls = r.acls ?? {};
-  sessionStorage.setItem('sid', sid);
-  sessionStorage.setItem('acls', JSON.stringify(acls));
+  storage.setItem('sid', sid);
+  storage.setItem('acls', JSON.stringify(acls));
 }
 
 // Forgets the session locally (the router-side session simply times out).
 export function clearSession() {
   sid = null;
   acls = {};
-  sessionStorage.removeItem('sid');
-  sessionStorage.removeItem('acls');
+  globalThis.sessionStorage?.removeItem('sid');
+  globalThis.sessionStorage?.removeItem('acls');
 }
 
 // Destroys the session on the router, then forgets it locally.

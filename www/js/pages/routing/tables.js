@@ -53,7 +53,7 @@ export function tablesCard(data, state, rerender) {
     h('td', { className: 'num' }, String(t.v4)),
     h('td', { className: 'num' }, String(t.v6)));
   });
-  return card([icon('list-ul'), 'Routing tables', h('span', { className: 'sub' }, `${rows.length} table${rows.length === 1 ? '' : 's'} · click one to list its routes`)],
+  return card([icon('list-ul'), 'Routing tables', h('span', { className: 'sub' }, `${rows.length} table${rows.length === 1 ? '' : 's'} · installed + configured entries · click to list`)],
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-tables' },
       h('thead', {}, h('tr', {}, ['Table', 'Used for', 'Consulted by', 'IPv4', 'IPv6'].map((c, i) => h('th', { className: i > 2 ? 'num' : '' }, c)))),
       h('tbody', {}, rows))));

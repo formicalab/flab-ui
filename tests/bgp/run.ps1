@@ -13,8 +13,8 @@ Tests the BGP tab of the Routing page against captured and synthetic BIRD states
    that peers, routes, announcements, health findings and colors update without a reload.
 
 Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action
-Deploy) and installs playwright-core into the project work folder. Everything it creates on the router
-(/root/flab-ui-tests/bgp) and locally is removed afterwards.
+Deploy) and installs playwright-core into the temporary work folder. Everything it creates on the router
+(/tmp/flab-bgp-test) and locally is removed afterwards.
 
 .PARAMETER Router
 SSH destination of the router.
@@ -41,8 +41,8 @@ $sid = $null
 $root = (Resolve-Path (Join-Path $here '..\..')).Path
 $plugin = Join-Path $root 'rpcd\ucode\flab.bgp.uc'
 $libs = Join-Path $root 'rpcd\lib\flab'
-$work = Join-Path $here '.work'
-$remote = '/root/flab-ui-tests/bgp'
+$work = Join-Path ([IO.Path]::GetTempPath()) 'flab-bgp-test'
+$remote = '/tmp/flab-bgp-test'
 # Scenario directories built by mkfx.mjs (base = unchanged capture); each is also the name of its output JSON.
 $scenarios = 'base', 'down', 'dual', 'announce'
 

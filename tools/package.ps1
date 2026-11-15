@@ -233,13 +233,20 @@ SRC='@@SRC@@'
 OUT='@@OUT@@'
 SDK=$(ls -d @@SDK@@ 2>/dev/null | head -n 1 || true)
 [ -n "$SDK" ] || { echo "No OpenWrt SDK found at: @@SDK@@" >&2; exit 1; }
+SDK=$(cd "$SDK" && pwd)
 cd "$SDK"
+exec 9>"$SDK/.flab-ui-build.lock"
+flock -n 9 || { echo "Another flab-ui build is using $SDK." >&2; exit 1; }
 LOG="$SDK/.flab-ui-build.log"
 if [ ! -f .config ] || ! grep '^CONFIG_PACKAGE_flab-ui=m' .config > /dev/null || ! ls -d package/feeds/*/flab-ui > /dev/null 2>&1; then
   echo "The SDK at $SDK is not set up for flab-ui: install the feed that holds admin/flab-ui and set CONFIG_PACKAGE_flab-ui=m (see docs/package.md)." >&2
   exit 1
 fi
 STAGE="$SDK/tmp/flab-ui-src"
+ORIGINAL="$SDK/.flab-ui-package-original"
+[ ! -e "$ORIGINAL" ] && [ ! -L "$ORIGINAL" ] || {
+  echo "An interrupted build left $ORIGINAL; restore the SDK package entry before retrying." >&2; exit 1;
+}
 make package/flab-ui/clean > "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
 if [ '@@FEED@@' = 1 ]; then
   make package/flab-ui/compile V=s >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
@@ -247,7 +254,19 @@ else
   rm -rf "$STAGE"
   mkdir -p "$STAGE"
   cp -a "$SRC/www" "$SRC/rpcd" "$SRC/LICENSE" "$STAGE/"
-  make package/flab-ui/compile V=s USE_SOURCE_DIR="$STAGE" >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
+  # Temporarily redirect only the SDK's installed package entry; never edit the feed checkout's Makefile.
+  PACKAGE=$(ls -d package/feeds/*/flab-ui | head -n 1)
+  OVERRIDE="$SDK/.flab-ui-package"
+  bash "$SRC/tools/stage-source.sh" "$PACKAGE" "$OVERRIDE" "$STAGE"
+  mv "$PACKAGE" "$ORIGINAL"
+  restore_package() {
+    rm -f "$PACKAGE"
+    mv "$ORIGINAL" "$PACKAGE"
+    rm -rf "$OVERRIDE"
+  }
+  trap restore_package EXIT
+  ln -s "$OVERRIDE" "$PACKAGE"
+  make package/flab-ui/compile V=s >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
 fi
 mkdir -p "$OUT"
 APK=$(ls -t bin/packages/*/*/flab-ui-*.apk 2>/dev/null | head -n 1 || true)

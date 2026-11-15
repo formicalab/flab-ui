@@ -34,7 +34,8 @@ Reads `flab.routing status` (and `network.interface dump` for the logical interf
   the rule may be a leftover), and netifd's IPv6 reject rule for a delegated prefix (priority 4200000000 with an
   `iif`). Anything else is flagged "unknown".
 - **Routing tables:** every table that holds a route or is named by a rule or in `rt_tables` (name, number, what it
-  is for, the rules that consult it, route counts per family). A click selects the table in the route list.
+  is for, the rules that consult it, entry counts per family including inactive static configuration). A click selects
+  the table in the route list. The top kernel tiles count installed routes only.
 - **Static routes:** the editable IPv4 and IPv6 sections described below, on this same view.
 - **Routes:** the routes of the selected table (default: all tables) for the selected family, filtered by text (any
   destination, next hop, device, logical interface, protocol, ...), sortable by destination, type, next hop,

@@ -23,6 +23,11 @@ let methods = deferred({
 			return { text };
 		} },
 		deadline: { call: () => { while (true) {} } },
+		status: { call: () => command_result('sleep 2; printf status') },
+		config: { call: () => ({ interfaces: [], devices: [] }) },
+		control: { call: () => command_result('sleep 3; printf control') },
+		// Intentionally last: a reused loop binding must not classify preceding read methods as mutations.
+		cable_test: { call: () => ({ ok: true }) },
 	},
 });
 methods['flab.execution-test'].pulse = { call: () => ({ ticks }) };

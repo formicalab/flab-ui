@@ -18,8 +18,8 @@ Tests the Toolbox page (connectivity check, ping, traceroute, DNS lookup and com
    router's configuration.
 
 Needs ssh/scp access to the router and Node.js. -Browser also needs the deployed UI (tools/package.ps1 -Action Deploy) and
-installs playwright-core into the project work folder. Everything created on the router
-(/root/flab-ui-tests/toolbox, including its private diagnostic jobs) and locally is removed afterwards.
+installs playwright-core into the temporary work folder. Everything created on the router
+(/tmp/flab-toolbox-test, including its private diagnostic jobs) and locally is removed afterwards.
 
 .PARAMETER Router
 SSH destination of the router.
@@ -32,7 +32,7 @@ Also run the browser test.
 
 .PARAMETER KeepWork
 Keep the local work folder (the plugin outputs and the browser test's node modules) after the run, so the browser test
-can be repeated by hand. The folder is tests\toolbox\.work.
+can be repeated by hand. The folder is %TEMP%\flab-toolbox-test.
 #>
 [CmdletBinding()]
 param(
@@ -51,8 +51,8 @@ $sid = $null
 $root = (Resolve-Path (Join-Path $here '..\..')).Path
 $diagPlugin = Join-Path $root 'rpcd\ucode\flab.diag.uc'
 $libs = Join-Path $root 'rpcd\lib\flab'
-$work = Join-Path $here '.work'
-$remote = '/root/flab-ui-tests/toolbox'
+$work = Join-Path ([IO.Path]::GetTempPath()) 'flab-toolbox-test'
+$remote = '/tmp/flab-toolbox-test'
 
 #region Helpers
 function Invoke-Remote {
