@@ -30,10 +30,10 @@ export const IPERF_MINUTES = [2, 1, 5, 15, 30];
 // The DNS record types the page offers.
 export const DNS_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'];
 
-// The public resolvers the DNS comparison offers next to the router's own: [address, name].
+// The public resolvers the DNS lookup offers next to the router's own: [address, name].
 export const PUBLIC_RESOLVERS = [['1.1.1.1', 'Cloudflare'], ['8.8.8.8', 'Google'], ['9.9.9.9', 'Quad9']];
 
-// The most servers one comparison asks (the plugin enforces the same limit).
+// The most servers one lookup asks (the plugin enforces the same limit).
 export const MAX_SERVERS = 6;
 
 // The protocols the certificate check can upgrade to TLS (STARTTLS), as the plugin accepts them.
@@ -48,9 +48,9 @@ export const blankForm = () => ({
   count: String(LIMITS.count[2]), size: String(LIMITS.size[2]),
   hops: String(LIMITS.hops[2]), probes: String(LIMITS.probes[2]), method: 'udp', resolve: '', asn: '1',
   cycles: String(LIMITS.cycles[2]), mtrMethod: 'icmp',
-  type: 'A', server: '',
+  type: 'A',
   port: '', sni: '', starttls: '',
-  servers: ['router', '1.1.1.1', '8.8.8.8'], extraServer: '', iface: '', wolOther: false,
+  servers: ['router'], extraServer: '', iface: '', wolOther: false,
   minutes: String(IPERF_MINUTES[0]), iperfPort: String(LIMITS.iperfPort[2]), bind: '',
 });
 
@@ -114,19 +114,21 @@ export function requestOf(form) {
   } else if (form.tool === 'trace') {
     args.type = form.type;
   } else if (form.tool === 'dns') {
-    args.type = form.type;
-    const server = String(form.server ?? '').trim();
-    if (server && !isHost(server)) return { error: 'The DNS server must be a host name or an address.' };
-    if (server) args.server = server;
-  } else if (form.tool === 'compare') {
+    // One server is a plain lookup (the router's own resolver is the default, so "router" sends no server); two or more
+    // are a comparison, which the plugin runs as its own tool.
     args.type = form.type;
     const servers = [...(form.servers ?? [])];
     const extra = String(form.extraServer ?? '').trim();
-    if (extra && !servers.includes(extra)) servers.push(extra);
     if (extra && !isHost(extra)) return { error: 'The extra DNS server must be a host name or an address.' };
+    if (extra && !servers.includes(extra)) servers.push(extra);
     if (!servers.length) return { error: 'Choose at least one DNS server.' };
     if (servers.length > MAX_SERVERS) return { error: `Choose at most ${MAX_SERVERS} DNS servers.` };
-    args.servers = servers;
+    if (servers.length > 1) {
+      args.tool = 'compare';
+      args.servers = servers;
+    } else if (servers[0] !== 'router') {
+      args.server = servers[0];
+    }
   } else if (form.tool === 'tls') {
     problem = need('port', 'The port');
     const sni = String(form.sni ?? '').trim();

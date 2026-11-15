@@ -1,4 +1,5 @@
-// The Toolbox tools: a connectivity check, ping, traceroute, DNS lookups and comparisons and a certificate check run on the
+// The Toolbox tools: a connectivity check, ping, traceroute, DNS lookups (one server, or several to compare) and a
+// certificate check run on the
 // router, with their output streaming in as it is produced and shown as statistics,
 // a hop table, the answers, a certificate chain or a checklist (the views of the last three are in diagviews.js).
 //
@@ -25,15 +26,15 @@ const READ_EVERY = 500;
 const STATUS_TTL = 60000;
 
 // The tools offered, with their labels and titles.
-const TOOLS = [['check', 'Connectivity check'], ['ping', 'Ping'], ['traceroute', 'Traceroute'], ['mtr', 'MTR'], ['dns', 'DNS lookup'], ['trace', 'DNS trace'], ['compare', 'DNS compare'], ['tls', 'TLS certificate'], ['iperf', 'iperf3 server'], ['wol', 'Wake-on-LAN']];
+const TOOLS = [['check', 'Connectivity check'], ['ping', 'Ping'], ['traceroute', 'Traceroute'], ['mtr', 'MTR'], ['dns', 'DNS lookup'], ['trace', 'DNS trace'], ['tls', 'TLS certificate'], ['iperf', 'iperf3 server'], ['wol', 'Wake-on-LAN']];
 
-// The heading of a result for each tool.
-const TITLES = { ping: 'Ping', traceroute: 'Traceroute', mtr: 'MTR', dns: 'DNS lookup', trace: 'DNS trace', check: 'Connectivity check', compare: 'DNS comparison', tls: 'TLS certificate', iperf: 'iperf3 server', wol: 'Wake-on-LAN' };
+// The heading of a result for each job (a DNS lookup of two or more servers runs as the plugin's `compare` tool).
+const TITLES = { ping: 'Ping', traceroute: 'Traceroute', mtr: 'MTR', dns: 'DNS lookup', trace: 'DNS trace', check: 'Connectivity check', compare: 'DNS lookup', tls: 'TLS certificate', iperf: 'iperf3 server', wol: 'Wake-on-LAN' };
 
 // Whether the router has what `tool` needs (`status` is the plugin's answer).
 const available = (status, tool) => {
   const t = status.tools ?? {};
-  return { ping: t.ping, traceroute: t.traceroute, mtr: t.mtr, dns: Boolean(status.dns_tool), trace: t.kdig, compare: Boolean(status.dns_tool), check: t.ping && Boolean(status.dns_tool), tls: t.openssl, iperf: Boolean(status.iperf), wol: Boolean(status.wol) }[tool];
+  return { ping: t.ping, traceroute: t.traceroute, mtr: t.mtr, dns: Boolean(status.dns_tool), trace: t.kdig, check: t.ping && Boolean(status.dns_tool), tls: t.openssl, iperf: Boolean(status.iperf), wol: Boolean(status.wol) }[tool];
 };
 
 // The select value of "Another MAC address…" in the Wake-on-LAN host list.
@@ -202,8 +203,9 @@ function runButton(state, allowed, label = 'Run') {
   return btn;
 }
 
-// The server choices of the DNS comparison: the router's own resolver, the ones it asks upstream, three public ones, and
-// a free field for one more. A box toggles the server in form.servers (at most MAX_SERVERS).
+// The server choices of the DNS lookup: the router's own resolver, the ones it asks upstream, three public ones, and a
+// free field for one more. A box toggles the server in form.servers (at most MAX_SERVERS); one server is a plain lookup,
+// two or more are compared.
 function serverPicker(state, status, disabled) {
   const f = state.diag.form;
   const upstream = status.upstream ?? [];
@@ -214,7 +216,7 @@ function serverPicker(state, status, disabled) {
     } });
     return h('label', { className: 'rt-check form-check' }, box, h('span', {}, label));
   });
-  return h('div', { className: 'rt-servers' }, h('span', { className: 'rt-servers-title' }, `Servers to ask (up to ${MAX_SERVERS})`), h('div', { className: 'rt-checks' }, boxes),
+  return h('div', { className: 'rt-servers' }, h('span', { className: 'rt-servers-title' }, `Servers to ask (up to ${MAX_SERVERS}): one for a plain lookup, two or more to compare`), h('div', { className: 'rt-checks' }, boxes),
     field('One more (optional)', 'Any other DNS server, by address or name', textInput(state, 'extraServer', { placeholder: 'e.g. 192.168.1.53', mono: true, disabled })));
 }
 
@@ -273,12 +275,9 @@ function formCard(state, status) {
     family(),
   ] : f.tool === 'dns' ? [
     field('Record type', 'The kind of DNS record to ask for', selectInput(state, 'type', DNS_TYPES.map(t => [t, t]), running)),
-    field('DNS server (optional)', 'Ask this server instead of the router\'s own resolver', textInput(state, 'server', { placeholder: 'the router\'s resolver', mono: true, disabled: running })),
   ] : f.tool === 'trace' ? [
     field('Record type', 'The kind of DNS record to look up', selectInput(state, 'type', DNS_TYPES.filter(t => t !== 'PTR').map(t => [t, t]), running)),
     field('Address family', 'Ask the servers over IPv4 or IPv6', selectInput(state, 'family', [['', 'IPv4'], ['6', 'IPv6']], running)),
-  ] : f.tool === 'compare' ? [
-    field('Record type', 'The kind of DNS record to ask for', selectInput(state, 'type', DNS_TYPES.map(t => [t, t]), running)),
   ] : f.tool === 'tls' ? [
     field('Port', 'The TCP port to connect to (default 443)', textInput(state, 'port', { type: 'number', placeholder: '443', disabled: running })),
     field('Server name (optional)', 'The name to ask the server for (SNI) and to check the certificate against, when it differs from the host', textInput(state, 'sni', { placeholder: 'same as the host', mono: true, disabled: running })),
@@ -292,8 +291,8 @@ function formCard(state, status) {
   ] : [];
 
   const weak = f.tool === 'dns' && status.dns_tool === 'nslookup' && WEAK_NSLOOKUP.includes(f.type);
-  const hostLabel = f.tool === 'check' ? 'Host to test (optional)' : f.tool === 'compare' ? 'Name to look up' : f.tool === 'trace' ? 'Name to trace' : f.tool === 'wol' ? 'Host to wake' : 'Host or address';
-  const hostHint = f.tool === 'check' ? `The name used for the DNS and TLS steps (${status.check_host ?? 'example.com'} by default)` : f.tool === 'compare' ? 'The name every server is asked about' : f.tool === 'trace' ? 'The name whose path from the root servers is traced' : f.tool === 'wol' ? 'A host the router knows: its DHCP reservations first, then the other hosts it has seen. Or enter another MAC address' : 'The name or address to probe';
+  const hostLabel = f.tool === 'check' ? 'Host to test (optional)' : f.tool === 'dns' ? 'Name to look up' : f.tool === 'trace' ? 'Name to trace' : f.tool === 'wol' ? 'Host to wake' : 'Host or address';
+  const hostHint = f.tool === 'check' ? `The name used for the DNS and TLS steps (${status.check_host ?? 'example.com'} by default)` : f.tool === 'dns' ? 'The name every server is asked about (an address for a PTR lookup)' : f.tool === 'trace' ? 'The name whose path from the root servers is traced' : f.tool === 'wol' ? 'A host the router knows: its DHCP reservations first, then the other hosts it has seen. Or enter another MAC address' : 'The name or address to probe';
   const hostHolder = f.tool === 'check' ? (status.check_host ?? 'example.com') : f.tool === 'wol' ? 'aa:bb:cc:dd:ee:ff' : f.tool === 'trace' ? 'e.g. www.example.com' : 'e.g. example.com or 1.1.1.1';
   const hostControl = f.tool === 'wol' ? wolPicker(state, status, running) : textInput(state, 'host', { placeholder: hostHolder, mono: true, disabled: running });
   const serving = f.tool === 'iperf';
@@ -306,11 +305,11 @@ function formCard(state, status) {
         h('div', { className: 'rt-actions' },
           running ? button(serving ? 'Stop server' : 'Stop', 'x-lg', () => stop(state)) : runButton(state, allowed, serving ? 'Start server' : 'Run'),
           d.job && !running ? button('Clear', 'x-lg', () => { d.job = null; d.formError = null; state.rerender(); }) : null)),
-      f.tool === 'compare' ? serverPicker(state, status, running) : null,
+      f.tool === 'dns' ? serverPicker(state, status, running) : null,
       d.formError ? h('div', { className: 'rt-error' }, icon('exclamation-triangle'), d.formError) : null,
       !allowed ? h('div', { className: 'rt-error' }, icon('exclamation-triangle'), 'This login is not allowed to run diagnostics.') : null,
       weak ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `This router only has busybox nslookup, which cannot show ${f.type} records in full. Installing bind-dig, knot-dig or ldns-drill gives complete answers.`) : null,
-      ['dns', 'compare', 'check'].includes(f.tool) && status.dns_tool && status.dns_tool !== 'nslookup' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Using ${status.dns_tool}.`) : null,
+      ['dns', 'check'].includes(f.tool) && status.dns_tool && status.dns_tool !== 'nslookup' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Using ${status.dns_tool}.`) : null,
       f.tool === 'check' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Walks down the stack: default route, next hop, internet, DNS (through the router and a public resolver), IPv6 and a secure connection. About 15 seconds.') : null,
       f.tool === 'trace' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Asks a root server, then the servers it points to, down to the one that answers: the way a resolver finds a name. It shows who answered, how long each step took and the DNSSEC records on the way, and ends with what the router\'s own resolver says.') : null,
       f.tool === 'mtr' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Probes every hop once a second for the chosen number of rounds and keeps its loss and delay up to date, like ping and traceroute in one. Loss that does not reach the last hop is a router limiting its own replies, not a fault.') : null,

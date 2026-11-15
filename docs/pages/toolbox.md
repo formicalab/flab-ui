@@ -1,13 +1,12 @@
 # Toolbox (route `#toolbox`)
 Diagnostic tools that run on the router and show their output as it arrives: a connectivity check, ping, traceroute, MTR,
-DNS lookups, a DNS trace and comparisons, a TLS certificate check, an iperf3 server and Wake-on-LAN. The form has a tool
+DNS lookups (of one server, or of several to compare), a DNS trace, a TLS certificate check, an iperf3 server and Wake-on-LAN. The form has a tool
 selector, the host, and the options of the tool:
 for ping the count
 (1 to 60), the packet size (0 to 1400), the address family and the interface to send from (a dropdown of the router's
 interfaces, "automatic" by default; the plugin also accepts an address); for traceroute the maximum hops (1 to 30), the probes per hop (1 to 3), UDP or ICMP
 probes, whether to look up host names and networks, family and source; for MTR the rounds (3 to 60) and ICMP or UDP; for
-DNS the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and an optional
-server; for the DNS trace the record type and the address family; for the comparison the record type and the servers; for
+DNS the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and the servers to ask (the router's resolver by default); for the DNS trace the record type and the address family; for
 the certificate check the port, a server name and a STARTTLS
 protocol; for the iperf3 server the time to run, the port and the address to listen on. A tool is offered only when the router has what it needs (the certificate check needs `openssl`,
 MTR needs `mtr`, the DNS trace needs `kdig`, the iperf3 server needs `iperf3`, the DNS tools
@@ -50,10 +49,18 @@ again. The form remembers its values while the page is open; Run is disabled for
   the destination was lost, a middle hop that shows loss while the later hops do not (it only limits its own replies, so the
   path is fine; shown in green, not as a fault), a destination that never answered, and a jump in delay between two hops. A probe
   still in flight is not counted as lost while the run goes on.
-- **DNS lookup:** how it went (the number of answers, NXDOMAIN, SERVFAIL, REFUSED, timeout, or no answer), the server that
-  answered, and the tool's own output. The tool is the first of `dig`, `kdig`, `drill` and `nslookup` that the router has;
-  busybox `nslookup` cannot show MX, TXT, NS, CNAME, SOA, SRV or CAA records in full (it prints "mail exchanger = 0" with no
-  host), so the page says so when only nslookup exists and one of those types is chosen.
+- **DNS lookup:** asks the same question of one server or of up to six. The server list offers the router's own resolver
+  (the default), the upstream resolvers the router was given (read from `resolv.conf.auto`, loopback left out), Cloudflare,
+  Google and Quad9, and a field for one more of your choice. With **one server** the result shows how it went (the number
+  of answers, NXDOMAIN, SERVFAIL, REFUSED, timeout, or no answer), the server that answered, and the tool's own output. The
+  tool is the first of `dig`, `kdig`, `drill` and `nslookup` that the router has; busybox `nslookup` cannot show MX, TXT, NS,
+  CNAME, SOA, SRV or CAA records in full (it prints "mail exchanger = 0" with no host), so the page says so when only
+  nslookup exists and one of those types is chosen. With **two or more servers** the same question is put to each in turn
+  and the result is a comparison: a bar chart (fastest first, the fastest marked) shows each server's response time, and a
+  row per server shows the result, the addresses, whether the resolver validated the answer with DNSSEC (the AD flag), the
+  time the tool reports and the fastest server. Differing answers are highlighted, with the note that a CDN gives each
+  resolver its own, correct set; a server that does not answer shows "No reply". A lookup of one server is sent to the
+  plugin as its `dns` tool and one of several as its `compare` tool.
 - **DNS trace:** the way a resolver finds a name, step by step, as a script that needs `kdig`. It asks a root server
   (a, c, f or m), then the servers each answer points to, down to the zone's own server, with `+norecurse +dnssec`, one block
   per step (`step <n> <address> <name> <zone>`), and ends by asking the router's resolver the same question. A name server
@@ -68,12 +75,6 @@ again. The form remembers its values while the page is open; Run is disabled for
   that is intact, not complete or absent. The last card compares the router's own resolver (whether it validated the answer,
   the time, the cache age) with the authoritative answer, and says that differences are normal for CDN names. NXDOMAIN
   answers that Cloudflare-style servers give as NOERROR with an NSEC `NXNAME` record are read as NXDOMAIN.
-- **DNS compare:** asks the same question of up to six servers in turn: the router's own resolver, the upstream resolvers
-  the router was given (read from `resolv.conf.auto`, loopback left out), Cloudflare, Google and Quad9, and one more of
-  your choice. A bar chart (fastest first, the fastest marked) shows each server's response time, and a row per server
-  shows the result, the addresses, whether the resolver validated the answer with DNSSEC (the
-  AD flag), the time the tool reports and the fastest server. Differing answers are highlighted, with the note that a
-  CDN gives each resolver its own, correct set; a server that does not answer shows "No reply".
 - **TLS certificate:** connects to a host and port (optionally with another server name, or after STARTTLS for SMTP, IMAP,
   POP3 and FTP) and shows the session (protocol, cipher, key exchange) and the certificates exactly as the server sent
   them, in the order sent: the router's own certificate authorities are never used to add or reorder any (`openssl
@@ -127,8 +128,9 @@ again. The form remembers its values while the page is open; Run is disabled for
 
 `flab.diag` runs the tools detached (`timeout -k 2 <limit> <tool> ... >out 2>&1 &`, with the exit code written to a file)
 under `/tmp/flab-diag/<id>/`: a ping may run its count plus 10 seconds, a traceroute 60 (with the AS lookups up to 108 more),
-MTR its rounds plus 15, a DNS trace 60, a DNS lookup 15, a certificate check 25, a comparison
-60, the connectivity check 75 and the iperf3 server the minutes asked for. The check, the comparison, the certificate check,
+MTR its rounds plus 15, a DNS trace 60, a DNS lookup of one server 15, a certificate check 25, a lookup of several servers
+(the plugin's `compare` tool) 60, the connectivity check 75 and the iperf3 server the minutes asked for. The check, the
+multi-server lookup, the certificate check,
 the DNS trace and a traceroute with AS lookups are small shell scripts (`job.sh`,
 written with LF line endings only, because BusyBox sh rejects a carriage return) that print their output in blocks
 (`### BEGIN <step> <uptime> <detail>` … `### END <exit code> <uptime>`), which the page
@@ -139,7 +141,7 @@ iperf3 server's output is fetched in pieces. At most three jobs run at once,
 twelve directories are kept, and a finished job is removed after ten minutes. Everything that reaches the shell is
 validated: the tool, the record type and the STARTTLS protocol come from allow-lists, the host, the server name and the DNS
 servers are made of letters, digits and `. : _ -` and do not start with `-` (they could be taken for an option), the port is
-clamped to 1 to 65535 (1024 to 65535 for the iperf3 server), a comparison takes one to six servers that are each such a name (or `router`), the source is such
+clamped to 1 to 65535 (1024 to 65535 for the iperf3 server), a `compare` request takes one to six servers that are each such a name (or `router`), the source is such
 an address or an interface name, the iperf3 time must be one of the offered minutes and the address to listen on one of the router's own addresses,
 the numbers are clamped to their ranges (a literal 0 is a number, not "absent"), the name-lookup and network-lookup switches must be real
 booleans, the argument list is built from those values

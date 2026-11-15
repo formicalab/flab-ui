@@ -101,7 +101,7 @@ at the day the samples were captured so the days left on a certificate do not dr
 entry above Logs, the form's checks, a ping
 read while it runs and after, loss, no reply and a bad host, the ping chart, the options sent, stopping, traceroute (partial, not
 reached, IPv6, with the networks of the hops), mtr, the DNS trace (a plain trace, two aliases, a name that does not exist, IPv6), DNS (answers, NXDOMAIN, the nslookup note), the connectivity check (a healthy router, a broken resolver, a dead
-next hop, a script that fails), the comparison (the choices offered, rows arriving, DNSSEC, the fastest, the response-time chart, a silent server), the certificate check (a good chain, the chain and expiry pictures, an expired certificate, a server that sends only its own certificate, a gap in the chain, the
+next hop, a script that fails), the lookup of several servers (the choices offered, rows arriving, DNSSEC, the fastest, the response-time chart, a silent server, one server being a plain lookup), the certificate check (a good chain, the chain and expiry pictures, an expired certificate, a server that sends only its own certificate, a gap in the chain, the
 PEM copy, expired, self-signed, hung up, refused, STARTTLS, a router without openssl), Wake-on-LAN (the host list with reservations first, a typed MAC, a bad MAC, a normalized
 MAC, a chosen interface, a host without an address, a refusal from the router, etherwake and socat, the Ping button, a router with
 neither tool, a login without the wake permission), the iperf3 server (the form, the countdown, the connect commands, tests

@@ -1,7 +1,8 @@
 // Toolbox page (route #toolbox): diagnostic tools that run on the router and stream their output.
 //
-// The tools (see diag.js): a connectivity check, ping, traceroute (with the network of each hop), mtr, DNS lookup, a DNS trace
-// from the root servers, a DNS comparison, a TLS certificate check, an iperf3 server and Wake-on-LAN. They run through
+// The tools (see diag.js): a connectivity check, ping, traceroute (with the network of each hop), mtr, DNS lookup (of one
+// server, or of several to compare), a DNS trace from the root servers, a TLS certificate check, an iperf3 server and
+// Wake-on-LAN. They run through
 // flab.diag (rpcd/ucode/flab.diag.uc) as detached jobs that the page reads every half second.
 // The form and the job live in the page state below, so they survive the page's own redraws and leaving the page.
 import { refreshControl } from '../../core/controls.js';
