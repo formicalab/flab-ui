@@ -165,7 +165,7 @@ await select('All tables').selectOption('main');
 
 console.log('\n== tables and policy rules ==');
 const how = page.locator('.rt-how');
-check(await how.count() === 1 && /lowest priority number to the highest/.test(await how.innerText()) && /not a table number/.test(await how.innerText()) && /ends the lookup at once/.test(await how.innerText()) && /throw route means/.test(await how.innerText()), 'a header explains how the kernel picks a route: rules by priority, fall-through to the next rule, and the exceptions');
+check(await how.count() === 1 && /lowest priority number to the highest/.test(await how.innerText()) && /not a table number/.test(await how.innerText()) && /ends the lookup at once/.test(await how.innerText()) && /throw route means/.test(await how.innerText()) && /Then the metric[\s\S]*never compared across tables/.test(await how.innerText()), 'a header explains how the kernel picks a route: rules by priority, longest prefix, then metric within a table, fall-through to the next rule, and the exceptions');
 check((await how.boundingBox()).y < (await cardOf('Policy rules').boundingBox()).y && (await how.boundingBox()).y < (await cardOf('Routing tables').boundingBox()).y, 'the explanation sits above the rules and the tables');
 const tr = await cardOf('Routing tables').locator('tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 check(tr.length === 5 && tr[0].startsWith('main (254) ordinary routes rule 32766 10 6') && tr[1].startsWith('local (255)') && tr.some(t => /^voip \(100\).*rule 100 1 0/.test(t)) && tr.some(t => /^220.*rule 200.*rule 220 1 0/.test(t)), 'the tables card: number, purpose, rules that consult each table, route counts', tr.join(' || '));

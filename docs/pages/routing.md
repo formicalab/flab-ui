@@ -24,7 +24,8 @@ Reads `flab.routing status` (and `network.interface dump` for the logical interf
   Polling pauses while a form field has focus; the form's text lives in the page state.
 - **Policy rules:** the section starts with a short header, "How the kernel picks a route": rules are checked from
   the lowest priority number to the highest, a priority is not a table number, every route (static ones included)
-  lives in one table and is considered only when a rule sends the lookup there, a table without a matching route
+  lives in one table and is considered only when a rule sends the lookup there, within the table the longest prefix
+  wins and then the lower metric (never compared across tables), a table without a matching route
   sends the lookup on to the next rule, and the cases that end it (blackhole, unreachable and prohibit routes or
   rules; `throw` and `suppress_prefixlength` continue). Below it, in a full-width card, every rule of both families in the order the
   kernel applies them (priority, family, what it
