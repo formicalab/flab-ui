@@ -45,7 +45,7 @@ export const FIELDS = [
   { key: 'gateway', label: 'Gateway', placeholder: 'next hop', hint: 'The next hop. Leave it empty for a network that is directly connected on the interface. Not used by blackhole, unreachable, prohibit and throw routes.' },
   { key: 'interface', label: 'Interface', hint: 'The network interface the route belongs to; the route exists while it is up.' },
   { key: 'metric', label: 'Metric', placeholder: 'inherit', hint: 'Blank inherits the interface metric; IPv6 metric zero becomes the kernel default of 1024. Lower metrics win between equally specific routes. Give a backup route a higher metric.' },
-  { key: 'table', label: 'Table', placeholder: 'main', hint: 'The routing table the route goes into: a number or a name from /etc/iproute2/rt_tables. Empty is the main table.' },
+  { key: 'table', label: 'Table', placeholder: 'inherit', hint: 'A number or name from /etc/iproute2/rt_tables. Blank, zero and main inherit the interface table; without a custom interface table this is main.' },
   { key: 'type', label: 'Type', hint: 'What the route does with matching packets.' },
   { key: 'mtu', label: 'MTU', placeholder: 'default', hint: 'Limits the size of packets sent over this route.' },
   { key: 'source', label: 'From', placeholder: 'any source', hint: 'Use the route only for packets that come from this address or prefix (source-based routing; it needs a policy rule that selects the table).' },
@@ -109,7 +109,7 @@ export function rowValues(raw, family) {
     if (len != null) target = `${target}/${len}`;
   }
   return {
-    target, gateway: text('gateway'), interface: text('interface'), metric: text('metric'), table: text('table'), type: text('type'),
+    target, gateway: text('gateway'), interface: text('interface'), metric: text('metric'), table: text('table'), type: text('type') === 'unicast' ? '' : text('type'),
     mtu: text('mtu'), source: text('source'), onlink: uciBool(raw.onlink, false), enabled: !uciBool(raw.disabled, false),
   };
 }

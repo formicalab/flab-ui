@@ -85,7 +85,7 @@ type (`uci get` with `type: route` and `route6`), never the whole network config
   main table, blackhole defaults included) first shows a confirmation that says what it does to the way out.
 - Polling pauses while there are unsaved edits, a control has focus or a save is running.
 - Out of scope: policy rules (`rule`, `rule6`, shown on the Routes tab) and routes learned by a daemon, DHCP or the kernel.
-- **Matching:** installed status compares family, effective table, destination, route type, source prefix, metric,
+- **Matching:** installed status compares family, effective table, destination, route type/protocol, source prefix, metric,
   gateway and outgoing device. Empty metrics/tables inherit the interface defaults; IPv6 metric zero is normalized to
   the kernel's 1024 default. Disabled state is known even if the kernel reply is unavailable.
 - **Limits:** installation does not prove that the gateway answers or that internet access works. Keep alternate access when

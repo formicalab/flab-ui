@@ -57,6 +57,12 @@ check(rowOf(draft, 'cfg03').values.target === '10.9.0.0/16' && rowOf(draft, 'cfg
 check(rowOf(draft, 'cfg04').values.enabled === false && rowOf(draft, 'cfg01').values.enabled === true && rowOf(draft, 'cfg06').values.onlink === true, 'disabled and onlink are read as checkboxes');
 check(rowOf(draft, 'cfg05').values.type === 'blackhole' && rowOf(draft, 'cfg05').values.table === 'voip' && rowOf(draft, 'cfg01').values.table === '', 'type and table are read; no table is the main table');
 check(m.readStatic(null, CFG6).available === false && m.readStatic(CFG4, null).available === false && m.readStatic({}, {}).routes.length === 0, 'a login that cannot read the config, and a config without routes');
+const explicitUnicast = m.readStatic(sec('route', 'normal', { target: '10.0.0.0/8', interface: 'lan', type: 'unicast' }), {}, { dump: DUMP });
+const unicastDraft = m.draftFrom(explicitUnicast);
+unicastDraft.rows[0].values.metric = '12';
+check(m.problems(explicitUnicast, unicastDraft).errors.length === 0
+  && j(m.plan(explicitUnicast, unicastDraft)) === j([{ op: 'set', config: 'network', section: 'normal', values: { metric: '12' } }]),
+  'explicit unicast routes remain editable without rewriting their existing type option');
 check(j(data.interfaces.map(i => i.name)) === j(['lan', 'loopback', 'wan', 'wan2']) && data.interfaces[0].v4[0].len === 24, 'the interfaces are listed by name with their subnets');
 check(read({}).kernel === null && read({ status: { available: false } }).kernel === null, 'without the kernel state nothing is known about it');
 
