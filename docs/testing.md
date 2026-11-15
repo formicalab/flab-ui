@@ -24,6 +24,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Network board | `pwsh -File flab-ui\tests\netboard\run.ps1 [-Browser]` | The board model (lanes, edges, protocol devices, tunnels, wireless, the draft's new and removed items, highlighting, findings, counts) and the pure parts of the drawer and of the bridge information; the board against the router's own data (read only) at 1920, 1280 and 900 px in both themes, the drawer, the Device menu, highlighting, leaving the page and the old `#bridges` route |
 | Network panels | `pwsh -File flab-ui\tests\netpanels\run.ps1 [-Browser]` | The panel and wizard model (protocol cards, essential and advanced options, device chooser, what a protocol change drops, used by, suggestions, the wizard's draft effects, validation and plan); with `-Browser`, the real panels, drawer and wizard against a stateful mock of the network config, served by a local web server (no router, nothing to deploy) |
 | VLAN editor | `pwsh -File flab-ui\tests\vlanedit\run.ps1 [-Browser]` | The VLAN editor's model (reading the sections, the tables of a bridge and of a swconfig switch, the draft, the review, validation and lockout warnings, the UCI operations, the check after a save); the Wired network page against the router's own config (read only), then the whole editing flow of a bridge and of a swconfig switch against a mock router |
+| Static routes | `pwsh -File flab-ui\tests\routeedit\run.ps1 [-Browser]` | The Static routes model (reading the `route` and `route6` sections, an older netmask, the draft, the review, validation and warnings, the default-route risks, the UCI operations, the check after a save, what the kernel holds); the tab against the router's own config (read only), then the whole editing flow against a mock router (see below) |
 | WireGuard editing | `pwsh -File flab-ui\tests\wgedit\run.ps1 [-Browser]` | The WireGuard model (address math, keys, draft, review, UCI plan, validation, the tunnel you work through, check after a save, add-a-device helpers); `flab.wireguard` against fixtures and read only on the router; the page against the router's own interfaces, then the whole editing flow against a mock router |
 | Firewall editing | `pwsh -File flab-ui\tests\fwedit\run.ps1 [-Browser]` | The Firewall editing model (reading, draft, zones, forwardings, rules, port forwards, defaults, validation, the lock-out check, UCI operations and section order, the check after a save); `flab.firewall` against fixtures and read only on the router; the page against the router's own firewall (read only), then the whole editing flow against a mock router |
 | nlbwmon settings | `pwsh -File flab-ui\tests\nlbwedit\run.ps1 [-Browser]` | The nlbwmon settings model (reading, every option's validation, the accounting window and the periods a lower count deletes, effects, warnings, the UCI plan, the check after a save, the daemon check); `flab.traffic nlbwmon_paths` against fixtures (RAM, flash, USB, read-only, network share, a missing or blocked directory, 100+ files, no `/proc/mounts`, refused paths) and once for real; the Settings tab against the router's own config, then the whole editing flow against a mock router |
@@ -390,6 +391,21 @@ plugin.
   router that applies nothing, one that refuses the confirmation, staged leftovers, a kernel table that differs, an older swconfig
   board (the groups, the CPU port, the `vid`, the untagged-once rule, a new group, `enable_vlan`; mock only, since the router has no
   swconfig switch), a login that may not write or may not read, and a session that expires while saving.
+
+## Static routes suite
+Never changes the router's configuration: every `uci` write is blocked (and fails the test) in the phase that talks to the real
+router, and the editing flow runs against a stateful mock of rpcd's `uci` object, `network.interface dump` and a `flab.routing status`
+whose kernel routes follow the mocked config. There is no backend part: the tab adds no plugin.
+- **Unit tests** (`model.test.mjs`, no router): the sections as `uci get` returns them, an older `netmask` joined to the target,
+  the address math, the draft and the review text, the UCI operations (only what changed; the prefix written to `target` and
+  `netmask` removed only for an edited target; `valid` and `proto` untouched), every error and warning, the default-route
+  risks, the check after a save and what the kernel holds of each route.
+- **Browser** (`live.mjs`): the tab first shows the real router read only (both tables, no pending change, `uci get` only by
+  section type, nothing staged or written). Then a mock router (with an interface that holds a password, which the page must never
+  read) drives: the rows and their state badges, an invalid target, a valid edit and its review text, saving (the order of the calls,
+  the older netmask replaced by a prefix), adding an IPv4 and an IPv6 route, removing and Undo, the confirmation before a default
+  route change (Cancel leaves everything as it was, Apply the change saves), a router that applies nothing, one that refuses the
+  confirmation, staged leftovers, a login that may not write or may not read, and a session that expires while saving.
 
 ## WireGuard editing suite
 Never changes the router's configuration: every uci write is answered by a mock, and blocked (failing the test) in the phase that talks to the

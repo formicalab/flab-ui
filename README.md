@@ -17,7 +17,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | Wi-Fi | Radios, wireless networks and clients; edit channels and settings. |
 | Mesh | 802.11s mesh peers and paths (read only). |
 | Firewall | Zones, rules and port forwards with live nftables counters; edit them. |
-| Routing | Kernel routes and rules, and BGP when BIRD is installed (read only). |
+| Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |
 | IPsec VPN | strongSwan connections, tunnels, traffic and a security score (read only). |
 | WireGuard | Interfaces and peers; edit them. |
 | DHCP | odhcpd and dnsmasq leases, reservations and pools; edit them. |

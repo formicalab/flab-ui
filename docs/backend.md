@@ -42,6 +42,7 @@ the configs they touch (in `rpcd/acl.d/`; the page and plugin sections name them
 | `flab-firewall.json` | `firewall` (with `order`) |
 | `flab-traffic.json` | `nlbwmon` |
 | `flab-vlan.json` | `network` (with `order`; the VLAN editor of the Wired network page) |
+| `flab-routing.json` | `network` (the Static routes tab of the Routing page; also ubus `flab.routing` `status` and `lookup`) |
 | `flab-network.json` | `network`: `changes` and the write methods only, no `get` (Devices and Interfaces, which reads the config through `flab.network config`) |
 | `flab-radio.json` | `wireless`: `changes` and the write methods only, no `get` (the Wi-Fi page reads it through `flab.radio config`) |
 | `flab-wireguard.json` | `network`: `changes` and the write methods only, no `get` (WireGuard reads it through `flab.wireguard status`) |
@@ -51,10 +52,10 @@ the configs they touch (in `rpcd/acl.d/`; the page and plugin sections name them
 `network` (PPPoE passwords, WireGuard keys) and `ddns` (passwords and tokens) are read through the plugin of the page, which leaves
 every secret out and reports only whether it is set, and the read-back after a save goes through the same plugin. Their password and key fields are
 write-only: empty keeps the stored value, a typed value replaces it, and the review list shows "new value (hidden)" or nothing. The
-configs a page reads with `uci get` itself (`system`, `dhcp`, `unbound`, `firewall`, `nlbwmon`) hold none. The VLAN editor reads the network config
-with `uci get` filtered by section type (`bridge-vlan`, `device`, `switch`, `switch_vlan`, `switch_port`), never the whole config, and a test checks
+configs a page reads with `uci get` itself (`system`, `dhcp`, `unbound`, `firewall`, `nlbwmon`) hold none. The VLAN editor and the Static routes tab read the network config
+with `uci get` filtered by section type (`bridge-vlan`, `device`, `switch`, `switch_vlan`, `switch_port`; `route`, `route6`), never the whole config, and a test checks
 that. rpcd cannot restrict `uci get` to section types, and root holds every fragment, so a root login can still call `uci get network` (through
-`flab-dhcp.json` or `flab-vlan.json`); the pages never do.
+`flab-dhcp.json`, `flab-vlan.json` or `flab-routing.json`); the pages never do.
 
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 

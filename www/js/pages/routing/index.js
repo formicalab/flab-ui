@@ -1,8 +1,9 @@
 // Routing page (route #routing): the kernel's routing state and, when BIRD is installed, BGP.
 //
-// Up to two tabs share the page and its command bar:
+// Up to three tabs share the page and its command bar:
 //   Routes       the next-hop lookup, the policy rules and routing tables, and the route list (flab.routing, see
 //                rpcd/ucode/flab.routing.uc; the logical interface names come from `network.interface dump`)
+//   Static routes  the route and route6 sections of /etc/config/network, edited through uci (static.js, static-model.js)
 //   BGP          the BIRD state (flab.bgp; the sections are in bgp/): sessions, learned and announced routes
 // Only the open tab is polled. The BGP tab is offered only when the router has birdc. A forwarded lookup answer offers
 // Ping and Traceroute buttons that open the Toolbox page with the destination filled in.
@@ -15,6 +16,7 @@ import { tile, tiles, healthBanner } from '../../core/ui.js';
 import { searchControl, selectControl, pauseControl, refreshControl, toggleControl, tabsControl } from '../../core/controls.js';
 import { loadBgp, peerOptions, bgpView } from './bgp/tab.js';
 import { lookupCard } from './lookup.js';
+import { loadStatic, staticEditor, staticView } from './static.js';
 import { routesCard, rulesCard, tablesCard, howCard } from './tables.js';
 import { defaultRoutes, findings, interfaceNames, isKernelRule, routeKey, tableLabel, tablesOf } from './model.js';
 
@@ -44,6 +46,7 @@ const ask = query => ubus('flab.routing', 'lookup', query).catch(e => {
 // Routes tab, the BIRD state on the BGP tab.
 async function load() {
   if (state.tab === 'bgp') return { tab: 'bgp', bgp: await loadBgp() };
+  if (state.tab === 'static') return loadStatic();
   const [status, dump, lookup] = await Promise.all([
     ubus('flab.routing', 'status'),
     optional(ubus('network.interface', 'dump')),
@@ -114,9 +117,10 @@ export default {
   title: 'Routing',
   icon: 'globe2',
   interval: 5000,
-  css: ['css/bgp.css', 'css/routing.css'],
-  // Polling stops while the lookup form is being typed in, because the redraw would take the focus away.
-  isPaused: () => state.paused || Boolean(document.activeElement?.closest?.('.rt-lookup')),
+  css: ['css/forms.css', 'css/bgp.css', 'css/routing.css'],
+  // Polling stops while the lookup form is being typed in, because the redraw would take the focus away, and while the
+  // Static routes tab holds unsaved edits, a focused control or a save in progress.
+  isPaused: () => state.paused || Boolean(document.activeElement?.closest?.('.rt-lookup')) || (state.tab === 'static' && staticEditor.paused('.rt-static')),
 
   load,
 
@@ -142,9 +146,11 @@ export default {
     bgpNodes.push(bsearch, peer.node, best);
     show();
     // The tabs offered: BGP only on a router with BIRD.
-    const tabOptions = () => [['routes', 'Routes'], ...(hasBird ? [['bgp', 'BGP']] : [])];
+    const tabOptions = () => [['routes', 'Routes'], ['static', 'Static routes'], ...(hasBird ? [['bgp', 'BGP']] : [])];
+    // The review banner of the Static routes tab.
+    const banner = staticEditor.attach(reload);
     return {
-      nodes: [tabs.node, rsearch, family.node, table.node, bsearch, peer.node, best, pauseControl(state), refreshControl(reload)],
+      nodes: [tabs.node, rsearch, family.node, table.node, bsearch, peer.node, best, pauseControl(state), refreshControl(reload), banner],
       update(data) {
         tabs.setOptions(tabOptions());
         if (data.tab === 'routes') {
@@ -158,6 +164,8 @@ export default {
   },
 
   view(data, rerender) {
-    return data.tab === 'bgp' ? bgpView(data.bgp, state, rerender) : routesView(data);
+    if (data.tab === 'bgp') return bgpView(data.bgp, state, rerender);
+    if (data.tab === 'static') return staticView(data, rerender);
+    return routesView(data);
   },
 };

@@ -96,7 +96,7 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
 - **Routing**: `index.js` owns the page state, the tabs and the command bar (the tab strip, the filters of each
   tab) and loads only the open tab; `model.js` holds the pure parts (address and prefix math, the table overview,
   findings, filtering and sorting, what a lookup answer means, who added a rule); `lookup.js` and `tables.js` build the
-  Routes tab cards. The Toolbox page (`toolbox/`) is separate: `index.js` is the page and exports `openTool`, which the
+  Routes tab cards; `static.js` and `static-model.js` are the Static routes tab (the editor wiring, and the pure model of the `route` and `route6` sections). The Toolbox page (`toolbox/`) is separate: `index.js` is the page and exports `openTool`, which the
   lookup answer's buttons use; `diag.js` is the form, job polling and the choice of result view, `diagviews.js`
   the ping, traceroute, DNS, check, comparison and certificate views, `diagmodel.js` the pure parts (the request a form may
   build, the parsers for the classic tools' output, the check's verdict), and the newer tools have a model and a view each
@@ -107,7 +107,7 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   per-peer color helpers, AS-path chips and prefix sort key.
 - **Pure models**: `firewall/model.js` (zone matrix) and `firewall/edit.js`, `validate.js`, `plan.js`, `view.js`, `check.js`, `describe.js` (the editor),
   `interfaces/boardmodel.js` (the network board), `interfaces/model.js`, `interfaces/checks.js`, `interfaces/panelmodel.js` and `interfaces/wizardmodel.js` (the network editor),
-  `network/vlanmodel.js` (the VLAN editor), `wifi/model.js` and `wifi/channels.js`, `wireguard/model.js`, `wireguard/addr.js` and
+  `network/vlanmodel.js` (the VLAN editor), `routing/static-model.js` (the static routes), `wifi/model.js` and `wifi/channels.js`, `wireguard/model.js`, `wireguard/addr.js` and
   `wireguard/keys.js`, `traffic/settings-model.js`, `logs/entries.js` (log filtering and formatting), `settings/model.js` and `dhcp/model.js` (validation and the
   UCI change plan) and `core/fields.js` (field checks)
   have no DOM access and are unit-tested on their own.

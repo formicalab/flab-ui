@@ -1,7 +1,8 @@
 # Routing (route `#routing`)
-The kernel's routing state and, when the router has BIRD, BGP, in up to two tabs on one page
-(the tab strip sits in the command bar; the BGP tab shows only when `birdc` is installed, which `flab.routing status`
-reports as `bird`). Only the open tab is polled (every 5 s), and each tab has its own filters in the command bar.
+The kernel's routing state, the static routes of the network config and, when the router has BIRD, BGP, in up to three
+tabs on one page (the tab strip sits in the command bar; the BGP tab shows only when `birdc` is installed, which
+`flab.routing status` reports as `bird`). Only the open tab is polled (every 5 s), and each tab has its own filters in
+the command bar.
 
 ## Routes tab
 Reads `flab.routing status` (and `network.interface dump` for the logical interface names such as `wan` next to
@@ -47,8 +48,32 @@ protocol, scope, metric, preferred source, expiry, MTU, flags and next hops (the
 route, `via inet6`, `mtu lock`); rules keep their selectors in order and the action (lookup, goto or a drop type).
 At most 4000 routes per family are returned (`truncated`). `lookup` accepts only an IPv4 or IPv6 address, an optional
 source address and an interface name, and refuses anything else before a command is built, so nothing but those
-three strings can reach the shell. The plugin is read-only, and the ACL fragment `rpcd/acl.d/flab-routing.json`
-grants only `status` and `lookup`.
+three strings can reach the shell. The plugin is read-only: the Static routes tab edits through rpcd's `uci` object, not
+through the plugin, and the ACL fragment `rpcd/acl.d/flab-routing.json` grants `status` and `lookup` plus `uci` on `network`.
+
+## Static routes tab
+The `route` (IPv4) and `route6` (IPv6) sections of `/etc/config/network`, as one editable table per family, with what the
+kernel holds of each. Files: `routing/static.js` (the view and the editor wiring), `routing/static-model.js` (pure: reading,
+draft, review list, validation, risks, UCI operations, check after a save, kernel state). The tab reads the sections by
+type (`uci get` with `type: route` and `route6`), never the whole network config (it holds passwords and keys), plus
+`flab.routing status` and `network.interface dump` for the kernel's routes and the interfaces' subnets.
+- **Tiles:** routes configured (by family), installed in the kernel, configured but not installed, disabled.
+- **Tables:** one row per route with Target, Gateway, Interface, Metric, Table, Type, MTU, From, On-link and Enabled,
+  and a state badge (installed, not installed, disabled, new, edited, to be removed). Target is a prefix
+  (`10.0.0.0/8`); an address alone is one host. An older IPv4 route with a separate `netmask` option is shown as one
+  prefix and is rewritten only if its target is edited. `valid` and `proto` are kept untouched. A new row is added
+  with "Add IPv4 route" / "Add IPv6 route" and starts enabled; Remove marks a saved route for removal (Undo takes it
+  back).
+- **Validation** (errors block Save): target, gateway and source must be addresses of the row's family, the metric
+  0 to 4294967295, the MTU 68 to 65535, the table a number or a name from `rt_tables`, the type a known one, the interface
+  one the router has. **Warnings** (Save stays possible): a gateway outside the subnets of its interface without
+  on-link, and two routes that are the same to the kernel.
+- **Saving** uses the same review banner and safety net as the other editing pages: stage, `uci apply` with the
+  rollback countdown, read the sections back, compare, confirm. A router that does not keep the change goes back to its
+  previous configuration by itself. Adding, removing, disabling or changing a **default route** (a zero prefix in the
+  main table, blackhole defaults included) first shows a confirmation that says what it does to the way out.
+- Polling pauses while there are unsaved edits, a control has focus or a save is running.
+- Out of scope: policy rules (`rule`, `rule6`, shown on the Routes tab) and routes learned by a daemon, DHCP or the kernel.
 
 ## BGP tab
 Status of BIRD 3 (`flab.bgp`). Sections, top to bottom:

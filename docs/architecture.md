@@ -10,8 +10,8 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins. It was d
 
 It is installed as the `flab-ui` package (see [OpenWrt package](package.md#openwrt-package)). It signs in with the router's own
 `root` login and creates no login of its own. The pages that only
-read the router are Overview, Mesh, IPsec VPN, Routing, Toolbox (which runs diagnostics and sends a Wake-on-LAN packet) and Logs. The others
-edit its configuration through UCI: System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), Dynamic DNS (`/etc/config/ddns`), Wi-Fi (the radios and wireless networks in `/etc/config/wireless`), Wired network (the VLAN sections of `/etc/config/network`), Devices and Interfaces, which holds the bridges (`/etc/config/network`), WireGuard (the WireGuard interfaces and peers in `/etc/config/network`), Firewall (`/etc/config/firewall`) and the Settings tab of Traffic (`/etc/config/nlbwmon`). The Services page starts, stops and restarts services. How configuration changes are made safely is described in
+read the router are Overview, Mesh, IPsec VPN, Toolbox (which runs diagnostics and sends a Wake-on-LAN packet) and Logs. The others
+edit its configuration through UCI: System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), Dynamic DNS (`/etc/config/ddns`), Wi-Fi (the radios and wireless networks in `/etc/config/wireless`), Wired network (the VLAN sections of `/etc/config/network`), Devices and Interfaces, which holds the bridges (`/etc/config/network`), WireGuard (the WireGuard interfaces and peers in `/etc/config/network`), Firewall (`/etc/config/firewall`), the Static routes tab of Routing (the `route` and `route6` sections of `/etc/config/network`) and the Settings tab of Traffic (`/etc/config/nlbwmon`). The Services page starts, stops and restarts services. How configuration changes are made safely is described in
 [Configuration changes](#configuration-changes) and how services are controlled under [Services](pages/services.md#services-route-services).
 
 ## Architecture at a glance
@@ -59,7 +59,7 @@ flab-ui/
   docs/                      The documentation (start at docs/README.md); one file per page under docs/pages/
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
   tools/package.ps1          Builds the OpenWrt package with an SDK (Linux, or WSL on Windows), installs or removes it on the router with apk, and publishes releases (Action Build, Deploy, Remove or Release)
-  tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), nlbwedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
+  tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), nlbwedit/, routeedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
   www/                       Static site, installed to /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -111,7 +111,8 @@ flab-ui/
         ddns/                Dynamic DNS: index.js (page, tiles, the editing wiring), schema.js (the options and their groups), model.js (pure: reading the plugin's status, the draft, validation, the UCI plan, the check after a save, verdicts, intervals, log parsing), cards.js (service cards with status, actions and log; the global card)
         interfaces/          Devices and Interfaces (the network board): index.js (page, state, the drawer wiring), boardmodel.js (pure: lanes, items, edges, highlighting, findings, counts), board.js (the lanes, cards and connectors), livepanel.js (the read-only panels of a zone and of an item the page cannot edit), bridgelive.js (the live information of a bridge), panels.js (the editing panels), panelmodel.js (pure: protocol cards, essential options, device chooser, suggestions), panelparts.js and controls.js (parts the panels and the wizard share), wizard.js and wizardmodel.js (the New network wizard; the model is pure), editor.js (the draft, banner, confirmation), schema.js (option tables), model.js (pure: draft, validation, UCI plan, check after a save), checks.js (value checks)
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
-                             lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards)
+                             lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards), static.js (the Static routes tab: tables and
+                             editor wiring), static-model.js (pure: the route and route6 sections, draft, validation, risks, UCI operations, check after a save)
           bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js
         toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, dispatch of the result views; Wake-on-LAN),
                              diagviews.js (ping, traceroute, DNS, check, comparison and certificate views), diagmodel.js (pure: request
@@ -159,7 +160,7 @@ flab-ui/
 
 ## Configuration changes
 
-System settings, DHCP, DNS, Dynamic DNS, Wi-Fi, Wired network (VLANs), Devices and Interfaces (which holds the bridges), WireGuard, Firewall and the Traffic settings change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
+System settings, DHCP, DNS, Dynamic DNS, Wi-Fi, Wired network (VLANs), Devices and Interfaces (which holds the bridges), WireGuard, Firewall, the static routes of Routing and the Traffic settings change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
 page with every control disabled and a note saying why.
 
 **Flow** (all of it is rpcd's `uci` object, wrapped by `www/js/core/uci.js`; pages call `applyChange()`, not the

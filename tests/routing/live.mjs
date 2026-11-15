@@ -121,7 +121,7 @@ console.log('== the Routes tab ==');
 const nav = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
 check(nav.includes('Routing') && !nav.includes('BGP') && (await page.locator('.nav-pane a.active').innerText()).trim() === 'Routing', 'the navigation has a Routing entry and no separate BGP one', nav.join(' | '));
 check((await page.locator('.cmdbar h1').innerText()).trim() === 'Routing', 'the page title');
-check((await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes,BGP' && await page.locator('.seg-tab.active').innerText() === 'Routes', 'two tabs, Routes open: Routes and (because BIRD is installed) BGP');
+check((await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes,Static routes,BGP' && await page.locator('.seg-tab.active').innerText() === 'Routes', 'three tabs, Routes open: Routes, Static routes and (because BIRD is installed) BGP');
 check(await tile(0) === 'internet' && /via 192\.0\.2\.1 · wan/.test(await tileSub(0)) && /1 more/.test(await tileSub(0)), 'the IPv4 default route tile: logical interface, next hop and device, and that a second default route exists', `${await tile(0)} | ${await tileSub(0)}`);
 check(await tile(1) === 'internet' && /via fe80::1/.test(await tileSub(1)), 'the IPv6 default route tile');
 check(await tile(2) === '16' && /10 IPv4 · 6 IPv6/.test(await tileSub(2)), 'routes in the main table, by family', `${await tile(2)} | ${await tileSub(2)}`);
@@ -253,14 +253,14 @@ check(await page.locator('.cmdbar input[placeholder="Filter paths…"]').isVisib
 const callsBefore = mock.statusCalls;
 await refresh();
 check(mock.statusCalls === callsBefore, 'only the open tab is polled');
-await page.locator('.seg-tab', { hasText: 'Routes' }).click();
+await page.locator('.seg-tab', { hasText: /^Routes$/ }).click();
 await page.waitForSelector('.rt-lookup');
 check(await page.locator('.cmdbar input[placeholder="Filter routes…"]').isVisible() && await rows().count() === 16, 'back on the Routes tab with its filters and list');
 
 console.log('\n== a router without BIRD, without ip, and a long route list ==');
 mock.status.bird = false;
 await refresh();
-check((await page.locator('.seg-tab').allInnerTexts()).length === 0 || (await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes' || await page.locator('.cmdbar .seg').isHidden(), 'without birdc the BGP tab is not offered (a single tab is not drawn)');
+check((await page.locator('.seg-tab').allInnerTexts()).join() === 'Routes,Static routes', 'without birdc the BGP tab is not offered');
 mock.status.bird = true;
 mock.status.routes.push(...Array.from({ length: 500 }, (_, i) => ({ ...clone(rich.routes[2]), prefix: `172.20.${i >> 8}.${i & 255}/32`, len: 32 })));
 await refresh();
