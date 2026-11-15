@@ -22,7 +22,7 @@ It does not configure uhttpd's document root, HTTPS listener, certificate, redir
 
 ## Building the package
 
-The package definition (`Makefile` and the CI tests) is `admin/flab-ui` in the
+The package definition (`Makefile` and the package smoke test) is `admin/flab-ui` in the
 [openwrt/packages](https://github.com/openwrt/packages) feed. It is not merged there yet; until it is, it is on the
 branch [`flab-ui`](https://github.com/formicalab/packages/tree/flab-ui) of a fork:
 

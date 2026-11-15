@@ -4,8 +4,7 @@
 
 The UI ships native ES modules without transpilation or a bundler. It uses BigInt for IP addresses, optional
 chaining, `Array.prototype.at`, `structuredClone` and native `<dialog>`. Use a current browser; the automated browser
-suites use Edge, with headless Chromium for the disposable-image smoke test. No browser compatibility matrix is
-established yet. HTTPS is required operationally for credentials;
+suites use Edge. No browser compatibility matrix is established yet. HTTPS is required operationally for credentials;
 clipboard and WebCrypto capabilities also depend on the browser and secure context. WireGuard has a JavaScript X25519
 fallback, but key generation still requires `crypto.getRandomValues`.
 

@@ -88,6 +88,7 @@ unit test.
 - PowerShell follows `Set-StrictMode -Version Latest`, `$ErrorActionPreference = 'Stop'`, comment-based help
   on functions and scripts, and `#region` blocks.
 - ucode uses tabs, JavaScript and CSS use two spaces.
+- Shell and ucode files check out with LF line endings, including on Windows.
 - Everything shown is discovered from the router at run time; nothing is hard-coded to one board.
 - Legends sit at the top of the card or section they explain.
 - Code in `rpcd/` and `www/` is deployed as is; there is no build step to keep in sync.

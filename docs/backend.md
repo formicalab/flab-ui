@@ -112,5 +112,6 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
   skip the plugin. Regular expressions are POSIX ERE (no `(?:` non-capturing groups, no lazy quantifiers); the
   code uses `[[:space:]]` instead of `\s` in classes. Use `100000.0` to force float division. Optional
   chaining (`a?.b`) and `??` work. `ucode -c <plugin>.uc` checks syntax (library modules with `export`
-  cannot be compiled that way). `0 == ''` is true, so `util.num()` (which tests for `''`) turns the integer 0 of
+  cannot be compiled that way). Exported function declarations end with a semicolon for parser compatibility.
+  `0 == ''` is true, so `util.num()` (which tests for `''`) turns the integer 0 of
   a ubus reply into null: use it for strings only, and test a number with `type(v) == 'int'`.

@@ -1,7 +1,0 @@
-{
-  "private": true,
-  "description": "Browser smoke test of the APK installed in a disposable OpenWrt image",
-  "dependencies": {
-    "playwright": "1.56.1"
-  }
-}

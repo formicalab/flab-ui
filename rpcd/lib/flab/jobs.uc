@@ -27,4 +27,4 @@ export function launch_job(command, seconds) {
 		wait "$supervisor"
 		rm -f stream
 	) </dev/null >/dev/null 2>&1 &`, /\r/g, '');
-}
+};

@@ -26,6 +26,6 @@
 ### Packaging and testing
 
 - Declare `ucode-mod-uloop` and include the bundled Bootstrap license notices in package metadata and installed files.
-- Add regression tests, official OpenWrt SDK-action CI builds and disposable-image checks for installed ACLs and the
-  normal login path.
+- Add local regression tests for worker concurrency, streaming limits, configuration recovery, lazy loading and
+  SDK source isolation. Build and validate locally with the OpenWrt SDK in WSL; no repository CI workflow is included.
 - Refresh the README files, developer documentation and comments to describe the actual behavior and limitations.

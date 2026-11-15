@@ -26,7 +26,7 @@ const slug = (s) => replace(s, /[^A-Za-z0-9]+/g, '_');
 export function record_file(name, data) {
 	if (RECORD && data != null)
 		writefile(`${RECORD}/${name}`, data);
-}
+};
 
 // Deep copy of recorded ubus/UCI data with key and password-like values (PSKs, passphrases, private keys,
 // 802.11r key-holder secrets) replaced by 'REDACTED'. Matching is on the option name, case-insensitive.
@@ -44,13 +44,13 @@ function scrub(v) {
 // Contents of <FLAB_FIXTURES>/<name>, or null when the seam is inactive.
 export function fixture(name) {
 	return FIXTURES ? (readfile(`${FIXTURES}/${name}`) ?? '') : null;
-}
+};
 
 // Replay wall-clock-dependent state against the same instant at which its synthetic timestamps were built.
 export function fixture_time() {
 	let fixed = FIXTURES ? trim(fixture('clock.txt') ?? '') : '';
 	return match(fixed, /^[0-9]+$/) ? +fixed : time();
-}
+};
 
 // Bounded compatibility reader for optional probes. Empty output alone cannot distinguish failure from success;
 // callers which require success must use command_result(). All real rpcd calls run in deferred workers.
@@ -63,11 +63,11 @@ export function run(cmd) {
 	if (result.truncated || result.timed_out)
 		die(result.truncated ? 'The command output budget was exhausted.' : 'The command timed out.');
 	return result.output;
-}
+};
 
 export function command_result(cmd, options) {
 	return execute(cmd, options);
-}
+};
 
 // Call a ubus object served by another daemon (netifd, hostapd, ...); null on failure. rpcd runs
 // plugins in-process, so never use this for objects rpcd serves itself.
@@ -80,7 +80,7 @@ export function ubus_call(conn, object, method, args) {
 	if (RECORD)
 		record_file(slug(`${object} ${method}`) + '.json', res != null ? sprintf('%J', scrub(res)) : '');
 	return res;
-}
+};
 
 // Every section of a UCI config as { name: { '.type': ..., option: value } }.
 export function uci_all(config) {
@@ -94,7 +94,7 @@ export function uci_all(config) {
 	if (RECORD)
 		record_file(`uci_${config}.json`, sprintf('%J', { values: scrub(all) }));
 	return all;
-}
+};
 
 // Lazily loaded files.json map (path -> contents), used for both replay and recording.
 let saved_files = null;
@@ -119,18 +119,18 @@ export function sysfs_raw(path) {
 		writefile(`${RECORD}/files.json`, sprintf('%J', saved_files));
 	}
 	return s;
-}
+};
 
 // Like sysfs_raw(), but with surrounding whitespace (the trailing newline) removed.
 export function sysfs(path) {
 	let s = sysfs_raw(path);
 	return s == null ? null : trim(s);
-}
+};
 
 // Interface names reach shell command lines, so restrict them to a safe alphabet.
 export function safe_ifname(name) {
 	return name && match(name, /^[A-Za-z0-9_.:-]+$/) != null;
-}
+};
 
 // Return a lowercase colon-separated MAC from any common spelling, or null.
 export function normalize_mac(raw) {
@@ -139,18 +139,18 @@ export function normalize_mac(raw) {
 		return null;
 	// Split the 12 hex digits into six pairs; slice() drops the full-match element.
 	return join(':', slice(match(hex, /(..)(..)(..)(..)(..)(..)/), 1));
-}
+};
 
 // Numeric value of a string field, or null when absent or empty.
 export function num(v) {
 	return (v == null || v == '') ? null : +v;
-}
+};
 
 // A UCI option as a list: UCI stores multi-value options as arrays but a single value as a plain string
 // ("a b c" is also accepted); null becomes an empty list.
 export function as_list(v) {
 	return v == null ? [] : (type(v) == 'array' ? v : split(trim(v), /[[:space:]]+/));
-}
+};
 
 // Channel, frequency, width, center frequency and TX power of a wireless interface, from `iw dev <if> info`.
 // Only the keys iw reports are set. The interface name must already have passed safe_ifname().
@@ -169,7 +169,7 @@ export function iw_channel_info(ifname) {
 			out.txpower = +m[1];
 	}
 	return out;
-}
+};
 
 // Human label for a UCI wireless `encryption` value. Order matters: the more specific patterns
 // (psk2+psk3, psk-mixed) are tested before the substrings they contain (psk2, psk). An unrecognized
@@ -188,4 +188,4 @@ export function security_label(enc) {
 	if (match(enc, /wpa/)) return 'WPA-Enterprise';
 	if (match(enc, /wep/)) return 'WEP (Legacy)';
 	return enc;
-}
+};

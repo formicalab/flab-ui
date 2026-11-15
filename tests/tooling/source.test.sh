@@ -2,7 +2,7 @@
 # Exercise recursive GNU make source isolation without an SDK, network, compiler or package installation.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-TEST="$PWD/tests/installation/.source-test-$$"
+TEST="$PWD/tests/tooling/.source-test-$$"
 mkdir "$TEST"
 trap 'rm -rf -- "$TEST"' EXIT
 mkdir -p "$TEST/definition" "$TEST/dependency" "$TEST/current/www" "$TEST/sdk-package"

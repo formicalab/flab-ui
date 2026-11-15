@@ -33,7 +33,8 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Pure/syntax aggregate | `node tests/run-pure.mjs` | All pure regression files, JavaScript syntax, ACL JSON and the lazy application-shell tests |
 | Native execution | `node tests/execution/run.mjs [root@router]` | Disposable chroot/private ubus, not the installed rpcd: deferred workers, timer responsiveness, error statuses, deadlines, saturation, command and diagnostic-output limits |
 | Release recovery | `pwsh -File tests/tooling/release.test.ps1` | Failure injection with disposable local Git remotes, recovery after commit/push failure and release-note validation |
-| Fresh installed image | `bash tests/installation/run.sh /absolute/path/flab-ui.apk` | Consume an APK built by the official SDK action or developer script, then test an isolated OpenWrt rootfs: actual dependencies, installed ACLs, normal root/editor/reader logins, denied permissions and browser lazy loading; never contacts a router |
+| Local source isolation | `wsl -d Ubuntu-26.04 -- bash tests/tooling/source.test.sh` | Verify that a working-tree SDK source override applies only to flab-ui, not its dependencies |
+| Local SDK entry recovery | `pwsh -File tests/tooling/build.test.ps1` | Verify that working-tree build preparation leaves the feed definition intact and restores the SDK package entry after success or failure |
 
 `-Browser` needs the UI installed (`tools/package.ps1 -Action Deploy`) and signs in with a temporary rpcd session that
 `tests/TestSession.ps1` creates over ssh, grants what the ACL fragments grant, and destroys afterwards, so no
@@ -47,17 +48,13 @@ suites also remove their `/tmp/flab-*-test` folder on the router. Do not run two
 - Temporary sessions use grants assembled from the checkout's ACL JSON, not the installed fragments. A package that
   omitted an ACL can still pass a browser suite; separately verify package contents and a normal login on a fresh image.
 - Backend fixtures and `ucode -c` do not establish compatibility with every board, ucode version or optional daemon.
-  The current hardware baseline is one GL-MT6000. Hardware-suite browser automation uses Edge; the disposable-image
-  smoke test uses headless Chromium.
+  The current hardware baseline is one GL-MT6000. Browser automation uses Edge.
 - A green test is not a substitute for checking the intended contract. The UCI regressions exercise session-wide
   preflight, transport deadlines, uncertain outcomes and cleanup failures; static-route tests distinguish full FIB
   identity and require installation verification for changed routes on running interfaces.
-- CI runs pure/syntax and release-recovery checks and builds/installs into a disposable image for the installed-ACL
-  and normal-login smoke tests. The full hardware/fixture/browser suites remain explicit; `-Action Release` builds
-  and checks installation but does not run the application test suites.
-
-The hosted Ubuntu image-test step temporarily permits the unprivileged user namespaces Bubblewrap needs and restores
-the runner's original AppArmor namespace policy afterward. The local image runner does not change host policy.
+- Validation runs locally: `node tests/run-pure.mjs`, the individual hardware/browser suites and the WSL SDK build.
+  There is no repository CI workflow. `-Action Release` builds and checks installation but does not run the application
+  test suites, so run them first.
 
 ## Common mechanism (BGP, IPsec, Routing and network suites)
 

@@ -33,7 +33,7 @@ Each page reads from the program it manages (`swanctl`, `birdc`, `wg`, `nft`, `i
 on). These are optional: install the ones for the pages you use.
 
 Use a current Chrome, Edge, Firefox or Safari: the frontend needs native ES modules, BigInt, `structuredClone` and
-`<dialog>`. Browser suites target Edge and headless Chromium; other browsers and boards have not been certified.
+`<dialog>`. Browser suites use Edge; other browsers and boards have not been certified.
 
 ## Install
 
@@ -82,9 +82,6 @@ Details are in the [security model](docs/architecture.md#security-model).
 ## Development
 
 - [Changelog](CHANGELOG.md) records the changes in each new release.
-- [CI](.github/workflows/test.yml) runs regression checks, builds with the official
-  [OpenWrt SDK action](https://github.com/openwrt/gh-action-sdk), and tests installation/login in a disposable image.
-
 - [docs/](docs/README.md) covers the architecture, the frontend and backend, the behavior of every page, how to add a
   page, the test suites and the coding conventions.
 - `tools/package.ps1` (PowerShell 7) is the one script for the package. It builds the apk from the working tree with

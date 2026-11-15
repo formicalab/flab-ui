@@ -14,7 +14,7 @@ function now() {
 
 export function begin_budget(seconds) {
 	budget = { end: now() + seconds, left: MAX_REQUEST_OUTPUT };
-}
+};
 
 function stem(cmd) {
 	return replace(replace(cmd, / 2>\/dev\/null$/, ''), /[^A-Za-z0-9]+/g, '_');
@@ -81,4 +81,4 @@ export function command_result(cmd, options) {
 		writefile(`${record}/${name}.result.json`, sprintf('%J', { code: out.code, truncated, timed_out }));
 	}
 	return out;
-}
+};

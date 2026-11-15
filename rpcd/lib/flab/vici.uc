@@ -103,7 +103,7 @@ export function events(cmd) {
 			push(out, { name: k, body: v });
 	}
 	return out;
-}
+};
 
 // Like events(), merged into one object keyed by name; a later event replaces an earlier one with the
 // same name, so use it only where names are unique (list-conns).
@@ -112,7 +112,7 @@ export function query(cmd) {
 	for (let e in events(cmd))
 		out[e.name] = e.body;
 	return out;
-}
+};
 
 // Run a request/reply swanctl command (stats, ...) and return its parsed reply, or null when
 // the daemon is unreachable.
@@ -122,4 +122,4 @@ export function reply(cmd) {
 			return parse_body(line);
 	}
 	return null;
-}
+};
