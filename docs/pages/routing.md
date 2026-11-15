@@ -89,7 +89,8 @@ type (`uci get` with `type: route` and `route6`), never the whole network config
   back).
 - **Validation** (errors block Save): target, gateway and source must be addresses of the row's family, the metric
   0 to 4294967295, the MTU 68 to 65535 for IPv4 or 1280 to 65535 for IPv6, the table a number or a name from `rt_tables`, the type a known one, the interface
-  one the router has. **Warnings** (Save stays possible): a gateway outside the subnets of its interface without
+  one the router has. **Warnings** (Save stays possible): a gateway outside the subnets of its interface (and that is not
+  the peer address of its point-to-point link, as on PPPoE) without
   on-link, and two routes that are the same to the kernel.
 - **Saving** uses the same review banner and safety net as the other editing pages: stage, `uci apply` with the
   rollback countdown, read the sections back, compare and verify changed enabled routes on running interfaces against

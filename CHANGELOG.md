@@ -10,6 +10,8 @@
   else its interface's table) and is reached only through the rules that consult that table.
 - Merge the four static-route tiles into one tile with the other tiles at the top: the number configured, and how many are
   installed, not installed and disabled.
+- Fix a false "gateway is not inside a subnet of <interface>" warning in the static-route editor on point-to-point links such
+  as PPPoE, where the gateway is the peer address of a /32 link.
 - Add a "Consulted by" column to the static-route editor: the table each route lands in and the policy rules that look
   it up, with a "no rule" warning for a table nothing consults.
 

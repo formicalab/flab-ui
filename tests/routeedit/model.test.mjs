@@ -175,6 +175,12 @@ check(warn(v => { v.gateway = 'fe80::1'; v.interface = 'lan'; v.target = '2001:d
 check(/not inside a subnet of lan/.test(warn(v => { v.gateway = '2001:db8:ffff::1'; }, 6)), 'a global IPv6 gateway outside the subnets warns');
 check(/a blackhole route has no next hop/.test(warn(v => { v.type = 'blackhole'; v.gateway = '192.168.1.254'; })), 'a gateway on a blackhole route is ignored, and says so');
 check(/"on-link" only matters together with a gateway/.test(warn(v => { v.onlink = true; })), 'on-link without a gateway is pointless');
+// A PPPoE link: the address is a /32 and the gateway is the peer at the far end, which the kernel reaches directly.
+const ptpData = m.readStatic({}, {}, { status: STATUS, dump: { interface: [...DUMP.interface, { interface: 'voip', up: true, l3_device: 'pppoe-voip', 'ipv4-address': [{ address: '1.215.177.151', mask: 32, ptpaddress: '1.215.176.1' }], 'ipv6-address': [] }] } });
+const ptpWarn = gateway => { const d = { rows: [], next: 0 }; const x = m.newRow(d, 4); Object.assign(x.values, { target: '10.0.0.0/8', interface: 'voip', gateway }); return m.problems(ptpData, d).warnings.join(' | '); };
+check(ptpWarn('1.215.176.1') === '', 'the peer of a point-to-point link is a reachable gateway');
+check(/not inside a subnet of voip/.test(ptpWarn('1.215.176.2')), 'but any other address next to it is not');
+check(/is the router's own address on voip/.test(ptpWarn('1.215.177.151')), 'and the router\'s own end is still refused');
 check(/host bits set/.test(warn(v => { v.target = '10.60.0.5/16'; })), 'a target with host bits warns');
 draft = m.draftFrom(data);
 r = row();

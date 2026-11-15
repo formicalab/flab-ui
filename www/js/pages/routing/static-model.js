@@ -125,6 +125,9 @@ export function readStatic(cfg4, cfg6, { status = null, dump = null } = {}) {
     metric: Number(i.metric ?? 0), table4: i.ip4table || 'main', table6: i.ip6table || 'main',
     v4: (i['ipv4-address'] ?? []).map(a => parseCidr(`${a.address}/${a.mask}`, 4)).filter(Boolean),
     v6: (i['ipv6-address'] ?? []).map(a => parseCidr(`${a.address}/${a.mask}`, 6)).filter(Boolean),
+    // The far end of a point-to-point link (PPPoE, a tunnel): the address is /32 but the peer is reachable directly, so it is a valid gateway.
+    peers4: (i['ipv4-address'] ?? []).map(a => a.ptpaddress && parseCidr(`${a.ptpaddress}/32`, 4)).filter(Boolean),
+    peers6: (i['ipv6-address'] ?? []).map(a => a.ptpaddress && parseCidr(`${a.ptpaddress}/128`, 6)).filter(Boolean),
   })).sort((a, b) => a.name.localeCompare(b.name));
   return {
     available, routes, interfaces, kernel: status?.available ? status.routes ?? [] : null, tableIds: status?.available ? status.table_ids ?? {} : null,
@@ -264,12 +267,14 @@ export function problems(data, draft) {
     if (v.onlink && !v.gateway) warnings.push(`${name}: "on-link" only matters together with a gateway.`);
     const iface = ifaces.get(v.interface);
     if (iface && !iface.up) warnings.push(`${name}: the interface ${v.interface} is down, so the route is not installed until it comes up.`);
-    // A gateway must be reachable on the interface's own subnets (an IPv6 link-local gateway always is), unless the route says on-link.
+    // A gateway must be reachable on the interface's own subnets or be the far end of its point-to-point link (an IPv6 link-local
+    // gateway always is), unless the route says on-link.
     if (gw && gw.family === row.family && iface && !v.onlink && !NO_GATEWAY.includes(v.type)) {
       const subnets = row.family === 4 ? iface.v4 : iface.v6;
+      const peers = row.family === 4 ? iface.peers4 : iface.peers6;
       const linkLocal = row.family === 6 && (gw.value >> 118n) === 0x3fan;
       if (subnets.some(s => s.value === gw.value)) warnings.push(`${name}: the gateway ${v.gateway} is the router's own address on ${v.interface}.`);
-      else if (subnets.length && !linkLocal && !subnets.some(s => inside(s, gw))) warnings.push(`${name}: the gateway ${v.gateway} is not inside a subnet of ${v.interface}, so the kernel refuses the route unless "on-link" is set.`);
+      else if ((subnets.length || peers.length) && !linkLocal && !peers.some(p => p.value === gw.value) && !subnets.some(s => inside(s, gw))) warnings.push(`${name}: the gateway ${v.gateway} is not inside a subnet of ${v.interface}, so the kernel refuses the route unless "on-link" is set.`);
     }
     // Two routes that are the same to the kernel (family, table, prefix, source and metric): only one of them can be installed.
     if (target) {
