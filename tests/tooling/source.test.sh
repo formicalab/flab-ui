@@ -36,4 +36,14 @@ if make "${args[@]}" "USE_SOURCE_DIR=$TEST/current" > "$TEST/leaked.log" 2>&1; t
   exit 1
 fi
 make "${args[@]}"
-echo 'PASS package-local current source, unchanged feed definition and recursive dependency isolation'
+# A release number replaces only PKG_RELEASE in the copy; a missing or non-numeric one is refused.
+printf 'PKG_VERSION:=1.2.3\nPKG_RELEASE:=1\n' > "$TEST/definition/Makefile"
+bash tools/stage-source.sh "$TEST/definition" "$TEST/sdk-package" "$TEST/current" 202611151530
+grep -qx 'PKG_RELEASE:=202611151530' "$TEST/sdk-package/Makefile"
+grep -qx 'PKG_VERSION:=1.2.3' "$TEST/sdk-package/Makefile"
+grep -qx 'PKG_RELEASE:=1' "$TEST/definition/Makefile"
+if bash tools/stage-source.sh "$TEST/definition" "$TEST/sdk-package" "$TEST/current" 'x;y' 2> /dev/null; then
+  echo 'A non-numeric release number was accepted.' >&2
+  exit 1
+fi
+echo 'PASS package-local current source, unchanged feed definition, dev release number and recursive dependency isolation'

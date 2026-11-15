@@ -24,6 +24,24 @@ fallback, but key generation still requires `crypto.getRandomValues`.
 - An `AuthError` from the shell's load path returns the user to the sign-in screen ("Session expired"); action
   handlers must explicitly trigger that path or display their own session error.
 
+### Browser cache
+
+uhttpd sends no `Cache-Control` header for static files, and the packaged files carry a reproducible-build
+modification time (often 1970). A browser may then reuse a file it has for a very long time (months, even years) without asking the router, so after an
+upgrade it keeps showing the old pages. `core/freshness.js` (called once per page load by `core/app.js`, after sign-in)
+removes that problem:
+
+- the router's `flab.system build` returns `id`, a hash of every file's path, size, modification time and status-change
+  time under `/www/flab`, and `files`, the list of those files;
+- the browser compares `id` with the one in `localStorage` (`flab.build`). When it differs, every file is requested
+  again with `cache: 'reload'`, which replaces the cached copy, the new `id` is stored and, unless this is the first
+  run in this browser, the page reloads so the new code runs. A failed download leaves the stored `id`, so the next
+  start retries; a router that cannot answer leaves the page as it is.
+
+The status-change time moves whenever a file is written, so every install, upgrade and `-Action Sync` is noticed
+even when the size and modification time do not change. Code cached before this check existed cannot run it: after
+upgrading from such a version, reload once with Ctrl+F5.
+
 ## Page contract
 
 Every page is a plain object, default-exported from its module (full text in `js/pages/index.js`):

@@ -4,6 +4,7 @@
     "read": {
       "ubus": {
         "system": ["board", "info"],
+        "flab.system": ["build"],
         "network.interface": ["dump"],
         "service": ["list"],
         "session": ["access", "destroy"]

@@ -68,7 +68,7 @@ ssh root@<router> 'apk add --allow-untrusted /tmp/flab-ui-*.apk'
 ```
 
 Installing and removing (`apk del flab-ui`) reload rpcd. apk does not reinstall the version that is already installed,
-so to try a rebuilt package of the same version, remove the installed one first.
+so to try a rebuilt package of the same version, remove the installed one first (`Deploy` does).
 
 ## Package script
 
@@ -77,14 +77,31 @@ for `Deploy` and `Remove`, `ssh` and `scp` with key auth to the router (`scp -O`
 sftp-server).
 
 ```powershell
-pwsh -File tools/package.ps1 -Action Build                             # only build the apk (no router needed)
+pwsh -File tools/package.ps1 -Action Sync -Router root@192.168.1.1     # fast loop: copy www/ to the router, no apk
+pwsh -File tools/package.ps1 -Action Sync -Backend -Router root@192.168.1.1   # also copy rpcd/ and reload rpcd
 pwsh -File tools/package.ps1 -Action Deploy -Router root@192.168.1.1   # build, replace the installed flab-ui, check
+pwsh -File tools/package.ps1 -Action Build                             # only build the apk (no router needed)
 pwsh -File tools/package.ps1 -Action Remove -Router root@192.168.1.1   # apk del flab-ui and check that no flab.* object is left
+pwsh -File tools/package.ps1 -Action Check -Router root@192.168.1.1    # do Makefile, tag, hash, changelog, release and router agree?
 pwsh -File tools/package.ps1 -Action Release -Version 0.1.4 -Router root@192.168.1.1 -Amend -NotesFile CHANGELOG.md
 ```
 
 `Build` and `Deploy` do the "from a local checkout" build described above.
 
+- **Editing loop.** Use `Sync` while changing pages: it replaces `/www/flab` with a copy of `www/` in about a second
+  and needs no SDK. Reload the browser: the page notices that the router's files changed and downloads them again
+  (see [Browser cache](frontend.md#browser-cache)). `-Backend` also copies `rpcd/` to the places the package installs
+  it and reloads rpcd; do not use it while a configuration apply is waiting for confirmation, because the rollback
+  timer lives in rpcd's memory. Files deleted from `rpcd/` stay on the router; `Deploy` cleans that up. Use `Deploy`
+  before calling a change done: it exercises the real package (files, permissions, dependencies, scripts).
+- **Versions.** The version of a working-tree apk is the Makefile's `PKG_VERSION`, and its release is the UTC build time
+  (for example `flab-ui-0.1.4-r202611151530.apk`), so it is clearly not the published `-r1`, upgrades it, and the next
+  tagged version still sorts above it. `Deploy` verifies that the router reports exactly the version it built.
+  The feed's Makefile is never modified by a working-tree build.
+- **Keeping the release in step.** The Makefile (`PKG_VERSION`, `PKG_RELEASE:=1`, `PKG_HASH`), the tag `v<version>`, the
+  changelog section and the GitHub release's apk name one version; only `Release` writes them, together. `Check`
+  reports each of them and the apk installed on the router, and fails on a mismatch. It also says how many commits
+  the source is past the tag: those are not in the published apk.
 - **Where the SDK is.** On Linux the build runs directly in bash. On Windows it runs in WSL (`-Distro`, default
   `Ubuntu-26.04`) and reaches the working tree through `/mnt`. `-Sdk` is the SDK directory as that shell sees it
   (default `$HOME/sdk/openwrt-sdk-*`; a glob is allowed).
@@ -141,7 +158,8 @@ repositories.
 
 ## Testing a plugin without rpcd
 
-A Deploy or Remove replaces the plugins and the web files that a signed-in page uses, so do not run one while a browser
+A Deploy, Sync or Remove replaces the plugins and the web files that a signed-in page uses (Sync without `-Backend` only
+the web files), so do not run one while a browser
 test is running on the same router. To test a plugin without rpcd: copy it and `rpcd/lib/flab/` to `/tmp`, then run it
 with `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh is fragile).
 

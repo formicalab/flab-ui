@@ -27,8 +27,10 @@ all:
 	@test -f CMakeLists.txt
 MAKE
 cat > "$WORK/feed/Makefile" <<'MAKE'
+PKG_RELEASE:=1
 all:
 	@test "$$(cat "$(USE_SOURCE_DIR)/www/index.html")" = "current tree"
+	@test "$(PKG_RELEASE)" = "202611151530"
 	@test ! -e "$(TEST_SDK)/fail"
 MAKE
 cp "$WORK/feed/Makefile" "$WORK/original-Makefile"
@@ -51,7 +53,7 @@ try {
     foreach ($fail in @($false, $true)) {
         $toggle = if ($fail) { "touch '$work/sdk/fail'" } else { "rm -f '$work/sdk/fail'" }
         $null = Invoke-Bash "set -eu`n$toggle`nrm -rf '$work/out'`n#"
-        $script = $buildScript.Replace('@@SRC@@', "$work/source").Replace('@@OUT@@', "$work/out").Replace('@@SDK@@', "$work/sdk").Replace('@@FEED@@', '0')
+        $script = $buildScript.Replace('@@SRC@@', "$work/source").Replace('@@OUT@@', "$work/out").Replace('@@SDK@@', "$work/sdk").Replace('@@FEED@@', '0').Replace('@@DEVREL@@', '202611151530')
         $caught = $false
         try { $null = Invoke-Bash $script }
         catch { $caught = $true }

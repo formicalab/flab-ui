@@ -4,10 +4,15 @@
 Builds, installs, removes and releases the flab-ui OpenWrt package.
 
 .DESCRIPTION
-Build     builds the apk from the working tree with an OpenWrt SDK and writes it to -OutDir.
+Build     builds the apk from the working tree with an OpenWrt SDK and writes it to -OutDir. The apk is named
+          flab-ui-<version>-r<UTC time>.apk, where the version is the Makefile's, so it is never mistaken for a release.
 Deploy    builds, copies the apk to the router, removes the installed flab-ui and adds the new one (installing and
           removing reload rpcd; the package's own scripts do that), then waits until every flab.* ubus object of
-          rpcd/ucode exists and the page answers over HTTPS.
+          rpcd/ucode exists, the page answers over HTTPS and the router reports the version that was built.
+Sync      the fast loop for editing: copies www/ to /www/flab on the router without building an apk (with -Backend,
+          also rpcd/ and reloads rpcd). Browsers pick the new files up when the page is reloaded.
+Check     reports whether the Makefile version/release, the Git tag, PKG_HASH, CHANGELOG.md, the GitHub release's apk
+          and the router's installed apk agree. Fails on any mismatch.
 Remove    runs apk del on the router and checks that no flab.* object is left.
 Release   tags the source, updates the package Makefile to match, builds the apk from the tag and publishes it:
             1. checks that this repository is on main, clean and pushed, that the tag does not exist, and that the packages
@@ -34,7 +39,10 @@ A Deploy or Remove replaces the plugins that serve the signed-in pages, so do no
 running on the same router.
 
 .PARAMETER Action
-Build, Deploy, Remove or Release (see the description).
+Build, Deploy, Sync, Check, Remove or Release (see the description).
+
+.PARAMETER Backend
+Sync only: also copy rpcd/ and reload rpcd. Never use while a configuration apply awaits confirmation.
 
 .PARAMETER Router
 SSH destination of the router, for example root@192.168.1.1. Defaults to the FLAB_ROUTER environment variable, else
@@ -80,7 +88,7 @@ asset/source SHA-256 notes are appended automatically. Read and validated before
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('Build', 'Deploy', 'Remove', 'Release')][string]$Action,
+    [Parameter(Mandatory)][ValidateSet('Build', 'Deploy', 'Sync', 'Check', 'Remove', 'Release')][string]$Action,
     [string]$Router = $(if ($env:FLAB_ROUTER) { $env:FLAB_ROUTER } else { 'root@192.168.1.1' }),
     [ValidatePattern('^[A-Za-z0-9._-]+$')][string]$Distro = 'Ubuntu-26.04',
     [ValidatePattern('^[A-Za-z0-9._/$*~-]+$')][string]$Sdk = '$HOME/sdk/openwrt-sdk-*',
@@ -90,6 +98,7 @@ param(
     [string]$PackagesDir = $(if ($env:FLAB_PACKAGES) { $env:FLAB_PACKAGES } else { Join-Path (Split-Path $PSScriptRoot -Parent | Split-Path -Parent) 'packages' }),
     [string]$Remote = 'fork',
     [switch]$Amend,
+    [switch]$Backend,
     [switch]$SkipInstallCheck,
     [switch]$Draft,
     [string]$NotesFile
@@ -254,10 +263,12 @@ else
   rm -rf "$STAGE"
   mkdir -p "$STAGE"
   cp -a "$SRC/www" "$SRC/rpcd" "$SRC/LICENSE" "$STAGE/"
+  # Files read from a Windows drive in WSL are rwxrwxrwx; the package must not install them that way.
+  find "$STAGE" -type d -exec chmod 0755 {} + -o -type f -exec chmod 0644 {} +
   # Temporarily redirect only the SDK's installed package entry; never edit the feed checkout's Makefile.
   PACKAGE=$(ls -d package/feeds/*/flab-ui | head -n 1)
   OVERRIDE="$SDK/.flab-ui-package"
-  bash "$SRC/tools/stage-source.sh" "$PACKAGE" "$OVERRIDE" "$STAGE"
+  bash "$SRC/tools/stage-source.sh" "$PACKAGE" "$OVERRIDE" "$STAGE" '@@DEVREL@@'
   mv "$PACKAGE" "$ORIGINAL"
   restore_package() {
     rm -f "$PACKAGE"
@@ -290,7 +301,10 @@ function Build-Package {
     New-Item -ItemType Directory $OutDir -Force | Out-Null
     Write-Host $(if ($FromFeed) { 'Building the package from the source the feed Makefile names...' } else { 'Building the package from the working tree...' })
     $feed = if ($FromFeed) { '1' } else { '0' }
-    $script = $buildScript.Replace('@@SRC@@', (ConvertTo-BuildPath $root)).Replace('@@OUT@@', (ConvertTo-BuildPath (Resolve-Path $OutDir).Path)).Replace('@@SDK@@', $Sdk).Replace('@@FEED@@', $feed)
+    # A working-tree build gets a release number made of the UTC time (for example flab-ui-0.1.4-r202611151530),
+    # which sorts after the published -r1 of the same version and can never be mistaken for it.
+    $devRelease = [DateTime]::UtcNow.ToString('yyyyMMddHHmm')
+    $script = $buildScript.Replace('@@SRC@@', (ConvertTo-BuildPath $root)).Replace('@@OUT@@', (ConvertTo-BuildPath (Resolve-Path $OutDir).Path)).Replace('@@SDK@@', $Sdk).Replace('@@FEED@@', $feed).Replace('@@DEVREL@@', $devRelease)
     $apk = Join-Path $OutDir @(Invoke-Bash $script)[-1]
     if (-not (Test-Path $apk)) { throw "The built package is missing: $apk" }
     Write-Host "Built $apk"
@@ -322,11 +336,15 @@ function Install-Package {
     Invoke-Remote @"
 set -e
 if apk info -e flab-ui >/dev/null 2>&1; then apk del flab-ui; fi
+rm -rf /www/flab
 apk add --allow-untrusted /tmp/$apkName
 rm -f /tmp/$apkName
 "@ | Write-Host
 
     Wait-Objects -Expected $expected
+    # The installed version must be the one that was built: the apk file name is name-version-release.apk.
+    $installed = (Invoke-Remote 'apk list -I flab-ui 2>/dev/null | head -n 1') -replace '^(\S+).*$', '$1'
+    if ($installed -ne [IO.Path]::GetFileNameWithoutExtension($apkName)) { throw "The router reports '$installed', not $apkName." }
     $hostName = $Router.Split('@')[-1]
     $page = Invoke-WebRequest -Uri "https://$hostName/flab/" -SkipCertificateCheck
     if ($page.StatusCode -ne 200) { throw "The page answered HTTP $($page.StatusCode)." }
@@ -499,11 +517,163 @@ It was built by the OpenWrt SDK from the source tarball of this tag (SHA-256 ``$
 }
 #endregion
 
+#region Sync
+function Sync-Router {
+    <#
+    .SYNOPSIS
+    Copies the working tree's web files (and, with -Backend, the rpcd files) to the installed package on the router, without building an apk.
+    .DESCRIPTION
+    A fast loop for editing pages. The router's /www/flab is replaced by a copy of www/ (files that no longer exist
+    locally disappear). The browser notices the new files by itself the next time the page starts (core/freshness.js).
+    With -Backend, rpcd/ is copied to the places the package installs it and rpcd is reloaded; do that only when no
+    configuration apply is waiting for confirmation, because the rollback timer lives in rpcd's memory. Files removed
+    from rpcd/ are not removed on the router. The result is not an installed package version: use Deploy for that.
+    #>
+    $work = Join-Path ([IO.Path]::GetTempPath()) ("flab-sync-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory $work | Out-Null
+    try {
+        $webTar = Join-Path $work 'web.tar'
+        $null = Invoke-Native tar @('--format', 'ustar', '-cf', $webTar, '-C', (Join-Path $root 'www'), '.')
+        scp -O -q $webTar "${Router}:/tmp/flab-web.tar"
+        if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
+        $backendScript = ''
+        if ($Backend) {
+            $stage = Join-Path $work 'stage'
+            foreach ($pair in @(@('acl.d', 'usr/share/rpcd/acl.d'), @('ucode', 'usr/share/rpcd/ucode'), @('lib/flab', 'usr/share/ucode/flab'))) {
+                $target = Join-Path $stage $pair[1]
+                New-Item -ItemType Directory $target -Force | Out-Null
+                Copy-Item (Join-Path (Join-Path $root 'rpcd') $pair[0] | Join-Path -ChildPath '*') $target
+            }
+            $backendTar = Join-Path $work 'backend.tar'
+            $null = Invoke-Native tar @('--format', 'ustar', '-cf', $backendTar, '-C', $stage, '.')
+            scp -O -q $backendTar "${Router}:/tmp/flab-backend.tar"
+            if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
+            $backendScript = @'
+tar -xof /tmp/flab-backend.tar -C /
+chmod 0644 /usr/share/rpcd/acl.d/flab-*.json /usr/share/rpcd/ucode/flab.*.uc /usr/share/ucode/flab/*.uc
+rm -f /tmp/flab-backend.tar
+/etc/init.d/rpcd reload
+'@
+        }
+        # Extract beside the live folder and rename, so a request never sees a half-copied tree.
+        Invoke-Remote @"
+set -e
+rm -rf /www/flab.new /www/flab.old
+mkdir /www/flab.new
+tar -xof /tmp/flab-web.tar -C /www/flab.new
+chmod -R u=rwX,go=rX /www/flab.new
+[ ! -d /www/flab ] || mv /www/flab /www/flab.old
+mv /www/flab.new /www/flab
+rm -rf /www/flab.old /tmp/flab-web.tar
+$backendScript
+"@ | Write-Host
+    }
+    finally {
+        Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if ($Backend) {
+        $expected = @(Get-ChildItem (Join-Path (Join-Path $root 'rpcd') 'ucode') -Filter 'flab.*.uc' | ForEach-Object { $_.BaseName })
+        Wait-Objects -Expected $expected
+    }
+    $hostName = $Router.Split('@')[-1]
+    $page = Invoke-WebRequest -Uri "https://$hostName/flab/" -SkipCertificateCheck
+    if ($page.StatusCode -ne 200) { throw "The page answered HTTP $($page.StatusCode)." }
+    Write-Host "Synchronized. Reload https://$hostName/flab/ (the page refreshes its cached files when it starts)."
+}
+#endregion
+
+#region Check
+function Get-MakeVariable {
+    <#
+    .SYNOPSIS
+    Reads a PKG_* variable of a Makefile text, or $null when it is not set exactly once.
+    #>
+    param([string]$Text, [string]$Name)
+
+    $found = [regex]::Matches($Text, "(?m)^${Name}:=(.*?)\r?$")
+    if ($found.Count -ne 1) { return $null }
+    return $found[0].Groups[1].Value.Trim()
+}
+
+function Test-Consistency {
+    <#
+    .SYNOPSIS
+    Checks that the package Makefile, the Git tag, the changelog, the GitHub release and the installed apk name the same version.
+    .DESCRIPTION
+    Prints one line per check and throws when one fails. The network and the router are queried; a router
+    that cannot be reached is reported as a failure of that check only. A working-tree build installed on the router
+    (a release number made of the time, not 1) is reported, not treated as a failure.
+    #>
+    $makefile = Join-Path (Join-Path (Join-Path $PackagesDir 'admin') 'flab-ui') 'Makefile'
+    if (-not (Test-Path $makefile)) { throw "No Makefile at $makefile; set -PackagesDir." }
+    $text = [IO.File]::ReadAllText($makefile)
+    $version = Get-MakeVariable $text 'PKG_VERSION'
+    $release = Get-MakeVariable $text 'PKG_RELEASE'
+    $hash = Get-MakeVariable $text 'PKG_HASH'
+    $tag = "v$version"
+    $apkName = "flab-ui-$version-r$release.apk"
+    $state = @{ Failed = 0 }
+    function Report([bool]$Ok, [string]$Message) {
+        Write-Host ('{0} {1}' -f $(if ($Ok) { '  ok' } else { 'FAIL' }), $Message)
+        if (-not $Ok) { $state.Failed++ }
+    }
+    Report ([bool]($version -and $release -and $hash)) "Makefile (packages checkout): PKG_VERSION=$version PKG_RELEASE=$release; apk $apkName"
+
+    $slug = ((Invoke-Native git @('-C', $root, 'remote', 'get-url', 'origin')) -replace '^.*github\.com[:/]', '' -replace '\.git$', '')
+    $localTag = [bool](Invoke-Native git @('-C', $root, 'tag', '--list', $tag))
+    $remoteTag = [bool](Invoke-Native git @('-C', $root, 'ls-remote', '--tags', 'origin', "refs/tags/$tag"))
+    Report ($localTag -and $remoteTag) "Git tag ${tag}: local $localTag, on origin $remoteTag"
+    if ($localTag) {
+        $ahead = [int](Invoke-Native git @('-C', $root, 'rev-list', '--count', "$tag..HEAD"))
+        Write-Host ("  --  source is {0} commit(s) past {1}; those are not in the published apk" -f $ahead, $tag)
+        $unclean = [bool](Invoke-Native git @('-C', $root, 'status', '--porcelain'))
+        if ($unclean) { Write-Host '  --  the working tree has uncommitted changes' }
+    }
+
+    $tarball = Join-Path ([IO.Path]::GetTempPath()) "flab-ui-check-$version.tar.gz"
+    try {
+        Invoke-WebRequest -Uri "https://codeload.github.com/$slug/tar.gz/$tag" -OutFile $tarball
+        $actual = (Get-FileHash $tarball -Algorithm SHA256).Hash.ToLower()
+        Report ($actual -eq $hash) "PKG_HASH matches the tarball GitHub serves for $tag"
+    }
+    catch { Report $false "PKG_HASH: cannot download the tarball of ${tag}: $($_.Exception.Message)" }
+    finally { Remove-Item $tarball -ErrorAction SilentlyContinue }
+
+    $changelog = [IO.File]::ReadAllText((Join-Path $root 'CHANGELOG.md'))
+    Report ($changelog -match "(?m)^## $([regex]::Escape($version)) ") "CHANGELOG.md has a section for $version"
+
+    try {
+        $assets = @((Invoke-Native gh @('release', 'view', $tag, '--repo', $slug, '--json', 'assets', '--jq', '.assets[].name')))
+        Report (($assets -contains $apkName) -and ($assets -contains "$apkName.sha256")) "GitHub release $tag has $apkName and its .sha256"
+    }
+    catch { Report $false "GitHub release ${tag}: $($_.Exception.Message)" }
+
+    $branch = Invoke-Native git @('-C', $PackagesDir, 'branch', '--show-current')
+    $clean = -not (Invoke-Native git @('-C', $PackagesDir, 'status', '--porcelain'))
+    $remoteHead = @(Invoke-Native git @('-C', $PackagesDir, 'ls-remote', '--heads', $Remote, "refs/heads/$branch"))
+    $pushed = $remoteHead.Count -gt 0 -and (($remoteHead[0] -split '\s+')[0] -eq (Invoke-Native git @('-C', $PackagesDir, 'rev-parse', 'HEAD')))
+    Report ($clean -and $pushed) "packages checkout on $branch is clean and equals $Remote/$branch"
+
+    try {
+        $installed = (Invoke-Remote 'apk list -I flab-ui 2>/dev/null | head -n 1') -replace '^(\S+).*$', '$1'
+        if (-not $installed) { Report $false 'router: flab-ui is not installed' }
+        elseif ($installed -eq [IO.Path]::GetFileNameWithoutExtension($apkName)) { Report $true "router has $installed" }
+        elseif ($installed -match "^flab-ui-$([regex]::Escape($version))-r\d{12}$") { Write-Host "  --  router has the working-tree build $installed" }
+        else { Report $false "router has $installed, the Makefile names $([IO.Path]::GetFileNameWithoutExtension($apkName))" }
+    }
+    catch { Report $false "router: $($_.Exception.Message)" }
+
+    if ($state.Failed) { throw "$($state.Failed) consistency check(s) failed." }
+}
+#endregion
+
 #region Actions
 if ($MyInvocation.InvocationName -eq '.') { return }
 switch ($Action) {
     'Build' { $null = Build-Package -FromFeed:$UseFeedSource }
     'Deploy' { Install-Package (Build-Package -FromFeed:$UseFeedSource) }
+    'Sync' { Sync-Router }
+    'Check' { Test-Consistency }
     'Remove' {
         Invoke-Remote 'if apk info -e flab-ui >/dev/null 2>&1; then apk del flab-ui; else echo "flab-ui is not installed."; fi' | Write-Host
         Wait-Objects

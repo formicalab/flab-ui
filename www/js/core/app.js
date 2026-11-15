@@ -5,6 +5,7 @@ import { h, byId } from './dom.js';
 import { icon } from './icons.js';
 import { ubus, hasSession, logout, clearSession, AuthError } from './ubus.js';
 import { showLogin } from './login.js';
+import { ensureCurrent } from './freshness.js';
 import { card } from './ui.js';
 import { pages, aliases } from '../pages/index.js';
 
@@ -15,6 +16,7 @@ let timer = null;
 let refresh = null;
 let routeNo = 0;
 let board = null;
+let freshnessChecked = false;
 const loadedCss = new Set();
 
 // Page-specific stylesheets are loaded once, the first time the page is opened. `css` may be one path or a list.
@@ -38,6 +40,13 @@ async function route() {
   // Invalidate pending imports and requests even when this navigation opens login or redirects an alias.
   const current = () => mine === routeNo;
   if (!hasSession()) return showLogin(route);
+  // Once per page load, after sign-in (the check is an authenticated call): replace browser-cached files that
+  // the router no longer has; when that reloads the page, this route is abandoned.
+  if (!freshnessChecked) {
+    freshnessChecked = true;
+    if (await ensureCurrent()) return;
+    if (!current()) return;
+  }
   // A route that moved to another page (see `aliases` in pages/index.js): the hash is replaced, which runs this function again.
   const alias = aliases[location.hash.slice(1)];
   if (alias) { location.replace(`#${alias}`); return; }

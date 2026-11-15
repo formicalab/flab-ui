@@ -84,10 +84,12 @@ Details are in the [security model](docs/architecture.md#security-model).
 - [Changelog](CHANGELOG.md) records the changes in each new release.
 - [docs/](docs/README.md) covers the architecture, the frontend and backend, the behavior of every page, how to add a
   page, the test suites and the coding conventions.
-- `tools/package.ps1` (PowerShell 7) is the one script for the package. It builds the apk from the working tree with
-  an OpenWrt SDK, on Linux or in WSL on Windows (`-Action Build`), installs it on a router (`-Action Deploy`) or removes
-  it (`-Action Remove`), and publishes a release (`-Action Release`: it tags the source, updates the package Makefile
-  to the same version and hash, builds the apk from the tag and creates the GitHub release). See
+- `tools/package.ps1` (PowerShell 7) is the one script for the package. `-Action Sync` copies the pages to a router
+  in about a second for quick tests; `-Action Build` builds the apk from the working tree with an OpenWrt SDK (on Linux
+  or in WSL on Windows), `-Action Deploy` installs it on a router and `-Action Remove` removes it. `-Action Check`
+  verifies that the Makefile, the tag, the changelog, the GitHub release and the installed apk agree, and
+  `-Action Release` tags the source, updates the package Makefile to the same version and hash, builds the apk from
+  the tag and creates the GitHub release. See
   [Package script](docs/package.md#package-script) and [Releasing](docs/package.md#releasing).
 - Tests live in `tests/` and need Node.js, PowerShell 7 and, for most suites, ssh access to a test router. They use
   fixtures and mocks and do not change the router's configuration; `-Browser` also drives a browser. See

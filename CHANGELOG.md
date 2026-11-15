@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Upgrades
+
+- Make the browser pick up a new version by itself. uhttpd sends no `Cache-Control` and the package files have an
+  old modification time, so browsers kept showing the previous pages (for example the removed "Static routes" tab)
+  until a hard reload. The router now reports an identifier and the list of its web files (`flab.system build`), and
+  the page downloads them again and restarts when the identifier changed. After upgrading from 0.1.4 or earlier,
+  reload once with Ctrl+F5.
+
+### Development
+
+- Add `tools/package.ps1 -Action Sync` to copy the pages (and with `-Backend`, the rpcd files) to a router without
+  building an apk, and `-Action Check` to verify that the Makefile, tag, hash, changelog, GitHub release and installed
+  apk agree.
+- Give working-tree apks a release number made of the build time, so they cannot be mistaken for the published `-r1`;
+  `Deploy` now verifies that the router reports the version it built, installs normal file permissions and removes
+  leftover web files before installing.
+
 ## 0.1.4 - 2026-11-15
 
 ### Routing

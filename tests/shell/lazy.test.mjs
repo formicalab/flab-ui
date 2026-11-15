@@ -64,6 +64,7 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } 
       logout: async () => { signedIn = false; }, clearSession: () => { signedIn = false; },
     }),
     './login.js': await synthetic({ showLogin: callback => { onLogin = callback; app.replaceChildren('LOGIN'); } }),
+    './freshness.js': await synthetic({ ensureCurrent: async () => false }),
     './ui.js': await synthetic({ card: (_, child) => child }),
     '../pages/index.js': registry,
   };
