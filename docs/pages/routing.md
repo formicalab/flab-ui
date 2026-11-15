@@ -23,9 +23,10 @@ Reads `flab.routing status` (and `network.interface dump` for the logical interf
   answer follows route changes (a failover shows up by itself), and the matched route is highlighted in the list.
   Polling pauses while a form field has focus; the form's text lives in the page state.
 - **Policy rules:** the section starts with a short header, "How the kernel picks a route": rules are checked from
-  the lowest priority number to the highest, a priority is not a table number, a table without a matching route
+  the lowest priority number to the highest, a priority is not a table number, every route (static ones included)
+  lives in one table and is considered only when a rule sends the lookup there, a table without a matching route
   sends the lookup on to the next rule, and the cases that end it (blackhole, unreachable and prohibit routes or
-  rules; `throw` and `suppress_prefixlength` continue). Below it, every rule of both families in the order the
+  rules; `throw` and `suppress_prefixlength` continue). Below it, in a full-width card, every rule of both families in the order the
   kernel applies them (priority, family, what it
   matches, what it does) and an "Added by" column. The kernel does not record the author of a rule, so the page
   infers it and says so in the tooltip: the three kernel rules (0, 32766, 32767), a rule configured in
@@ -33,10 +34,11 @@ Reads `flab.routing status` (and `network.interface dump` for the logical interf
   strongSwan's default (priority 220, table 220, every packet; the tooltip notes when charon is not running, so
   the rule may be a leftover), and netifd's IPv6 reject rule for a delegated prefix (priority 4200000000 with an
   `iif`). Anything else is flagged "unknown".
-- **Routing tables:** every table that holds a route or is named by a rule or in `rt_tables` (name, number, what it
+- **Routing tables:** (full width, under the rules) every table that holds a route or is named by a rule or in `rt_tables` (name, number, what it
   is for, the rules that consult it, entry counts per family including inactive static configuration). A click selects
   the table in the route list. The top kernel tiles count installed routes only.
-- **Static routes:** the editable IPv4 and IPv6 sections described below, on this same view.
+- **Static routes:** the editable IPv4 and IPv6 sections described below, on this same view, after the rules and tables
+  they depend on.
 - **Routes:** the routes of the selected table (default: all tables) for the selected family, filtered by text (any
   destination, next hop, device, logical interface, protocol, ...), sortable by destination, type, next hop,
   interface, protocol, metric and table. A route shows its type (blackhole, unreachable, prohibit, throw, local,
@@ -47,8 +49,12 @@ Reads `flab.routing status` (and `network.interface dump` for the logical interf
   draws its first 400 rows with a "Show all" button.
 
 Static routes are applied when Save and apply commits the network configuration. netifd installs enabled routes while
-their interface is up. They have no special precedence over connected, DHCP or BGP routes: policy rules choose a table,
-the longest matching destination prefix wins within it, and lower metrics choose between equally specific alternatives.
+their interface is up. They have no special precedence over connected, DHCP or BGP routes, and they are not applied
+before or after the policy rules: a static route is an entry in a table (the main table unless it has a Table), and it is
+reached only through the rules that consult that table. Rule 32766 consults `main`, after every rule with a lower number,
+so a rule that matches and finds a route in its own table wins over static routes in `main`. A route in a table that no
+rule consults is never used. Within a table the longest matching destination prefix wins and lower metrics choose between
+equally specific alternatives.
 A routing daemon chooses its own best paths before exporting them into the kernel. A default route is a `/0` fallback,
 not an override for more-specific routes.
 
@@ -69,6 +75,8 @@ type (`uci get` with `type: route` and `route6`), never the whole network config
 `flab.routing status` and `network.interface dump` for the kernel's routes and the interfaces' subnets.
 - **Tiles:** routes configured (by family), installed in the kernel, configured but not installed, disabled.
 - **Tables:** one row per route with Target, Gateway, Interface, Metric, Table, Type, MTU, From, On-link and Enabled,
+  a "Consulted by" column (the table the route lands in, after netifd's inheritance, and the policy rules of its family
+  that look that table up; "no rule" when none does, because then the route is never used; it follows edits as you type)
   and a state badge (installed, not installed, disabled, new, edited, to be removed). Target is a prefix
   (`10.0.0.0/8`); an address alone is one host. An older IPv4 route with a separate `netmask` option is shown as one
   prefix and is rewritten only if its target is edited. `valid` and `proto` are kept untouched. A new row is added

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Routing
+
+- Show the policy rules and the routing tables in full-width cards in lookup order (rules, tables, static routes, final
+  list), and explain that static routes are not a stage before or after the rules: a static route is an entry in a table
+  and is reached only through the rules that consult that table (the main table through rule 32766, after every lower-
+  numbered rule).
+- Add a "Consulted by" column to the static-route editor: the table each route lands in and the policy rules that look
+  it up, with a "no rule" warning for a table nothing consults.
+
 ### Upgrades
 
 - Make the browser pick up a new version by itself. uhttpd sends no `Cache-Control` and the package files have an

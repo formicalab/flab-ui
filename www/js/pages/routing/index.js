@@ -101,9 +101,9 @@ function routesView(data) {
     banner,
     lookupCard(data, state, devices, names),
     howCard(),
-    h('div', { className: 'row g-3' },
-      h('div', { className: 'col-12 col-xxl-7' }, rulesCard(s)),
-      h('div', { className: 'col-12 col-xxl-5' }, tablesCard(data.inventory, state, rerender))),
+    // In lookup order: the rules, then the tables they consult, then the static routes that live in those tables.
+    rulesCard(s),
+    tablesCard(data.inventory, state, rerender),
     ...staticView(data.configured, rerender),
     routesCard(data.inventory, state, rerender, names, hit),
   ];

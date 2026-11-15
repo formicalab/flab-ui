@@ -11,12 +11,12 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, optional, ubus } from '../../core/ubus.js';
-import { badge, button, card, tile, tiles } from '../../core/ui.js';
+import { badge, button, card, mono, tile, tiles } from '../../core/ui.js';
 import { legend, note } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
 import { openDialog } from '../../core/modal.js';
 import { APPLY_TIMEOUT_S, uci } from '../../core/uci.js';
-import { CONFIG, FAMILIES, FIELDS, ROUTE_TYPES, changesOf, checkApplied, checkInstalled, counts, draftFrom, interfaceChoices, isDirty, kernelState, newRow, plan, problems, readStatic, risksOf } from './static-model.js';
+import { CONFIG, FAMILIES, FIELDS, ROUTE_TYPES, changesOf, checkApplied, checkInstalled, counts, draftFrom, interfaceChoices, isDirty, kernelState, newRow, plan, problems, reachedBy, readStatic, risksOf } from './static-model.js';
 
 // Asks before a change to a default route: lists what it does to the router's way out and resolves to whether the admin wants to go on.
 // A change that touches no default route is saved without a question.
@@ -136,6 +136,17 @@ function stateBadge(ctx, row) {
   return null;
 }
 
+// What the "Consulted by" column says about a route: the table it lands in and the policy rules that send lookups there. A table no
+// rule consults is never used, which is called out because it is the usual reason for a route that is installed but does nothing.
+function reachCell(ctx, row) {
+  if (row.removed) return [];
+  const { table, rules } = reachedBy(row, ctx.data);
+  const chip = (text, title) => h('span', { className: 'chip', title }, text);
+  if (!rules) return [mono(table)];
+  if (!rules.length) return [mono(table), ' ', badge('no rule', 'warning', 'No policy rule looks up this table, so the route is never used')];
+  return [mono(table), ' ', ...rules.map(p => chip(`rule ${p}`, 'A policy rule that consults this table'))];
+}
+
 // One row of a table: a cell per option, the state, and Remove (or Undo for a row that is marked for removal).
 function routeRow(ctx, row, choices) {
   const widths = { target: 'rt-s-target', gateway: 'rt-s-gw', metric: 'rt-s-num', table: 'rt-s-tab', mtu: 'rt-s-num', source: 'rt-s-src' };
@@ -156,7 +167,9 @@ function routeRow(ctx, row, choices) {
     } }, icon('x-lg'));
   const state = h('td', {}, stateBadge(ctx, row));
   ctx.states.set(row, state);
-  return h('tr', { id: `rt-static-${row.key}`, className: row.removed ? 'rt-s-removed' : row.section == null ? 'rt-s-new' : '' }, ...cells, state, h('td', {}, action));
+  const reach = h('td', { className: 'rt-s-reach' }, ...reachCell(ctx, row));
+  ctx.reach.set(row, reach);
+  return h('tr', { id: `rt-static-${row.key}`, className: row.removed ? 'rt-s-removed' : row.section == null ? 'rt-s-new' : '' }, ...cells, reach, state, h('td', {}, action));
 }
 
 // The card of one address family: its routes, and a button that adds one.
@@ -174,8 +187,8 @@ function familyCard(ctx, fam, choices) {
     [icon('signpost-split'), h('span', {}, `${fam.label} static routes`), h('span', { className: 'sub' }, `${count} route${count === 1 ? '' : 's'}`)],
     h('div', {},
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-sm align-middle rt-static-table' },
-        h('thead', {}, h('tr', {}, ...FIELDS.map(f => h('th', { title: f.hint }, f.label)), h('th', {}, 'State'), h('th', {}))),
-        h('tbody', {}, rows.length ? rows.map(r => routeRow(ctx, r, choices)) : h('tr', {}, h('td', { colSpan: FIELDS.length + 2, className: 'muted' }, `No ${fam.label} static routes.`))))),
+        h('thead', {}, h('tr', {}, ...FIELDS.map(f => h('th', { title: f.hint }, f.label)), h('th', { title: 'The table the route lands in, and the policy rules that look it up' }, 'Consulted by'), h('th', {}, 'State'), h('th', {}))),
+        h('tbody', {}, rows.length ? rows.map(r => routeRow(ctx, r, choices)) : h('tr', {}, h('td', { colSpan: FIELDS.length + 3, className: 'muted' }, `No ${fam.label} static routes.`))))),
       h('div', { className: 'card-body' }, add)));
 }
 
@@ -198,20 +211,22 @@ export function staticView(data, rerender) {
     return [note('bad', 'The routes in /etc/config/network cannot be read: this login may not read the network configuration, or the router did not answer.')];
   }
   const canEdit = editor.begin(data, rerender);
-  const ctx = { data, base: editor.state.base, draft: editor.state.draft, canEdit, inputs: {}, states: new Map(), sync: () => {}, touched: () => {}, redraw: () => editor.redraw() };
+  const ctx = { data, base: editor.state.base, draft: editor.state.draft, canEdit, inputs: {}, states: new Map(), reach: new Map(), sync: () => {}, touched: () => {}, redraw: () => editor.redraw() };
   ctx.touched = editor.touched(ctx);
   // Called after every edit: marks the controls that hold an error and refreshes the banner (the form itself is not redrawn, so the
   // focus stays where it is).
   ctx.sync = () => {
     editor.markErrors(ctx.inputs, canEdit);
     for (const [row, cell] of ctx.states) cell.replaceChildren(...[stateBadge(ctx, row)].filter(Boolean));
+    for (const [row, cell] of ctx.reach) cell.replaceChildren(...reachCell(ctx, row));
   };
   const choices = interfaceChoices(ctx.base, ctx.draft);
   // The wrapper is what the page's isPaused looks in for a focused control.
   const form = h('div', { className: 'rt-static' },
     legend([
-      'Static routes are the route and route6 sections of /etc/config/network. Save and apply commits them; netifd installs enabled routes when their interface is up and removes them when it goes down. They appear together with connected, DHCP and routing-daemon routes in the final Routes list below. Disabled or not-yet-installed entries are labeled and do not forward traffic. Changes are applied with the review banner at the top.',
-      'A target without a prefix length is one host. Leave the gateway empty for a network that is directly connected to the interface. A route in another table is only used where a policy rule sends traffic to that table; "From" limits the route to packets from one source.']),
+      'Static routes are the route and route6 sections of /etc/config/network. They are not applied before or after the policy rules: a route is one entry inside a routing table, and the Consulted by column shows which table that is and which policy rules look it up. Routes without a table go in main, which rule 32766 consults, after every rule you added with a lower number. A route in another table is only used where a rule sends traffic to that table, and one that no rule consults is never used.',
+      'Save and apply commits the routes; netifd installs enabled ones when their interface is up and removes them when it goes down. Installed static routes then compete by longest prefix and metric with the connected, DHCP and routing-daemon routes of the same table, and all appear in the final Routes list below. Disabled or not-yet-installed entries are labeled and do not forward traffic. Changes are applied with the review banner at the top.',
+      'A target without a prefix length is one host. Leave the gateway empty for a network that is directly connected to the interface. "From" limits the route to packets from one source.']),
     ...FAMILIES.map(fam => familyCard(ctx, fam, choices)));
   ctx.sync();
   return [h('section', { className: 'rt-static-section' }, summary(data), ...editor.notes(data).filter(Boolean), form)];

@@ -186,7 +186,9 @@ const rowOf = async target => {
 };
 // The box (or drop-down) of a column in a row, and the badge of the state column.
 const cell = (row, title) => row.locator(`[title="${title}"]`).first();
-const badgeOf = async row => (await row.locator('.fl-badge').allInnerTexts()).join('|').trim();
+const badgeOf = async row => (await row.locator('td:not(.rt-s-reach) .fl-badge').allInnerTexts()).join('|').trim();
+// What the "Consulted by" column says: the table and the policy rules that look it up.
+const reachOf = async row => (await row.locator('.rt-s-reach').innerText()).replace(/\s+/g, ' ').trim();
 // The two checkboxes of a row: On-link, then Enabled.
 const boxes = row => row.locator('input[type=checkbox]');
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `routeedit-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
@@ -225,6 +227,9 @@ check(await cell(rDef, 'Interface').inputValue() === 'wan' && await cell(rBh, 'T
 check(await boxes(rOff).nth(1).isChecked() === false && await boxes(rDef).nth(1).isChecked() === true, 'a disabled route has Enabled unchecked');
 const states = [await badgeOf(rDef), await badgeOf(rOld), await badgeOf(rOff), await badgeOf(rBh), await badgeOf(r6)];
 check(states.join() === 'installed,installed,disabled,installed,installed', 'the state column says what the kernel holds of each route', states.join());
+const reach = [await reachOf(rDef), await reachOf(r6)];
+check(/^main\b.*rule 32766/.test(reach[0]) && /^main\b.*rule 32766/.test(reach[1]), 'the Consulted by column names the table and the kernel rule that looks it up', reach.join(' | '));
+check(/^voip\b/.test(await reachOf(rBh)), 'a route in a named table shows that table', await reachOf(rBh));
 const tileTexts = await page.locator('.rt-static-section .tile').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 check(/Static routes 5 4 IPv4 · 1 IPv6/.test(tileTexts[0]) && /Installed 4/.test(tileTexts[1]) && /Not installed 0/.test(tileTexts[2]) && /Disabled 1/.test(tileTexts[3]), 'the tiles count the routes', tileTexts.join(' | '));
 check(mock.gets.length >= 2 && mock.gets.every(g => g.type) && mock.whole.length === 0 && !(await page.locator('main').innerHTML()).includes(SECRET), 'in the mock too the config is read by section type only, and a secret is never in the page');

@@ -126,7 +126,10 @@ export function readStatic(cfg4, cfg6, { status = null, dump = null } = {}) {
     v4: (i['ipv4-address'] ?? []).map(a => parseCidr(`${a.address}/${a.mask}`, 4)).filter(Boolean),
     v6: (i['ipv6-address'] ?? []).map(a => parseCidr(`${a.address}/${a.mask}`, 6)).filter(Boolean),
   })).sort((a, b) => a.name.localeCompare(b.name));
-  return { available, routes, interfaces, kernel: status?.available ? status.routes ?? [] : null, tableIds: status?.available ? status.table_ids ?? {} : null };
+  return {
+    available, routes, interfaces, kernel: status?.available ? status.routes ?? [] : null, tableIds: status?.available ? status.table_ids ?? {} : null,
+    rules: status?.available && Array.isArray(status.rules) ? status.rules : null,
+  };
 }
 
 //#endregion
@@ -374,6 +377,18 @@ function effectiveRoute(row, data) {
   const table = explicitTable && !['0', '254'].includes(explicitTable) ? explicitTable : (row.family === 6 ? iface?.table6 : iface?.table4) ?? 'main';
   const metric = Number(v.metric || iface?.metric || 0);
   return { v, iface, table: tableKey(table, data.tableIds), metric: row.family === 6 && metric === 0 ? 1024 : metric };
+}
+
+// Where a configured route is consulted: the table it lands in (as { name }, the name of that table when the kernel's table ids
+// are known) and the policy rules of its family that send lookups there, lowest priority first. `rules` is null when the rules are
+// not known; an empty list means no rule consults the table, so the route is never used.
+export function reachedBy(row, data) {
+  const { table } = effectiveRoute(row, data);
+  const name = Object.keys(data.tableIds ?? {}).find(n => String(data.tableIds[n]) === table) ?? table;
+  if (!data.rules) return { table: name, rules: null };
+  const rules = data.rules.filter(r => r.action === 'lookup' && r.family === row.family && r.table != null && tableKey(r.table, data.tableIds) === table)
+    .map(r => r.priority).sort((a, b) => a - b);
+  return { table: name, rules: [...new Set(rules)] };
 }
 
 // A configured route's full identity, not just another route to the same destination.

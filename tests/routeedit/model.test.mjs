@@ -296,6 +296,16 @@ thrown = null;
 try { m.checkInstalled(data, dormant, data); } catch (e) { thrown = e; }
 check(thrown === null, 'a route on a down interface may be saved for later without blocking on installation');
 
+console.log('== which policy rules reach a route ==');
+const rule = (priority, table, over = {}) => ({ priority, family: 4, action: 'lookup', table, selectors: [['from', 'all']], ...over });
+const withRules = m.readStatic(CFG4, CFG6, { status: { ...STATUS, rules: [rule(1000, 'voip', { selectors: [['iif', 'br-lan']] }), rule(32766, 'main'), rule(32766, 'main', { family: 6 }), rule(100, 'main', { action: 'goto' })] }, dump: DUMP });
+const reachFor = (section, d = withRules) => m.reachedBy(rowOf(m.draftFrom(d), section), d);
+check(j(reachFor('cfg01')) === j({ table: 'main', rules: [32766] }), 'a route without a table is reached by the kernel\'s main rule; a goto rule does not count', j(reachFor('cfg01')));
+check(j(reachFor('cfg05')) === j({ table: 'voip', rules: [1000] }), 'a route in a named table is reached by the rule that looks that table up (numbers and names are the same table)', j(reachFor('cfg05')));
+check(reachFor('cfg05', { ...withRules, rules: [rule(32766, 'main')] }).rules.length === 0, 'a table no rule consults has no rules, so its routes are never used');
+check(m.reachedBy(rowOf(m.draftFrom(withRules), 'cfg01'), { ...withRules, rules: [rule(5, 'main', { family: 6 })] }).rules.length === 0, 'rules of the other address family do not reach the route');
+check(reachFor('cfg01', read()).rules === null, 'without the rules the answer says so instead of claiming none');
+
 console.log('== the interface choices ==');
 draft = m.draftFrom(data);
 check(j(m.interfaceChoices(data, draft)) === j(['lan', 'loopback', 'wan', 'wan2']), 'the choices are the router\'s interfaces');
