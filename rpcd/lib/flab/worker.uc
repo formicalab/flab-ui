@@ -15,12 +15,14 @@ export function deferred(objects) {
 	for (let object, methods in objects)
 		for (let name, method in methods) {
 			let handler = method.call;
+			// ucode reuses for-in bindings: capture method classification and object identity before closing over them.
+			let object_name = object;
+			let mutating = index([ 'control', 'start', 'stop', 'wake', 'cable_test' ], name) >= 0;
 			method.call = function(request) {
 				// Fixture/direct-call harnesses intentionally keep their synchronous API.
 				if (type(request?.defer) != 'function')
 					return handler(request);
-				let mutating = index([ 'control', 'start', 'stop', 'wake', 'cable_test' ], name) >= 0;
-				if (active >= MAX_WORKERS || (mutating && mutations[object])) {
+				if (active >= MAX_WORKERS || (mutating && mutations[object_name])) {
 					request.reply({ error: 'This object is busy. Try again shortly.' }, STATUS_UNKNOWN_ERROR);
 					return null;
 				}
@@ -33,13 +35,13 @@ export function deferred(objects) {
 					finished = true;
 					active--;
 					if (mutating)
-						delete mutations[object];
+						delete mutations[object_name];
 					guard?.cancel();
 					request.reply(result, status);
 				};
 				active++;
 				if (mutating)
-					mutations[object] = true;
+					mutations[object_name] = true;
 				child = task(() => {
 					// Module caches are private fork snapshots. Results are returned, never merged into rpcd's VM.
 					begin_budget(DEADLINE - 2);
