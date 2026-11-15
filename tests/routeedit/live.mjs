@@ -230,10 +230,15 @@ check(states.join() === 'installed,installed,disabled,installed,installed', 'the
 const reach = [await reachOf(rDef), await reachOf(r6)];
 check(/^main\b.*rule 32766/.test(reach[0]) && /^main\b.*rule 32766/.test(reach[1]), 'the Consulted by column names the table and the kernel rule that looks it up', reach.join(' | '));
 check(/^voip\b/.test(await reachOf(rBh)), 'a route in a named table shows that table', await reachOf(rBh));
-const tileTexts = await page.locator('.rt-static-section .tile').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
-check(/Static routes 5 4 IPv4 · 1 IPv6/.test(tileTexts[0]) && /Installed 4/.test(tileTexts[1]) && /Not installed 0/.test(tileTexts[2]) && /Disabled 1/.test(tileTexts[3]), 'the tiles count the routes', tileTexts.join(' | '));
+const tileText = (await page.locator('.tile:has(.label:text-is("Static routes"))').innerText()).replace(/\s+/g, ' ').trim();
+check(/Static routes 5 4 installed · 0 not installed · 1 disabled/.test(tileText), 'one tile counts the routes: configured, installed, not installed, disabled', tileText);
 check(mock.gets.length >= 2 && mock.gets.every(g => g.type) && mock.whole.length === 0 && !(await page.locator('main').innerHTML()).includes(SECRET), 'in the mock too the config is read by section type only, and a secret is never in the page');
 check(!(await page.locator('.seg-tab').allInnerTexts()).includes('Static routes'), 'static routes are not hidden on a separate tab');
+const order = await page.evaluate(() => ['.rt-how', '.rt-rules', '.rt-static', '.rt-tables', '.rt-routes'].map(s => document.querySelector(s)).map((n, i, all) => i === 0 || Boolean(all[i - 1].compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING)));
+check(order.every(Boolean), 'the view follows the lookup: how it works, policy rules, static routes, routing tables, final list', JSON.stringify(order));
+const topTiles = await page.locator('main .tile .label').allInnerTexts();
+check(topTiles.includes('Static routes') && topTiles.length >= 7 && await page.locator('.rt-static-section .tile').count() === 0, 'the static-route tile is with the other tiles at the top', topTiles.join('|'));
+check(/Where static routes fit[\s\S]*Consulted by/.test(await page.locator('.rt-how').innerText()) && await page.locator('.rt-static .set-legend').count() === 1, 'the static-route description is part of "How the kernel picks a route"');
 const finalRoutes = await page.locator('.rt-routes tbody').innerText();
 check(/172\.16\.0\.0\/12[\s\S]*disabled/.test(finalRoutes) && /203\.0\.113\.0\/24/.test(finalRoutes),
   'the final list includes disabled and custom-table static routes', finalRoutes);

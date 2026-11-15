@@ -4,10 +4,12 @@
 
 ### Routing
 
-- Show the policy rules and the routing tables in full-width cards in lookup order (rules, tables, static routes, final
-  list), and explain that static routes are not a stage before or after the rules: a static route is an entry in a table
-  and is reached only through the rules that consult that table (the main table through rule 32766, after every lower-
-  numbered rule).
+- Show the policy rules, the static-route editor and the routing tables in lookup order (full-width rules card, then the
+  static routes, then the tables overview, then the final list). The static-route description is part of "How the kernel
+  picks a route": static routes are not a stage before or after the rules; each is an entry in a table (its Table option,
+  else its interface's table) and is reached only through the rules that consult that table.
+- Merge the four static-route tiles into one tile with the other tiles at the top: the number configured, and how many are
+  installed, not installed and disabled.
 - Add a "Consulted by" column to the static-route editor: the table each route lands in and the policy rules that look
   it up, with a "no rule" warning for a table nothing consults.
 

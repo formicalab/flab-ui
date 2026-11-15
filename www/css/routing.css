@@ -36,17 +36,21 @@
 .rt-routes tr.rt-down > td { background: var(--fl-bad-bg); }
 .rt-more { display: flex; align-items: center; gap: 1rem; padding: .6rem 1rem; border-top: 1px solid var(--fl-stroke); }
 .chip.bad { color: var(--fl-bad-fg); border-color: var(--fl-bad-fg); }
+/* The static-route paragraph under the numbered steps of "How the kernel picks a route". */
+.rt-how .rt-how-static { margin: .75rem 0 0; }
 
 /* ── Static routes tab ── */
 .rt-static-section, .rt-static { display: grid; gap: 1rem; min-width: 0; }
 .rt-static-table td, .rt-static-table th { padding: .3rem .4rem; white-space: nowrap; }
-.rt-static-table .rt-s-target { min-width: 10rem; }
-.rt-static-table .rt-s-gw { min-width: 8.5rem; }
-.rt-static-table .rt-s-if { min-width: 7rem; }
-.rt-static-table .rt-s-num { min-width: 4.5rem; width: 5.5rem; }
-.rt-static-table .rt-s-tab { min-width: 5rem; width: 6rem; }
-.rt-static-table .rt-s-type { min-width: 9rem; }
-.rt-static-table .rt-s-src { min-width: 8rem; }
+.rt-static-table .rt-s-target { min-width: 8.5rem; }
+.rt-static-table .rt-s-gw { min-width: 7.5rem; }
+.rt-static-table .rt-s-if { min-width: 6.5rem; }
+.rt-static-table .rt-s-num { min-width: 4rem; width: 4.5rem; }
+.rt-static-table .rt-s-tab { min-width: 4.5rem; width: 5rem; }
+.rt-static-table .rt-s-type { min-width: 8rem; }
+.rt-static-table .rt-s-src { min-width: 7rem; }
+/* The tables a route is consulted through wrap, so a table with several rules does not widen the editor. */
+.rt-static-table td.rt-s-reach { white-space: normal; min-width: 7rem; }
 .rt-static-table td.rt-s-check { text-align: center; }
 .rt-s-new > td { background: var(--fl-info-bg); }
 .rt-s-removed > td { background: var(--fl-bad-bg); opacity: .8; }

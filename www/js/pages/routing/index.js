@@ -15,7 +15,7 @@ import { tile, tiles, healthBanner } from '../../core/ui.js';
 import { searchControl, selectControl, pauseControl, refreshControl, toggleControl, tabsControl } from '../../core/controls.js';
 import { loadBgp, peerOptions, bgpView } from './bgp/tab.js';
 import { lookupCard } from './lookup.js';
-import { loadStatic, staticEditor, staticView } from './static.js';
+import { loadStatic, staticEditor, staticTiles, staticView } from './static.js';
 import { routeInventory } from './static-model.js';
 import { routesCard, rulesCard, tablesCard, howCard } from './tables.js';
 import { defaultRoutes, findings, interfaceNames, isKernelRule, routeKey, tableLabel, tablesOf } from './model.js';
@@ -71,8 +71,8 @@ function defaultTile(s, family, names) {
   return tile(label, names.get(dev) ?? dev ?? '–', `${hop.via ? `via ${hop.via}` : 'directly'}${dev && names.get(dev) && names.get(dev) !== dev ? ` · ${dev}` : ''}${more}`);
 }
 
-// The summary tiles of the Routes tab.
-function routeTiles(s, names) {
+// The summary tiles of the Routes tab: the kernel's, then the static routes' (`extra`, from static.js).
+function routeTiles(s, names, extra) {
   const main = s.routes.filter(r => r.table === 'main');
   const tables = tablesOf(s);
   const multipath = main.filter(r => r.nexthops.length > 1).length;
@@ -83,7 +83,8 @@ function routeTiles(s, names) {
     tile('Routes in the main table', String(main.length), `${main.filter(r => r.family === 4).length} IPv4 · ${main.filter(r => r.family === 6).length} IPv6`),
     tile('Routing tables', String(tables.length), tables.map(t => t.name).join(', ')),
     tile('Policy rules', String(s.rules.length), custom ? `${custom} added beyond the kernel's own` : 'only the kernel\'s own'),
-    tile('Multipath routes', String(multipath), 'load-shared over several next hops'));
+    tile('Multipath routes', String(multipath), 'load-shared over several next hops'),
+    ...extra);
 }
 
 // The nodes of the Routes tab. `rerender` redraws from the cached data and also syncs the command-bar selectors
@@ -93,18 +94,19 @@ function routesView(data) {
   const s = data.status;
   const names = interfaceNames(data.dump);
   const banner = healthBanner(findings(s), 'The routing tables look healthy.');
-  if (!s.available) return [banner, ...staticView(data.configured, rerender), routesCard(data.inventory, state, rerender, names, null)];
+  const staticTop = staticTiles(data.configured);
+  if (!s.available) return [...(staticTop.length ? [tiles(...staticTop)] : []), banner, ...staticView(data.configured, rerender), routesCard(data.inventory, state, rerender, names, null)];
   const devices = [...new Set([...names.keys(), ...s.routes.flatMap(r => r.nexthops.map(n => n.dev))].filter(Boolean))].sort();
   const hit = state.query && data.lookup?.match ? routeKey(data.lookup.match) : null;
   return [
-    routeTiles(s, names),
+    routeTiles(s, names, staticTop),
     banner,
     lookupCard(data, state, devices, names),
     howCard(),
-    // In lookup order: the rules, then the tables they consult, then the static routes that live in those tables.
+    // In lookup order: the rules, then the static routes (entries of the tables the rules consult), then the tables overview.
     rulesCard(s),
-    tablesCard(data.inventory, state, rerender),
     ...staticView(data.configured, rerender),
+    tablesCard(data.inventory, state, rerender),
     routesCard(data.inventory, state, rerender, names, hit),
   ];
 }

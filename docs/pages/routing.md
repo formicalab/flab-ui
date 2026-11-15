@@ -50,9 +50,11 @@ Reads `flab.routing status` (and `network.interface dump` for the logical interf
 
 Static routes are applied when Save and apply commits the network configuration. netifd installs enabled routes while
 their interface is up. They have no special precedence over connected, DHCP or BGP routes, and they are not applied
-before or after the policy rules: a static route is an entry in a table (the main table unless it has a Table), and it is
+before or after the policy rules: a static route is an entry in a table (the one named by its Table option, else its
+interface's table, which is `main` unless the interface sets `ip4table`/`ip6table`), and it is
 reached only through the rules that consult that table. Rule 32766 consults `main`, after every rule with a lower number,
-so a rule that matches and finds a route in its own table wins over static routes in `main`. A route in a table that no
+so a rule with a lower number that matches the packet and finds a matching route in its own table wins over all static
+routes in `main`, even more specific ones. A route in a table that no
 rule consults is never used. Within a table the longest matching destination prefix wins and lower metrics choose between
 equally specific alternatives.
 A routing daemon chooses its own best paths before exporting them into the kernel. A default route is a `/0` fallback,
@@ -73,7 +75,8 @@ kernel holds of each. Files: `routing/static.js` (the view and the editor wiring
 draft, review list, validation, risks, UCI operations, check after a save, kernel state). The editor reads the sections by
 type (`uci get` with `type: route` and `route6`), never the whole network config (it holds passwords and keys), plus
 `flab.routing status` and `network.interface dump` for the kernel's routes and the interfaces' subnets.
-- **Tiles:** routes configured (by family), installed in the kernel, configured but not installed, disabled.
+- **Tile:** one "Static routes" tile at the top with the other tiles: the number configured, and underneath how many are
+  installed in the kernel, not installed and disabled (the value turns amber when some enabled route is not installed).
 - **Tables:** one row per route with Target, Gateway, Interface, Metric, Table, Type, MTU, From, On-link and Enabled,
   a "Consulted by" column (the table the route lands in, after netifd's inheritance, and the policy rules of its family
   that look that table up; "no rule" when none does, because then the route is never used; it follows edits as you type)

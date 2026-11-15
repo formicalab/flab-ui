@@ -28,10 +28,13 @@ export function howCard() {
     h('div', { className: 'card-body rt-how' },
       h('ol', {},
         item(h('strong', {}, 'Rules first. '), 'The policy rules are checked from the lowest priority number to the highest. The first rule whose conditions match names a routing table to consult. A priority is only an order; it is not a table number (rule 0 looks up table 255, ', mono('local'), ').'),
-        item(h('strong', {}, 'Routes live in tables. '), 'Every route, whatever its origin (static, connected, DHCP, BGP), sits in exactly one table, and it is considered only when a rule sends the lookup to that table. A static route with no table goes in ', mono('main'), ', which the kernel\'s own rule 32766 consults: after every rule with a lower number. So a matching rule you added that finds any route in its own table beats all static routes in ', mono('main'), ', and a static route in another table is ignored unless some rule consults that table.'),
+        item(h('strong', {}, 'Routes live in tables. '), 'Every route, whatever its origin (static, connected, DHCP, BGP), sits in exactly one table, and it is considered only when a rule sends the lookup to that table.'),
         item(h('strong', {}, 'Then the longest prefix. '), 'Within the table the most specific matching destination wins; equally specific alternatives use the lower metric. Static routes are not a separate stage before or after BGP, DHCP or connected routes: the routes of one table compete in the same lookup. A daemon such as BIRD first chooses its own best paths before exporting them to the kernel.'),
         item(h('strong', {}, 'No route in that table? '), 'The kernel goes on to the next rule. If no rule produces a route, the destination is unreachable.'),
-        item(h('strong', {}, 'Exceptions. '), 'A matching blackhole, unreachable or prohibit route, or a rule with such an action, ends the lookup at once. A throw route means "not in this table, keep going". ', mono('suppress_prefixlength'), ' counts a too-short match, such as a default route, as a miss.'))));
+        item(h('strong', {}, 'Exceptions. '), 'A matching blackhole, unreachable or prohibit route, or a rule with such an action, ends the lookup at once. A throw route means "not in this table, keep going". ', mono('suppress_prefixlength'), ' counts a too-short match, such as a default route, as a miss.')),
+      h('p', { className: 'rt-how-static' },
+        h('strong', {}, 'Where static routes fit. '),
+        'Static routes are the ', mono('route'), ' and ', mono('route6'), ' sections of ', mono('/etc/config/network'), ', edited below the rules. They are not a stage before or after the rules: each is an entry in one table, and the Consulted by column shows which table that is and which rules look it up. A static route goes in the table named by its Table option or, when that is blank, in its interface\'s table, which is ', mono('main'), ' unless the interface sets its own (', mono('ip4table'), ', ', mono('ip6table'), '). The kernel\'s rule 32766 consults ', mono('main'), ' after every rule with a lower number, so a rule with a lower number that matches the packet and finds a matching route in its own table wins over all static routes in ', mono('main'), ', even more specific ones; a static route in a table that no rule consults is never used. Save and apply commits them; netifd installs enabled ones while their interface is up and removes them when it goes down. Installed ones then compete by longest prefix and metric with the connected, DHCP and routing-daemon routes of the same table, and all appear in the final Routes list. Disabled or not-yet-installed entries are labeled and do not forward traffic. Changes are applied with the review banner at the top.')));
 }
 
 //#endregion
@@ -99,7 +102,7 @@ export function rulesCard(data) {
     h('td', {}, origin(r))));
   return card([icon('signpost-split'), 'Policy rules', h('span', { className: 'sub' }, 'Checked in this order; the first rule that matches decides which table is consulted')],
     h('div', {},
-      h('div', { className: 'set-legend muted small' }, 'Static routes are not listed here: they are routes inside the tables named in the Then column, and a rule is what makes a table\'s routes reachable. Static routes without a table are in main, reached by rule 32766 after all lower-numbered rules.'),
+      h('div', { className: 'set-legend muted small' }, 'Static routes are not listed here: they are routes inside the tables named in the Then column, edited in the static routes below.'),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-rules' },
         h('thead', {}, h('tr', {}, ['Priority', 'Family', 'Matches', 'Then', 'Added by'].map((c, i) => h('th', { className: i === 0 ? 'num' : '' }, c)))),
         h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 5, className: 'muted' }, 'No policy rules')))))));

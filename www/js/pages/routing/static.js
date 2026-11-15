@@ -11,7 +11,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, optional, ubus } from '../../core/ubus.js';
-import { badge, button, card, mono, tile, tiles } from '../../core/ui.js';
+import { badge, button, card, mono, tile } from '../../core/ui.js';
 import { legend, note } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
 import { openDialog } from '../../core/modal.js';
@@ -194,15 +194,14 @@ function familyCard(ctx, fam, choices) {
 
 //#endregion
 
-// The summary tiles: how many routes are configured and what the kernel makes of them.
-function summary(data) {
+// The summary tile: how many routes are configured, and in its sub line how many of them the kernel holds, does not hold or
+// has switched off. It joins the other tiles at the top of the Routes view; nothing is returned when the config cannot be read
+// (the editor shows a message instead). An array is returned so the caller can spread it among the other tiles.
+export function staticTiles(data) {
+  if (!data.available) return [];
   const c = counts(draftFrom(data), data);
-  const v4 = data.routes.filter(r => r.family === 4).length;
-  return tiles(
-    tile('Static routes', String(c.total), `${v4} IPv4 · ${c.total - v4} IPv6`),
-    tile('Installed', data.kernel ? String(c.active) : '–', data.kernel ? 'held by the kernel now' : 'the kernel state is not available'),
-    tile('Not installed', data.kernel ? String(c.missing) : '–', data.kernel ? c.missing ? 'configured, but not in the kernel' : 'every enabled route is installed' : 'the kernel state is not available', c.missing ? 'text-warning' : ''),
-    tile('Disabled', String(c.disabled), 'switched off in the config'));
+  const sub = data.kernel ? `${c.active} installed · ${c.missing} not installed · ${c.disabled} disabled` : `kernel state not available · ${c.disabled} disabled`;
+  return [tile('Static routes', String(c.total), sub, c.missing ? 'text-warning' : '')];
 }
 
 // The nodes of the Static routes tab for one poll. `data` is what loadStatic returned.
@@ -223,11 +222,8 @@ export function staticView(data, rerender) {
   const choices = interfaceChoices(ctx.base, ctx.draft);
   // The wrapper is what the page's isPaused looks in for a focused control.
   const form = h('div', { className: 'rt-static' },
-    legend([
-      'Static routes are the route and route6 sections of /etc/config/network. They are not applied before or after the policy rules: a route is one entry inside a routing table, and the Consulted by column shows which table that is and which policy rules look it up. Routes without a table go in main, which rule 32766 consults, after every rule you added with a lower number. A route in another table is only used where a rule sends traffic to that table, and one that no rule consults is never used.',
-      'Save and apply commits the routes; netifd installs enabled ones when their interface is up and removes them when it goes down. Installed static routes then compete by longest prefix and metric with the connected, DHCP and routing-daemon routes of the same table, and all appear in the final Routes list below. Disabled or not-yet-installed entries are labeled and do not forward traffic. Changes are applied with the review banner at the top.',
-      'A target without a prefix length is one host. Leave the gateway empty for a network that is directly connected to the interface. "From" limits the route to packets from one source.']),
+    legend(['A target without a prefix length is one host. Leave the gateway empty for a network that is directly connected to the interface. "From" limits the route to packets from one source. How static routes fit with the policy rules is explained in "How the kernel picks a route" above.']),
     ...FAMILIES.map(fam => familyCard(ctx, fam, choices)));
   ctx.sync();
-  return [h('section', { className: 'rt-static-section' }, summary(data), ...editor.notes(data).filter(Boolean), form)];
+  return [h('section', { className: 'rt-static-section' }, ...editor.notes(data).filter(Boolean), form)];
 }
