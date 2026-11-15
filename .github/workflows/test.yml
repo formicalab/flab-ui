@@ -66,4 +66,10 @@ jobs:
         run: |
           mapfile -t apks < <(find "$FLAB_SDK_WORK/artifacts/bin/packages" -type f -name 'flab-ui-*.apk' -print)
           test "${#apks[@]}" -eq 1
+          # Ubuntu 24's AppArmor policy denies the unprivileged UID mapping required by Bubblewrap.
+          # Change only this ephemeral runner step, then restore its original policy even on failure.
+          if original_userns_policy=$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null); then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            trap 'sudo sysctl -w "kernel.apparmor_restrict_unprivileged_userns=$original_userns_policy" >/dev/null' EXIT
+          fi
           bash tests/installation/run.sh "${apks[0]}"

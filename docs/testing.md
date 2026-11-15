@@ -56,6 +56,9 @@ suites also remove their `/tmp/flab-*-test` folder on the router. Do not run two
   and normal-login smoke tests. The full hardware/fixture/browser suites remain explicit; `-Action Release` builds
   and checks installation but does not run the application test suites.
 
+The hosted Ubuntu image-test step temporarily permits the unprivileged user namespaces Bubblewrap needs and restores
+the runner's original AppArmor namespace policy afterward. The local image runner does not change host policy.
+
 ## Common mechanism (BGP, IPsec, Routing and network suites)
 
 1. **Capture**: each plugin is run once on the router with `FLAB_RECORD` set, so it saves its own inputs
