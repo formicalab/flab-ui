@@ -17,7 +17,10 @@ fallback, but key generation still requires `crypto.getRandomValues`.
 - `page.load()` fetches data, `page.view(data, rerender)` returns nodes. A `setInterval` repeats
   `load()` every `page.interval` ms unless `page.isPaused()` is true. A poll is also skipped while the previous
   one is still running and while the browser tab is in the background (the tab refreshes when it is shown again).
-  Only the newest request counts: a late reply that was overtaken, or one for a page that was left, is dropped.
+  Only the newest request counts: a late reply that was overtaken, or one for a page that was left, is dropped. A
+  poll's reply is also dropped when the page became paused while it was on its way (the user clicked into a form or
+  started an edit), so a slow router cannot rebuild a form under the user; an explicit reload (a save, Refresh) is
+  always applied.
 - Page CSS (`page.css`) is added once to `<head>` the first time the page opens.
 - The registry contains navigation metadata and dynamic imports. The shell loads the selected page only after sign-in,
   caches successful imports and rejects stale navigation results; page styles remain loaded on demand.

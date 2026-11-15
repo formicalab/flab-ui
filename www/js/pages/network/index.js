@@ -1,5 +1,5 @@
-// Wired network page (route #network): the Ethernet ports. The wiring diagram (SoC, MACs, switch chip,
-// PHYs, jacks) and a port table with link, hardware, traffic and errors. Bridges and the layers built on
+// Ethernet page (route #network): the Ethernet ports, as one table with a row per port (link, hardware, traffic graph, errors).
+// Bridges and the layers built on
 // the ports have their own pages. Data comes from the flab.network plugin; everything is rediscovered on
 // every poll and counters are turned into rates in the browser (core/rates.js), so ports that appear,
 // change or disappear are reflected without a reload. The VLAN cards under the port table can be edited
@@ -38,8 +38,8 @@ function summary(net) {
 
 export default {
   id: 'network',
-  label: 'Wired network',
-  title: 'Wired network · ports',
+  label: 'Ethernet',
+  title: 'Ethernet',
   icon: 'ethernet',
   interval: 3000,
   css: ['css/network.css', 'css/forms.css'],
@@ -53,11 +53,12 @@ export default {
     return { nodes: [pauseControl(state), refreshControl(reload), vlan.attach(reload)] };
   },
 
-  // Summary tiles, the findings banner, then the wiring diagram and port table (which redraw via `rerender`).
+  // Summary tiles, the findings banner (only when there is something to report), then the port table (which redraws via `rerender`).
   view(data, rerender) {
+    const findings = portFindings(data.net);
     return [
       summary(data.net),
-      healthBanner(portFindings(data.net), 'All ports look healthy.'),
+      ...(findings.length ? [healthBanner(findings, '')] : []),
       ...portsPanel(data.net, rerender, vlan.view(data, rerender)),
     ];
   },

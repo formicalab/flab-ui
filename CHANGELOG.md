@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Ethernet
+
+- Rename the "Wired network" page to "Ethernet" (the route stays `#network`).
+- Replace the wiring diagram (SoC, MACs, switch chip, PHYs and connectors) and the port tiles with the port table alone.
+  How those parts are connected differs from board to board and cannot be drawn correctly for all of them, and the tiles
+  repeated what the table says. Each row now has a jack icon tinted by link state, the LAN/WAN role, the SFP tag and the
+  MAC, and a graph of the recent traffic next to the live rates. Link changes sit under the speed in the Link column and
+  the learned-MAC count under the bridge state. One line per switch above the table keeps what the diagram said about it:
+  user ports, CPU ports, the CPU link's capacity and use, and how oversubscribed it is. The Hardware column gives each
+  switch port's number.
+- Remove the "All ports look healthy." banner from the Ethernet page. It only looked at changes since the page was opened,
+  so it appeared next to a port with thousands of old errors. The findings banner now shows only when there is something
+  to report (a downshifted link, flaps, new errors, an optical alarm or a busy CPU link).
+
+### Reliability
+
+- Stop a slow refresh from rebuilding a form the user has started to use. The refresh of an open page took one to two
+  seconds on a real router, and its reply was applied even if the user had clicked into a form meanwhile, which rebuilt
+  the form, took the focus away and could disturb a save in progress. A reply to a timer refresh is now dropped when the
+  page has become paused; explicit reloads (a save, Refresh) are still applied.
+
 ## 0.1.5 - 2026-11-15
 
 ### Routing

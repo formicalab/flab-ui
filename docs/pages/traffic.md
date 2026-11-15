@@ -7,7 +7,7 @@ those three tabs reuse their last answer until it is 10 s (Connections, Settings
 Refresh was pressed. The state (open tab, filters, sorts) lives in the page, so it survives the redraw on every poll.
 
 ## Live tab
-Reads `flab.network status` and netifd's interface dump, the same calls and the same rate tracker as the Wired network page
+Reads `flab.network status` and netifd's interface dump, the same calls and the same rate tracker as the Ethernet page
 (`network/shared.js`, `network/util.js`), so a counter sampled by one page serves the other, and `flab.traffic status` for the
 connection count (optional: without the plugin the tab still works and is the only one). No counter is read a second time.
 - **Interfaces** (`model.deviceRows`): every device `flab.network` reports, once each: Ethernet ports, the CPU conduit of a

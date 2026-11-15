@@ -667,7 +667,7 @@ await openDevice('br-guest');
 await unfold();
 await input(card(), 'MAC aging time \\(s\\)').fill('600');
 await page.click('a[href="#network"]');
-await page.waitForSelector('.port');
+await page.waitForSelector('.port-ic');
 check(await page.locator('.fl-drawer').count() === 0, 'leaving the page closes the panel');
 await page.click('a[href="#interfaces"]');
 await page.waitForSelector('.nb-card');

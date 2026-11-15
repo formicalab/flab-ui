@@ -158,7 +158,7 @@ console.log('\n== leaving the page, the old Bridges route ==');
 await iface.click({ position: { x: 6, y: 6 } });
 await page.waitForSelector('.fl-drawer.show');
 await page.click('a[href="#network"]');
-await page.waitForSelector('.port');
+await page.waitForSelector('.port-ic');
 check(await page.locator('.fl-drawer').count() === 0 && await page.locator('body.fl-drawer-open').count() === 0, 'leaving the page closes the drawer');
 await page.evaluate(() => { location.hash = 'bridges'; });
 await page.waitForFunction(() => location.hash === '#interfaces', null, { timeout: 5000 });

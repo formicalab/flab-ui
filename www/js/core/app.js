@@ -100,17 +100,21 @@ async function route() {
 
   // Polls the page once and redraws it. A failed poll shows the error in place of the content; an expired session
   // returns to the login form. Only the newest request counts: an older reply that arrives late (a slow router, an
-  // explicit refresh during a poll) is dropped, as is any reply for a page that was left meanwhile.
+  // explicit refresh during a poll) is dropped, as is any reply for a page that was left meanwhile. A reply to a
+  // timer poll is also dropped when the page became paused while it was on its way (the user clicked into a form,
+  // started an edit or pressed Pause): redrawing then would rebuild the form under the user and take the focus away.
+  // The next poll after the page is unpaused refreshes it; an explicit reload (a save, Refresh) is always applied.
   let requests = 0;
   let loading = false;
   // One poll cycle: fetches the page data and redraws, unless a newer request or a navigation superseded it.
-  async function load() {
+  async function load(polled = false) {
     if (!current()) return;
     const n = ++requests;
     loading = true;
     try {
       const fresh = await page.load();
       if (!current() || n !== requests) return;
+      if (polled && page.isPaused?.()) return;
       data = fresh;
       ctl.update?.(data);
       rerender();
@@ -118,6 +122,7 @@ async function route() {
     } catch (e) {
       if (!current() || n !== requests) return;
       if (e instanceof AuthError) return expire();
+      if (polled && page.isPaused?.()) return;
       results.replaceChildren(card(null, h('div', { className: 'card-body text-danger' }, e.message)));
     } finally {
       if (n === requests) loading = false;
@@ -129,8 +134,8 @@ async function route() {
   // Pages may suspend polling (Pause button) without stopping the timer. A poll is also skipped while the previous
   // one is still running and while the tab is in the background; the tab refreshes as soon as it is shown again.
   const due = () => !loading && !document.hidden && !page.isPaused?.();
-  timer = setInterval(() => { if (due()) load(); }, page.interval);
-  refresh = () => { if (!loading && !page.isPaused?.()) load(); };
+  timer = setInterval(() => { if (due()) load(true); }, page.interval);
+  refresh = () => { if (!loading && !page.isPaused?.()) load(true); };
 }
 
 // Stops polling, drops the stored session and returns to the login form with an explanation.

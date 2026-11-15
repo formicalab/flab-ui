@@ -15,7 +15,7 @@ const text = node => typeof node === 'string' ? node : (node?.children ?? []).ma
 const find = (node, match) => match(node) ? node : (node?.children ?? []).map(child => find(child, match)).find(Boolean);
 
 async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } = {}) {
-  const events = {}, calls = [], styles = [], timers = new Map(), renders = [], controls = {};
+  const events = {}, calls = [], styles = [], timers = new Map(), renders = [], controls = {}, paused = { on: false };
   const element = (tag, props = {}, ...children) => ({
     tag, ...props, children: children.flat().filter(c => c != null),
     replaceChildren(...next) { this.children = next; },
@@ -45,7 +45,7 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } 
       calls.push(`import:${id}`);
       if (imports[id]) await imports[id].promise;
       return synthetic({ openTool: (tool, host) => calls.push(`tool:${tool}:${host}`), default: {
-        id, label: id, interval: 1000, css: `css/${id}.css`,
+        id, label: id, interval: 1000, css: `css/${id}.css`, isPaused: () => paused.on,
         load: () => { calls.push(`load:${id}`); return loads[id]?.() ?? Promise.resolve({ value: id }); },
         controls: ctl => { controls[id] = ctl; return { nodes: [] }; },
         view: data => { renders.push(data.value); return [element('p', {}, data.value)]; },
@@ -74,7 +74,7 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } 
   module.namespace.start();
   await tick();
   return {
-    app, calls, renders, styles, timers, controls, AuthError, context, openTool: registry.namespace.openTool,
+    app, calls, renders, styles, timers, controls, paused, AuthError, context, openTool: registry.namespace.openTool,
     navigate: async hash => { context.location.hash = hash; await events.hashchange(); },
     signedOut: async () => { signedIn = false; await events.hashchange(); },
     signIn: async () => { signedIn = true; await onLogin(); },
@@ -153,6 +153,30 @@ test('late page data, old errors and rerenders cannot replace the newest route o
   oldBoard.reject(new t.AuthError('old session'));
   await tick();
   assert.equal(text(t.app).includes('wifi'), true);
+});
+
+test('a poll reply that arrives after the page became paused is dropped, an explicit reload is not', async () => {
+  const slow = deferred();
+  let count = 0;
+  const s = await shell({ loads: { overview: () => ++count === 2 ? slow.promise : Promise.resolve({ value: `load ${count}` }) } });
+  assert.equal(text(s.app).includes('load 1'), true);
+  // The timer fires while nothing is being edited, and the router is slow to answer...
+  [...s.timers.values()][0]();
+  await tick();
+  // ...the user clicks into the form meanwhile, so the page pauses; the late reply must not rebuild the form under them.
+  s.paused.on = true;
+  slow.resolve({ value: 'late poll' });
+  await tick();
+  assert.equal(text(s.app).includes('late poll'), false, 'a poll reply must not redraw a page the user started editing');
+  assert.equal(text(s.app).includes('load 1'), true);
+  // A reload the page asked for itself (a save, Refresh) is applied even while it is paused.
+  await s.controls.overview.reload();
+  assert.equal(text(s.app).includes('load 3'), true);
+  // Unpaused again, the next timer poll refreshes it.
+  s.paused.on = false;
+  [...s.timers.values()][0]();
+  await tick();
+  assert.equal(text(s.app).includes('load 4'), true);
 });
 
 test('openTool still retains its target/autorun state across a lazy Toolbox import', async () => {

@@ -1,4 +1,4 @@
-// Shared helpers of the three wired-network pages (Wired network, Bridges, Devices and Interfaces): rate
+// Shared helpers of the wired-network pages (Ethernet, Devices and Interfaces): rate
 // tracking, formatting and the live "what changed" findings.
 import { createTracker, latest } from '../../core/rates.js';
 
@@ -82,6 +82,47 @@ export const STP_ROLE = {
   root: 'Root port', designated: 'Designated', alternate: 'Alternate (blocked)', backup: 'Backup', disabled: 'Disabled',
 };
 
+// The ports as jacks: in the order the board lists them (usually the order on the case) with each switch's ports kept together,
+// leaving out the SoC MACs that only feed a switch (its conduits). Ports without a board index sort after the indexed ones, in
+// discovery order. Returns { ordered, switchOf }, where switchOf(port) is the switch a port belongs to (matched by its switch node).
+export function jackOrder(net) {
+  const switches = net.switches ?? [];
+  const fed = new Set(switches.flatMap(s => (s.cpu_ports ?? []).map(c => c.conduit).filter(Boolean)));
+  const rank = new Map(net.ports.map((p, i) => [p.name, p.board?.index ?? 1000 + i]));
+  const sorted = net.ports.filter(p => !fed.has(p.name)).sort((a, b) => rank.get(a.name) - rank.get(b.name));
+  const switchOf = p => switches.find(s => s.node === p.hardware?.switch_node);
+  const ordered = [], done = new Set();
+  for (const p of sorted) {
+    const sw = switchOf(p);
+    if (!sw) { ordered.push(p); continue; }
+    if (done.has(sw.node)) continue;
+    done.add(sw.node);
+    ordered.push(...sorted.filter(q => switchOf(q) === sw));
+  }
+  return { ordered, switchOf };
+}
+
+// The line about a switch and its link to the SoC: the user ports (and the fastest speed any advertises, as the router reports it),
+// its CPU ports, the link's capacity, how much of it is in use now, and, when the linked user ports could send more than it
+// carries, how many times it is oversubscribed. Null for a switch without a known CPU link capacity.
+export function switchLine(net, sw) {
+  const link = cpuLink(net, sw);
+  const fastest = Math.max(0, ...net.ports.filter(p => sw.ports.includes(p.name)).map(p => p.max_speed ?? 0));
+  const cpu = (sw.cpu_ports ?? []).map(c => c.port).filter(p => p != null);
+  const used = link?.utilization == null ? null : `${link.utilization < 10 ? link.utilization.toFixed(1) : Math.round(link.utilization)}% used`;
+  const over = link?.oversubscription > 1 ? `linked ports can send up to ${fmtSpeed(link.potential)} (${link.oversubscription.toFixed(1)}× oversubscribed)` : null;
+  return {
+    busy: link?.utilization >= CPU_LINK_BUSY,
+    text: [
+      `${sw.label ?? 'Switch'} switch`,
+      `${sw.ports.length} user port${sw.ports.length === 1 ? '' : 's'}${fastest ? ` (up to ${fmtSpeed(fastest)})` : ''}`,
+      cpu.length ? `CPU port${cpu.length > 1 ? 's' : ''} ${cpu.join(', ')}` : null,
+      link ? `CPU link ${fmtSpeed(link.capacity)}` : null,
+      used, over,
+    ].filter(Boolean).join(' · '),
+  };
+}
+
 // Badge kind for a spanning-tree port state ('' for unknown or disabled).
 export const stpKind = state => ({ forwarding: 'success', learning: 'info', listening: 'info', blocking: 'warning' })[state] ?? '';
 
@@ -91,7 +132,7 @@ export function hwLines(p) {
   if (!hw) return [];
   return [
     hw.phy ? ['PHY', `${hw.phy.name ?? 'unknown PHY'}${hw.phy.id ? ` (ID ${hw.phy.id})` : ''} · address ${hw.phy.address} on ${hw.phy.bus}`] : null,
-    hw.switch ? ['Switch', hw.switch] : null,
+    hw.switch ? ['Switch', `${hw.switch}${hw.switch_port != null ? ` · port ${hw.switch_port}` : ''}`] : null,
     hw.soc ? ['SoC MAC', `${hw.soc} Ethernet`] : null,
     hw.driver ? ['Driver', `${hw.driver}${hw.bus ? ` · ${hw.bus}` : ''}`] : null,
     hw.media ? ['Medium', hw.media === 'MII' ? 'MII (internal link)' : hw.media] : null,

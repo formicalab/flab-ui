@@ -1,4 +1,4 @@
-// Live-update test for the network-related pages (Wired network, Devices and Interfaces with its bridges, Wi-Fi, Mesh,
+// Live-update test for the network-related pages (Ethernet, Devices and Interfaces with its bridges, Wi-Fi, Mesh,
 // WireGuard, Firewall and Logs). A real browser opens the deployed UI; the status calls of the flab.network,
 // flab.radio, flab.mesh, flab.wireguard, flab.firewall and flab.logs plugins are intercepted and answered with
 // the scenario JSON produced by the backend run, so every page can be driven through link loss, STP changes,
@@ -65,7 +65,18 @@ const before = (a, b) => page.evaluate(([x, y]) => { const A = document.querySel
 // All visible text of every element matching a selector, joined by newlines.
 const text = sel => page.locator(sel).allInnerTexts().then(t => t.join('\n'));
 // Clicks Refresh and gives the page a moment to redraw.
-const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
+// Clicks Refresh and waits for the page to redraw from the new reply (the explicit reload is always the newest request, so the
+// first redraw after the click is its own), instead of sleeping a fixed time that a busy router can outlast.
+const refresh = async () => {
+  await page.evaluate(() => {
+    window.__redrawn = false;
+    const observer = new MutationObserver(() => { window.__redrawn = true; observer.disconnect(); });
+    observer.observe(document.querySelector('main'), { childList: true });
+  });
+  await page.click('button:has-text("Refresh")');
+  await page.waitForFunction(() => window.__redrawn, null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(200);
+};
 // Switches one plugin's mock to a scenario (null = back to the live router), refreshes and takes a screenshot.
 const stage = async (label, plugin, name) => {
   console.log(`\n== ${label} ==`);
@@ -74,8 +85,13 @@ const stage = async (label, plugin, name) => {
   await refresh();
   if (shots) await page.screenshot({ path: path.join(shots, `${plugin}-${label.replace(/\W+/g, '-')}.png`), fullPage: true });
 };
-// CSS classes of a port tile on the Wired network page.
-const portClass = async name => (await page.locator(`.port:has(.pname:text-is("${name}"))`).first().getAttribute('class')) ?? '';
+// CSS classes of a port tile on the Ethernet page.
+// CSS classes of a port's jack icon on the Ethernet page ('port-ic up', 'port-ic warn' or 'port-ic down').
+const portClass = async name => (await page.locator(`.port-table tr:has(strong:text-is("${name}")) .port-ic`).first().getAttribute('class')) ?? '';
+// The ports that are jacks, in table order: the SoC MAC that only feeds a switch is listed last, as "CPU link", and is not a jack.
+const JACK_ROW = '.port-table tbody tr:not(.diag-row):not(:has(.port-role:text-is("CPU link")))';
+const jackNames = () => page.locator(`${JACK_ROW} .port-id strong`).allInnerTexts();
+const jackCount = () => page.locator(`${JACK_ROW} .port-ic`).count();
 
 // Start signed in, the way a real sign-in leaves the tab: the session id and its ACLs in sessionStorage.
 await page.addInitScript(([id, granted]) => {
@@ -84,28 +100,29 @@ await page.addInitScript(([id, granted]) => {
 }, [sid, acls]);
 await page.goto(baseUrl);
 await page.waitForSelector('.tile');
-check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wired network', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: network layers, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces (which holds the bridges), Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
-//#region Wired network page
+check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Ethernet', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: network layers, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces (which holds the bridges), Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
+//#region Ethernet page
 await page.click('a[href="#network"]');
-await page.waitForSelector('.port');
+await page.waitForSelector('.port-ic');
 
 console.log('== live router (pass-through) ==');
-const livePorts = await page.locator('.port').count();
-check(livePorts >= 5, 'port tiles drawn from the live router', String(livePorts));
+const livePorts = await jackCount();
+check(livePorts >= 5, 'a row with a jack icon for every port of the live router', String(livePorts));
 check(await page.locator('.nb').count() === 0 && await page.locator('.bl').count() === 0, 'the network board and the bridge information are not on this page');
 check(/^\d+ \/ \d+$/.test(await tile(0)), 'ports-linked tile', await tile(0));
-check(await before('.topo-legend', '.topo'), 'the port diagram key is above the diagram');
+await refresh(); await refresh();
+check(await page.locator('.port-table tbody tr:not(.diag-row) .spark').count() >= 1, 'a linked port has a usage graph in its row');
 const liveLinked = await tile(0);
 
 await stage('a link goes down', 'network', 'n-linkdown');
-check((await portClass('lan1')).includes('down'), 'lan1 turns into a down tile', await portClass('lan1'));
+check((await portClass('lan1')).includes('down'), 'lan1 turns into a down icon', await portClass('lan1'));
 check(await tile(0) !== liveLinked || (await portClass('lan1')).includes('down'), 'ports-linked tile follows');
 const noLink = page.locator('.port-table tr:has(strong:text-is("lan1")) .fl-badge:text-is("no link")');
 check(await noLink.count() === 1 && !/danger|warning/.test(await noLink.getAttribute('class')), 'a missing link is a neutral tag, not an error color', await noLink.getAttribute('class'));
-check(await page.locator('.port-table tr:has(strong:text-is("lan1")) .dot.idle').count() === 1 && await page.locator('.port-table tr:has(strong:text-is("lan1")) .dot.down').count() === 0, 'its status dot is gray, not red');
+check(await page.locator('.port-table tr:has(strong:text-is("lan1")) .port-ic.down').count() === 1 && await page.locator('.port-table tr:has(strong:text-is("lan1")) .port-ic.warn').count() === 0, 'its jack icon is the neutral gray one, not an alarm color');
 
 await stage('a port logs errors', 'network', 'n-errors');
-check(await page.locator('.topo-box.phy').count() >= 1 && /RTL8221B/.test(await text('.topo-box.phy')), 'topology shows the external PHY chipset', await text('.topo-box.phy'));
+check(/RTL8221B/.test(await text('.port-table')), 'the port table names the external PHY chipset', await text('.port-table'));
 check(/PHY.*MT7531/.test(await text('.port-table tr:has(strong:text-is("lan2")) .hw-lines')) && /Switch\s+MediaTek MT7531/.test(await text('.port-table tr:has(strong:text-is("lan2")) .hw-lines')), 'port table lists PHY, switch, driver and medium');
 check(await page.locator('.diag').count() === 0, 'the breakdown starts closed');
 await page.click('tr:has(strong:text-is("lan2")) .diag-btn');
@@ -118,44 +135,46 @@ check(await page.locator('.diag').count() === 0, 'Hide details closes it');
 
 await stage('downshifted link', 'network', 'n-downshift');
 check(/check the cable/.test(await text('.net-health')), 'health banner names the downshifted link', await text('.net-health'));
-check((await portClass('lan2')).includes('warn'), 'its tile turns amber');
+check((await portClass('lan2')).includes('warn'), 'its jack icon turns amber');
 
 await stage('router reports no devices', 'network', 'n-nodevices');
-check(await page.locator('.port').count() === 0 && await tile(0) === '0 / 0', 'page copes with an empty device list', await tile(0));
+check(await jackCount() === 0 && await tile(0) === '0 / 0', 'page copes with an empty device list', await tile(0));
 
 await stage('back to normal', 'network', 'base');
-check(await page.locator('.topo .port').count() === livePorts, 'jacks are back (the CPU link is a MAC box, not a jack)', `${await page.locator('.topo .port').count()} / ${livePorts}`);
-check(/MT7531/.test(await text('.topo-box.chip')) && /^CPU port/.test(await text('.vl-cap')) && await text('.vl:has(.vl-cap) .swnum') === '6', 'topology shows the switch chip and its CPU port, whose number sits in a circle on the CPU link like the user ports');
-check(/\d+ user ports \(up to [\d.]+ [GM]bit\/s\)/.test(await text('.topo-box.chip')) && /up to [\d.]+ [GM]bit\/s/.test(await text('.topo-box.phy')), 'the lines under the switch and the external PHY are computed from what the router reports (user ports, fastest speed), not from a table of known chips', await text('.topo-box.chip') + ' | ' + await text('.topo-box.phy'));
-check((await page.locator('.topo .swport .swnum').allInnerTexts()).join() === '5,0,1,2,3', 'switch port numbers under the chip, in jack order', (await page.locator('.topo .swport .swnum').allInnerTexts()).join());
-check((await page.locator('.topo .port .pname').allInnerTexts()).join() === 'lan1,lan2,lan3,lan4,lan5,eth1' && /WAN/.test(await text('.topo .port:has(.pname:text-is("eth1")) .prole')), 'jacks follow the board order with LAN/WAN labels');
-check(await page.locator('.topo-box.phy').count() === 2 && /RTL8221B/.test(await text('.topo-box.phy')), 'external PHYs drawn for lan1 and eth1');
+check(await jackCount() === livePorts, 'the rows are back (the CPU link is listed last and is not a jack)', `${await jackCount()} / ${livePorts}`);
+check(/CPU link/.test(await text('.port-table tbody tr:last-child')) , 'the SoC MAC that only feeds the switch is the last row, labeled CPU link', await text('.port-table tbody tr:last-child'));
+check(/MT7531 switch/.test(await text('.cpu-link')) && /CPU port 6/.test(await text('.cpu-link')), 'above the table, a line names the switch and its CPU port', await text('.cpu-link'));
+check(/\d+ user ports \(up to [\d.]+ [GM]bit\/s\)/.test(await text('.cpu-link')) && /RTL8221B/.test(await text('.port-table')), 'the line above the table is computed from what the router reports (user ports, fastest speed), not from a table of known chips', await text('.cpu-link'));
+const switchPorts = await page.locator('.port-table tbody tr').evaluateAll(rows => rows.filter(r => /^lan\d/.test((r.querySelector('strong')?.textContent ?? '').trim())).map(r => /Switch\s+[^\n]*? · port (\d+)/.exec(r.querySelector('.hw-lines')?.innerText ?? '')?.[1]));
+check(switchPorts.join() === '5,0,1,2,3', 'the port table gives each jack its switch port number, in jack order', switchPorts.join());
+check((await jackNames()).join() === 'lan1,lan2,lan3,lan4,lan5,eth1' && /WAN/.test(await text('.port-table tr:has(strong:text-is("eth1")) .port-role')), 'rows follow the board order with LAN/WAN labels', (await jackNames()).join());
+check(await page.locator('.port-table .hw-lines:has-text("RTL8221B")').count() === 2, 'external PHYs are listed for lan1 and eth1');
 
 await stage('another router: four LAN ports, no external PHY', 'network', 'n-board');
-check((await page.locator('.topo .port .pname').allInnerTexts()).join() === 'lan4,lan3,lan2,lan1,eth1', 'jack order follows the other board', (await page.locator('.topo .port .pname').allInnerTexts()).join());
-check(/Other Router/.test(await text('.topo-soc')) && await page.locator('.topo-box.phy').count() === 1, 'model name and PHYs follow the data');
+check((await jackNames()).join() === 'lan4,lan3,lan2,lan1,eth1', 'row order follows the other board', (await jackNames()).join());
+check(/RTL8221B/.test(await text('.port-table tr:has(strong:text-is("eth1")) .hw-lines')), 'the port table names the PHY of the port that has one');
 
 await stage('a router without a switch', 'network', 'n-nodsa');
-check(await page.locator('.topo-box.chip').count() === 0 && await page.locator('.topo .port').count() === 2, 'no switch chip, two plain MAC columns', `${await page.locator('.topo-box.chip').count()} / ${await page.locator('.topo .port').count()}`);
+check(await page.locator('.cpu-link').count() === 0 && await jackCount() === 2, 'no switch line, two plain port rows', `${await page.locator('.cpu-link').count()} / ${await jackCount()}`);
 
 await stage('back to normal again', 'network', 'base');
-check(await page.locator('.port').count() === livePorts, 'ports are back');
+check(await jackCount() === livePorts, 'ports are back');
 
-console.log('\n== MAC addresses in the diagram ==');
+console.log('\n== MAC addresses ==');
 const baseNet = scenario('base', 'network');
 // The MAC address of port `n` in the captured data.
 const macOf = n => baseNet.ports.find(p => p.name === n).mac;
-check(JSON.stringify(await page.locator('.topo .tb-mac').allInnerTexts()) === JSON.stringify([macOf('eth0'), macOf('eth1')]), 'the MAC boxes of the SoC show their addresses', JSON.stringify(await page.locator('.topo .tb-mac').allInnerTexts()));
-check(JSON.stringify(await page.locator('.topo .port .pmac').allInnerTexts()) === JSON.stringify(['lan1', 'lan2', 'lan3', 'lan4', 'lan5', 'eth1'].filter(n => macOf(n) !== macOf('eth0')).map(macOf)), 'a jack shows its MAC only when it differs from the MAC of the SoC port that feeds its switch (the switch ports inherit it, so the MAC box shows it once)', JSON.stringify(await page.locator('.topo .port .pmac').allInnerTexts()));
-check((await page.locator('.port:has(.pname:text-is("lan1"))').getAttribute('title')).includes(macOf('lan1')), 'the tooltip of every jack still gives its MAC');
+const rowMacs = await Promise.all(['lan1', 'lan2', 'lan3', 'lan4', 'lan5', 'eth1', 'eth0'].map(async n => [n, (await text(`.port-table tr:has(strong:text-is("${n}")) .port-id .mono`)).trim()]));
+check(rowMacs.every(([n, mac]) => mac === macOf(n)), 'every row shows its own MAC, including the switch ports that inherit the SoC port\'s', JSON.stringify(rowMacs));
+check((await page.locator('.port-table tr:has(strong:text-is("lan1")) .port-ic').getAttribute('title')).includes(macOf('lan1')), 'the tooltip of every jack icon gives its MAC and hardware');
 
 console.log('\n== the CPU link ==');
-check(/CPU link [\d.]+ [GM]bit\/s · [\d.]+% used/.test(await text('.topo-box.chip')), 'the switch box says how much of the CPU link is used', await text('.topo-box.chip'));
+check(/CPU link [\d.]+ [GM]bit\/s · [\d.]+% used/.test(await text('.cpu-link')), 'the switch line says how much of the CPU link is used', await text('.cpu-link'));
 const busy = scenario('base', 'network');
 tick = (plugin, d) => { if (plugin === 'network') for (const p of d.ports) { p.stats.rx_bytes += p.name === 'eth0' ? 600_000_000 : 1000; p.stats.tx_bytes += 1000; } };
 mock.network = busy;
 await refresh(); await refresh(); await refresh();
-check(/9\d% used|100% used/.test(await text('.topo-box.chip')) && /text-danger/.test(await page.locator('.topo-box.chip .tb-sub').last().getAttribute('class')) && /CPU is|between MediaTek MT7531 and the SoC is \d+% used/.test(await text('.net-health')), 'a busy CPU link is called out in the box and in the health banner', `${await text('.topo-box.chip')} | ${await text('.net-health')}`);
+check(/9\d% used|100% used/.test(await text('.cpu-link')) && /text-danger/.test(await page.locator('.cpu-link').last().getAttribute('class')) && /CPU is|between MediaTek MT7531 and the SoC is \d+% used/.test(await text('.net-health')), 'a busy CPU link is called out in the line and in the health banner', `${await text('.cpu-link')} | ${await text('.net-health')}`);
 tick = null;
 mock.network = scenario('base', 'network');
 await refresh();
@@ -163,10 +182,10 @@ const oversub = scenario('base', 'network');
 for (const p of oversub.ports) if (p.role === 'switch') { p.carrier = true; p.speed = 2500; }
 mock.network = oversub;
 await refresh();
-check(/linked ports can send up to 12\.5 Gbit\/s \(5\.0× oversubscribed\)/.test(await text('.topo-box.chip')), 'ports that could send more than the CPU link carries are called oversubscribed', await text('.topo-box.chip'));
+check(/linked ports can send up to 12\.5 Gbit\/s \(5\.0× oversubscribed\)/.test(await text('.cpu-link')), 'ports that could send more than the CPU link carries are called oversubscribed', await text('.cpu-link'));
 
 await stage('an optical module with an alarm', 'network', 'n-sfp');
-check(/SFP/.test(await text('.topo .port:has(.pname:text-is("eth1")) .ptags')) && (await portClass('eth1')).includes('warn'), 'the port with a module is tagged SFP and turns amber on an alarm', await portClass('eth1'));
+check(/SFP/.test(await text('.port-table tr:has(strong:text-is("eth1")) .port-id')) && (await portClass('eth1')).includes('warn'), 'the port with a module is tagged SFP and its icon turns amber on an alarm', await portClass('eth1'));
 check(/optical module in eth1 reports: Laser rx power low/.test(await text('.net-health')), 'the health banner names the alarm', await text('.net-health'));
 const eth1Row = page.locator('.port-table tr:has(strong:text-is("eth1"))');
 check(/Module\s+FS SFP-GE-LX · Ethernet: 1000BASE-LX · LC · 1310 nm/.test(await eth1Row.locator('.hw-lines').innerText()) && /Optics\s+Tx -3\.0 dBm · Rx -30\.0 dBm · 41\.5 °C · 3\.30 V · 18\.5 mA/.test(await eth1Row.locator('.hw-lines').innerText()), 'the port table lists the module and its optics', await eth1Row.locator('.hw-lines').innerText());
@@ -193,17 +212,18 @@ check(/VLAN filtering is on but no VLAN is configured/.test(await text('main')),
 
 console.log('\n== a switch driven through swconfig ==');
 await stage('an older board with swconfig', 'network', 'n-swconfig');
-check(/AR8327 switch/.test(await text('.topo-box.chip')) && (await page.locator('.topo .port .pname').allInnerTexts()).join() === 'port1,port2,port3,port4,port5,eth1', 'the switch is drawn with its user ports as jacks (eth0, the CPU netdev, is not one)', (await page.locator('.topo .port .pname').allInnerTexts()).join());
-check((await page.locator('.topo .swport .swnum').allInnerTexts()).join() === '1,2,3,4,5' && await text('.vl:has(.vl-cap) .swnum') === '0' && /CPU link [\d.]+ [GM]bit\/s/.test(await text('.topo-box.chip')), 'switch port numbers, the CPU port circle and the CPU link follow swconfig', `${(await page.locator('.topo .swport .swnum').allInnerTexts()).join()} | ${await text('.topo-box.chip')}`);
-check(/WAN/.test(await text('.topo .port:has(.pname:text-is("port1")) .prole')) && (await portClass('port2')).includes('up') && (await portClass('port3')).includes('down'), 'roles from board.json, link state from the switch');
+check(/AR8327 switch/.test(await text('.cpu-link')) && (await jackNames()).join() === 'port1,port2,port3,port4,port5,eth1', 'the switch line names it and its user ports are the jack rows (eth0, the CPU netdev, is not one)', (await jackNames()).join());
+const swcPorts = await page.locator('.port-table tbody tr').evaluateAll(rows => rows.filter(r => /^port\d/.test((r.querySelector('strong')?.textContent ?? '').trim())).map(r => /port (\d+)/.exec(r.querySelector('.hw-lines')?.innerText ?? '')?.[1]));
+check(swcPorts.join() === '1,2,3,4,5' && /CPU port 0/.test(await text('.cpu-link')) && /CPU link [\d.]+ [GM]bit\/s/.test(await text('.cpu-link')), 'switch port numbers, the CPU port and the CPU link follow swconfig', `${swcPorts.join()} | ${await text('.cpu-link')}`);
+check(/WAN/.test(await text('.port-table tr:has(strong:text-is("port1")) .port-role')) && (await portClass('port2')).includes('up') && (await portClass('port3')).includes('down'), 'roles from board.json, link state from the switch');
 const p2row = page.locator('.port-table tr:has(strong:text-is("port2"))');
-check(/no per-port counters/.test(await text('.port:has(.pname:text-is("port2")) .prate')) && await page.locator('.port:has(.pname:text-is("port2")) .spark').count() === 0 && /no counters/.test(await p2row.locator('td.num').first().innerText()), 'a port without counters says so instead of "measuring" forever', await text('.port:has(.pname:text-is("port2")) .prate'));
+check(await p2row.locator('.spark').count() === 0 && /no counters/.test(await p2row.locator('td.num').first().innerText()), 'a port without counters says so instead of drawing an empty graph', await p2row.locator('td.num').first().innerText());
 check(/link up/.test(await p2row.innerText()) && /100 Mbit\/s half/.test(await p2row.innerText()) && !/total/.test(await p2row.innerText()) && await p2row.locator('.cable-btn').count() === 0 && /br-lan/.test(await p2row.innerText()) && /eth0\.1/.test(await p2row.innerText()), 'the port table shows what swconfig reports, no counters, no cable test, and the bridge and VLAN device', await p2row.innerText());
 const sc = page.locator('.card:has(.card-header:has-text("VLAN groups"))');
 check(/Switch AR8327 · VLAN groups/.test(await sc.locator('.card-header').innerText()) && /VLANs on/.test(await sc.locator('.card-header').innerText()) && (await sc.locator('thead th').allInnerTexts()).join() === 'VLAN,port1,port2,port3,port4,port5' && (await sc.locator('tbody tr').allInnerTexts()).length === 2, 'the swconfig VLAN groups are a matrix of VLANs and ports', (await sc.locator('thead th').allInnerTexts()).join());
 check(/PVID/.test(await sc.locator('tbody tr').nth(1).locator('td').nth(1).innerText()) && /PVID/.test(await sc.locator('tbody tr').first().locator('td').nth(2).innerText()), 'the PVID of each port is marked in its VLAN');
 await stage('back to normal', 'network', 'base');
-check(await page.locator('.vlan-table').count() === 0 && await page.locator('.port').count() === livePorts, 'and the DSA board is back');
+check(await page.locator('.vlan-table').count() === 0 && await jackCount() === livePorts, 'and the DSA board is back');
 
 console.log('\n== cable test (answered by the fixtures: no cable is ever tested) ==');
 cableMock = JSON.parse(fs.readFileSync(path.join(out, 'cable.json'), 'utf8'));
@@ -267,7 +287,7 @@ await ro.addInitScript(([id]) => {
   sessionStorage.setItem('acls', JSON.stringify({ ubus: { 'flab.network': ['status'], system: ['board', 'info'], service: ['list'], session: ['access', 'destroy'], 'network.interface': ['dump'] } }));
 }, [sid]);
 await ro.goto(`${baseUrl}#network`);
-await ro.waitForSelector('.port');
+await ro.waitForSelector('.port-ic');
 check(await ro.locator('.port-table .cable-btn').count() === 0, 'a login that may not run the test sees no cable-test buttons');
 await ro.close();
 cableMock = null;
@@ -278,7 +298,7 @@ mock.network = scenario('base', 'network');
 tick = (plugin, d) => { if (plugin === 'network') for (const p of d.ports) { p.stats.rx_bytes += 5_000_000; p.stats.tx_bytes += 1_000_000; } };
 await refresh(); await refresh(); await refresh();
 check(/^↓ [1-9]/.test(await tile(1)) && !/0 bit/.test((await tile(1)).split('\n')[0]), 'throughput tile shows a measured rate', await tile(1));
-check(/Mbit\/s/.test(await text('.port.up .prate')), 'port tiles show live rates', await text('.port.up .prate'));
+check((await page.locator('.port-table tr:has(.port-ic.up) td.num:nth-child(5)').allInnerTexts()).some(t => /Mbit\/s/.test(t)), 'port rows show live rates', (await page.locator('.port-table tr:has(.port-ic.up) td.num:nth-child(5)').allInnerTexts()).join(' | '));
 //#endregion
 
 //#region Bridges on the Devices and Interfaces board
@@ -308,7 +328,7 @@ const bridgeLive = async name => {
 // The names of the bridge cards of the devices lane (bridges come first).
 const bridgeCards = () => page.locator('.nb-lane-devices .nb-card:has(.fl-badge:text-is("bridge")) .nb-name').allInnerTexts();
 const lanBridgeName = (await bridgeCards())[0];
-check(await page.locator('.port').count() === 0 && lanBridgeName && await page.locator('.nb-lane-devices .nb-card:has(.fl-badge:text-is("bridge"))').count() >= 1, 'the bridge card is drawn on the board, no port tiles on this page', String(lanBridgeName));
+check(await page.locator('.port-table').count() === 0 && lanBridgeName && await page.locator('.nb-lane-devices .nb-card:has(.fl-badge:text-is("bridge"))').count() >= 1, 'the bridge card is drawn on the board, no port table on this page', String(lanBridgeName));
 check(await (await bridgeLive(lanBridgeName)).locator('.bl-member').count() >= 3, 'the bridge information lists the member ports');
 check(await bridgeLive('no-such-bridge').then(b => b.locator('.bl').count()) === 0, 'a bridge the router does not have gives no live information');
 
@@ -346,7 +366,7 @@ await refresh();
 const ifCard = n => page.locator(`.nb-lane-interfaces .nb-card:has(.nb-name:text-is("${n}"))`);
 // The board cards of a lane that are highlighted as connected to what the mouse is over.
 const related = lane => page.locator(`.nb-lane-${lane} .nb-card.nb-rel`);
-check(await page.locator('.port').count() === 0 && await page.locator('#bl-test').count() === 0, 'no port tiles on this page');
+check(await page.locator('.port-table').count() === 0 && await page.locator('#bl-test').count() === 0, 'no port table on this page');
 await ifCard('lan').hover();
 check(/on br-lan/.test(await ifCard('lan').innerText()) && await related('ports').count() >= 3 && await related('devices').count() >= 1, 'lan sits on br-lan, which groups ports and Wi-Fi: hovering it highlights them');
 check(/radio\d/.test(await text('.nb-lane-ports .nb-group-head')) && await page.locator('.nb-lane-ports .nb-chip').count() >= 1, 'Wi-Fi interfaces are grouped under the radio they are on');

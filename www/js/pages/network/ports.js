@@ -1,12 +1,11 @@
-// Physical ports: the wiring diagram (topology.js) followed by a detail table. Ports are whatever the
-// backend discovered; nothing is hard-coded.
+// Physical ports: one table with a row per port (jack icon, hardware, link, traffic with a graph, errors, bridge). Ports are whatever the
+// backend discovered; nothing is hard-coded, and nothing is assumed about how they are wired.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, button, card, muted } from '../../core/ui.js';
+import { badge, button, card, muted, sparkline } from '../../core/ui.js';
 import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
-import { fmtSpeed, traffic, newFlaps, newErrors, errorsOf, dropsOf, hwLines, STP_ROLE, stpKind } from './util.js';
+import { fmtSpeed, traffic, newFlaps, newErrors, errorsOf, dropsOf, hwLines, jackOrder, switchLine, STP_ROLE, stpKind } from './util.js';
 import { diagnosticsPanel } from './diagnostics.js';
-import { topologyCard } from './topology.js';
 import { cableButton, cablePanel, hooks } from './cable.js';
 import { vlanCards } from './vlans.js';
 
@@ -42,15 +41,17 @@ function errorsCell(p) {
   if (!errs && !drops) return badge('clean', 'success');
   const open = expanded.has(p.name);
   return h('div', {},
-    errs ? badge(`${fmtNum(errs)} errors`, newErrors(p) ? 'danger' : 'warning') : null,
-    drops ? badge(`${fmtNum(drops)} drops`, '') : null,
+    h('div', { className: 'd-flex flex-wrap gap-1' },
+      errs ? badge(`${fmtNum(errs)} errors`, newErrors(p) ? 'danger' : 'warning') : null,
+      drops ? badge(`${fmtNum(drops)} drops`, '') : null),
     p.diagnostics ? h('div', {}, button(open ? 'Hide details' : 'Details', open ? 'chevron-up' : 'chevron-down', () => {
       if (expanded.has(p.name)) expanded.delete(p.name); else expanded.add(p.name);
       rerender();
     }, 'btn-fl diag-btn')) : null);
 }
 
-// The Link column: link state and speed, an alarm badge when the optical module raises one, and the cable-test button.
+// The Link column: link state and speed, how often the link changed state (and how many times since the page was opened), an alarm
+// badge when the optical module raises one, and the cable-test button.
 function linkCell(p) {
   const alarms = p.sfp?.alarms ?? [];
   const cable = cableButton(p);
@@ -58,28 +59,64 @@ function linkCell(p) {
     p.carrier
       ? h('div', {}, badge('link up', 'success'), h('div', { className: 'mt-1' }, `${fmtSpeed(p.speed)} ${p.duplex ?? ''}`))
       : badge(p.up ? 'no link' : 'disabled', ''),
+    p.carrier_changes != null ? h('div', { className: 'muted small' }, `${fmtNum(p.carrier_changes)} link change${p.carrier_changes === 1 ? '' : 's'}`) : null,
+    newFlaps(p) ? badge(`+${newFlaps(p)} now`, 'warning') : null,
     alarms.length ? badge('optical alarm', 'danger', alarms.join(', ')) : null,
     cable ? h('div', {}, cable) : null);
 }
 
+// The jack icon's color state: 'down' without carrier, 'warn' when downshifted, flapping/erroring since the page was opened or the
+// optical module raises an alarm, else 'up'.
+function portState(p) {
+  if (!p.carrier) return 'down';
+  return p.downshifted || newFlaps(p) || newErrors(p) || p.sfp?.alarms?.length ? 'warn' : 'up';
+}
+
+// The role under a port's name: LAN or WAN from the board, or what a switch's CPU link is (the SoC MAC that only feeds a switch).
+function roleOf(p) {
+  if (p.board?.role) return p.board.role.toUpperCase();
+  return p.role === 'conduit' ? 'CPU link' : null;
+}
+
+// The Port column: the jack icon (green up, amber warning, gray no link), the name, its LAN/WAN role and its MAC. The tooltip of the
+// icon lists the hardware.
+function portCell(p) {
+  const title = [`${p.name} · ${p.mac ?? ''}`, p.carrier ? `Link ${fmtSpeed(p.speed)} ${p.duplex ?? ''}` : 'No link', ...hwLines(p).map(([k, v]) => `${k}: ${v}`)].join('\n');
+  const role = roleOf(p);
+  return h('td', {},
+    h('div', { className: 'port-id' },
+      h('span', { className: `port-ic ${portState(p)}`, title }, icon('ethernet', 22)),
+      h('div', {},
+        h('div', {}, h('strong', {}, p.name), role ? h('span', { className: 'port-role' }, role) : null,
+          p.sfp?.present ? badge('SFP', p.sfp.alarms?.length ? 'danger' : 'info', [p.sfp.vendor, p.sfp.part].filter(Boolean).join(' ')) : null),
+        h('div', { className: 'muted small mono' }, p.mac ?? ''))));
+}
+
+// The Throughput column: the live rate in each direction, the totals and a graph of the recent rates. A port without counters of its
+// own (a swconfig port) says so instead of drawing an empty graph.
+function throughputCell(p) {
+  const t = traffic(p.name);
+  const counted = p.stats?.rx_bytes != null;
+  return h('td', { className: 'num' },
+    p.carrier && counted ? h('div', {}, h('div', {}, icon('arrow-down', 12), fmtLine(t.rxNow)), h('div', {}, icon('arrow-up', 12), fmtLine(t.txNow))) : h('div', { className: 'muted' }, p.carrier ? 'no counters' : '–'),
+    p.carrier && counted ? sparkline([{ values: t.rx, cls: 'rx' }, { values: t.tx, cls: 'tx' }], { width: 130, height: 26 }) : null,
+    counted ? h('div', { className: 'muted small' }, `total ↓ ${fmtBytes(p.stats.rx_bytes)} ↑ ${fmtBytes(p.stats.tx_bytes)}`) : null);
+}
+
 // The table row(s) of one port: the port itself, plus the breakdown row while its Details are open and the cable-test result.
 function row(p) {
-  const t = traffic(p.name);
   const main = h('tr', {},
-    h('td', {}, h('span', { className: `dot ${p.carrier ? 'up' : 'idle'}` }), h('strong', {}, ' ' + p.name),
-      h('div', { className: 'muted small mono' }, p.mac ?? '')),
+    portCell(p),
     h('td', {}, hardwareCell(p)),
     h('td', {}, linkCell(p)),
     h('td', {}, negotiation(p)),
-    h('td', { className: 'num' }, p.carrier && p.stats.rx_bytes != null ? h('div', {}, h('div', {}, icon('arrow-down', 12), fmtLine(t.rxNow)), h('div', {}, icon('arrow-up', 12), fmtLine(t.txNow))) : h('div', { className: 'muted' }, p.carrier ? 'no counters' : '–'),
-      p.stats.rx_bytes != null ? h('div', { className: 'muted small' }, `total ↓ ${fmtBytes(p.stats.rx_bytes)} ↑ ${fmtBytes(p.stats.tx_bytes)}`) : null),
+    throughputCell(p),
     h('td', { className: 'num' }, errorsCell(p)),
-    h('td', { className: 'num' }, h('div', {}, fmtNum(p.carrier_changes)), newFlaps(p) ? badge(`+${newFlaps(p)} now`, 'warning') : null),
     h('td', {}, p.bridge
       ? h('div', {}, badge(p.bridge, 'info'), p.brport ? badge(p.brport.state_name, stpKind(p.brport.state_name)) : null,
-        p.brport?.role ? h('div', { className: 'muted small' }, `${STP_ROLE[p.brport.role]} · cost ${p.brport.path_cost}`) : null)
+        p.brport?.role ? h('div', { className: 'muted small' }, `${STP_ROLE[p.brport.role]} · cost ${p.brport.path_cost}`) : null,
+        p.macs != null ? h('div', { className: 'muted small' }, `${fmtNum(p.macs)} MAC${p.macs === 1 ? '' : 's'} learned`) : null)
       : muted('not bridged')),
-    h('td', { className: 'num' }, p.macs != null ? fmtNum(p.macs) : '–'),
     h('td', {}, (p.vlans ?? []).length ? p.vlans.map(v => badge(`${v.name} (${v.vid})`, v.up ? 'success' : 'danger')) : muted('–')));
   const rows = [main];
   if (p.diagnostics && expanded.has(p.name)) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, diagnosticsPanel(p))));
@@ -89,19 +126,30 @@ function row(p) {
 }
 
 // Column headings of the details table; the breakdown row spans all of them.
-const HEAD = ['Port', 'Hardware', 'Link', 'Negotiation', 'Throughput', 'Errors / drops', 'Link changes', 'Bridge / STP', 'MACs', 'VLAN devices'];
+const HEAD = ['Port', 'Hardware', 'Link', 'Negotiation', 'Throughput', 'Errors / drops', 'Bridge / STP', 'VLAN devices'];
 const COLS = HEAD.length;
 
 // Redraw callback handed in by the page; the Details buttons call it. Module-level because errorsCell
 // is created fresh on every redraw.
 let rerender = () => {};
 
-// The "Port details" card with one row per port.
+// The "Ports" card: under the header one line per switch (its user ports, CPU ports and the state of its link to the SoC), then one
+// row per port. The rows follow the order the board lists its ports (usually the order on the case) with each switch's ports kept
+// together; the SoC MACs that only feed a switch (its conduits) come last. Nothing is assumed about how the ports are wired.
 function details(net) {
-  return card([icon('hdd-stack'), h('span', {}, 'Port details')],
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table port-table' },
-      h('thead', {}, h('tr', {}, HEAD.map(c => h('th', {}, c)))),
-      h('tbody', {}, net.ports.flatMap(row)))));
+  const { ordered } = jackOrder(net);
+  const rest = net.ports.filter(p => !ordered.includes(p));
+  const linked = ordered.filter(p => p.carrier).length;
+  const lines = (net.switches ?? []).filter(sw => sw.ports.length).map(sw => switchLine(net, sw));
+  return card([icon('ethernet'), h('span', {}, 'Ports'), h('span', { className: 'sub' },
+    `${linked} of ${ordered.length} ports linked${rest.length ? ` · the last row${rest.length === 1 ? ' is' : 's are'} the internal CPU link${rest.length === 1 ? '' : 's'} to the switch, not a port` : ''}`)],
+    h('div', {},
+      ...lines.map(l => h('div', { className: `cpu-link small ${l.busy ? 'text-danger' : 'muted'}` }, l.text)),
+      h('div', { className: 'grid-wrap' }, h('table', { className: 'table port-table' },
+        h('thead', {}, h('tr', {}, HEAD.map(c => h('th', {}, c)))),
+        h('tbody', {}, ordered.length || rest.length
+          ? [...ordered, ...rest].flatMap(row)
+          : h('tr', {}, h('td', { colSpan: COLS, className: 'muted' }, 'No Ethernet ports were reported.')))))));
 }
 
 // `redraw` repaints the page from cached data (used by the Details and cable-test buttons). Below the port table come the VLAN cards
@@ -112,5 +160,5 @@ export function portsPanel(net, redraw, vlan) {
   hooks.rerender = redraw;
   // A port that vanished must not leave a stale open panel behind.
   for (const name of expanded) if (!net.ports.some(p => p.name === name)) expanded.delete(name);
-  return [topologyCard(net), details(net), ...vlanCards(net, vlan)];
+  return [details(net), ...vlanCards(net, vlan)];
 }

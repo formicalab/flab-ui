@@ -159,7 +159,8 @@ function answer(body) {
     if (uciMock.engineDown && uciMock.backup && r.engines?.[r.configured]) r.engines[r.configured].running = false;
     return ok(r);
   }
-  if (obj.startsWith('flab.') && obj !== 'flab.dns') mock.unknownFlab.push(`${obj}.${method}`);
+  // The shell's own cache check (flab.system build, once per page load) is not the page's business; the real router answers it.
+  if (obj.startsWith('flab.') && obj !== 'flab.dns' && !(obj === 'flab.system' && method === 'build')) mock.unknownFlab.push(`${obj}.${method}`);
   return null;
 }
 //#endregion

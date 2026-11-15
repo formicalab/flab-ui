@@ -44,7 +44,7 @@ function activateToolbox(module) {
 // navigation metadata. Native ES modules cache successful imports and preserve each page's state on return.
 export const pages = [
   { id: 'overview', label: 'Overview', icon: 'speedometer2', resolve: () => import('./overview/index.js') },
-  { id: 'network', label: 'Wired network', icon: 'ethernet', resolve: () => import('./network/index.js') },
+  { id: 'network', label: 'Ethernet', icon: 'ethernet', resolve: () => import('./network/index.js') },
   { id: 'wifi', label: 'Wi-Fi', icon: 'wifi', resolve: () => import('./wifi/index.js') },
   { id: 'mesh', label: 'Mesh', icon: 'arrow-left-right', resolve: () => import('./mesh/index.js') },
   { id: 'ipsec', label: 'IPsec VPN', icon: 'shield-lock', resolve: () => import('./ipsec/index.js') },

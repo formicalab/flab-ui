@@ -1,28 +1,37 @@
-# Wired network (route `#network`)
+# Ethernet (route `#network`)
 Refreshed every 3 s. The physical ports only; the bridges and the layered device/interface view are on
 the Devices and Interfaces page. The backend (`flab.network`) classifies whatever netifd reports (`devtype` dsa/ethernet = port, bridge,
 vlan), so another board or a new bridge shows up on the next poll. `shared.js` holds the loader and the
-address helpers the Wired network, Devices and Interfaces and Traffic pages share.
+address helpers the Ethernet, Devices and Interfaces and Traffic pages share.
 
-- **Summary tiles and health banner**: ports linked, live throughput of the external ports, switch chip,
-  errors and drops, link changes. The banner lists what needs attention: a downshifted link (negotiated speed
-  below what both ends support), link flaps and new errors since the page was opened.
-- **Port topology** (`topology.js`, `tile.js`): the wiring of the Ethernet ports, drawn from what
-  the router reports: SoC, its MAC(s), the CPU port and link speed into the switch chip, the chip with its
-  numbered switch ports, an external PHY where one exists, and one jack per column (green/amber/gray by link
-  state, LAN/WAN label, speed, live rate, chart, bridge, STP role, VLAN devices). The SoC MAC boxes show their MAC; a
-  jack shows its own only when it differs from the MAC of the SoC port feeding its switch (DSA user ports inherit it,
-  so every LAN jack of a typical router would repeat the same address; the tooltip always gives it). Jacks follow the order
-  `/etc/board.json` lists its ports (usually the order on the case) with each switch's ports kept together; a
-  switch's CPU port and the SoC MAC behind it come from the device tree (`ports/port@N` with an `ethernet`
-  property, matched to the MAC by phandle); a port has an external PHY when its node has a `phy-handle`,
-  otherwise the switch's internal one. A router without a switch gets MAC, PHY and jack columns. Nothing is assumed about the chips: the boxes show
-  the names the router reports, and the lines under them are computed from its data (the fastest speed the ports of a switch
-  or an external PHY advertise, the number of user ports, the CPU port's mode and speed), so any hardware is described the same way.
-- **Port table** (`ports.js`): the hardware, link, speed and duplex, negotiation (auto/forced, max speed,
-  partner speed, pause), live and total traffic, errors and drops, link-change counter, STP state and role,
-  learned MACs and VLAN devices per port. A missing link is shown in neutral gray, not red: an unplugged port
-  is normal.
+- **Summary tiles and findings banner**: ports linked, live throughput of the external ports, switch chip,
+  errors and drops (the totals since boot), link changes. The banner appears only when something changed or needs attention:
+  a downshifted link (negotiated speed below what both ends support), link flaps and new errors since the page was opened,
+  an optical module alarm or a CPU link above 90% used. There is no "all healthy" banner: old error counters do not
+  trigger a finding, so such a message would contradict the errors tile and the rows.
+- **Ports** (`ports.js`): one table with a row per port, and nothing else. There is deliberately no wiring diagram and no
+  tile grid: how a SoC, its MACs, a switch chip and the PHYs are connected differs from board to board and cannot be drawn
+  correctly for all of them, and a tile per port would repeat what the table already says, so the page shows only what each
+  port reports. Rows follow the order `/etc/board.json` lists its ports (usually the order on the case) with each switch's
+  ports kept together; the SoC MAC that only feeds a switch (its conduit) comes last, labeled "CPU link". Each row has:
+  - **Port**: a jack icon tinted by link state (green up, amber when downshifted, flapping, erroring since the page was
+    opened or an optical alarm, gray without link: an unplugged port is normal, not red), the name, the LAN/WAN role from the
+    board, an SFP tag for a port with an optical module, and the MAC (always shown; the icon's tooltip lists the hardware).
+  - **Hardware**, **Link** (state, speed and duplex, how many times the link changed state and how many since the page was
+    opened, an optical alarm, the cable-test button), **Negotiation** (auto/forced, max speed, partner speed, pause, EEE).
+  - **Throughput**: the live rate in each direction, a graph of the recent rates and the totals; a port without counters of
+    its own (swconfig) says so instead of drawing an empty graph.
+  - **Errors / drops** with the Details button, **Bridge / STP** (the bridge, the forwarding state and role, the learned
+    MACs) and the **VLAN devices** on the port.
+
+  Above the table, one line per switch says what the router reports about it: the number of user ports and the fastest speed
+  they advertise, its CPU port(s), the CPU link's capacity, how much of it the busier direction uses now (a link above 90% is
+  also a finding in the banner) and, when the linked user ports could send more than it carries, how many times it is
+  oversubscribed (for example five 2.5 Gbit/s ports into a 2.5 Gbit/s CPU port). The hardware column gives each switch port's
+  number. A switch's CPU port and the SoC MAC behind it come from the device tree (`ports/port@N` with an `ethernet`
+  property, matched to the MAC by phandle); a port has an external PHY when its node has a `phy-handle`, otherwise the
+  switch's internal one. Nothing is assumed about the chips: the line and the rows are computed from the router's data, so any
+  hardware is described the same way.
 - **Hardware** (when known): the PHY chip (driver name, ID, MDIO address and bus), the switch chip (from the
   device tree of the DSA switch node), the SoC Ethernet MAC, the kernel driver and bus, and the medium. The
   backend reads it once per port (`ethtool -i`, `ethtool`, `/sys/class/mdio_bus`, device-tree `compatible`)
@@ -30,7 +39,7 @@ address helpers the Wired network, Devices and Interfaces and Traffic pages shar
   without it (small repeaters leave it out) the driver comes from the
   device's `driver` link in sysfs and the switch is still found from the device tree. A SoC MAC whose netdev has
   no device-tree node (the IPQ4019 Ethernet MAC) takes it from its parent device, so a switch's CPU port is still
-  matched to its conduit and the diagram draws that MAC as the link into the switch, not as a port with a jack
+  matched to its conduit and that MAC is treated as the link into the switch, not as a port row of its own
   (an `ethN` is only internal when a DSA switch lists it as its conduit). A DSA port's PHY is the one at its
   `PHYAD` that is not attached to another netdev, which
   keeps a switch port on the switch's internal PHY instead of the SoC-bus PHY with the same address.
@@ -47,7 +56,7 @@ address helpers the Wired network, Devices and Interfaces and Traffic pages shar
   `ethtool --show-eee`; a port that answers without it is not asked again.
 - **Optical modules** (SFP and SFP+ cages: the device tree wires the port to an `sfp`, ethtool lists FIBRE among its ports, or the
   port type is fibre or direct attach): the module (vendor, part, type, connector, wavelength) and its diagnostics (Tx and Rx
-  power, temperature, voltage, laser bias) from `ethtool -m`, shown with the hardware, an `SFP` tag on the jack and an
+  power, temperature, voltage, laser bias) from `ethtool -m`, shown with the hardware, an `SFP` tag on the port's tile and an
   alarm badge. Module alarms and warnings that read On are listed and are findings; an empty cage says so; a direct-attach
   cable shows no diagnostics. Optical ports have no cable test.
 - **VLAN tables**: a card per bridge that filters VLANs or has VLANs (a matrix of VLANs against ports: tagged, untagged and the

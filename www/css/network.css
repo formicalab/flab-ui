@@ -1,58 +1,25 @@
-/* Wired network page styling (port topology, jacks, port table, error breakdown). Shared pieces (tiles, cards,
+/* Ethernet page styling (port table with its jack icons and graphs, error breakdown). Shared pieces (tiles, cards,
    tables, badges, health banner) live in base.css. Loaded on demand by core/app.js when the page is first opened. */
 
-/* ── Port topology: SoC/switch/PHY boxes joined by connectors, with the jacks below ── */
-.topo-scroll { overflow-x: auto; }
-.topo { display: grid; column-gap: 1rem; row-gap: 0; align-items: stretch; min-width: min-content; }
-.topo-soc { display: flex; align-items: center; justify-content: center; gap: .7rem; padding: .55rem 1rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
-.topo-soc svg { color: var(--fl-brand); }
-.topo-row { display: flex; gap: 1rem; justify-content: center; }
-.topo-row > * { flex: 1 1 0; min-width: 0; }
-.topo-row .topo-box { max-width: 26rem; margin-inline: auto; width: 100%; }
-.topo-box { position: relative; z-index: 1; display: grid; gap: .15rem; align-content: center; justify-items: center; text-align: center; padding: .55rem .75rem; margin: 0 .25rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
-.topo-box .tb-title { font-weight: 600; }
-.topo-box .tb-title svg { vertical-align: -2px; color: var(--fl-brand); }
-.topo-box .tb-sub { font-size: .75rem; color: var(--fl-muted); line-height: 1.25; }
-.topo-box .tb-mac { font-family: var(--fl-mono); font-size: .7rem; color: var(--fl-muted); }
-.topo-box .tb-live { font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--fl-ok-fg); }
-.topo-box.mac.on, .topo-box.phy.on { border-color: color-mix(in srgb, var(--fl-ok-fg) 55%, var(--fl-stroke)); }
-.topo-box.chip { border-color: var(--fl-brand); background: color-mix(in srgb, var(--fl-info-bg) 55%, var(--fl-surface)); }
-.topo-legend { margin-bottom: .8rem; display: flex; align-items: center; gap: .35rem; }
+/* ── Ports card: a line per switch above the table ── */
+.cpu-link { padding: .6rem 1rem 0; }
+.cpu-link + .cpu-link { padding-top: .15rem; }
+.cpu-link:last-of-type { padding-bottom: .6rem; }
 
-/* Connectors: a centered vertical line, green while the link is up. */
-.vl { position: relative; min-height: 1.9rem; display: flex; align-items: center; justify-content: center; }
-.vl::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--fl-stroke); }
-.vl.on::before { background: var(--fl-ok-fg); }
-.vl .vl-cap { position: absolute; left: calc(50% + .7rem); top: 50%; transform: translateY(-50%); padding: .05rem .4rem; font-size: .75rem; color: var(--fl-muted); background: var(--fl-surface); border-radius: 6px; white-space: nowrap; }
-.vl .swnum { position: relative; z-index: 1; display: grid; place-items: center; min-width: 1.6rem; height: 1.6rem; padding: 0 .3rem; border-radius: 999px; border: 2px solid var(--fl-stroke); background: var(--fl-surface); font-size: .75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.vl.on .swnum { border-color: var(--fl-ok-fg); color: var(--fl-ok-fg); }
-.topo .port { width: auto; }
-
-/* ── Port tile (the jack): link state tints, speed, rates and sparkline ── */
-.port .prole { font-size: .75rem; font-weight: 600; letter-spacing: .05em; color: var(--fl-muted); }
-.port { position: relative; display: grid; gap: .3rem; justify-items: center; text-align: center; width: 176px; padding: .85rem .7rem .75rem; border: 1px solid var(--fl-stroke); border-radius: 12px; background: var(--fl-surface-hover); transition: border-color .25s, background .25s; }
-.port .jack { display: grid; place-items: center; width: 52px; height: 40px; border-radius: 8px; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
-.port .pname { font-weight: 600; }
-.port .pmac { font-family: var(--fl-mono); font-size: .68rem; color: var(--fl-muted); letter-spacing: -.01em; }
-.port .pspeed { font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.port .prate { display: flex; gap: .8rem; font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--fl-muted); }
-.port .prate svg { margin-right: .15rem; vertical-align: -1px; }
-.port .spark { width: 100%; height: 26px; }
-.port .spark-empty { font-size: .75rem; }
-.port .ptags { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: center; min-height: 1.4rem; }
-.port.up { border-color: color-mix(in srgb, var(--fl-ok-fg) 55%, var(--fl-stroke)); background: color-mix(in srgb, var(--fl-ok-bg) 40%, var(--fl-surface)); }
-.port.up .jack { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
-.port.warn { border-color: var(--fl-warn-fg); background: color-mix(in srgb, var(--fl-warn-bg) 45%, var(--fl-surface)); }
-.port.warn .jack { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
-.port.down { opacity: .72; }
-.port.down .pspeed { color: var(--fl-muted); font-weight: 400; }
+/* ── Port column: the jack icon (link state tint), name, LAN/WAN role and MAC ── */
+.port-id { display: flex; align-items: center; gap: .6rem; white-space: nowrap; }
+.port-ic { display: inline-grid; place-items: center; flex: none; width: 40px; height: 32px; border-radius: 8px; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); transition: background .25s, color .25s; }
+.port-ic.up { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
+.port-ic.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
+.port-role { margin-left: .5rem; font-size: .7rem; font-weight: 600; letter-spacing: .05em; color: var(--fl-muted); }
+.port-table .spark { display: block; margin: .25rem 0 .15rem auto; max-width: 100%; }
 
 /* Port table: per-port rows with hardware lines and negotiated-link column */
 .port-table td { vertical-align: top; }
-.port-table th, .port-table td { padding-left: .6rem; padding-right: .6rem; }
-.hw-lines { font-size: .75rem; line-height: 1.35; max-width: 15rem; white-space: normal; }
+.port-table th, .port-table td { padding-left: .5rem; padding-right: .5rem; }
+.hw-lines { font-size: .75rem; line-height: 1.35; min-width: 11rem; max-width: 14rem; white-space: normal; }
 .hw-lines > div { overflow-wrap: anywhere; }
-.neg { max-width: 13rem; white-space: normal; }
+.neg { min-width: 8rem; max-width: 12rem; white-space: normal; }
 
 /* ── Error breakdown: expandable row under a port with counters, driver statistics and log excerpt ── */
 .diag-btn, .cable-btn { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }

@@ -11,7 +11,7 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins. It was d
 It is installed as the `flab-ui` package (see [OpenWrt package](package.md#openwrt-package)). It signs in with the router's own
 `root` login and creates no login of its own. The pages that only
 read the router are Overview, Mesh, IPsec VPN, Toolbox (which runs diagnostics and sends a Wake-on-LAN packet) and Logs. The others
-edit its configuration through UCI: System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), Dynamic DNS (`/etc/config/ddns`), Wi-Fi (the radios and wireless networks in `/etc/config/wireless`), Wired network (the VLAN sections of `/etc/config/network`), Devices and Interfaces, which holds the bridges (`/etc/config/network`), WireGuard (the WireGuard interfaces and peers in `/etc/config/network`), Firewall (`/etc/config/firewall`), the static-route editor on Routing (the `route` and `route6` sections of `/etc/config/network`) and the Settings tab of Traffic (`/etc/config/nlbwmon`). The Services page starts, stops and restarts services. How configuration changes are made safely is described in
+edit its configuration through UCI: System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), Dynamic DNS (`/etc/config/ddns`), Wi-Fi (the radios and wireless networks in `/etc/config/wireless`), Ethernet (the VLAN sections of `/etc/config/network`), Devices and Interfaces, which holds the bridges (`/etc/config/network`), WireGuard (the WireGuard interfaces and peers in `/etc/config/network`), Firewall (`/etc/config/firewall`), the static-route editor on Routing (the `route` and `route6` sections of `/etc/config/network`) and the Settings tab of Traffic (`/etc/config/nlbwmon`). The Services page starts, stops and restarts services. How configuration changes are made safely is described in
 [Configuration changes](#configuration-changes) and how services are controlled under [Services](pages/services.md#services-route-services).
 
 ## Architecture at a glance
@@ -98,7 +98,7 @@ flab-ui/
       pages/
         index.js             Page registry and the page contract (read this first)
         overview/            index.js, cpu.js, temperatures.js
-        network/             Wired network: index.js, shared.js, topology.js, tile.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), vlanpage.js (the VLAN editor's wiring), vlanedit.js (the editable VLAN cards), vlanmodel.js (pure: the VLAN sections, tables, draft, validation, UCI operations, check after a save), util.js
+        network/             Ethernet: index.js, shared.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), vlanpage.js (the VLAN editor's wiring), vlanedit.js (the editable VLAN cards), vlanmodel.js (pure: the VLAN sections, tables, draft, validation, UCI operations, check after a save), util.js
         wifi/                index.js (clients, and the editor of the radios and wireless networks), radios.js (radio cards), editors.js (the
                              radio settings and the network forms), schema.js (the option tables), model.js (pure: draft, validation, UCI operations,
                              check after a save), channels.js (pure model of the channel change), picker.js (the channel picker); mesh interfaces are left to mesh/
@@ -165,7 +165,7 @@ flab-ui/
 
 ## Configuration changes
 
-System settings, DHCP, DNS, Dynamic DNS, Wi-Fi, Wired network (VLANs), Devices and Interfaces (which holds the bridges), WireGuard, Firewall, the static routes of Routing and the Traffic settings change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
+System settings, DHCP, DNS, Dynamic DNS, Wi-Fi, Ethernet (VLANs), Devices and Interfaces (which holds the bridges), WireGuard, Firewall, the static routes of Routing and the Traffic settings change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
 page with every control disabled and a note saying why.
 
 **Flow** (all of it is rpcd's `uci` object, wrapped by `www/js/core/uci.js`; pages call `applyChange()`, not the
@@ -225,9 +225,9 @@ confirmation reply with no acknowledged rollback is explicitly uncertain. No mut
   while there is something to lose.
 
 **Status.** `core/ubus.js` and `core/uci.js` (including `applyChange`) are unit-tested against a fake transport
-(`tests/network/uci.test.mjs`); the suites of the editing pages (System settings, DHCP, DNS, Dynamic DNS, Wi-Fi, Wired network VLANs, Devices and Interfaces (with the bridges), WireGuard, Firewall, Static routes and the Traffic settings) test their models and drive the whole flow in a
+(`tests/network/uci.test.mjs`); the suites of the editing pages (System settings, DHCP, DNS, Dynamic DNS, Wi-Fi, Ethernet VLANs, Devices and Interfaces (with the bridges), WireGuard, Firewall, Static routes and the Traffic settings) test their models and drive the whole flow in a
 browser against a mock router. The real path was exercised against the router with the System settings model and
 `applyChange`,
 restoring the configuration afterwards: a confirmed change (zone, description, log port, NTP servers and
 switch), the removal of options, a custom zone rule, a forced rollback and the countdown rollback of an
-unconfirmed apply. The Wi-Fi, Wired network VLAN, Devices and Interfaces, WireGuard, Firewall, Static routes and Traffic settings editors are exercised through their suites against mock routers only; the suites block every write on the real router.
+unconfirmed apply. The Wi-Fi, Ethernet VLAN, Devices and Interfaces, WireGuard, Firewall, Static routes and Traffic settings editors are exercised through their suites against mock routers only; the suites block every write on the real router.

@@ -12,7 +12,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | Page | What it does |
 |---|---|
 | Overview | Uptime, CPU, load, memory and temperatures. |
-| Wired network | Physical ports and VLANs; edit the VLAN sections. |
+| Ethernet | Physical ports and VLANs; edit the VLAN sections. |
 | Wi-Fi | Radios, wireless networks and clients; edit channels and settings. |
 | Mesh | 802.11s mesh peers and paths (read only). |
 | IPsec VPN | strongSwan connections, tunnels, traffic and a security score (read only). |

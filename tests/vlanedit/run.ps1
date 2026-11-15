@@ -1,12 +1,12 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-Tests the VLAN editor of the Wired network page without changing the router.
+Tests the VLAN editor of the Ethernet page without changing the router.
 
 .DESCRIPTION
 1. Unit tests of the editor's model (reading the VLAN sections of the network config, the editable tables, the draft, the review
    list, validation and warnings, the UCI operations, the check after a save), for DSA bridges and swconfig switches.
-2. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1). The Wired network page is first
+2. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1). The Ethernet page is first
    shown against the router's own configuration with every write blocked (and failing the test if one is attempted): the editor opens
    and closes, reads only sections of one type from the network config (never the whole config, which holds secrets) and stages
    nothing. Then the whole editing flow is driven against a stateful mock of rpcd's uci object and a flab.network status that

@@ -1,5 +1,5 @@
-// Browser test for the VLAN editor of the Wired network page. A real browser opens the deployed UI.
-// 1. Against the real router, read only: the page shows the Wired network page, the editor opens and closes, and every uci write it
+// Browser test for the VLAN editor of the Ethernet page. A real browser opens the deployed UI.
+// 1. Against the real router, read only: the page shows the Ethernet page, the editor opens and closes, and every uci write it
 //    might send is blocked and fails the test. The editor must read the network config only by section type (the whole config holds
 //    secrets), and nothing may be staged.
 // 2. Against a stateful mock of rpcd's `uci` object and a flab.network status that follows the mocked config: the editing flow of a
@@ -202,7 +202,7 @@ await ctx.route('**/ubus', async route => {
   const reply = body ? await answer(body, route) : null;
   return reply ? route.fulfill({ contentType: 'application/json', body: JSON.stringify(reply) }) : route.continue();
 });
-// Opens the Wired network page with a session in sessionStorage, the way a real sign-in leaves the tab.
+// Opens the Ethernet page with a session in sessionStorage, the way a real sign-in leaves the tab.
 const open = async acls => {
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(String(e)));
@@ -212,7 +212,7 @@ const open = async acls => {
     sessionStorage.setItem('acls', JSON.stringify(a));
   }, [sid, acls ?? rootAcls]);
   await p.goto(`${baseUrl}#network`);
-  await p.waitForSelector('.port, .login-form', { timeout: 20000 });
+  await p.waitForSelector('.port-ic, .login-form', { timeout: 20000 });
   return p;
 };
 // The ACLs of a login that may read the config but not change it, and of one that may change it but not read it.
@@ -256,7 +256,7 @@ let eth = [];
 
 //#region The real router (read only)
 console.log('== the real router (read only: nothing is written, nothing is staged) ==');
-check(await page.locator('.port').count() >= 5, 'the Wired network page shows the real router\'s ports');
+check(await page.locator('.port-table tbody tr strong').count() >= 5, 'the Ethernet page shows the real router\'s ports');
 const setup = page.locator('.card:has(.card-header:has-text("Bridge br-lan · VLAN filtering"))');
 check(await page.locator('.vlan-table').count() === 0, 'a router that does not filter VLANs has no VLAN matrix');
 check(await setup.count() === 1 && await setup.locator('button:has-text("Set up VLAN filtering")').count() === 1 && !/VLANs/.test(await setup.locator('.card-header').innerText()), 'its bridge offers a way into the editor (and the card does not take the name of the VLAN tables)', await page.locator('main').innerText());
@@ -284,7 +284,7 @@ check(Object.keys(staged).length === 0 && mock.unsafe.length === 0, 'nothing is 
 //#region Mock: reading
 mock.on = true;
 await page.reload();
-await page.waitForSelector('.port');
+await page.waitForSelector('.port-ic');
 console.log('\n== a bridge with VLANs (mock router) ==');
 eth = (await page.evaluate(async () => {
   const sid = sessionStorage.getItem('sid');
@@ -424,7 +424,7 @@ console.log('\n== a switch driven through swconfig (an older board, mock only) =
 mock.mode = 'switch';
 mock.cfg = null;
 await page.reload();
-await page.waitForSelector('.port');
+await page.waitForSelector('.port-ic');
 const scard = page.locator('.card:has(.card-header:has-text("VLAN groups"))');
 check(await scard.count() === 1 && /Switch AR8327 · VLAN groups/.test(await scard.locator('.card-header').innerText()) && await scard.locator('tbody tr').count() === 2, 'the read-only card shows the two groups');
 await shot('switch-read-only');
