@@ -9,7 +9,6 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge } from '../../core/ui.js';
-import { fmtDur } from '../../core/format.js';
 import { fmtSpeed } from '../network/util.js';
 import { related } from './boardmodel.js';
 
@@ -46,25 +45,42 @@ function stateBadge(item) {
   return badge('not present', '', 'The router has no device of this name at the moment');
 }
 
-// The card of a port: link dot, name, speed and the position on the board (LAN or WAN), and a mark when it has device settings.
+// The card of a port: the Ethernet icon (green with a link), name, speed and the position on the board (LAN or WAN), a mark when it has device settings,
+// and its hardware under them.
 function portCard(item) {
   const s = item.settings;
-  return h('div', { className: 'nb-line' },
-    h('span', { className: `dot ${item.up ? 'up' : 'idle'}` }), h('strong', { className: 'nb-name' }, item.name),
-    h('span', { className: 'muted small' }, item.up ? (item.speed ? fmtSpeed(item.speed) : 'link') : 'no link'),
-    item.role ? h('span', { className: 'muted small' }, item.role.toUpperCase()) : null,
-    s ? badge(s.removed ? 'settings removed' : s.isNew ? 'new settings' : 'settings', s.removed ? 'danger' : 'info', 'This port has device settings (MTU, MAC address, speed, flow control)') : null);
+  return [
+    h('div', { className: 'nb-line' },
+      h('span', { className: `nb-pico ${item.up ? 'up' : 'idle'}`, title: item.up ? 'Link up' : 'No link' }, icon('ethernet', 14)), h('strong', { className: 'nb-name' }, item.name),
+      h('span', { className: 'muted small' }, item.up ? (item.speed ? fmtSpeed(item.speed) : 'link') : 'no link'),
+      item.role ? h('span', { className: 'muted small' }, item.role.toUpperCase()) : null,
+      s ? badge(s.removed ? 'settings removed' : s.isNew ? 'new settings' : 'settings', s.removed ? 'danger' : 'info', 'This port has device settings (MTU, MAC address, speed, flow control)') : null),
+    ...(item.hw ?? []).map(line => h('div', { className: 'muted small nb-sub nb-hw' }, line)),
+  ];
 }
 
-// The chip of a Wi-Fi or mesh interface, or of a radio without interfaces: a link to the Wi-Fi or Mesh page.
+// The chip of a Wi-Fi or mesh interface inside its radio: a link to the Wi-Fi or Mesh page.
 function wifiChip(item) {
   const href = item.kind === 'mesh' ? '#mesh' : '#wifi';
-  const what = item.kind === 'radio' ? 'no interface configured' : [item.kind === 'mesh' ? 'mesh' : item.mode, item.ssid && item.ssid !== item.name ? item.name : null].filter(Boolean).join(' · ');
-  const title = [item.kind === 'radio' ? `Radio ${item.name}` : `${item.name} on ${item.radio ?? 'a radio'}`, item.enabled === false ? 'disabled' : null, 'opens the Wi-Fi page'].filter(Boolean).join(' · ');
+  const what = [item.kind === 'mesh' ? 'mesh' : item.mode, item.ssid && item.ssid !== item.name ? item.name : null].filter(Boolean).join(' · ');
+  const title = [`${item.name} on ${item.radio ?? 'a radio'}`, item.enabled === false ? 'disabled' : null, 'opens the Wi-Fi page'].filter(Boolean).join(' · ');
   return h('a', { className: 'nb-chip', href, title },
     h('span', { className: `dot ${item.up ? 'up' : 'idle'}` }),
-    h('span', { className: 'nb-chip-text' }, h('strong', {}, item.kind === 'mesh' ? item.ssid ?? item.name : item.kind === 'radio' ? item.name : item.ssid ?? item.name),
+    h('span', { className: 'nb-chip-text' }, h('strong', {}, item.ssid ?? item.name),
       h('span', { className: 'muted small' }, what), item.enabled === false ? badge('disabled') : null));
+}
+
+// The card of a radio, a container of its wireless interfaces: the Wi-Fi icon (green when it is up), name, band and state, its hardware, and under them the
+// chips of the interfaces on it. `chips` are those nodes.
+function radioCard(item, chips) {
+  const state = !item.enabled ? badge('disabled') : item.up ? null : badge('down', 'danger');
+  return [
+    h('div', { className: 'nb-line' },
+      h('span', { className: `nb-pico ${item.up && item.enabled ? 'up' : 'idle'}`, title: item.up ? 'Radio up' : 'Radio down' }, icon('wifi', 14)), h('strong', { className: 'nb-name' }, item.name),
+      item.band ? h('span', { className: 'muted small' }, bandText(item.band)) : null, item.phy ? h('span', { className: 'muted small' }, item.phy) : null, state),
+    ...(item.hw ?? []).map(line => h('div', { className: 'muted small nb-sub nb-hw' }, line)),
+    h('div', { className: 'nb-radio-ifs' }, chips.length ? chips : h('div', { className: 'muted small' }, 'no interface configured')),
+  ];
 }
 
 // The card of a device: icon, name, type, state and a line saying what it is.
@@ -106,8 +122,7 @@ function addressLines(item) {
 function interfaceCard(item) {
   return [
     h('div', { className: 'nb-line' }, icon('diagram-3', 14), h('strong', { className: 'nb-name' }, item.name),
-      badge(item.protoText, 'info'), stateBadge(item), item.noProto ? badge('no protocol', 'warning', 'netifd ignores all settings of an interface without a protocol and its device stays down') : null,
-      item.up && item.uptime != null ? h('span', { className: 'muted small' }, fmtDur(item.uptime)) : null),
+      badge(item.protoText, 'info'), stateBadge(item), item.noProto ? badge('no protocol', 'warning', 'netifd ignores all settings of an interface without a protocol and its device stays down') : null),
     item.deviceText ? h('div', { className: 'muted small nb-sub' }, item.deviceText) : h('div', { className: 'muted small nb-sub' }, item.protoDevice ? 'no device below it' : 'no device'),
     item.protoDevice ? h('div', { className: 'nb-proto small' }, h('span', { className: 'nb-pdev mono' }, item.protoDevice.name),
       h('span', { className: 'muted' }, item.protoDevice.label ? `${item.protoDevice.label}${item.protoDevice.shared ? ' (shared)' : ''}` : item.protoDevice.shared ? 'shared' : 'protocol device')) : null,
@@ -175,35 +190,39 @@ export function boardView({ board, selected = null, onOpen, actions = null }) {
   const els = new Map();
   let chosen = selected;
   let hovered = null;
-  // Makes a card of `item` with `kids`; a click or Enter opens it (unless it is a link or a control inside the card).
+  // Makes a card of `item` with `kids`; a click or Enter opens it (unless it is a link or a control inside the card). A card that holds other cards (a radio)
+  // takes the focus only for itself, not for what is inside it.
   const card = (item, kind, ...kids) => {
     const el = h('div', { className: `nb-card nb-${kind}${item.removed ? ' nb-removed' : ''}${item.isNew ? ' nb-new' : ''}`, tabIndex: 0, role: 'button' }, kids);
+    const own = e => kind !== 'radio' || e.target === el;
     el.dataset.id = item.id;
     els.set(item.id, el);
     el.addEventListener('click', e => { if (!e.target.closest('a, button, summary, input')) onOpen(item); });
     el.addEventListener('keydown', e => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(item); } });
     el.addEventListener('mouseenter', () => { hovered = item.id; paint(); });
     el.addEventListener('mouseleave', () => { hovered = null; paint(); });
-    el.addEventListener('focusin', () => { hovered = item.id; paint(); });
-    el.addEventListener('focusout', () => { hovered = null; paint(); });
+    el.addEventListener('focusin', e => { if (own(e)) { hovered = item.id; paint(); } });
+    el.addEventListener('focusout', e => { if (own(e)) { hovered = null; paint(); } });
     return el;
   };
-  // A chip (Wi-Fi) is a link: it takes part in the highlighting like a card.
-  const chip = item => {
+  // A chip (Wi-Fi) is a link: it takes part in the highlighting like a card. Leaving it for its radio highlights the radio again.
+  const chip = (item, parent = null) => {
     const el = wifiChip(item);
     el.classList.add('nb-card');
     el.dataset.id = item.id;
     els.set(item.id, el);
     el.addEventListener('mouseenter', () => { hovered = item.id; paint(); });
-    el.addEventListener('mouseleave', () => { hovered = null; paint(); });
+    el.addEventListener('mouseleave', () => { hovered = parent; paint(); });
     return el;
   };
 
-  // Lane 1: ports, then the radios with their Wi-Fi interfaces.
-  const groups = board.lanes.ports.map(g => h('div', { className: 'nb-group' },
-    h('div', { className: 'nb-group-head' }, h('strong', {}, g.title), g.band ? h('span', { className: 'muted small' }, bandText(g.band)) : null,
-      g.up === false ? h('span', { className: 'muted small' }, 'down') : null, g.enabled === false ? badge('disabled') : null),
-    g.items.map(i => (i.kind === 'port' ? card(i, 'port', portCard(i)) : chip(i)))));
+  // Lane 1: the Ethernet ports, then the radios, each a container of its Wi-Fi interfaces.
+  const groups = board.lanes.ports.map(g => (g.radio
+    ? h('div', { className: 'nb-group' }, card(g.radio, 'radio', radioCard(g.radio, g.items.map(i => chip(i, g.radio.id)))))
+    : h('div', { className: 'nb-group' },
+      h('div', { className: 'nb-group-head' }, h('strong', {}, g.title), g.band ? h('span', { className: 'muted small' }, bandText(g.band)) : null,
+        g.up === false ? h('span', { className: 'muted small' }, 'down') : null, g.enabled === false ? badge('disabled') : null),
+      g.items.map(i => (i.kind === 'port' ? card(i, 'port', portCard(i)) : chip(i))))));
   const lanePorts = h('section', { className: 'nb-lane nb-lane-ports' },
     laneHead('Ports and radios', 'Network devices: Ethernet ports and Wi-Fi'), h('div', { className: 'nb-cards' }, groups.length ? groups : none('No ports reported.')));
 
@@ -239,7 +258,8 @@ export function boardView({ board, selected = null, onOpen, actions = null }) {
     const rel = focus && els.has(focus) ? related(board, focus) : null;
     root.classList.toggle('nb-focus', Boolean(rel));
     for (const [id, el] of els) {
-      el.classList.toggle('nb-rel', Boolean(rel?.ids.has(id)));
+      // A radio is related when it or one of its interfaces is.
+      el.classList.toggle('nb-rel', Boolean(rel?.ids.has(id) || board.items.get(id)?.children?.some(c => rel?.ids.has(c))));
       el.classList.toggle('nb-self', id === focus);
       el.classList.toggle('nb-sel', id === chosen);
     }

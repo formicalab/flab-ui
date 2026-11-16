@@ -102,10 +102,17 @@ await page.addInitScript(([id, granted]) => {
 }, [sid, acls]);
 await page.goto(baseUrl);
 await page.waitForSelector('.tile');
-check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Ethernet', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: network layers, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces (which holds the bridges), Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
-//#region Ethernet page
-await page.click('a[href="#network"]');
+check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: Wi-Fi, Mesh, VPNs, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces (which holds the bridges and the Ethernet ports), Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out; there is no Ethernet entry', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
+//#region Ethernet ports view of Devices and Interfaces
+await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');
+check(await page.evaluate(() => location.hash) === '#interfaces' && (await page.locator('.cmdbar h1').innerText()).trim() === 'Devices and Interfaces' && (await page.locator('.cmdbar .seg-tab').allInnerTexts()).join() === 'Board,Ethernet ports' && (await page.locator('.cmdbar .seg-tab.active').innerText()) === 'Ethernet ports' && await page.locator('.nav-pane a.active:has-text("Devices and Interfaces")').count() === 1, 'the old #network route opens Devices and Interfaces on its Ethernet ports tab (the hash becomes #interfaces, the navigation has no Ethernet entry)');
+await page.locator('.cmdbar .seg-tab', { hasText: 'Board' }).click();
+await page.waitForSelector('.nb-card');
+check(await page.locator('.port-table').count() === 0 && (await page.locator('.cmdbar .seg-tab.active').innerText()) === 'Board', 'the Board tab shows the board and no port table');
+await page.locator('.cmdbar .seg-tab', { hasText: 'Ethernet ports' }).click();
+await page.waitForSelector('.port-ic');
+check(await page.locator('.nb-card').count() === 0, 'and the Ethernet ports tab shows the port table again');
 
 console.log('== live router (pass-through) ==');
 const livePorts = await jackCount();
@@ -304,7 +311,7 @@ check((await page.locator('.port-table tr:has(.port-ic.up) td.num:nth-child(5)')
 //#endregion
 
 //#region Bridges on the Devices and Interfaces board
-await page.click('a[href="#interfaces"]');
+await page.locator('.cmdbar .seg-tab', { hasText: 'Board' }).click();
 await page.waitForSelector('.nb-card');
 console.log('\n== bridges: live router (pass-through) ==');
 mock.network = null;
@@ -371,7 +378,7 @@ const related = lane => page.locator(`.nb-lane-${lane} .nb-card.nb-rel`);
 check(await page.locator('.port-table').count() === 0 && await page.locator('#bl-test').count() === 0, 'no port table on this page');
 await ifCard('lan').hover();
 check(/on br-lan/.test(await ifCard('lan').innerText()) && await related('ports').count() >= 3 && await related('devices').count() >= 1, 'lan sits on br-lan, which groups ports and Wi-Fi: hovering it highlights them');
-check(/radio\d/.test(await text('.nb-lane-ports .nb-group-head')) && await page.locator('.nb-lane-ports .nb-chip').count() >= 1, 'Wi-Fi interfaces are grouped under the radio they are on');
+check(/radio\d/.test(await text('.nb-lane-ports .nb-radio')) && await page.locator('.nb-lane-ports .nb-radio .nb-chip').count() >= 1, 'Wi-Fi interfaces are grouped in the card of the radio they are on');
 check(await page.locator('.nb-lane-ports a.nb-chip[href="#mesh"]').count() >= 1 && await page.locator('.nb-lane-ports a.nb-chip[href="#wifi"]').count() >= 1, 'the mesh interface and the Wi-Fi interfaces are chips that link to the Mesh and Wi-Fi pages');
 check(/Radios/.test(await text('.tile')) && /Wireless interfaces/.test(await text('.tile')), 'radio and wireless interface tiles');
 check(/pppoe-wan/.test(await ifCard('wan').innerText()) && /on eth1\.1036/.test(await ifCard('wan').innerText()) && /VLAN 1036 on eth1/.test(await text('.nb-lane-devices')), 'wan is PPPoE over the VLAN on eth1');

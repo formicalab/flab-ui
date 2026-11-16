@@ -1,4 +1,4 @@
-// The editable VLAN cards of the Wired network page (shown while the editor is open): one matrix per VLAN-filtering bridge and per
+// The editable VLAN cards of the Ethernet ports view (shown while the editor is open): one matrix per VLAN-filtering bridge and per
 // swconfig switch, each cell a choice of how a port takes part in a VLAN. The cards edit the draft of vlanmodel.js; saving,
 // the review banner and the rollback countdown are the shared editor's (vlanpage.js). Styles are in css/network.css.
 import { h } from '../../core/dom.js';

@@ -214,6 +214,24 @@ test('wireless interfaces are grouped by radio, each once', () => {
   assert.equal(new Set(groups.flatMap(g => g.items.map(i => i.id))).size, groups.flatMap(g => g.items).length);
 });
 
+test('a port card carries a hardware summary, one line each: PHY, switch port or SoC MAC, optical module', () => {
+  const hw = (hardware, extra = {}) => buildBoard({ net: { ports: [port('lan1', true, 0, { hardware, ...extra })], bridges: [], vlans: [] }, ifs: [], radios: [] }).items.get('port:lan1').hw;
+  assert.deepEqual(hw({ phy: { name: 'RTL8221B 2.5Gbps PHY', address: 7, bus: 'mdio-bus' }, switch: 'MediaTek MT7531', switch_port: 5 }), ['RTL8221B 2.5Gbps PHY', 'MediaTek MT7531 · port 5']);
+  assert.deepEqual(hw({ soc: 'MediaTek', driver: 'mtk_soc_eth' }), ['MediaTek MAC']);
+  assert.deepEqual(hw({ phy: { name: 'MediaTek MT7531 PHY', address: 1, bus: 'mdio-bus' }, switch: 'MediaTek MT7531', switch_port: 1 }), ['MediaTek MT7531 PHY · port 1']);
+  assert.deepEqual(hw(undefined, { sfp: { present: true, vendor: 'FS', part: 'SFP-10G' } }), ['FS SFP-10G']);
+  assert.deepEqual(hw(undefined), []);
+});
+
+test('every radio is an item of its own, with its interfaces as children, and is related to what they are', () => {
+  const radio = wb.lanes.ports.find(g => g.title === 'radio0');
+  assert.equal(radio.radio.id, 'radio:radio0');
+  assert.equal(radio.radio.kind, 'radio');
+  assert.deepEqual([...radio.radio.children].sort(), radio.items.map(i => i.id).sort());
+  const rel = related(wb, 'radio:radio0');
+  assert.ok(radio.items.every(i => rel.ids.has(i.id)) && rel.ids.has('dev:name:br-lan'));
+});
+
 test('a configured Wi-Fi interface that is not running joins the bridge of the network named in its config', () => {
   assert.ok(edgeOf(wb, 'wifi:g0', 'dev:name:br-lan'));
   assert.equal(wb.items.get('wifi:g0').running, false);

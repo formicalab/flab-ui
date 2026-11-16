@@ -1,4 +1,4 @@
-// Pieces shared by the three wired-network pages (Wired network, Bridges, Devices and Interfaces): the
+// Pieces shared by the two views of Devices and Interfaces (the Ethernet ports and the board): the
 // common data load and address helpers. All three read the same flab.network status plus netifd's
 // network.interface dump, and feed the same rate tracker (util.js), so a counter sampled by one page is
 // available to the others.

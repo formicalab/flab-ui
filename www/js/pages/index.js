@@ -11,7 +11,7 @@
 //   label     navigation text            title?  command-bar heading (defaults to label)
 //   icon      icon name from core/icons.js
 //   nav       'bottom' places the link below the spacer, next to Sign out (default: the main list)
-//   interval  auto-refresh period in ms
+//   interval  auto-refresh period in ms, or a function that returns it (read again before each poll, for a page whose views poll at different rates)
 //   load()    async; returns the page data (usually one ubus call)
 //   view(data, rerender)  returns an array of nodes; rerender() redraws from cached data
 //   controls({ rerender, reload })  returns { nodes, update?(data) } for persistent command-bar controls
@@ -20,6 +20,7 @@
 
 let pendingTool = null;
 let pendingBoardItem = null;
+let pendingBoardView = null;
 
 // Lightweight deep-link bridge: importing this from another page must not fetch Toolbox's implementation.
 export function openTool(tool, host) {
@@ -42,25 +43,32 @@ export function openBoardItem(id) {
   location.hash = '#interfaces';
 }
 
+// The shell calls this when it turns the route <name> into an alias: #network (the old Ethernet page) opens the Ethernet ports view of Devices and Interfaces.
+export function enterAlias(name) {
+  if (name === 'network') pendingBoardView = 'ports';
+}
+
 // Called by the shell only after the board's import completes and this navigation is still current.
 function activateInterfaces(module) {
+  // Every visit starts on the board, unless the route was #network (the Ethernet ports view).
+  module.openView(pendingBoardView ?? 'board');
+  pendingBoardView = null;
   if (!pendingBoardItem) return;
   const id = pendingBoardItem;
   pendingBoardItem = null;
   module.openBoardItem(id);
 }
 
-// Network pages go from the physical layer up (ports, radios, tunnels, firewall); DHCP and router
+// Network pages go from the physical layer up (Wi-Fi, mesh, tunnels, firewall); DHCP and router
 // advertisements, a service on top of those, come next, then DNS, the resolver those clients use, and Dynamic DNS, which keeps
 // a name pointing at the router; Devices and Interfaces (the network board: ports, bridges, VLANs, interfaces and zones, and where bridges are
-// edited) ties them together, followed by routing (kernel routes, static-route editing and BGP), traffic (where the bandwidth goes), the services, the toolbox
+// edited, with the Ethernet ports as its second view) ties them together, followed by routing (kernel routes, static-route editing and BGP), traffic (where the bandwidth goes), the services, the toolbox
 // (diagnostic tools) and the logs.
 // System settings sits at the bottom of the navigation, by Sign out.
 // Keep this module free of page imports, including Toolbox's openTool helper: the login screen only needs
 // navigation metadata. Native ES modules cache successful imports and preserve each page's state on return.
 export const pages = [
   { id: 'overview', label: 'Overview', icon: 'speedometer2', resolve: () => import('./overview/index.js') },
-  { id: 'network', label: 'Ethernet', icon: 'ethernet', resolve: () => import('./network/index.js') },
   { id: 'wifi', label: 'Wi-Fi', icon: 'wifi', resolve: () => import('./wifi/index.js') },
   { id: 'mesh', label: 'Mesh', icon: 'arrow-left-right', resolve: () => import('./mesh/index.js') },
   { id: 'ipsec', label: 'IPsec VPN', icon: 'shield-lock', resolve: () => import('./ipsec/index.js') },
@@ -78,5 +86,5 @@ export const pages = [
   { id: 'settings', label: 'System settings', icon: 'gear', nav: 'bottom', resolve: () => import('./settings/index.js') },
 ];
 
-// Routes that were pages once and now open another page: #bridges is part of the Devices and Interfaces board.
-export const aliases = { bridges: 'interfaces' };
+// Routes that were pages once and now open another page: #bridges is part of the Devices and Interfaces board, and #network (Ethernet) is its Ethernet ports view.
+export const aliases = { bridges: 'interfaces', network: 'interfaces' };

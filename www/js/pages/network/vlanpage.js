@@ -1,4 +1,4 @@
-// The VLAN editor of the Wired network page: the editor (core/editpage.js: draft, review banner, save with the rollback countdown,
+// The VLAN editor of the Ethernet ports view: the editor (core/editpage.js: draft, review banner, save with the rollback countdown,
 // discard) and its connection to the page. The network config holds secrets (keys and passwords in its interface sections), so
 // the editor reads only the section types it needs (bridge-vlan, device, switch, switch_vlan, switch_port) with `uci get` filtered
 // by type, and only while the editor is open; the read-only cards need none of it.

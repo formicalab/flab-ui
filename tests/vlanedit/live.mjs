@@ -224,12 +224,12 @@ let page = await open();
 // All the notes of the review banner, joined into one string.
 const notes = () => page.locator('.set-notes .set-note').allInnerTexts().then(t => t.join(' | '));
 // The review banner and its buttons.
-const bar = () => page.locator('.set-bar');
-const saveBtn = () => page.locator('button:has-text("Save and apply")');
+const bar = () => page.locator('.set-bar:not([hidden])');
+const saveBtn = () => page.locator('.set-bar:not([hidden]) button:has-text("Save and apply")');
 // The text of the review of pending changes.
-const changes = () => page.locator('.set-changes').evaluate(e => e.textContent);
+const changes = () => page.locator('.set-bar:not([hidden]) .set-changes').evaluate(e => e.textContent);
 // The text of the banner's summary line.
-const summary = () => page.locator('.set-bar-summary').innerText();
+const summary = () => page.locator('.set-bar:not([hidden]) .set-bar-summary').innerText();
 // The matrix of the editor, the headings of its columns, the row of VLAN `vid`, and the drop-down of a port in a VLAN.
 const heads = () => page.locator('.vlan-edit-table thead th').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 const rowOf = vid => page.locator('.vlan-edit-table tbody tr').filter({ has: page.locator(`td.vlan-edit-vid strong:text-is("${vid}")`) });
@@ -242,13 +242,13 @@ const stateOf = async (vid, port) => (await selectOf(vid, port)).inputValue();
 // Saves a full-page screenshot named after `label`, when a screenshot folder is set.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `vlanedit-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
 // Waits for the review banner to report the result of a save and returns its text.
-const outcome = async () => { const n = page.locator('.set-bar .set-outcome.ok, .set-bar .set-outcome.bad').first(); await n.waitFor({ timeout: 20000 }); return (await n.innerText()).trim(); };
+const outcome = async () => { const n = page.locator('.set-bar:not([hidden]) .set-outcome.ok, .set-bar:not([hidden]) .set-outcome.bad').first(); await n.waitFor({ timeout: 20000 }); return (await n.innerText()).trim(); };
 // Clicks Refresh and gives the page a moment to redraw.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(800); };
 // Opens the editor (the button of the card whose header says `name`) and waits for the matrix.
 const openEditor = async (name = 'Edit VLANs') => { await page.locator(`button:has-text("${name}")`).first().click(); await page.waitForSelector('.vlan-edit', { timeout: 15000 }); };
 // Discards the edits with the banner's button and waits for the banner to go away.
-const discard = async () => { await page.click('.set-bar button:has-text("Discard edits")'); await bar().waitFor({ state: 'hidden' }); };
+const discard = async () => { await page.click('.set-bar:not([hidden]) button:has-text("Discard edits")'); await bar().waitFor({ state: 'hidden' }); };
 // The "Done" button that closes the editor.
 const done = () => page.locator('.card-header button:has-text("Done")').first();
 // The port names of the bridge in the mock (what the real router's br-lan has).
@@ -284,6 +284,7 @@ check(Object.keys(staged).length === 0 && mock.unsafe.length === 0, 'nothing is 
 //#region Mock: reading
 mock.on = true;
 await page.reload();
+await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');
 console.log('\n== a bridge with VLANs (mock router) ==');
 eth = (await page.evaluate(async () => {
@@ -315,9 +316,9 @@ await pick('20', eth[0], 'u*');
 check(await saveBtn().isDisabled() && /is the PVID of VLAN 1 and VLAN 20/.test(await notes()) && (await (await selectOf('20', eth[0])).evaluate(e => e.classList.contains('is-invalid'))) && (await (await selectOf('1', eth[0])).evaluate(e => e.classList.contains('is-invalid'))), 'a second PVID on a port is an error that marks both cells and blocks Save', await notes());
 await pick('20', eth[0], 't');
 check(await bar().isVisible() && /1 unsaved change/.test(await summary()) && await saveBtn().isEnabled() && await done().isDisabled(), 'a valid edit shows the banner, enables Save and keeps the editor open');
-await page.click('.set-bar button:has-text("Details")');
+await page.click('.set-bar:not([hidden]) button:has-text("Details")');
 check(new RegExp(`br-lan VLAN 20: .*${eth[2]} tagged.* → .*${eth[0]} tagged`).test(await changes()), 'the review says what the VLAN was and becomes', await changes());
-await page.click('.set-bar button:has-text("Hide details")');
+await page.click('.set-bar:not([hidden]) button:has-text("Hide details")');
 await shot('edited');
 mock.calls = [];
 await saveBtn().click();
@@ -424,6 +425,7 @@ console.log('\n== a switch driven through swconfig (an older board, mock only) =
 mock.mode = 'switch';
 mock.cfg = null;
 await page.reload();
+await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');
 const scard = page.locator('.card:has(.card-header:has-text("VLAN groups"))');
 check(await scard.count() === 1 && /Switch AR8327 · VLAN groups/.test(await scard.locator('.card-header').innerText()) && await scard.locator('tbody tr').count() === 2, 'the read-only card shows the two groups');

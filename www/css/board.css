@@ -10,10 +10,11 @@
 .nb { position: relative; container-type: inline-size; }
 .nb-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 0; }
 .nb-lanes {
-  position: relative; z-index: 1; display: grid; align-items: start; column-gap: 2.25rem;
-  grid-template-columns: minmax(0, .85fr) minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+  position: relative; z-index: 1; display: grid; align-items: start; column-gap: 3.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .9fr) minmax(0, 1.2fr) minmax(0, 1fr);
 }
-@container (max-width: 1000px) { .nb-lanes { column-gap: 1.5rem; } }
+@container (min-width: 1300px) { .nb-lanes { column-gap: 5rem; } }
+@container (max-width: 1000px) { .nb-lanes { column-gap: 2rem; } }
 @container (max-width: 760px) {
   .nb-lanes { grid-template-columns: minmax(0, 1fr); row-gap: 1.5rem; }
   .nb-svg { display: none; }
@@ -40,6 +41,9 @@
 .nb-card .mono { overflow-wrap: break-word; }
 .nb-line { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .45rem; min-width: 0; }
 .nb-line > svg { flex: none; color: var(--fl-brand); }
+.nb-pico { display: inline-flex; flex: none; }
+.nb-pico.up { color: var(--fl-ok-fg); }
+.nb-pico.idle { color: var(--fl-muted); opacity: .7; }
 .nb-line .dot, .nb-chip .dot { width: 8px; height: 8px; display: inline-block; animation: none; flex: none; }
 .nb-name { min-width: 0; overflow-wrap: anywhere; }
 .nb-sub { margin-top: .15rem; overflow-wrap: anywhere; }
@@ -54,13 +58,20 @@
 .nb-removed { opacity: .65; }
 .nb-removed .nb-name { text-decoration: line-through; }
 
-/* A Wi-Fi or mesh chip (a link to the Wi-Fi or Mesh page) or a radio without interfaces. */
+/* A Wi-Fi or mesh chip (a link to the Wi-Fi or Mesh page), inside its radio. */
 .nb-card.nb-chip { display: flex; align-items: flex-start; gap: .5rem; text-decoration: none; color: inherit; padding: .4rem .6rem; }
 .nb-chip .dot { margin-top: .35rem; }
 .nb-chip-text { display: flex; flex-direction: column; min-width: 0; }
 
+/* A radio is a container of the interfaces on it. */
+.nb-radio-ifs { margin-top: .5rem; display: flex; flex-direction: column; gap: .35rem; }
+.rp-ifs { display: grid; gap: .6rem; }
+.nb-radio .nb-chip { background: var(--fl-surface-hover); box-shadow: none; }
+.nb-radio .nb-chip:hover { background: color-mix(in srgb, var(--fl-brand) 10%, var(--fl-surface-hover)); }
+
 /* Highlighting: what the hovered or open card is connected to stays bright, everything else steps back. */
 .nb-focus .nb-card:not(.nb-rel) { opacity: .42; }
+.nb-focus .nb-radio:not(.nb-rel) .nb-card { opacity: 1; }
 .nb-card.nb-rel { border-color: color-mix(in srgb, var(--fl-brand) 70%, var(--fl-stroke)); }
 .nb-card.nb-sel { outline: 2px solid var(--fl-brand); outline-offset: 0; }
 

@@ -1,6 +1,7 @@
-# Ethernet (route `#network`)
-Refreshed every 3 s. The physical ports only; the bridges and the layered device/interface view are on
-the Devices and Interfaces page. The backend (`flab.network`) classifies whatever netifd reports (`devtype` dsa/ethernet = port, bridge,
+# Ethernet ports (a view of Devices and Interfaces; route `#network`)
+The second view of the [Devices and Interfaces](interfaces.md) page, chosen with the **Board | Ethernet ports** tabs in the command bar; it was a page of its own (the route `#network` still works: it opens Devices and Interfaces on this tab, and every other visit to the page starts on the board).
+Refreshed every 3 s while this tab is open (the board every 5 s: the page's period follows the tab). The physical ports only; the bridges and the layered device/interface view are on
+the board. Every port's details are also in its drawer on the board (**Port details**, see [Devices and Interfaces](interfaces.md)), so nothing here needs this tab to be seen. The Pause and Refresh buttons are the page's, and the review banner of the VLAN editor sits in the command bar next to the board's. The backend (`flab.network`) classifies whatever netifd reports (`devtype` dsa/ethernet = port, bridge,
 vlan), so another board or a new bridge shows up on the next poll. `shared.js` holds the loader and the
 address helpers the Ethernet, Devices and Interfaces and Traffic pages share.
 
@@ -17,11 +18,11 @@ address helpers the Ethernet, Devices and Interfaces and Traffic pages share.
   - **Port**: a jack icon tinted by link state (green up, amber when downshifted, flapping, erroring since the page was
     opened or an optical alarm, gray without link: an unplugged port is normal, not red), the name, the LAN/WAN role from the
     board, an SFP tag for a port with an optical module, the MAC (always shown; the icon's tooltip lists the hardware) and a
-    **Settings** button on every front-panel port. Settings goes to Devices and Interfaces and opens that port in the board's
+    **Settings** button on every front-panel port. Settings switches to the Board tab and opens that port in the board's
     drawer, with the same editing panel as a click on the port's card there (link speed, duplex, auto-negotiation, pause, EEE,
     MTU, MAC and the advanced options of the port's device section; read only for a login that may not change the
     configuration). The editing stays on the board: it is the one place that holds the network config's draft, the review
-    banner and the rollback, so the Ethernet page only hands the port over (`openBoardItem` in `pages/index.js`).
+    banner and the rollback, so this view only hands the port over (`showBoardItem` in `interfaces/index.js`, through the `openItem` hook of `cable.js`).
     The internal CPU link has no button.
   - **Hardware**, **Link** (state, speed and duplex, how many times the link changed state and how many since the page was
     opened, an optical alarm, the cable-test button), **Negotiation** (auto/forced, max speed, partner speed, pause, EEE).

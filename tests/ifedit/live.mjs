@@ -227,15 +227,15 @@ const startWizard = async () => { await page.locator('.nb-lane-interfaces .nb-la
 const notes = () => page.locator('.set-notes .set-note').allInnerTexts().then(t => t.join(' | '));
 const errorCount = () => page.locator('.set-notes .set-note.bad').count();
 // The save bar, its summary and the save button.
-const bar = () => page.locator('.set-bar');
-const saveBtn = () => page.locator('button:has-text("Save and apply")');
-const summaryText = () => page.locator('.set-bar-summary').innerText();
+const bar = () => page.locator('.set-bar:not([hidden])');
+const saveBtn = () => page.locator('.set-bar:not([hidden]) button:has-text("Save and apply")');
+const summaryText = () => page.locator('.set-bar:not([hidden]) .set-bar-summary').innerText();
 // The text of the review of pending changes.
-const changes = async () => { if (await page.locator('.set-bar-details').isHidden()) await page.click('.set-bar button:has-text("Details")'); return page.locator('.set-changes').evaluate(e => e.textContent); };
+const changes = async () => { if (await page.locator('.set-bar:not([hidden]) .set-bar-details').isHidden()) await page.click('.set-bar:not([hidden]) button:has-text("Details")'); return page.locator('.set-bar:not([hidden]) .set-changes').evaluate(e => e.textContent); };
 // Saves a full-page screenshot named after `label`, when a screenshot folder is set.
 const shot = async label => { if (shots) await page.screenshot({ path: path.join(shots, `ifedit-${label.replace(/\W+/g, '-')}.png`), fullPage: true }); };
 // Waits for the save bar to report the result of a save and returns its text.
-const outcome = async (timeout = 25000) => { const n = page.locator('.set-bar .set-outcome.ok, .set-bar .set-outcome.bad').first(); await n.waitFor({ timeout }); return (await n.innerText()).trim(); };
+const outcome = async (timeout = 25000) => { const n = page.locator('.set-bar:not([hidden]) .set-outcome.ok, .set-bar:not([hidden]) .set-outcome.bad').first(); await n.waitFor({ timeout }); return (await n.innerText()).trim(); };
 // Clicks Refresh and gives the page a moment to redraw.
 const refresh = async () => { await page.click('button:has-text("Refresh")'); await page.waitForTimeout(700); };
 // Clicks something that redraws the form and gives the page a moment to do it.
@@ -383,7 +383,7 @@ await input(wan2, 'PAP/CHAP password').fill(TYPED);
 check(/1 unsaved change/.test(await summaryText()), 'typing a password is a change');
 const reviewPw = await changes();
 check(/new value \(hidden\)/.test(reviewPw) && !reviewPw.includes(TYPED) && !reviewPw.includes(SECRET), 'the review shows it only as "new value (hidden)"', reviewPw);
-check(/within 90 seconds/.test(await page.locator('.set-bar-details').innerText()), 'the review promises the 90 second rollback');
+check(/within 90 seconds/.test(await page.locator('.set-bar:not([hidden]) .set-bar-details').innerText()), 'the review promises the 90 second rollback');
 await saveBtn().click();
 check(/^Saved/.test(await outcome()), 'it is saved without a question (nothing risky)');
 check(mock.cfg.find(s => s.name === 'wan').values.password === TYPED && mock.cfg.find(s => s.name === 'wan').values.odd_option === 'x', 'the password was stored and the other options kept');
@@ -666,7 +666,7 @@ console.log('\n== edits survive a switch between the pages, and the session expi
 await openDevice('br-guest');
 await unfold();
 await input(card(), 'MAC aging time \\(s\\)').fill('600');
-await page.click('a[href="#network"]');
+await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');
 check(await page.locator('.fl-drawer').count() === 0, 'leaving the page closes the panel');
 console.log('\n== Settings on an Ethernet port opens it in the board\'s drawer ==');
@@ -675,6 +675,10 @@ await page.locator('.port-table tr:has(strong:text-is("lan1")) .port-settings').
 await page.waitForSelector('.fl-drawer.show');
 check(await page.evaluate(() => location.hash) === '#interfaces' && /lan1/.test(await drawerTitle()) && await page.locator('.fl-drawer .ne-form').count() === 1, 'it goes to Devices and Interfaces with the port\'s own editing panel open', `${await page.evaluate(() => location.hash)} | ${await drawerTitle()}`);
 check(await page.locator('.nb-card.nb-sel').count() === 1 && /lan1/.test(await page.locator('.nb-card.nb-sel').innerText()), 'and the port\'s card on the board is highlighted');
+check((await page.locator('.fl-drawer .pl dt').allInnerTexts()).join() === 'Hardware,Role,MAC,Link,Negotiation,Throughput,Errors / drops,Bridge / STP,VLAN devices' && /Port details/.test(await page.locator('.fl-drawer').innerText()), 'the drawer also carries the details the Ethernet page had for the port: link, negotiation, hardware, throughput, errors, bridge and VLAN devices');
+await page.evaluate(() => { document.querySelector('.fl-drawer .pl dl').dataset.mark = '1'; document.querySelector('.fl-drawer .ne-form').dataset.mark = '1'; });
+await page.waitForFunction(() => !document.querySelector('.fl-drawer .pl dl')?.dataset.mark, null, { timeout: 8000 });
+check(await page.locator('.fl-drawer .ne-form[data-mark="1"]').count() === 1, 'the details refresh by themselves while the form is open, and the form is not rebuilt');
 await page.keyboard.press('Escape');
 check(await page.locator('.fl-drawer').count() === 0, 'Escape closes it and the next visit does not reopen it');
 await page.click('a[href="#interfaces"]');

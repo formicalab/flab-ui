@@ -26,6 +26,7 @@ import {
   usedByDevice, usedByInterface, vlanName, zoneText,
 } from './panelmodel.js';
 import { infoList, optionList, pageLink, protoCards, section } from './panelparts.js';
+import { portLive } from '../network/portlive.js';
 
 export { openWizard } from './wizard.js';
 
@@ -188,30 +189,28 @@ export function interfacePanel(ctx, id) {
 
 //#region Device panel
 
-// The words for a link speed in Mbit/s.
-const speedText = mbit => (mbit >= 1000 ? `${mbit / 1000} Gbit/s` : `${mbit} Mbit/s`);
-
-// The live facts of a port as rows.
-function portRows(net, name) {
-  const p = (net?.ports ?? []).find(x => x.name === name);
-  if (!p) return [['State', muted('The router reports no port of this name.')]];
-  return [
-    ['Link', p.carrier ? badge(`up${p.speed ? `, ${speedText(p.speed)}` : ''}${p.duplex ? `, ${p.duplex} duplex` : ''}`, 'success') : badge('no link', '')],
-    p.role ? ['Role', p.role === 'conduit' ? 'the link between the CPU and the switch chip' : p.role === 'nic' ? 'a network card' : `a ${p.role} port`] : null,
-    p.max_speed ? ['Capability', `up to ${speedText(p.max_speed)}`] : null,
-  ];
-}
-
-// The "Used by" section of a device and how many interfaces and VLAN devices depend on it.
+// The "Used by" section of a device and how many interfaces and VLAN devices depend on it. A port's live bridge and VLAN devices are already in its details, so only what the details do not show is listed (one not saved yet).
 function deviceUses(ctx, name, kind) {
   const u = usedByDevice(ctx.base, ctx.draft, name);
+  const port = kind === 'port' ? (ctx.live.net?.ports ?? []).find(p => p.name === name) : null;
+  const vlans = port ? u.vlans.filter(v => !(port.vlans ?? []).some(x => x.name === v)) : u.vlans;
   const rows = [
     u.interfaces.length ? ['Interfaces', lines(u.interfaces)] : null,
-    u.vlans.length ? ['VLAN devices', lines(u.vlans)] : null,
-    u.bridge ? ['Port of', mono(u.bridge)] : null,
+    vlans.length ? ['VLAN devices', lines(vlans)] : null,
+    u.bridge && !(port && port.bridge === u.bridge) ? ['Port of', mono(u.bridge)] : null,
     u.wifi.length ? ['Wi-Fi interfaces', h('span', { className: 'np-wrap' }, u.wifi.map(n => h('div', {}, mono(n))), pageLink('#wifi', 'Wi-Fi page'))] : null,
   ];
-  return { node: usedSection(null, rows, kind === 'port' ? 'No interface, VLAN device or bridge uses this port.' : 'Nothing uses this device yet.'), names: [...u.interfaces, ...u.vlans] };
+  const shownAbove = port && (port.bridge || (port.vlans ?? []).length);
+  return { node: usedSection(null, rows, kind === 'port' ? (shownAbove ? 'No interface runs on this port itself.' : 'No interface, VLAN device or bridge uses this port.') : 'Nothing uses this device yet.'), names: [...u.interfaces, ...u.vlans] };
+}
+
+// The live details of a port, as on the Ethernet ports tab (link, negotiation, hardware, throughput, errors, bridge, VLAN devices, cable test), or nothing when
+// the router reports no port of that name.
+function portDetails(ctx, name, num) {
+  const live = portLive(ctx.live.net, name);
+  // The note sits at the right of the heading: a drawer with a form pauses the page, but not these details.
+  const title = h('span', { className: 'pl-title' }, 'Port details', live ? h('span', { className: 'pl-note muted small' }, 'Live: the rest of the page is paused while you edit.') : null);
+  return section(num ?? null, title, null, live ?? infoList([['State', muted('The router reports no port of this name.')]]));
 }
 
 // The live information of a bridge from the page's bridge module (bridgelive.js), put into `box` when the module exists: members with link, spanning-tree
@@ -228,7 +227,8 @@ function sectionPanel(ctx, d) {
   const v = ctx.draft.devices[d.id];
   const type = DEVICE_TYPES.find(t => t.id === d.type);
   const live = d.type === 'bridge' ? (ctx.live.net?.bridges ?? []).find(b => b.name === d.name) : (ctx.live.net?.vlans ?? []).find(x => x.name === d.name);
-  const state = d.isNew ? 'not saved yet' : live ? (live.up ? 'up' : 'down') : 'not present';
+  const port = d.type === 'plain' ? (ctx.live.net?.ports ?? []).find(p => p.name === d.name) : null;
+  const state = d.isNew ? 'not saved yet' : d.type === 'plain' ? (port ? (port.carrier ? 'link up' : 'no link') : 'not present') : live ? (live.up ? 'up' : 'down') : 'not present';
   const subtitle = `${d.type === 'bridge' ? 'Bridge device' : d.type === 'plain' ? 'Network device settings' : 'VLAN device'} · ${state}`;
   if (d.removed) return { title: d.name, subtitle, body: removedBody(`The device section for ${d.name}`, () => { restoreDevice(ctx.draft, d.id); ctx.touched(); ctx.redraw(); }), footer: [] };
   if (!d.editable) {
@@ -275,12 +275,11 @@ function sectionPanel(ctx, d) {
     main = [section(1, 'VLAN tag', 'A VLAN device carries only the frames of one VLAN tag of its base device (a port or a bridge), as a device of its own. An interface can then sit on it.',
       h('div', { className: 'set-fields np-fields' }, typeBox, ...tagIds.map(id => control(settings.essential.find(f => idOf(f) === id)))))];
   } else {
-    main = [section(1, 'Link now', 'Settings here change how the network device itself behaves. The device section is optional: without one the port works with its defaults.',
-      infoList(portRows(ctx.live.net, d.name)))];
+    main = [portDetails(ctx, d.name, 1)];
   }
   const rest = vlan ? settings.essential.filter(f => !tagIds.includes(idOf(f))) : settings.essential;
   const groups = settings.groups.map(g => ({ group: g.group, fields: g.fields.filter(f => !vlan || !tagIds.includes(idOf(f))) })).filter(g => g.fields.length);
-  const settingsSection = section(2, 'Settings', null,
+  const settingsSection = section(2, 'Settings', d.type === 'plain' ? 'Settings here change how the network device itself behaves. The device section is optional: without one the port works with its defaults.' : null,
     rest.length ? h('div', { className: 'set-fields np-fields' }, rest.map(control)) : null,
     advancedBlock(`dev:${d.id}`, groups, control, v, extraOptions(d.raw, d.secrets, known, 'device section')));
   const uses = deviceUses(ctx, d.name.trim(), d.type === 'plain' ? 'port' : d.type);
@@ -301,7 +300,7 @@ function livePanel(ctx, name) {
   const port = (net?.ports ?? []).find(p => p.name === name);
   const kind = bridge ? 'Bridge device' : vlan ? 'VLAN device' : 'Network device';
   const rows = bridge ? [['State', badge(bridge.up ? 'up' : 'down', bridge.up ? 'success' : 'danger')], ['Members', lines(bridge.members.map(m => m.name))]]
-    : vlan ? [['State', badge(vlan.up ? 'up' : 'down', vlan.up ? 'success' : 'danger')], ['Tag', `VLAN ${vlan.vid} on ${vlan.parent}`]] : portRows(net, name);
+    : vlan ? [['State', badge(vlan.up ? 'up' : 'down', vlan.up ? 'success' : 'danger')], ['Tag', `VLAN ${vlan.vid} on ${vlan.parent}`]] : [];
   const uses = deviceUses(ctx, name, port ? 'port' : 'device');
   const add = button('Add settings for this device', 'plus-lg', () => {
     const id = addDevice(ctx.base, ctx.draft, 'plain');
@@ -315,7 +314,7 @@ function livePanel(ctx, name) {
   return {
     title: name, subtitle: kind,
     body: panelBody(
-      section(null, 'Now', `A ${kind.toLowerCase()} the router reports. It has no device section in the configuration, which is normal: it works with its defaults, and an interface can sit on it directly.`, infoList(rows)),
+      port ? portDetails(ctx, name) : section(null, 'Now', `A ${kind.toLowerCase()} the router reports. It has no device section in the configuration, which is normal: it works with its defaults, and an interface can sit on it directly.`, infoList(rows)),
       bridge ? liveBox : null,
       section(null, 'Settings', 'Give the device settings of its own (MTU, MAC address, link speed, flow control) by adding a device section for it.', h('div', {}, add)),
       uses.node),

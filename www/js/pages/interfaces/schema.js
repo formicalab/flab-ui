@@ -218,7 +218,7 @@ export const DEVICE_FIELDS = [
   { key: 'ageing_time', type: 'int', number: true, min: 10, max: 1000000, group: 'stp', types: ['bridge'], label: 'MAC aging time (s)', placeholder: '300',
     hint: 'Seconds after which a learned MAC address is forgotten.' },
   { key: 'vlan_filtering', type: 'bool', group: 'general', types: ['bridge'], label: 'VLAN filtering', default: false,
-    hint: 'Make the bridge VLAN aware: frames are forwarded according to the bridge VLAN table (the Wired network page edits it). Switching it on or off changes how every port forwards, so it can cut your connection.' },
+    hint: 'Make the bridge VLAN aware: frames are forwarded according to the bridge VLAN table (the Ethernet ports tab edits it). Switching it on or off changes how every port forwards, so it can cut your connection.' },
   { key: 'bridge_empty', type: 'bool', group: 'general', types: ['bridge'], label: 'Keep the bridge without ports', default: false,
     hint: 'Create the bridge even when no port is in it, for example a bridge that only Wi-Fi networks join.' },
   { key: 'igmp_snooping', type: 'bool', group: 'multicast', types: ['bridge'], label: 'IGMP snooping', default: false,

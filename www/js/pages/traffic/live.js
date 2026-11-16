@@ -1,6 +1,6 @@
 // The Live tab of the Traffic page: how much each interface carries right now, and the totals.
 //
-// The counters come from flab.network (the same call, and the same rate tracker, as the Wired network page: see
+// The counters come from flab.network (the same call, and the same rate tracker, as the Ethernet ports view: see
 // network/shared.js and network/util.js), so rates are derived in the browser from successive polls and a short
 // history is kept per interface. Interfaces are whatever the router reports; nothing is named here.
 import { h } from '../../core/dom.js';

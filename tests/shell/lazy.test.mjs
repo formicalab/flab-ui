@@ -28,6 +28,7 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } 
     document: { hidden: false, head: { append: node => styles.push(node) }, addEventListener: (name, fn) => { events[name] = fn; } },
     addEventListener: (name, fn) => { events[name] = fn; },
     setInterval: fn => { timers.set(++timer, fn); return timer; },
+    setTimeout: fn => { timers.set(++timer, fn); return timer; },
     clearInterval: id => timers.delete(id),
   });
   async function synthetic(values) {
@@ -44,8 +45,8 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } 
       const id = specifier.split('/')[1].replace('.js', '');
       calls.push(`import:${id}`);
       if (imports[id]) await imports[id].promise;
-      return synthetic({ openTool: (tool, host) => calls.push(`tool:${tool}:${host}`), openBoardItem: item => calls.push(`item:${item}`), default: {
-        id, label: id, interval: 1000, css: `css/${id}.css`, isPaused: () => paused.on,
+      return synthetic({ openTool: (tool, host) => calls.push(`tool:${tool}:${host}`), openBoardItem: item => calls.push(`item:${item}`), openView: view => calls.push(`view:${view}`), default: {
+        id, label: id, interval: id === 'interfaces' ? () => 2000 : 1000, css: `css/${id}.css`, isPaused: () => paused.on,
         load: () => { calls.push(`load:${id}`); return loads[id]?.() ?? Promise.resolve({ value: id }); },
         controls: ctl => { controls[id] = ctl; return { nodes: [] }; },
         view: data => { renders.push(data.value); return [element('p', {}, data.value)]; },
@@ -88,7 +89,7 @@ test('login imports no page modules; successful sign-in resolves only the select
   await s.signIn();
   assert.deepEqual(s.calls, ['import:overview', 'load:overview']);
   const links = s.app.children[0].children[0].children.filter(n => n?.href);
-  assert.equal(links.map(n => n.href).join(','), '#overview,#network,#wifi,#mesh,#ipsec,#wireguard,#firewall,#dhcp,#dns,#ddns,#interfaces,#routing,#traffic,#services,#toolbox,#logs,#settings');
+  assert.equal(links.map(n => n.href).join(','), '#overview,#wifi,#mesh,#ipsec,#wireguard,#firewall,#dhcp,#dns,#ddns,#interfaces,#routing,#traffic,#services,#toolbox,#logs,#settings');
   assert.equal(links.at(-1).children.at(-1), 'System settings');
 });
 
@@ -177,6 +178,32 @@ test('a poll reply that arrives after the page became paused is dropped, an expl
   [...s.timers.values()][0]();
   await tick();
   assert.equal(text(s.app).includes('load 4'), true);
+});
+
+test('#network opens the Ethernet ports view of Devices and Interfaces; every other visit starts on the board', async () => {
+  const s = await shell();
+  await s.navigate('#network');
+  assert.equal(s.context.location.hash, '#interfaces');
+  assert.equal(s.calls.includes('import:network'), false, 'Ethernet is no page of its own');
+  await s.navigate('#interfaces'); // the hashchange the browser fires after the alias replaced the hash
+  assert.deepEqual(s.calls.filter(call => call.startsWith('view:')), ['view:ports']);
+  assert.ok(s.calls.lastIndexOf('view:ports') < s.calls.lastIndexOf('load:interfaces'), 'the view is chosen before the page loads and draws');
+  await s.navigate('#wifi');
+  await s.navigate('#interfaces');
+  assert.deepEqual(s.calls.filter(call => call.startsWith('view:')), ['view:ports', 'view:board']);
+});
+
+test('a page that gives its period as a function is polled with a timeout that schedules the next one', async () => {
+  const s = await shell();
+  await s.navigate('#interfaces');
+  assert.equal(s.timers.size, 1, 'one poll timer');
+  const loads = () => s.calls.filter(call => call === 'load:interfaces').length;
+  const before = loads();
+  [...s.timers.values()][0]();
+  await tick();
+  assert.equal(loads(), before + 1, 'the timer polls the page');
+  assert.equal(s.timers.size, 2, 'and schedules the next poll');
+  await s.navigate('#wifi');
 });
 
 test('openBoardItem opens the board item after the board import, keeps only the newest request and ignores a stale navigation', async () => {

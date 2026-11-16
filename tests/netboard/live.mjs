@@ -57,14 +57,15 @@ for (const width of [1920, 1280, 900]) {
     // Nothing overlaps its neighbours: the cards of one lane are in a column, and every card stays inside its lane.
     const geometry = await page.evaluate(() => [...document.querySelectorAll('.nb-lane')].map(lane => ({
       lane: lane.getBoundingClientRect().toJSON(),
-      cards: [...lane.querySelectorAll('.nb-card')].map(c => ({ id: c.dataset.id, ...c.getBoundingClientRect().toJSON() })),
+      cards: [...lane.querySelectorAll('.nb-card')].map(c => ({ id: c.dataset.id, inner: Boolean(c.parentElement.closest('.nb-card')), ...c.getBoundingClientRect().toJSON() })),
     })));
     let overlapping = '';
     let outside = '';
     for (const g of geometry) {
       for (let i = 0; i < g.cards.length; i++) {
         if (g.cards[i].x < g.lane.x - 1 || g.cards[i].x + g.cards[i].width > g.lane.x + g.lane.width + 1) outside += `${g.cards[i].id} `;
-        for (let j = i + 1; j < g.cards.length; j++) if (overlap(g.cards[i], g.cards[j])) overlapping += `${g.cards[i].id}/${g.cards[j].id} `;
+        // A radio holds its interfaces' chips, so a chip and a top level card are not compared.
+        for (let j = i + 1; j < g.cards.length; j++) if (g.cards[i].inner === g.cards[j].inner && overlap(g.cards[i], g.cards[j])) overlapping += `${g.cards[i].id}/${g.cards[j].id} `;
       }
     }
     check(!overlapping && !outside, `${label}: no cards overlap and every card stays inside its lane`, `${overlapping}| ${outside}`);
@@ -130,7 +131,22 @@ await page.waitForSelector('.fl-drawer.show');
 check(/Firewall page/.test(await page.locator('.fl-drawer').innerText()) && await page.locator('.fl-drawer a[href="#firewall"]').count() === 1, 'a firewall zone opens a read-only recap with a link to the Firewall page');
 await page.click('.fl-drawer .btn-close');
 
-console.log('\n== the Device menu, the wizard button and Network-wide settings ==');
+console.log('\n== radios are containers ==');
+const radioCards = page.locator('.nb-lane-ports .nb-radio');
+const nRadios = await radioCards.count();
+check(nRadios >= 1 && await radioCards.first().locator('.nb-pico svg').count() === 1 && await radioCards.first().locator('.nb-radio-ifs .nb-chip, .nb-radio-ifs .muted').count() >= 1, 'each radio is a card with the Wi-Fi icon that holds its wireless interfaces');
+check(await page.locator('.nb-lane-ports .nb-card.nb-port .nb-pico svg').count() >= 1, 'and the Ethernet ports have their icon too');
+const chipId = await radioCards.first().locator('.nb-chip').first().getAttribute('data-id').catch(() => null);
+if (chipId) {
+  await radioCards.first().locator('.nb-chip').first().hover();
+  check(await radioCards.first().evaluate(e => e.classList.contains('nb-rel') && getComputedStyle(e).opacity === '1'), 'hovering an interface keeps its radio bright');
+  await page.mouse.move(2, 2);
+}
+await radioCards.first().locator('.nb-line').click();
+await page.waitForSelector('.fl-drawer.show');
+const radioDrawer = await page.locator('.fl-drawer').innerText();
+check(/Radio/.test(radioDrawer) && /Hardware/.test(radioDrawer) && /Settings/.test(radioDrawer) && /Channel/.test(radioDrawer) && await page.locator('.fl-drawer a[href="#wifi"]').count() >= 1, 'clicking a radio opens its drawer: hardware, state, settings and the link to the Wi-Fi page');
+await page.click('.fl-drawer .btn-close');
 await page.locator('.nb-lane-devices .nb-menu-wrap > button').click();
 check(await page.locator('.nb-menu-item').count() === 3 && await page.locator('.nb-menu').isVisible(), 'the Device menu offers a bridge, a VLAN device and port settings');
 await page.keyboard.press('Escape');
@@ -157,7 +173,7 @@ if (shots) await page.screenshot({ path: path.join(shots, 'netboard-final.png') 
 console.log('\n== leaving the page, the old Bridges route ==');
 await iface.click({ position: { x: 6, y: 6 } });
 await page.waitForSelector('.fl-drawer.show');
-await page.click('a[href="#network"]');
+await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');
 check(await page.locator('.fl-drawer').count() === 0 && await page.locator('body.fl-drawer-open').count() === 0, 'leaving the page closes the drawer');
 await page.evaluate(() => { location.hash = 'bridges'; });

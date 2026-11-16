@@ -7,7 +7,7 @@ import { ubus, hasSession, logout, clearSession, AuthError } from './ubus.js';
 import { showLogin } from './login.js';
 import { ensureCurrent } from './freshness.js';
 import { card } from './ui.js';
-import { pages, aliases } from '../pages/index.js';
+import { pages, aliases, enterAlias } from '../pages/index.js';
 
 // Module-level state: the refresh interval of the open page, a function that refreshes the open page (for the
 // tab becoming visible again), the number of the current route (a route that was superseded while it awaited the
@@ -49,7 +49,7 @@ async function route() {
   }
   // A route that moved to another page (see `aliases` in pages/index.js): the hash is replaced, which runs this function again.
   const alias = aliases[location.hash.slice(1)];
-  if (alias) { location.replace(`#${alias}`); return; }
+  if (alias) { enterAlias(location.hash.slice(1)); location.replace(`#${alias}`); return; }
   const entry = pages.find(p => p.id === location.hash.slice(1)) ?? pages[0];
 
   // The board info feeds the navigation header on every page, and is read on every route so a renamed router
@@ -134,7 +134,13 @@ async function route() {
   // Pages may suspend polling (Pause button) without stopping the timer. A poll is also skipped while the previous
   // one is still running and while the tab is in the background; the tab refreshes as soon as it is shown again.
   const due = () => !loading && !document.hidden && !page.isPaused?.();
-  timer = setInterval(() => { if (due()) load(true); }, page.interval);
+  // A page may give its period as a function (re-read before each poll): a timeout that schedules the next one, which `clearInterval` ends too.
+  if (typeof page.interval === 'function') {
+    const next = () => { timer = setTimeout(() => { if (due()) load(true); next(); }, page.interval()); };
+    next();
+  } else {
+    timer = setInterval(() => { if (due()) load(true); }, page.interval);
+  }
   refresh = () => { if (!loading && !page.isPaused?.()) load(true); };
 }
 

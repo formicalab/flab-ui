@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Pages
+
+- **Ethernet is now a view of Devices and Interfaces.** The page has two tabs in the command bar, **Board** and **Ethernet ports** (the old
+  Ethernet page, unchanged), so the physical ports, their VLAN tables and the board's editing sit in one place and a port's **Settings**
+  button no longer leaves the page. The navigation loses its Ethernet entry; the route `#network` still works and opens the page on the
+  Ethernet ports tab, and every other visit starts on the board. The ports view keeps its 3 second refresh while the board keeps 5
+  (a page's refresh period may now be a function). The Pause and Refresh buttons are shared. The details the Ethernet page had for a port (link and its
+  changes, negotiation, hardware, throughput graph, errors with the breakdown, bridge and spanning-tree state, VLAN devices, the optical module and the
+  cable test) are now also in the port's drawer on the board, as **Port details**, built from the same cells as the table. They refresh by themselves every 3 s while the drawer is open, even while its form pauses the page.
+  Ports show their hardware in one line on the board. Each radio is a container of its Wi-Fi and mesh interfaces, with the Wi-Fi icon, and opens a read-only drawer with its hardware, state and settings.
+
 ### Toolbox
 
 - New **Packet capture** tool (needs `tcpdump`): records the packets of an interface (or all) and lists them as they arrive, with

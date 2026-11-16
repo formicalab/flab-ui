@@ -6,6 +6,7 @@ import { badge, kv, mono, muted } from '../../core/ui.js';
 import { fmtDur } from '../../core/format.js';
 import { fmtSpeed } from '../network/util.js';
 import { bridgeLive } from './bridgelive.js';
+import { portLive } from '../network/portlive.js';
 
 // What a firewall policy means in words.
 const POLICY = { ACCEPT: 'accepted', REJECT: 'rejected, with an error reply', DROP: 'dropped silently' };
@@ -72,12 +73,12 @@ export function livePanel(item, data) {
   if (item.kind === 'port') {
     return {
       title: item.name, subtitle: 'Network device · port',
-      body: h('div', { className: 'nb-panel' }, kv([
+      body: h('div', { className: 'nb-panel' }, portLive(data.net, item.name) ?? kv([
         ['Link', item.up ? badge('up', 'success') : badge('no link', '')],
         ['Speed', item.up && item.speed ? fmtSpeed(item.speed) : '–'],
         item.role ? ['Position', item.role.toUpperCase()] : null,
       ])),
-      footer: [pageLink('#network', 'Wired network page')],
+      footer: [pageLink('#network', 'Ethernet ports')],
     };
   }
   // A device: its type and relations, and for a bridge the live bridge information.

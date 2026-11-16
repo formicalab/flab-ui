@@ -12,7 +12,6 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | Page | What it does |
 |---|---|
 | Overview | Uptime, CPU, load, memory and temperatures. |
-| Ethernet | Physical ports and VLANs; edit the VLAN sections. |
 | Wi-Fi | Radios, wireless networks and clients; edit channels and settings. |
 | Mesh | 802.11s mesh peers and paths (read only). |
 | IPsec VPN | strongSwan connections, tunnels, traffic and a security score (read only). |
@@ -21,7 +20,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | DHCP | odhcpd and dnsmasq leases, reservations and pools; edit them. |
 | DNS | Unbound or dnsmasq state, options and zones; edit them. |
 | Dynamic DNS | ddns-scripts services, status and logs; edit them. |
-| Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. |
+| Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. A second view lists the Ethernet ports (link, traffic, errors, optical modules, cable test) and the VLAN tables, which can be edited. |
 | Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |
 | Traffic | Bandwidth, connections and nlbwmon usage; edit the nlbwmon settings. |
 | Services | List, start, stop, restart, enable and disable services. |

@@ -6,19 +6,19 @@ import { badge, button, card, muted, sparkline } from '../../core/ui.js';
 import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
 import { fmtSpeed, traffic, newFlaps, newErrors, errorsOf, dropsOf, hwLines, jackOrder, switchLine, STP_ROLE, stpKind } from './util.js';
 import { diagnosticsPanel } from './diagnostics.js';
-import { openBoardItem } from '../index.js';
 import { cableButton, cablePanel, hooks } from './cable.js';
 import { vlanCards } from './vlans.js';
 
-// Ports whose error breakdown is open; kept here so it survives the redraw on every poll.
-const expanded = new Set();
+// Ports whose error breakdown is open; kept here so it survives the redraw on every poll (the table and the drawer of the board share it).
+export const expanded = new Set();
 
 // Autoneg badge plus the speed limits of both ends and the EEE state; only meaningful while the link is up. A swconfig port
 // reports neither autonegotiation nor the speeds of the ends, so only what it does report is shown.
-function negotiation(p) {
+export function negotiation(p) {
   if (!p.carrier) return muted('–');
-  const limits = p.max_speed != null || p.partner_max != null || p.flow.length
-    ? `${p.max_speed != null ? `max ${fmtSpeed(p.max_speed)} · partner ${fmtSpeed(p.partner_max)}` : ''}${p.flow.length ? `${p.max_speed != null ? ' · ' : ''}pause ${p.flow.join('/')}` : ''}`
+  const flow = p.flow ?? [];
+  const limits = p.max_speed != null || p.partner_max != null || flow.length
+    ? `${p.max_speed != null ? `max ${fmtSpeed(p.max_speed)} · partner ${fmtSpeed(p.partner_max)}` : ''}${flow.length ? `${p.max_speed != null ? ' · ' : ''}pause ${flow.join('/')}` : ''}`
     : null;
   return h('div', { className: 'neg' },
     p.autoneg == null ? null : p.autoneg ? badge('auto-negotiated', '') : badge('forced', 'warning'),
@@ -29,7 +29,7 @@ function negotiation(p) {
 }
 
 // PHY / switch / SoC / driver / medium lines from the device tree and sysfs (see hwLines).
-function hardwareCell(p) {
+export function hardwareCell(p) {
   const lines = hwLines(p);
   return lines.length
     ? h('div', { className: 'hw-lines' }, lines.map(([k, v]) => h('div', {}, h('span', { className: 'muted' }, `${k} `), v)))
@@ -37,7 +37,7 @@ function hardwareCell(p) {
 }
 
 // Errors and drops with a button that opens the breakdown row below (only when the backend has one).
-function errorsCell(p) {
+export function errorsCell(p) {
   const errs = errorsOf(p), drops = dropsOf(p);
   if (!errs && !drops) return badge('clean', 'success');
   const open = expanded.has(p.name);
@@ -53,7 +53,7 @@ function errorsCell(p) {
 
 // The Link column: link state and speed, how often the link changed state (and how many times since the page was opened), an alarm
 // badge when the optical module raises one, and the cable-test button.
-function linkCell(p) {
+export function linkCell(p) {
   const alarms = p.sfp?.alarms ?? [];
   const cable = cableButton(p);
   return h('div', {},
@@ -92,19 +92,35 @@ function portCell(p) {
         h('div', {}, h('strong', {}, p.name), role ? h('span', { className: 'port-role' }, role) : null,
           p.sfp?.present ? badge('SFP', p.sfp.alarms?.length ? 'danger' : 'info', [p.sfp.vendor, p.sfp.part].filter(Boolean).join(' ')) : null),
         h('div', { className: 'muted small mono' }, p.mac ?? ''),
-        p.role === 'conduit' ? null : button('Settings', 'gear', () => openBoardItem(`port:${p.name}`), 'btn-fl port-settings'))));
+        p.role === 'conduit' ? null : button('Settings', 'gear', () => hooks.openItem(`port:${p.name}`), 'btn-fl port-settings'))));
 }
 
 // The Throughput column: the live rate in each direction, the totals and a graph of the recent rates. A port without counters of its
 // own (a swconfig port) says so instead of drawing an empty graph.
-function throughputCell(p) {
+export function throughputBody(p) {
   const t = traffic(p.name);
   const counted = p.stats?.rx_bytes != null;
-  return h('td', { className: 'num' },
+  return [
     p.carrier && counted ? h('div', {}, h('div', {}, icon('arrow-down', 12), fmtLine(t.rxNow)), h('div', {}, icon('arrow-up', 12), fmtLine(t.txNow))) : h('div', { className: 'muted' }, p.carrier ? 'no counters' : '–'),
     p.carrier && counted ? sparkline([{ values: t.rx, cls: 'rx' }, { values: t.tx, cls: 'tx' }], { width: 130, height: 26 }) : null,
-    counted ? h('div', { className: 'muted small' }, `total ↓ ${fmtBytes(p.stats.rx_bytes)} ↑ ${fmtBytes(p.stats.tx_bytes)}`) : null);
+    counted ? h('div', { className: 'muted small' }, `total ↓ ${fmtBytes(p.stats.rx_bytes)} ↑ ${fmtBytes(p.stats.tx_bytes)}`) : null,
+  ];
 }
+
+// The Throughput column as a table cell.
+const throughputCell = p => h('td', { className: 'num' }, ...throughputBody(p));
+
+// The bridge a port belongs to, its spanning-tree state and role, and the MAC addresses learned on it; or "not bridged".
+export function bridgeCell(p) {
+  return p.bridge
+    ? h('div', {}, badge(p.bridge, 'info'), p.brport ? badge(p.brport.state_name, stpKind(p.brport.state_name)) : null,
+      p.brport?.role ? h('div', { className: 'muted small' }, `${STP_ROLE[p.brport.role]} · cost ${p.brport.path_cost}`) : null,
+      p.macs != null ? h('div', { className: 'muted small' }, `${fmtNum(p.macs)} MAC${p.macs === 1 ? '' : 's'} learned`) : null)
+    : muted('not bridged');
+}
+
+// The VLAN devices on a port, with their state.
+export const vlansCell = p => ((p.vlans ?? []).length ? p.vlans.map(v => badge(`${v.name} (${v.vid})`, v.up ? 'success' : 'danger')) : muted('–'));
 
 // The table row(s) of one port: the port itself, plus the breakdown row while its Details are open and the cable-test result.
 function row(p) {
@@ -115,12 +131,8 @@ function row(p) {
     h('td', {}, negotiation(p)),
     throughputCell(p),
     h('td', { className: 'num' }, errorsCell(p)),
-    h('td', {}, p.bridge
-      ? h('div', {}, badge(p.bridge, 'info'), p.brport ? badge(p.brport.state_name, stpKind(p.brport.state_name)) : null,
-        p.brport?.role ? h('div', { className: 'muted small' }, `${STP_ROLE[p.brport.role]} · cost ${p.brport.path_cost}`) : null,
-        p.macs != null ? h('div', { className: 'muted small' }, `${fmtNum(p.macs)} MAC${p.macs === 1 ? '' : 's'} learned`) : null)
-      : muted('not bridged')),
-    h('td', {}, (p.vlans ?? []).length ? p.vlans.map(v => badge(`${v.name} (${v.vid})`, v.up ? 'success' : 'danger')) : muted('–')));
+    h('td', {}, bridgeCell(p)),
+    h('td', {}, vlansCell(p)));
   const rows = [main];
   if (p.diagnostics && expanded.has(p.name)) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, diagnosticsPanel(p))));
   const cable = cablePanel(p);
@@ -135,6 +147,13 @@ const COLS = HEAD.length;
 // Redraw callback handed in by the page; the Details buttons call it. Module-level because errorsCell
 // is created fresh on every redraw.
 let rerender = () => {};
+
+// Points the Details buttons (and the cable test's redraw) at the redraw of the view that shows them: the Ethernet ports view, or the board
+// when a port's details are in its drawer.
+export function bindRedraw(redraw) {
+  rerender = redraw;
+  hooks.rerender = redraw;
+}
 
 // The "Ports" card: under the header one line per switch (its user ports, CPU ports and the state of its link to the SoC), then one
 // row per port. The rows follow the order the board lists its ports (usually the order on the case) with each switch's ports kept
@@ -159,8 +178,7 @@ function details(net) {
 // of the bridges and swconfig switches that have a VLAN table; `vlan` is the VLAN editor's context (vlanpage.js), null when the
 // login may not change the config.
 export function portsPanel(net, redraw, vlan) {
-  rerender = redraw;
-  hooks.rerender = redraw;
+  bindRedraw(redraw);
   // A port that vanished must not leave a stale open panel behind.
   for (const name of expanded) if (!net.ports.some(p => p.name === name)) expanded.delete(name);
   return [details(net), ...vlanCards(net, vlan)];

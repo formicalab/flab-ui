@@ -1,4 +1,4 @@
-// Pure model of the VLAN editor on the Wired network page: the VLAN tables as the network config holds them (the `bridge-vlan`
+// Pure model of the VLAN editor on the Ethernet ports view: the VLAN tables as the network config holds them (the `bridge-vlan`
 // sections of DSA and VLAN-filtering bridges, the `switch_vlan` sections of swconfig switches), the draft the matrix edits, the
 // review list, validation, the UCI operations a save makes and the check after a save. No DOM and no network, so it is unit-tested
 // on its own (tests/vlanedit/model.test.mjs).

@@ -1,21 +1,17 @@
-// Ethernet page (route #network): the Ethernet ports, as one table with a row per port (link, hardware, traffic graph, errors).
-// Bridges and the layers built on
-// the ports have their own pages. Data comes from the flab.network plugin; everything is rediscovered on
+// The Ethernet ports view of the Devices and Interfaces page (it was the page #network; that route now opens this view): the Ethernet
+// ports, as one table with a row per port (link, hardware, traffic graph, errors). The bridges and the layers built on
+// the ports are the other view, the board. Data comes from the flab.network plugin; everything is rediscovered on
 // every poll and counters are turned into rates in the browser (core/rates.js), so ports that appear,
 // change or disappear are reflected without a reload. The VLAN cards under the port table can be edited
 // (vlanpage.js, vlanedit.js, vlanmodel.js): the editor stages changes to the VLAN sections of the network config.
+// This module is not a page of its own: pages/interfaces/index.js hosts it (its load, view, command-bar nodes and pause rule).
 import { tile, tiles, healthBanner } from '../../core/ui.js';
-import { pauseControl, refreshControl } from '../../core/controls.js';
 import { fmtLine, fmtNum } from '../../core/format.js';
 import { portsPanel } from './ports.js';
 import { hooks } from './cable.js';
 import { loadWired } from './shared.js';
 import { vlan } from './vlanpage.js';
 import { traffic, portFindings, errorsOf, dropsOf, newFlaps } from './util.js';
-
-// Module-level so the Pause button state survives the redraw on every poll.
-const state = { paused: false };
-
 // KPI tiles. Throughput sums the external ports only: a conduit (SoC MAC feeding a switch) carries the
 // same frames as the switch ports and would be counted twice.
 function summary(net) {
@@ -36,21 +32,19 @@ function summary(net) {
     tile('Link changes', flaps, 'since this page was opened', flaps ? 'text-warning' : ''));
 }
 
-export default {
-  id: 'network',
-  label: 'Ethernet',
-  title: 'Ethernet',
-  icon: 'ethernet',
-  interval: 3000,
-  css: ['css/network.css', 'css/forms.css'],
-  isPaused: () => state.paused || vlan.paused(),
+// The view the host page shows on its Ports tab.
+export const ports = {
+  css: ['css/network.css'],
+  // The VLAN editor holds unsaved edits, a focused control or a save in progress (the host adds the Pause button).
+  isPaused: () => vlan.paused(),
 
   // The wired data, plus what the VLAN editor needs while it is open.
   load: async () => vlan.load(await loadWired()),
 
-  controls({ reload }) {
+  // The command-bar node of the view: the review banner of the VLAN editor.
+  attach(reload) {
     hooks.reload = reload;
-    return { nodes: [pauseControl(state), refreshControl(reload), vlan.attach(reload)] };
+    return vlan.attach(reload);
   },
 
   // Summary tiles, the findings banner (only when there is something to report), then the port table (which redraws via `rerender`).

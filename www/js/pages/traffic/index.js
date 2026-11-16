@@ -1,6 +1,6 @@
 // The Traffic page (route #traffic): where the bandwidth goes. Four tabs share the page and its command bar:
 //   Live         the rate of every interface with a short history, and the totals (flab.network, the counters the
-//                Wired network page uses, plus flab.traffic status for the connection count)
+//                Ethernet ports view uses, plus flab.traffic status for the connection count)
 //   Connections  the connection tracking table: who talks to whom, NAT, state, size (flab.traffic connections)
 //   Usage        the data each host moved in an nlbwmon accounting period (flab.traffic usage), offered only when the
 //                router has nlbw

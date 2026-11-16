@@ -12,6 +12,7 @@
 // and a changed device of an interface moves its connector at once. Pure data in, plain objects out: unit-tested without a browser
 // (tests/netboard/boardmodel.test.mjs).
 import { deviceList, ifaceList } from './model.js';
+import { hwSummary } from '../network/util.js';
 
 // Description of the device a netifd protocol creates under its interface, by protocol name.
 const PROTO_DEVICE = {
@@ -63,7 +64,7 @@ export function editSource(base, draft) {
 // editSource() or null when the page cannot edit (then only what the router reports is shown). Returns
 //   items    Map(id -> item), every item with `id`, `kind` (port, wifi, mesh, radio, device, interface, zone) and `lane`
 //   edges    [{ id, from, to, kind }] from the left item to the right one (kind: carry, rides, tunlink, zone)
-//   lanes    { ports: [{ id, title, band, up, enabled, items }] (groups), devices: [item], interfaces: [item], zones: [item] }
+//   lanes    { ports: [{ id, title, band, up, enabled, items, radio }] (groups; `radio` is the radio's own item, null for the Ethernet ports), devices: [item], interfaces: [item], zones: [item] }
 //   findings [{ level, text }]      stats  the counts behind the summary tiles
 export function buildBoard(data, edit = null) {
   const net = data.net ?? {};
@@ -87,12 +88,12 @@ export function buildBoard(data, edit = null) {
   const portsGroup = { id: 'pg', title: 'Ethernet ports', band: null, up: null, enabled: true, items: [] };
   for (const p of net.ports ?? []) {
     const item = add({ id: `port:${p.name}`, kind: 'port', lane: 'ports', devName: p.name, name: p.name, up: Boolean(p.carrier), speed: p.speed ?? null, role: p.board?.role ?? null,
-      index: p.board?.index ?? null, hidden: p.role === 'conduit' || p.type === 'swconfig', settings: null });
+      index: p.board?.index ?? null, hw: hwSummary(p), hidden: p.role === 'conduit' || p.type === 'swconfig', settings: null });
     portsGroup.items.push(item);
   }
-  // One group per radio, its Wi-Fi and mesh interfaces as items; a radio without any interface is an item of its own.
+  // One group per radio: the radio is an item of its own (`group.radio`, its interfaces are its `children`) and its Wi-Fi and mesh interfaces are the items.
   for (const r of radios) {
-    const group = { id: `rg:${r.name}`, title: r.name, band: r.band ?? null, up: Boolean(r.up), enabled: r.enabled !== false, items: [] };
+    const group = { id: `rg:${r.name}`, title: r.name, band: r.band ?? null, up: Boolean(r.up), enabled: r.enabled !== false, items: [], radio: null };
     groups.set(group.id, group);
     for (const w of r.interfaces ?? []) {
       const name = w.ifname ?? w.section;
@@ -100,7 +101,8 @@ export function buildBoard(data, edit = null) {
         up: Boolean(w.up && r.up), enabled: w.enabled !== false, running: Boolean(w.ifname), networks: w.networks ?? [] });
       group.items.push(item);
     }
-    if (!(r.interfaces ?? []).length) group.items.push(add({ id: `radio:${r.name}`, kind: 'radio', lane: 'ports', devName: null, name: r.name, radio: r.name, band: r.band ?? null, up: Boolean(r.up), enabled: r.enabled !== false, networks: [] }));
+    group.radio = add({ id: `radio:${r.name}`, kind: 'radio', lane: 'ports', devName: null, name: r.name, radio: r.name, band: r.band ?? null, phy: r.phy ?? null, hw: r.hardware?.hardware ? [r.hardware.hardware] : [],
+      up: Boolean(r.up), enabled: r.enabled !== false, networks: [], children: group.items.map(i => i.id) });
   }
   //#endregion
 
@@ -289,7 +291,7 @@ export function buildBoard(data, edit = null) {
   portsGroup.items = portsGroup.items.filter(p => !p.hidden || used.has(p.id)).sort((a, b) => (a.index ?? 999) - (b.index ?? 999) || a.name.localeCompare(b.name));
   const radioGroups = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title)).map(g => ({ ...g, items: g.items.sort((a, b) => a.name.localeCompare(b.name)) }));
   board.lanes = {
-    ports: [...(portsGroup.items.length ? [portsGroup] : []), ...radioGroups.filter(g => g.items.length)],
+    ports: [...(portsGroup.items.length ? [portsGroup] : []), ...radioGroups.filter(g => g.radio || g.items.length)],
     devices: [...items.values()].filter(i => i.kind === 'device').sort((a, b) => rank(a.id) - rank(b.id) || DEVICE_ORDER[a.type] - DEVICE_ORDER[b.type] || a.name.localeCompare(b.name)),
     interfaces: [...items.values()].filter(i => i.kind === 'interface').sort(byRankName),
     zones: zoneItems,
@@ -318,13 +320,15 @@ export function buildBoard(data, edit = null) {
 }
 
 // Everything connected to an item, for highlighting: the items it is built on (to the left, transitively) and the items built on it (to the
-// right, transitively), and the edges between them. A bridge's other ports and a VLAN's sibling are not related to a port, only its own chain is.
+// right, transitively), and the edges between them. A bridge's other ports and a VLAN's sibling are not related to a port, only its own chain is. A radio is
+// related to everything its wireless interfaces are.
 export function related(board, id) {
-  const ids = new Set([id]);
+  const start = [id, ...(board.items.get(id)?.children ?? [])];
+  const ids = new Set(start);
   // Adds everything reachable from the item in one direction: `forward` follows from -> to, otherwise to -> from.
   const walk = forward => {
-    const queue = [id];
-    const seen = new Set([id]);
+    const queue = [...start];
+    const seen = new Set(start);
     while (queue.length) {
       const at = queue.shift();
       for (const e of board.edges) {

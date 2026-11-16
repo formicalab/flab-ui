@@ -699,7 +699,7 @@ export function risksOf(data, draft, host = '') {
     const before = valueOf(PORTS_FIELD, d.raw.ports), after = draft.devices[d.id].ports.map(p => p.trim()).filter(Boolean);
     const gone = before.filter(p => !after.includes(p));
     if (gone.length) out.push(`Removing ${gone.join(', ')} from ${d.name}${carries ? ', which carries the management network' : ''}: anything reached through ${gone.length > 1 ? 'those ports' : 'that port'} loses its connection${carries ? ', and a computer plugged into it cannot reach the router' : ''}.`);
-    if (lines.includes('vlan_filtering')) out.push(`Switching VLAN filtering ${draft.devices[d.id].vlan_filtering ? 'on' : 'off'} on ${d.name} changes how every port of the bridge forwards${carries ? ' and can cut your connection' : ''}; make sure the bridge VLAN table (Wired network page) lets the management network through.`);
+    if (lines.includes('vlan_filtering')) out.push(`Switching VLAN filtering ${draft.devices[d.id].vlan_filtering ? 'on' : 'off'} on ${d.name} changes how every port of the bridge forwards${carries ? ' and can cut your connection' : ''}; make sure the bridge VLAN table (Ethernet ports tab) lets the management network through.`);
     else if (carries && lines.some(k => ['macaddr', 'mtu'].includes(k))) out.push(`Changing the MAC address or MTU of ${d.name}, which carries the management network, briefly drops its link.`);
   }
   return out;

@@ -140,6 +140,20 @@ export function hwLines(p) {
   ].filter(Boolean);
 }
 
+// The hardware of a port for its card on the board, one short line each: the PHY, the switch (or the SoC MAC) with the port number, the optical module;
+// empty when nothing is known.
+export function hwSummary(p) {
+  const hw = p.hardware;
+  const module = p.sfp?.present ? [p.sfp.vendor, p.sfp.part].filter(Boolean).join(' ') || 'optical module' : null;
+  if (!hw && !module) return [];
+  const phy = hw?.phy ? hw.phy.name ?? 'PHY' : null;
+  const port = hw?.switch_port != null ? `port ${hw.switch_port}` : null;
+  // A switch's own PHY is named after the switch ("MediaTek MT7531 PHY"): the line of the PHY then carries the port number and the switch has no line.
+  const sameChip = Boolean(hw?.switch && phy?.includes(hw.switch));
+  const sw = hw?.switch && !sameChip ? [hw.switch, port].filter(Boolean).join(' · ') : hw?.soc ? `${hw.soc} MAC` : null;
+  return [sameChip && port ? `${phy} · ${port}` : phy, sw, module].filter(Boolean);
+}
+
 // The lines about an optical module: what it is, then what its diagnostics read (only the values it reports).
 function sfpLines(sfp) {
   if (!sfp) return [];

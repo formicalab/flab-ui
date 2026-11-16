@@ -1,4 +1,4 @@
-// The cable test of the Wired network page. `ethtool --cable-test` (the flab.network `cable_test` method) sends pulses down the pairs
+// The cable test of the Ethernet ports view. `ethtool --cable-test` (the flab.network `cable_test` method) sends pulses down the pairs
 // of a twisted-pair cable and reads the reflections; the PHY drops the link for a few seconds while it runs, so it is only
 // started from a button, after a confirmation that says so. The result stays under the port's row until it is closed.
 // Which PHY drivers support it varies: the plugin remembers a port that does not, and the button disappears for it.
@@ -9,8 +9,9 @@ import { openDialog } from '../../core/modal.js';
 import { badge, button } from '../../core/ui.js';
 import { fmtSpeed } from './util.js';
 
-// What the page hands over: its redraw and its reload (a call that finds the session ended reloads, which shows the sign-in screen).
-export const hooks = { rerender: () => {}, reload: () => {} };
+// What the page hands over: its redraw and its reload (a call that finds the session ended reloads, which shows the sign-in screen), and
+// the function that opens a board item (`port:<name>`) in the drawer of the board view, which the host page sets.
+export const hooks = { rerender: () => {}, reload: () => {}, openItem: () => {} };
 
 // The test of each port: name to { phase: 'running' | 'done', result }. Kept here so it survives the redraw of every poll.
 const tests = new Map();

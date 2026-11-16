@@ -1,4 +1,4 @@
-// The VLAN membership cards of the Wired network page: one per bridge that filters VLANs or has a VLAN table, and one per switch that
+// The VLAN membership cards of the Ethernet ports view: one per bridge that filters VLANs or has a VLAN table, and one per switch that
 // is driven through swconfig (its VLAN groups). Each is a matrix with one row per VLAN and one column per port, so it reads at a
 // glance which ports carry which VLAN, tagged or untagged, and which VLAN a port puts untagged frames into (its PVID). A login that
 // may change the network config gets an "Edit VLANs" button on each card (and "Set up VLAN filtering" on a bridge that has no table
