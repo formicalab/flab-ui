@@ -206,7 +206,7 @@ const openIf = name => openCard(ifaceCard(name));
 const openDevice = name => openCard(deviceCardOf(name));
 // The title of the open drawer.
 const drawerTitle = () => page.locator('.fl-drawer .fl-drawer-title').innerText();
-// Adds a device of a kind ('Bridge', 'VLAN device', 'Port settings') from the Device menu; the new device opens in the drawer.
+// Adds a device of a kind ('Bridge', 'VLAN device') from the Device menu; the new device opens in the drawer.
 const addDevice = async kind => { await page.locator('.nb-lane-devices .nb-menu-wrap > button').click(); await page.locator(`.nb-menu-item:has(strong:text-is("${kind}"))`).click(); await page.waitForSelector('.fl-drawer.show'); await page.waitForTimeout(400); };
 // Opens every Advanced block of the open panel (they are folded until opened).
 const unfold = async () => { await page.locator('.fl-drawer details.np-adv').evaluateAll(ds => ds.forEach(d => { d.open = true; })); await page.waitForTimeout(100); };
@@ -456,7 +456,7 @@ check(await ifaceCard('guest').count() === 1 && await ifaceCard('wan6').count() 
 check(await page.locator('.fl-drawer').count() === 0, 'the panel of an interface that is gone closes by itself');
 await shot('mock-added');
 
-console.log('\n== VLAN devices and device settings ==');
+console.log('\n== VLAN devices ==');
 await addDevice('VLAN device');
 const vl = card();
 await vl.locator('input[placeholder="eth1.200"]').first().fill('eth1.200');
@@ -467,18 +467,10 @@ check(/already is VLAN 1036 on eth1|VLAN 1036 on eth1/.test(await notes()), 'the
 await input(vl, 'VLAN ID').fill('200');
 check(await errorCount() === 0, 'a valid VLAN device has no errors', await notes());
 check(await page.locator('.nb-lane-devices .nb-card.nb-new').count() === 1 && /VLAN 200 on eth1/.test(await page.locator('.nb-lane-devices .nb-card.nb-new').innerText()), 'the new VLAN device is on the board, marked new, with its ID and base device');
-await addDevice('Port settings');
-const ds = card();
-await ds.locator('input[placeholder="lan1"]').first().fill('lan1');
-await input(ds, 'MTU').fill('1500');
-await unfold();
-await box(ds, 'Isolate port').click();
-check(await errorCount() === 0 && /Add settings of device lan1/.test(await changes()), 'device settings for a port are accepted', await notes());
-check(/new settings/.test(await portCardOf('lan1').innerText()), 'the settings show as a mark on the port\'s board card');
 await saveBtn().click();
-check(/^Saved/.test(await outcome()), 'saving the VLAN device and the device settings works');
-const newDevs = mock.cfg.filter(s => s.type === 'device' && ['eth1.200', 'lan1'].includes(s.values.name));
-check(newDevs.length === 2 && newDevs.find(s => s.values.name === 'eth1.200').values.type === '8021q' && newDevs.find(s => s.values.name === 'eth1.200').values.vid === '200' && newDevs.find(s => s.values.name === 'lan1').values.isolate === '1' && !('type' in newDevs.find(s => s.values.name === 'lan1').values) && newDevs.every(s => s.anonymous), 'both were added as anonymous device sections, the settings without a type', JSON.stringify(newDevs));
+check(/^Saved/.test(await outcome()), 'saving the VLAN device works');
+const newDevs = mock.cfg.filter(s => s.type === 'device' && s.values.name === 'eth1.200');
+check(newDevs.length === 1 && newDevs[0].values.type === '8021q' && newDevs[0].values.vid === '200' && newDevs[0].anonymous, 'it was added as an anonymous device section', JSON.stringify(newDevs));
 await openDevice('br-lan.100');
 await tap(card().locator('button:has-text("Remove VLAN device")'));
 check(/lan100: the device br-lan\.100 it runs on is removed in this form/.test(await notes()) && await saveBtn().isDisabled(), 'a device that an interface runs on cannot be removed', await notes());
@@ -669,22 +661,34 @@ await input(card(), 'MAC aging time \\(s\\)').fill('600');
 await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');
 check(await page.locator('.fl-drawer').count() === 0, 'leaving the page closes the panel');
-console.log('\n== Settings on an Ethernet port opens it in the board\'s drawer ==');
+check(await bar().isVisible() && /1 unsaved change/.test(await summaryText()) && /br-guest: MAC aging time/.test(await changes()), 'the Ethernet ports page shows the same pending change in its review banner');
+
+console.log('\n== the settings of a port are on the Ethernet ports page ==');
 check(await page.locator('.port-table tr:has(.port-role:text-is("CPU link")) .port-settings').count() === 0 && await page.locator('.port-table .port-settings').count() >= 5, 'every front-panel port has a Settings button, the internal CPU link has none');
 await page.locator('.port-table tr:has(strong:text-is("lan1")) .port-settings').click();
-await page.waitForSelector('.fl-drawer.show');
-check(await page.evaluate(() => location.hash) === '#interfaces' && /lan1/.test(await drawerTitle()) && await page.locator('.fl-drawer .ne-form').count() === 1, 'it goes to Devices and Interfaces with the port\'s own editing panel open', `${await page.evaluate(() => location.hash)} | ${await drawerTitle()}`);
-check(await page.locator('.nb-card.nb-sel').count() === 1 && /lan1/.test(await page.locator('.nb-card.nb-sel').innerText()), 'and the port\'s card on the board is highlighted');
-check((await page.locator('.fl-drawer .pl dt').allInnerTexts()).join() === 'Hardware,Role,MAC,Link,Negotiation,Throughput,Errors / drops,Bridge / STP,VLAN devices' && /Port details/.test(await page.locator('.fl-drawer').innerText()), 'the drawer also carries the details the Ethernet page had for the port: link, negotiation, hardware, throughput, errors, bridge and VLAN devices');
-await page.evaluate(() => { document.querySelector('.fl-drawer .pl dl').dataset.mark = '1'; document.querySelector('.fl-drawer .ne-form').dataset.mark = '1'; });
-await page.waitForFunction(() => !document.querySelector('.fl-drawer .pl dl')?.dataset.mark, null, { timeout: 8000 });
-check(await page.locator('.fl-drawer .ne-form[data-mark="1"]').count() === 1, 'the details refresh by themselves while the form is open, and the form is not rebuilt');
-await page.keyboard.press('Escape');
-check(await page.locator('.fl-drawer').count() === 0, 'Escape closes it and the next visit does not reopen it');
+await page.waitForSelector('.port-set .ne-form');
+check(await page.locator('.fl-drawer').count() === 0 && await page.locator('.port-set button:has-text("Add settings for this port")').count() === 1, 'it opens under the port\'s row, not in a drawer; a port without a device section offers to add one');
+await page.locator('.port-set button:has-text("Add settings for this port")').click();
+await page.waitForTimeout(400);
+const ps = page.locator('.port-set .ne-form');
+await input(ps, 'MTU').fill('1500');
+await ps.locator('details.np-adv').evaluateAll(ds => ds.forEach(d => { d.open = true; }));
+await page.waitForTimeout(100);
+await box(ps, 'Isolate port').click();
+check(await errorCount() === 0 && /Add settings of device lan1/.test(await changes()) && /br-guest: MAC aging time/.test(await changes()) && /\d+ unsaved changes/.test(await summaryText()), 'device settings for a port are accepted and join the pending change of the draft', await notes());
+await page.locator('.port-table tr:has(strong:text-is("lan1")) .port-settings').click();
+await page.waitForTimeout(300);
+check(await page.locator('.port-set').count() === 0, 'the Hide settings button closes the form (the draft keeps the settings)');
 await page.click('a[href="#interfaces"]');
 await page.waitForSelector('.nb-card');
-check(await bar().isVisible() && /1 unsaved change/.test(await summaryText()) && /br-guest: MAC aging time/.test(await changes()), 'unsaved edits are still pending when the page is opened again');
-mock.expired = true;
+check(await bar().isVisible() && /\d+ unsaved changes/.test(await summaryText()) && /br-guest: MAC aging time/.test(await changes()) && /Add settings of device lan1/.test(await changes()), 'unsaved edits of both pages are still pending when the board is opened again');
+check(/new settings/.test(await portCardOf('lan1').innerText()), 'the settings show as a mark on the port\'s board card');
+await portCardOf('lan1').click();
+await page.waitForFunction(() => location.hash === '#network', null, { timeout: 5000 });
+await page.waitForSelector('.port-table');
+check(await page.locator('.fl-drawer').count() === 0, 'a click on the port\'s card opens the Ethernet ports page, not a drawer');
+await page.click('a[href="#interfaces"]');
+await page.waitForSelector('.nb-card');mock.expired = true;
 // A poll may notice the expiry before the click lands; either way the sign-in screen must appear.
 await saveBtn().click({ timeout: 5000 }).catch(() => {});
 await page.waitForSelector('.login-form', { timeout: 30000 });

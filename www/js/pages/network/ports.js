@@ -8,9 +8,19 @@ import { fmtSpeed, traffic, newFlaps, newErrors, errorsOf, dropsOf, hwLines, jac
 import { diagnosticsPanel } from './diagnostics.js';
 import { cableButton, cablePanel, hooks } from './cable.js';
 import { vlanCards } from './vlans.js';
+import { portSettings } from '../interfaces/panels.js';
 
-// Ports whose error breakdown is open; kept here so it survives the redraw on every poll (the table and the drawer of the board share it).
+// Ports whose error breakdown is open, and ports whose settings form is open; kept here so they survive the redraw on every poll.
 export const expanded = new Set();
+const settingsOpen = new Set();
+
+// Whether the port settings can be offered (the router gives the network config to this login: the table has Settings buttons) and the editing context of the
+// page (interfaces/editor.js editContext), which exists only while a form is open or edits are pending. Set by portsPanel before the table is built.
+let settingsAvailable = false;
+let settingsCtx = null;
+
+// Whether a settings form is open: the page then needs the editing context.
+export const settingsFormOpen = () => settingsOpen.size > 0;
 
 // Autoneg badge plus the speed limits of both ends and the EEE state; only meaningful while the link is up. A swconfig port
 // reports neither autonegotiation nor the speeds of the ends, so only what it does report is shown.
@@ -80,7 +90,7 @@ function roleOf(p) {
 }
 
 // The Port column: the jack icon (green up, amber warning, gray no link), the name, its LAN/WAN role, its MAC and, for a front-panel
-// port, a Settings button that opens the port in the drawer of the Devices and Interfaces board (where its device settings are edited). The
+// port, a Settings button that opens the port's device settings (MTU, MAC address, speed, flow control, ...) under its row. The
 // tooltip of the icon lists the hardware.
 function portCell(p) {
   const title = [`${p.name} · ${p.mac ?? ''}`, p.carrier ? `Link ${fmtSpeed(p.speed)} ${p.duplex ?? ''}` : 'No link', ...hwLines(p).map(([k, v]) => `${k}: ${v}`)].join('\n');
@@ -92,7 +102,10 @@ function portCell(p) {
         h('div', {}, h('strong', {}, p.name), role ? h('span', { className: 'port-role' }, role) : null,
           p.sfp?.present ? badge('SFP', p.sfp.alarms?.length ? 'danger' : 'info', [p.sfp.vendor, p.sfp.part].filter(Boolean).join(' ')) : null),
         h('div', { className: 'muted small mono' }, p.mac ?? ''),
-        p.role === 'conduit' ? null : button('Settings', 'gear', () => hooks.openItem(`port:${p.name}`), 'btn-fl port-settings'))));
+        p.role === 'conduit' || !settingsAvailable ? null : button(settingsOpen.has(p.name) ? 'Hide settings' : 'Settings', settingsOpen.has(p.name) ? 'chevron-up' : 'gear', () => {
+          if (settingsOpen.has(p.name)) settingsOpen.delete(p.name); else settingsOpen.add(p.name);
+          rerender();
+        }, 'btn-fl port-settings'))));
 }
 
 // The Throughput column: the live rate in each direction, the totals and a graph of the recent rates. A port without counters of its
@@ -137,6 +150,7 @@ function row(p) {
   if (p.diagnostics && expanded.has(p.name)) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, diagnosticsPanel(p))));
   const cable = cablePanel(p);
   if (cable) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, cable)));
+  if (settingsCtx && settingsOpen.has(p.name)) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS, className: 'port-set' }, portSettings(settingsCtx, p.name))));
   return rows;
 }
 
@@ -148,8 +162,7 @@ const COLS = HEAD.length;
 // is created fresh on every redraw.
 let rerender = () => {};
 
-// Points the Details buttons (and the cable test's redraw) at the redraw of the view that shows them: the Ethernet ports view, or the board
-// when a port's details are in its drawer.
+// Points the Details buttons (and the cable test's redraw) at the redraw of the Ethernet ports page.
 export function bindRedraw(redraw) {
   rerender = redraw;
   hooks.rerender = redraw;
@@ -177,9 +190,11 @@ function details(net) {
 // `redraw` repaints the page from cached data (used by the Details and cable-test buttons). Below the port table come the VLAN cards
 // of the bridges and swconfig switches that have a VLAN table; `vlan` is the VLAN editor's context (vlanpage.js), null when the
 // login may not change the config.
-export function portsPanel(net, redraw, vlan) {
+export function portsPanel(net, redraw, vlan, settings) {
   bindRedraw(redraw);
+  settingsAvailable = Boolean(settings?.available);
+  settingsCtx = settings?.ctx ?? null;
   // A port that vanished must not leave a stale open panel behind.
-  for (const name of expanded) if (!net.ports.some(p => p.name === name)) expanded.delete(name);
+  for (const name of [...expanded, ...settingsOpen]) if (!net.ports.some(p => p.name === name)) { expanded.delete(name); settingsOpen.delete(name); }
   return [details(net), ...vlanCards(net, vlan)];
 }

@@ -95,9 +95,9 @@ export const countryError = v => (/^[A-Z0-9]{2}$/.test(v) ? null : 'must be a tw
 
 // The groups of a radio's settings, in order: id, title, whether the group starts open and an explanation.
 export const RADIO_GROUPS = [
-  { id: 'general', title: 'Radio', open: true, legend: 'Whether the radio is on, the generation and width it runs, where it is (the country decides the channels and the power) and how strong it transmits. The channel is chosen with the tiles above.' },
-  { id: 'rates', title: 'Rates and coexistence', legend: 'Which data rates the radio offers and how it behaves next to neighbors.' },
-  { id: 'advanced', title: 'Advanced', legend: 'Rarely needed. The defaults suit almost every setup.' },
+  { id: 'general', title: 'Radio', open: true, legend: 'Whether the radio is on, the generation and width it runs, which channels automatic selection may use, where it is (the country decides the channels and the power) and how strong it transmits. The channel is chosen with the tiles above.' },
+  { id: 'rates', title: 'Rates and coexistence', legend: 'Which data rates the radio offers and how it behaves next to neighbors. Prefer the cell density to the explicit rate lists.' },
+  { id: 'advanced', title: 'Advanced', legend: 'Rarely needed. The defaults suit almost every setup. Not every option is used by every driver: the OpenWrt documentation says which ones a chipset reads.' },
 ];
 
 // The log levels of hostapd and the cell densities, as their words.
@@ -111,6 +111,8 @@ export const RADIO_FIELDS = [
     hint: 'Turns the radio off: every wireless network on it stops and its clients are disconnected. The radio keeps its settings and comes back when this is cleared.' },
   { key: 'htmode', type: 'enum', dynamic: 'htmodes', group: 'general', label: 'Mode and channel width', blank: 'Driver default', test: htmodeError,
     hint: 'The 802.11 generation and the channel width in MHz: HT is 802.11n, VHT 802.11ac, HE 802.11ax and EHT 802.11be. A wider channel is faster but needs more free spectrum, leaves fewer channels to choose from and may reach less far. The list is what this radio\'s hardware reports. NOHT turns off 802.11n and later. On 2.4 GHz, HT40+ and HT40- say which side the second 20 MHz channel is on; plain HT40 picks it by itself.' },
+  { key: 'channels', type: 'list', check: 'wifichannels', group: 'general', label: 'Channels for automatic selection', addLabel: 'Add channels', placeholder: '1-11', show: v => v.channel === 'auto' || v.channels.length > 0,
+    hint: 'Used when the channel is automatic: hostapd picks one of these channels. Enter a range with a hyphen (36-48) or single channels, one entry each. Empty lets it choose from every channel the country allows.' },
   { key: 'country', type: 'enum', dynamic: 'countries', group: 'general', label: 'Country', blank: 'Driver default', test: countryError,
     hint: 'The two-letter country code. It decides which channels may be used and how strong the radio may transmit, so it must be the country the router is in. Changing it can make the current channel unavailable.' },
   { key: 'txpower', type: 'int', number: true, min: 1, max: 40, group: 'general', label: 'Transmit power (dBm)', placeholder: 'maximum allowed',
@@ -124,8 +126,14 @@ export const RADIO_FIELDS = [
     hint: 'Only clients that support at least this standard may connect. It also turns off the legacy 802.11b rates. Setting 802.11ac makes some Apple devices unreliable even when they support it.' },
   { key: 'noscan', type: 'bool', group: 'rates', label: 'Skip the coexistence scan', default: false, show: (v, c) => c.radio.band === '2g' || c.radio.values?.noscan === '1',
     hint: 'Do not scan for overlapping networks before using a 40 MHz channel on 2.4 GHz, which falls back to 20 MHz when a neighbor is found. The scan is polite behavior in a crowded band, not a regulation.' },
+  { key: 'ht_coex', type: 'bool', group: 'rates', label: 'Ignore 40 MHz intolerance (HT coexistence)', default: false, show: (v, c) => c.radio.band === '2g' || c.radio.values?.ht_coex === '1',
+    hint: 'Do not honor the 40 MHz intolerance flag of other access points and stations: the radio keeps using 40 MHz channels even when it is received. Off by default.' },
   { key: 'beacon_int', type: 'int', number: true, min: 15, max: 65535, group: 'rates', label: 'Beacon interval', default: 100,
     hint: 'The time between beacon frames in units of 1.024 ms; hostapd allows 15 to 65535. It has no effect on client (sta) networks.' },
+  { key: 'basic_rate', type: 'list', check: 'wifirate', group: 'rates', label: 'Basic rates (kb/s)', addLabel: 'Add rate', placeholder: '6000',
+    hint: 'The basic data rates, each in kb/s (6000 is 6 Mbit/s). It only has an effect on access points and ad-hoc networks and overrides the cell density, which is the easier way to set it.' },
+  { key: 'supported_rates', type: 'list', check: 'wifirate', group: 'rates', label: 'Supported rates (kb/s)', addLabel: 'Add rate', placeholder: '6000',
+    hint: 'The data rates the radio offers, each in kb/s. It must include every basic rate, and the lowest basic rate should also be the lowest supported rate. It only has an effect on access points and overrides the cell density.' },
 
   { key: 'country_ie', type: 'enum', options: ['0', '1'], labels: { 0: 'off', 1: 'on' }, group: 'advanced', label: 'Advertise the country (802.11d)', blank: 'Default (on when a country is set)',
     hint: 'Put the country code and the channel and power map in beacon and probe response frames. It needs a country.' },
@@ -139,6 +147,18 @@ export const RADIO_FIELDS = [
     hint: 'How far an antenna with more gain than the radio was approved with lowers the transmit power below the regulatory maximum, in dBi.' },
   { key: 'log_level', type: 'enum', options: ['0', '1', '2', '3', '4'], numbered: true, labels: LOG_LEVELS, group: 'advanced', label: 'hostapd log level', default: '2',
     hint: 'How much hostapd writes to the system log for this radio. Level 1 shows, for example, whether 802.11r roaming completed.' },
+  { key: 'diversity', type: 'bool', group: 'advanced', label: 'Automatic antenna selection', default: true,
+    hint: 'Let the driver choose the antenna by itself. Only some drivers (ath9k and a few more) have antennas to choose from; the others ignore it.' },
+  { key: 'rxantenna', type: 'int', number: true, min: 0, group: 'advanced', label: 'Antenna for receiving', placeholder: 'driver default',
+    hint: 'The antenna used for receiving, driver specific: usually 1 for the first and 2 for the second, 0 for automatic where the driver supports it. It has no effect while automatic selection is on.' },
+  { key: 'txantenna', type: 'int', number: true, min: 0, group: 'advanced', label: 'Antenna for transmitting', placeholder: 'driver default',
+    hint: 'The antenna used for transmitting; the values are those of the receiving antenna.' },
+  { key: 'chanbw', type: 'enum', options: ['5', '10', '20'], numbered: true, group: 'advanced', label: 'Narrow channel width (MHz)', blank: 'Default (20)', show: (v, c) => Boolean(c.radio.values?.chanbw),
+    hint: 'Run a narrower channel of 5 or 10 MHz instead of 20. Only the ath9k and ath5k drivers support it, so it is shown only when the file already sets it.' },
+  { key: 'ht_capab', type: 'list', check: 'htcapab', group: 'advanced', label: 'High throughput capabilities', addLabel: 'Add capability', placeholder: 'SHORT-GI-40',
+    hint: 'The capabilities the radio advertises for 802.11n, for example LDPC or SHORT-GI-20. They are detected by themselves; change them only when you know the hostapd documentation, and compare with the hostapd version installed.' },
+  { key: 'hostapd_options', type: 'list', group: 'advanced', label: 'Extra hostapd options', addLabel: 'Add option', placeholder: 'vendor_elements=dd0a0017f206010103010000',
+    hint: 'Options passed as they are into the hostapd configuration of this radio, one per entry, for example a vendor-specific information element. A wrong line can stop every network on the radio.' },
 ];
 
 //#endregion

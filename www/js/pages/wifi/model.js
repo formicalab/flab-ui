@@ -510,7 +510,7 @@ export function upTargets(w, draft, after) {
     const enabled = e => (e.d ? !e.d.disabled : e.i.values.disabled !== '1');
     if (!mine.some(enabled)) continue;
     const base = { channel: channelOf(r), ...valuesOf(RADIO_FIELDS, r.values) };
-    const radioChanged = d.channel !== base.channel || RADIO_FIELDS.some(f => isShown(f, d, radioCtx(r)) && base[f.key] !== d[f.key]);
+    const radioChanged = d.channel !== base.channel || RADIO_FIELDS.some(f => isShown(f, d, radioCtx(r)) && differs(f, base[f.key], d[f.key]));
     const changedNets = mine.filter(e => enabled(e) && e.d && (e.i.isNew || changedKeys(w, e.i, e.d).length));
     const removed = w.ifaces.some(i => i.device === r.name && draft.removed[i.section]);
     if (!radioChanged && !changedNets.length && !removed) continue;

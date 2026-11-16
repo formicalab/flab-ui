@@ -9,9 +9,8 @@ import { openDialog } from '../../core/modal.js';
 import { badge, button } from '../../core/ui.js';
 import { fmtSpeed } from './util.js';
 
-// What the page hands over: its redraw and its reload (a call that finds the session ended reloads, which shows the sign-in screen), and
-// the function that opens a board item (`port:<name>`) in the drawer of the board view, which the host page sets.
-export const hooks = { rerender: () => {}, reload: () => {}, openItem: () => {} };
+// What the page hands over: its redraw and its reload (a call that finds the session ended reloads, which shows the sign-in screen).
+export const hooks = { rerender: () => {}, reload: () => {} };
 
 // The test of each port: name to { phase: 'running' | 'done', result }. Kept here so it survives the redraw of every poll.
 const tests = new Map();

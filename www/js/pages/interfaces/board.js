@@ -190,15 +190,20 @@ export function boardView({ board, selected = null, onOpen, actions = null }) {
   const els = new Map();
   let chosen = selected;
   let hovered = null;
+  // Opens a card: an interface, a device or a zone in the drawer, a port or a radio on the page of that hardware.
+  const open = item => { if (item.kind === 'port') location.hash = '#network'; else if (item.kind === 'radio') location.hash = '#radios'; else onOpen(item); };
+
   // Makes a card of `item` with `kids`; a click or Enter opens it (unless it is a link or a control inside the card). A card that holds other cards (a radio)
   // takes the focus only for itself, not for what is inside it.
   const card = (item, kind, ...kids) => {
     const el = h('div', { className: `nb-card nb-${kind}${item.removed ? ' nb-removed' : ''}${item.isNew ? ' nb-new' : ''}`, tabIndex: 0, role: 'button' }, kids);
     const own = e => kind !== 'radio' || e.target === el;
     el.dataset.id = item.id;
+    if (item.kind === 'port') el.title = 'Opens the Ethernet ports page';
+    else if (item.kind === 'radio') el.title = 'Opens the Wi-Fi radios page';
     els.set(item.id, el);
-    el.addEventListener('click', e => { if (!e.target.closest('a, button, summary, input')) onOpen(item); });
-    el.addEventListener('keydown', e => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(item); } });
+    el.addEventListener('click', e => { if (!e.target.closest('a, button, summary, input')) open(item); });
+    el.addEventListener('keydown', e => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(item); } });
     el.addEventListener('mouseenter', () => { hovered = item.id; paint(); });
     el.addEventListener('mouseleave', () => { hovered = null; paint(); });
     el.addEventListener('focusin', e => { if (own(e)) { hovered = item.id; paint(); } });
@@ -230,7 +235,6 @@ export function boardView({ board, selected = null, onOpen, actions = null }) {
   const deviceAction = actions ? menuButton('Device', 'plus-lg', [
     { label: 'Bridge', hint: 'Joins ports into one Layer 2 network.', onclick: () => actions.addDevice('bridge') },
     { label: 'VLAN device', hint: 'The frames of one VLAN tag of a port or bridge.', onclick: () => actions.addDevice('8021q') },
-    { label: 'Port settings', hint: 'MTU, MAC address, speed and flow control of an existing port.', onclick: () => actions.addDevice('plain') },
   ], !actions.canEdit) : null;
   const laneDevices = h('section', { className: 'nb-lane nb-lane-devices' },
     laneHead('Devices', 'Bridge and VLAN devices carry frames', deviceAction),

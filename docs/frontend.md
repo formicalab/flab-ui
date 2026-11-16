@@ -55,14 +55,14 @@ Every page is a plain object, default-exported from its module (full text in `js
 | `label` | yes | Navigation text (`title` optionally overrides the command-bar heading) |
 | `icon` | yes | Name from `core/icons.js` |
 | `nav` | no | `'bottom'` puts the link below the spacer, next to Sign out (System settings); default is the main list |
-| `interval` | yes | Auto-refresh period in ms, or a function that returns it (read again before each poll: Devices and Interfaces polls its Ethernet ports tab every 3 s and the board every 5 s) |
+| `interval` | yes | Auto-refresh period in ms, or a function that returns it (read again before each poll: a page whose views poll at different rates can use it) |
 | `load()` | yes | Async; returns the page data, usually one ubus call |
 | `view(data, rerender)` | yes | Returns an array of DOM nodes |
 | `controls({ rerender, reload })` | no | Returns `{ nodes, update?(data) }`; controls persist across refreshes |
 | `isPaused()` | no | Return true to suspend auto-refresh |
 | `css` | no | Stylesheet (or array of stylesheets) loaded on first visit |
 
-`aliases` (exported next to `pages`) maps a route that was a page once to the page that replaced it (`bridges` → `interfaces`, `network` → `interfaces`); `core/app.js` replaces the hash, so a bookmark keeps working, after telling `enterAlias` (exported from the registry too) which route it was, so `#network` opens the Ethernet ports tab of Devices and Interfaces.
+`aliases` (exported next to `pages`) maps a route that was a page once to the page that replaced it (`bridges` → `interfaces`); `core/app.js` replaces the hash, so a bookmark keeps working.
 
 **State that must survive refreshes** (filter text, sort order, selected radio, paused flag, scroll
 position) lives in a module-level `state` object in the page, never in the DOM. The controls are created

@@ -41,7 +41,7 @@ the configs they touch (in `rpcd/acl.d/`; the page and plugin sections name them
 | `flab-dns.json` | `unbound` and `dhcp` |
 | `flab-firewall.json` | `firewall` (with `order`) |
 | `flab-traffic.json` | `nlbwmon` |
-| `flab-vlan.json` | `network` (with `order`; the VLAN editor of the Ethernet ports view) |
+| `flab-vlan.json` | `network` (with `order`; the VLAN editor of the Ethernet ports page) |
 | `flab-routing.json` | `network` (the static-route editor on the Routes view; also ubus `flab.routing` `status` and `lookup`) |
 | `flab-network.json` | `network`: `changes` and the write methods only, no `get` (Devices and Interfaces, which reads the config through `flab.network config`) |
 | `flab-radio.json` | `wireless`: `changes` and the write methods only, no `get` (the Wi-Fi page reads it through `flab.radio config`) |

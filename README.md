@@ -12,7 +12,9 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | Page | What it does |
 |---|---|
 | Overview | Uptime, CPU, load, memory and temperatures. |
-| Wi-Fi | Radios, wireless networks and clients; edit channels and settings. |
+| Ethernet ports | The Ethernet ports as hardware: link, negotiation, traffic, errors, optical modules, cable test; change a port's device settings (MTU, MAC address, speed, flow control); the bridge VLAN tables, which can be edited. |
+| Wi-Fi radios | The radios as hardware: state, live figures, channel utilization; change the channel, the width, the country, the power and the other radio options. |
+| Wi-Fi | The wireless networks (SSIDs) of every radio; edit them. |
 | Mesh | 802.11s mesh peers and paths (read only). |
 | IPsec VPN | strongSwan connections, tunnels, traffic and a security score (read only). |
 | WireGuard | Interfaces and peers; edit them. |
@@ -20,7 +22,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | DHCP | odhcpd and dnsmasq leases, reservations and pools; edit them. |
 | DNS | Unbound or dnsmasq state, options and zones; edit them. |
 | Dynamic DNS | ddns-scripts services, status and logs; edit them. |
-| Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. A second view lists the Ethernet ports (link, traffic, errors, optical modules, cable test) and the VLAN tables, which can be edited. |
+| Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. A second view lists the connected Wi-Fi clients. The ports and the radios open their own pages. |
 | Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |
 | Traffic | Bandwidth, connections and nlbwmon usage; edit the nlbwmon settings. |
 | Services | List, start, stop, restart, enable and disable services. |

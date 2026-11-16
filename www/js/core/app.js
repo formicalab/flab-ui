@@ -7,7 +7,7 @@ import { ubus, hasSession, logout, clearSession, AuthError } from './ubus.js';
 import { showLogin } from './login.js';
 import { ensureCurrent } from './freshness.js';
 import { card } from './ui.js';
-import { pages, aliases, enterAlias } from '../pages/index.js';
+import { pages, aliases } from '../pages/index.js';
 
 // Module-level state: the refresh interval of the open page, a function that refreshes the open page (for the
 // tab becoming visible again), the number of the current route (a route that was superseded while it awaited the
@@ -49,7 +49,7 @@ async function route() {
   }
   // A route that moved to another page (see `aliases` in pages/index.js): the hash is replaced, which runs this function again.
   const alias = aliases[location.hash.slice(1)];
-  if (alias) { enterAlias(location.hash.slice(1)); location.replace(`#${alias}`); return; }
+  if (alias) { location.replace(`#${alias}`); return; }
   const entry = pages.find(p => p.id === location.hash.slice(1)) ?? pages[0];
 
   // The board info feeds the navigation header on every page, and is read on every route so a renamed router

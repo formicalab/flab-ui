@@ -24,6 +24,7 @@
 /* ── Error breakdown: expandable row under a port with counters, driver statistics and log excerpt ── */
 .diag-btn, .cable-btn, .port-settings { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }
 .diag-btn svg, .cable-btn svg, .port-settings svg { margin-right: .3rem; }
+.port-table tr.diag-row > td.port-set { padding: 1rem 1.25rem; white-space: normal; }
 .port-table tr.diag-row > td { padding: 0; background: color-mix(in srgb, var(--fl-surface-hover) 60%, transparent); }
 .diag { display: grid; gap: .9rem; padding: 1rem 1.25rem 1.25rem; white-space: normal; }
 .diag-head { display: flex; align-items: center; gap: .6rem; }
@@ -34,28 +35,6 @@
 .diag-table td:nth-child(2) { white-space: nowrap; font-weight: 600; }
 .diag-log { margin: 0; padding: .6rem .8rem; max-height: 12rem; overflow: auto; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface); white-space: pre-wrap; }
 
-/* The same breakdown and the cable test in the narrow drawer of a port: a box under the list, one column, the hint under each counter. */
-.pl-title { display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; }
-.pl-note { font-weight: 400; line-height: 1.25; }
-.np-h > span:last-child { flex: 1; min-width: 0; }
-.pl { display: flex; flex-direction: column; gap: .9rem; }
-.pl > .kv { grid-template-columns: 6.5rem minmax(0, 1fr); align-items: start; gap: .8rem .75rem; }
-.pl > .kv:not(:first-child) { border-top: 1px solid var(--fl-stroke); padding-top: .9rem; }
-.pl > .kv > dt { padding-top: .1rem; }
-.pl .hw-lines { min-width: 0; max-width: none; font-size: .85rem; line-height: 1.45; }
-.pl .hw-lines > div { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .5rem; }
-.pl .neg { min-width: 0; max-width: none; }
-.pl-rate > div:first-child { display: flex; flex-wrap: wrap; gap: .1rem 1.25rem; }
-.pl-rate > svg { display: block; width: 100%; max-width: 16rem; height: 30px; margin-top: .25rem; }
-.pl > .diag { margin-top: 0; padding: .75rem; gap: .75rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: color-mix(in srgb, var(--fl-surface-hover) 60%, transparent); }
-.pl .diag-head { align-items: flex-start; }
-.pl .diag-head > svg { flex: none; margin-top: .15rem; }
-.pl .diag-grid { grid-template-columns: minmax(0, 1fr); }
-.pl .diag-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: .75rem; border-bottom: 1px solid var(--fl-stroke); }
-.pl .diag-table tr:last-child { border-bottom: 0; }
-.pl .diag-table td { border: 0; padding: .3rem .2rem; overflow-wrap: anywhere; white-space: normal; }
-.pl .diag-table td:nth-child(3) { grid-column: 1 / -1; padding-top: 0; color: var(--fl-muted); }
-.pl .diag-table td:nth-child(3):empty { display: none; }
 
 /* The VLAN matrix: one row per VLAN, one column per port; the cells are centered. */
 .vlan-table th, .vlan-table td { text-align: center; }

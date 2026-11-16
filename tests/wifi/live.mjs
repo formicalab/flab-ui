@@ -1,4 +1,4 @@
-// Browser test for changing a radio's channel on the Wi-Fi page. A real browser opens the deployed UI.
+// Browser test for changing a radio's channel on the Wi-Fi radios page. A real browser opens the deployed UI.
 // 1. Against the real router, read only: the radio cards show the channel picker built from the router's own
 //    channel lists, hovering previews the block a channel would use, and any uci write the page might send in this
 //    phase is blocked and fails the test.
@@ -160,7 +160,7 @@ const open = async acls => {
     sessionStorage.setItem('sid', id);
     sessionStorage.setItem('acls', JSON.stringify(a));
   }, [sid, acls ?? rootAcls]);
-  await p.goto(`${baseUrl}#wifi`);
+  await p.goto(`${baseUrl}#radios`);
   await p.waitForSelector('.rd-card, .login-form', { timeout: 20000 });
   return p;
 };

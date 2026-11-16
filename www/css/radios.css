@@ -1,0 +1,18 @@
+/* The Wi-Fi radios page: the channel utilization block and the channel strip of its radio cards. */
+
+/* ── Channel utilization: busy share now, the meter and the history ── */
+.rd-air { display: grid; gap: .45rem; margin-bottom: 1.2rem; }
+.rd-air .label, .rd-chan .label { font-size: .75rem; color: var(--fl-muted); text-transform: uppercase; letter-spacing: .05em; }
+.rd-air-top { display: flex; align-items: baseline; gap: .7rem; }
+.rd-air .big { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.rd-air .spark { width: 100%; height: 40px; }
+.rd-air .spark-empty { width: 100% !important; }
+
+/* Channel strip: one box per channel (.span = in the channel width, .cur = current, .dfs, .off = disabled) */
+.rd-chan { display: grid; gap: .5rem; }
+.chans { display: flex; flex-wrap: wrap; gap: .3rem; }
+.chn { min-width: 2.1rem; padding: .15rem .35rem; text-align: center; font-size: .8rem; font-variant-numeric: tabular-nums; border-radius: 6px; border: 1px solid var(--fl-stroke); background: var(--fl-surface-hover); color: var(--fl-muted); }
+.chn.span { background: var(--fl-info-bg); color: var(--fl-info-fg); border-color: transparent; }
+.chn.cur { background: var(--fl-brand); color: #fff; border-color: var(--fl-brand); font-weight: 600; }
+.chn.dfs { border-color: var(--fl-warn-fg); }
+.chn.off { text-decoration: line-through; opacity: .45; }

@@ -102,18 +102,11 @@ await page.addInitScript(([id, granted]) => {
 }, [sid, acls]);
 await page.goto(baseUrl);
 await page.waitForSelector('.tile');
-check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: Wi-Fi, Mesh, VPNs, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces (which holds the bridges and the Ethernet ports), Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out; there is no Ethernet entry', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
-//#region Ethernet ports view of Devices and Interfaces
+check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Ethernet ports', 'Wi-Fi radios', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: the two hardware pages (Ethernet ports, Wi-Fi radios), Wi-Fi, Mesh, VPNs, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces, Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
+//#region Ethernet ports page
 await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');
-check(await page.evaluate(() => location.hash) === '#interfaces' && (await page.locator('.cmdbar h1').innerText()).trim() === 'Devices and Interfaces' && (await page.locator('.cmdbar .seg-tab').allInnerTexts()).join() === 'Board,Ethernet ports' && (await page.locator('.cmdbar .seg-tab.active').innerText()) === 'Ethernet ports' && await page.locator('.nav-pane a.active:has-text("Devices and Interfaces")').count() === 1, 'the old #network route opens Devices and Interfaces on its Ethernet ports tab (the hash becomes #interfaces, the navigation has no Ethernet entry)');
-await page.locator('.cmdbar .seg-tab', { hasText: 'Board' }).click();
-await page.waitForSelector('.nb-card');
-check(await page.locator('.port-table').count() === 0 && (await page.locator('.cmdbar .seg-tab.active').innerText()) === 'Board', 'the Board tab shows the board and no port table');
-await page.locator('.cmdbar .seg-tab', { hasText: 'Ethernet ports' }).click();
-await page.waitForSelector('.port-ic');
-check(await page.locator('.nb-card').count() === 0, 'and the Ethernet ports tab shows the port table again');
-
+check(await page.evaluate(() => location.hash) === '#network' && (await page.locator('.cmdbar h1').innerText()).trim() === 'Ethernet ports' && await page.locator('.cmdbar .seg-tab').count() === 0 && await page.locator('.nav-pane a.active:has-text("Ethernet ports")').count() === 1, 'the Ethernet ports page is a page of its own in the navigation (no tabs)');
 console.log('== live router (pass-through) ==');
 const livePorts = await jackCount();
 check(livePorts >= 5, 'a row with a jack icon for every port of the live router', String(livePorts));
@@ -311,7 +304,7 @@ check((await page.locator('.port-table tr:has(.port-ic.up) td.num:nth-child(5)')
 //#endregion
 
 //#region Bridges on the Devices and Interfaces board
-await page.locator('.cmdbar .seg-tab', { hasText: 'Board' }).click();
+await page.evaluate(() => { location.hash = '#interfaces'; });
 await page.waitForSelector('.nb-card');
 console.log('\n== bridges: live router (pass-through) ==');
 mock.network = null;
@@ -608,7 +601,20 @@ check(await page.locator('.rd-card').count() >= 1, 'radio cards drawn from the l
 check(await page.locator('.rd-card table tbody tr').count() >= 1, 'interfaces listed');
 check(!/formicalabmesh|\bmesh\b/.test(await text('.rd-card table')) && await page.locator('.rd-card a[href="#mesh"]').count() >= 1, 'the mesh interface is not in the Wi-Fi tables, only linked to the Mesh page');
 check(!/\bmesh\b/.test(await text('main .card-header')), 'no mesh client group on the Wi-Fi page');
-check(await before('details.legend', '.card-header .ms-auto'), 'the client legend sits above the client tables');
+check(await page.locator('details.legend').count() === 0 && await page.locator('.fixed-grid').count() === 0, 'the client tables and their legend are no longer on the Wi-Fi page: they are on the Connected devices tab');
+
+await stage('base radios', 'radio', 'base');
+const baseRows = await page.locator('.rd-card').first().locator('tbody tr').count();
+await stage('new SSID', 'radio', 'r-newssid');
+check(await page.locator('.rd-card').first().locator('tbody tr').count() === baseRows + 1, 'new SSID row appears', String(baseRows));
+check(await page.locator('.rd-find').count() === 0 && await page.locator('.chn').count() === 0, 'the radio cards of the Wi-Fi page hold the networks only: the findings and the channel strip are on the Wi-Fi radios page');
+//#endregion
+
+//#region Wi-Fi radios page
+await page.click('a[href="#radios"]');
+await page.waitForSelector('.rd-hero');
+check((await page.locator('.cmdbar h1').innerText()).trim() === 'Wi-Fi radios' && await page.locator('.rd-card table').count() === 0 && await page.locator('.rd-card .rd-hero').count() >= 1, 'the Wi-Fi radios page has a card per radio with its live figures and no table of networks');
+check(/guest is an open network/.test(await text('.rd-find')), 'open network warned about', await text('.rd-find'));
 
 await stage('a radio goes down', 'radio', 'r-down');
 check(await page.locator('.rd-card.is-down').count() === 1, 'one radio card switches to the down style');
@@ -625,10 +631,6 @@ await stage('radio disabled', 'radio', 'r-disabled');
 check(/disabled in the configuration/.test(await text('.rd-find')), 'disabled radio explained', await text('.rd-find'));
 
 await stage('base radios', 'radio', 'base');
-const baseRows = await page.locator('.rd-card').first().locator('tbody tr').count();
-await stage('new SSID', 'radio', 'r-newssid');
-check(await page.locator('.rd-card').first().locator('tbody tr').count() === baseRows + 1, 'new SSID row appears', String(baseRows));
-check(/guest is an open network/.test(await text('.rd-find')), 'open network warned about', await text('.rd-find'));
 
 console.log('\n== live channel utilization ==');
 mock.radio = scenario('base', 'radio');

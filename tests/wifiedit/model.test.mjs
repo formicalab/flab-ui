@@ -51,6 +51,8 @@ const world = (edit, status) => { const c = CONFIG(); edit?.(c); return m.readWi
 const draftOf = (w, edit) => { const d = m.draftFrom(w); edit?.(d); return d; };
 // The first error whose key is `key`, and whether any warning matches `re`.
 const errorOf = (p, key) => p.errors.find(e => e.key === key);
+// The radio field of the schema with this key.
+const RADIO_FIELD = key => s.RADIO_FIELDS.find(f => f.key === key);
 const warned = (p, re) => p.warnings.some(t => re.test(t));
 //#endregion
 
@@ -100,6 +102,16 @@ p = m.problems(w, draftOf(w, x => { x.radios.radio0.country = 'DE'; }));
 check(!p.errors.length && warned(p, /changing the country/), 'a valid country warns that channels and power change');
 p = m.problems(w, draftOf(w, x => { x.radios.radio1.txpower = '99'; x.radios.radio1.beacon_int = '5'; x.radios.radio1.cell_density = '9'; }));
 check(errorOf(p, 'radio1:txpower') && errorOf(p, 'radio1:beacon_int') && errorOf(p, 'radio1:cell_density') && p.errors.length === 3, 'a power above 40 dBm, a beacon interval below 15 and a cell density that is not 0 to 3 are errors', j(p));
+console.log('\n== radio options of the OpenWrt wireless documentation (wifi-device) ==');
+// Every option of a wifi-device section that the documentation lists for mac80211 is a field: the lists (channels, rates, capabilities, hostapd options) and the
+// antenna, coexistence and narrow-width options too.
+d = draftOf(w, x => { x.radios.radio0.channel = 'auto'; x.radios.radio0.channels = ['1-11']; x.radios.radio1.basic_rate = ['6000', '12000']; x.radios.radio1.supported_rates = ['6000', '12000', '24000']; x.radios.radio1.hostapd_options = ['vendor_elements=dd0a0017f206010103010000']; x.radios.radio1.ht_capab = ['LDPC']; x.radios.radio1.diversity = false; x.radios.radio1.rxantenna = '1'; x.radios.radio1.txantenna = '1'; x.radios.radio0.ht_coex = true; });
+check(j(m.plan(w, d)) === j([{ op: 'set', config: 'wireless', section: 'radio0', values: { channels: ['1-11'], ht_coex: '1', channel: 'auto' } }, { op: 'set', config: 'wireless', section: 'radio1', values: { basic_rate: ['6000', '12000'], supported_rates: ['6000', '12000', '24000'], diversity: '0', rxantenna: '1', txantenna: '1', ht_capab: ['LDPC'], hostapd_options: ['vendor_elements=dd0a0017f206010103010000'] } }]), 'the channels of automatic selection, the rate lists, the capabilities, the antennas, the coexistence flag and the hostapd options are written, lists as lists', j(m.plan(w, d)));
+p = m.problems(w, draftOf(w, x => { x.radios.radio0.channel = 'auto'; x.radios.radio0.channels = ['11-1', 'abc']; x.radios.radio1.basic_rate = ['6 Mbit']; x.radios.radio1.supported_rates = ['0']; x.radios.radio1.ht_capab = ['no good']; }));
+check(errorOf(p, 'radio0:channels') && errorOf(p, 'radio1:basic_rate') && errorOf(p, 'radio1:supported_rates') && errorOf(p, 'radio1:ht_capab') && p.errors.length === 5, 'a reversed range, a word that is not a channel, a rate that is not kb/s, and a capability with a space are errors', j(p));
+check(!m.isShown(RADIO_FIELD('channels'), draftOf(w).radios.radio1, m.radioCtx(w.radios[1])) && m.isShown(RADIO_FIELD('channels'), { ...draftOf(w).radios.radio1, channel: 'auto' }, m.radioCtx(w.radios[1])), 'the channels for automatic selection are offered while the channel is automatic');
+check(!m.isShown(RADIO_FIELD('chanbw'), draftOf(w).radios.radio1, m.radioCtx(w.radios[1])), 'the narrow channel width is offered only where the file already sets it (ath9k and ath5k only)');
+
 p = m.problems(w, draftOf(w, x => { x.radios.radio1.txpower = '30'; }));
 check(!p.errors.length && warned(p, /30 dBm is above the regulatory limit of 23 dBm on channel 104/), 'a power above the regulatory limit of the channel warns', j(p));
 p = m.problems(w, draftOf(w, x => { x.radios.radio1.htmode = 'HE80'; x.radios.radio1.channel = '149'; }));

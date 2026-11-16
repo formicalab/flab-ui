@@ -98,8 +98,10 @@ flab-ui/
       pages/
         index.js             Page registry and the page contract (read this first)
         overview/            index.js, cpu.js, temperatures.js
-        network/             The Ethernet ports view of Devices and Interfaces (hosted by interfaces/index.js): index.js, shared.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), vlanpage.js (the VLAN editor's wiring), vlanedit.js (the editable VLAN cards), vlanmodel.js (pure: the VLAN sections, tables, draft, validation, UCI operations, check after a save), util.js
-        wifi/                index.js (clients, and the editor of the radios and wireless networks), radios.js (radio cards), editors.js (the
+        network/             The Ethernet ports page: index.js (page: tiles, findings, ports table with the settings of a port under its row, VLAN cards), shared.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), vlanpage.js (the VLAN editor's wiring), vlanedit.js (the editable VLAN cards), vlanmodel.js (pure: the VLAN sections, tables, draft, validation, UCI operations, check after a save), util.js
+        connected/           The Connected devices view of Devices and Interfaces (hosted by interfaces/index.js): index.js (the Wi-Fi client tables, moved out of wifi/)
+        radios/              The Wi-Fi radios page: index.js (page: tiles, the editor wiring), card.js (the radio cards: live figures, picker, radio settings), parts.js (moved out of wifi/: the rate tracker, findings, state, key figures, utilization, configuration, channel strip)
+        wifi/                index.js (the Wi-Fi page: the wireless networks), editor.js (the editor shared with the radios page), radios.js (radio cards: the SSIDs of a radio), editors.js (the
                              radio settings and the network forms), schema.js (the option tables), model.js (pure: draft, validation, UCI operations,
                              check after a save), channels.js (pure model of the channel change), picker.js (the channel picker); mesh interfaces are left to mesh/
         mesh/                index.js, node.js

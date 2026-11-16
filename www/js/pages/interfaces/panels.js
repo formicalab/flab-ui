@@ -26,7 +26,6 @@ import {
   usedByDevice, usedByInterface, vlanName, zoneText,
 } from './panelmodel.js';
 import { infoList, optionList, pageLink, protoCards, section } from './panelparts.js';
-import { portLive } from '../network/portlive.js';
 
 export { openWizard } from './wizard.js';
 
@@ -204,15 +203,6 @@ function deviceUses(ctx, name, kind) {
   return { node: usedSection(null, rows, kind === 'port' ? (shownAbove ? 'No interface runs on this port itself.' : 'No interface, VLAN device or bridge uses this port.') : 'Nothing uses this device yet.'), names: [...u.interfaces, ...u.vlans] };
 }
 
-// The live details of a port, as on the Ethernet ports tab (link, negotiation, hardware, throughput, errors, bridge, VLAN devices, cable test), or nothing when
-// the router reports no port of that name.
-function portDetails(ctx, name, num) {
-  const live = portLive(ctx.live.net, name);
-  // The note sits at the right of the heading: a drawer with a form pauses the page, but not these details.
-  const title = h('span', { className: 'pl-title' }, 'Port details', live ? h('span', { className: 'pl-note muted small' }, 'Live: the rest of the page is paused while you edit.') : null);
-  return section(num ?? null, title, null, live ?? infoList([['State', muted('The router reports no port of this name.')]]));
-}
-
 // The live information of a bridge from the page's bridge module (bridgelive.js), put into `box` when the module exists: members with link, spanning-tree
 // role, learned MACs and throughput. Without the module there is no live section.
 function addBridgeLive(ctx, name, box) {
@@ -275,7 +265,7 @@ function sectionPanel(ctx, d) {
     main = [section(1, 'VLAN tag', 'A VLAN device carries only the frames of one VLAN tag of its base device (a port or a bridge), as a device of its own. An interface can then sit on it.',
       h('div', { className: 'set-fields np-fields' }, typeBox, ...tagIds.map(id => control(settings.essential.find(f => idOf(f) === id)))))];
   } else {
-    main = [portDetails(ctx, d.name, 1)];
+    main = [];
   }
   const rest = vlan ? settings.essential.filter(f => !tagIds.includes(idOf(f))) : settings.essential;
   const groups = settings.groups.map(g => ({ group: g.group, fields: g.fields.filter(f => !vlan || !tagIds.includes(idOf(f))) })).filter(g => g.fields.length);
@@ -297,11 +287,10 @@ function livePanel(ctx, name) {
   const net = ctx.live.net;
   const bridge = (net?.bridges ?? []).find(b => b.name === name);
   const vlan = (net?.vlans ?? []).find(v => v.name === name);
-  const port = (net?.ports ?? []).find(p => p.name === name);
   const kind = bridge ? 'Bridge device' : vlan ? 'VLAN device' : 'Network device';
   const rows = bridge ? [['State', badge(bridge.up ? 'up' : 'down', bridge.up ? 'success' : 'danger')], ['Members', lines(bridge.members.map(m => m.name))]]
     : vlan ? [['State', badge(vlan.up ? 'up' : 'down', vlan.up ? 'success' : 'danger')], ['Tag', `VLAN ${vlan.vid} on ${vlan.parent}`]] : [];
-  const uses = deviceUses(ctx, name, port ? 'port' : 'device');
+  const uses = deviceUses(ctx, name, 'device');
   const add = button('Add settings for this device', 'plus-lg', () => {
     const id = addDevice(ctx.base, ctx.draft, 'plain');
     ctx.draft.devAdded.find(a => a.id === id).name = name;
@@ -314,7 +303,7 @@ function livePanel(ctx, name) {
   return {
     title: name, subtitle: kind,
     body: panelBody(
-      port ? portDetails(ctx, name) : section(null, 'Now', `A ${kind.toLowerCase()} the router reports. It has no device section in the configuration, which is normal: it works with its defaults, and an interface can sit on it directly.`, infoList(rows)),
+      section(null, 'Now', `A ${kind.toLowerCase()} the router reports. It has no device section in the configuration, which is normal: it works with its defaults, and an interface can sit on it directly.`, infoList(rows)),
       bridge ? liveBox : null,
       section(null, 'Settings', 'Give the device settings of its own (MTU, MAC address, link speed, flow control) by adding a device section for it.', h('div', {}, add)),
       uses.node),
@@ -329,6 +318,40 @@ export function devicePanel(ctx, ref) {
   if (d) return sectionPanel(ctx, d);
   if (ref.id) return gone('Device', 'This device is gone.');
   return livePanel(ctx, ref.name ?? '');
+}
+
+//#endregion
+
+//#region Port settings
+
+// The settings of the port `name` for the Ethernet ports page, built where the table puts them (under the port's row): the device section of the port (MTU,
+// MAC address, link speed, flow control and the rest, Advanced folded) and a button that removes it, or, for a port without a section, the button that gives it
+// one. Such a section is optional: without one the port works with its defaults. It edits the one shared draft of editor.js through `ctx`.
+export function portSettings(ctx, name) {
+  const d = deviceList(ctx.base, ctx.draft).find(x => x.type === 'plain' && x.name.trim() === name);
+  if (!d) {
+    const add = button('Add settings for this port', 'plus-lg', () => {
+      const id = addDevice(ctx.base, ctx.draft, 'plain');
+      ctx.draft.devAdded.find(a => a.id === id).name = name;
+      ctx.touched();
+      ctx.redraw();
+    });
+    add.disabled = !ctx.canEdit;
+    return panelBody(section(null, 'Settings', 'The port works with its defaults, which is normal. Give it settings of its own (MTU, MAC address, link speed, flow control) by adding a device section for it.', h('div', {}, add)));
+  }
+  if (d.removed) return removedBody(`The device section for ${name}`, () => { restoreDevice(ctx.draft, d.id); ctx.touched(); ctx.redraw(); });
+  if (!d.editable) return panelBody(section(null, 'Settings', 'This page does not edit this device section: its options are shown as they are in the file.', kv(Object.entries(d.raw).map(([k, val]) => [mono(k), mono(Array.isArray(val) ? val.join(', ') : String(val))]))));
+  const v = ctx.draft.devices[d.id];
+  const settings = deviceSettings('plain');
+  const known = new Set([...DEVICE_FIELDS.map(f => f.key), 'name', 'type', 'ports']);
+  const control = f => controlFor(ctx, deviceField(ctx, d, f), `dev:${d.id}:${idOf(f)}`, v, false);
+  const uses = deviceUses(ctx, name, 'port');
+  const sec = section(null, d.isNew ? 'Settings (not saved yet)' : 'Settings', 'These change how the network device itself behaves. The device section is optional: without one the port works with its defaults.',
+    settings.essential.length ? h('div', { className: 'set-fields np-fields' }, settings.essential.map(control)) : null,
+    advancedBlock(`dev:${d.id}`, settings.groups, control, v, extraOptions(d.raw, d.secrets, known, 'device section')));
+  return panelBody(sec, h('div', { className: 'np-foot' }, ...removeFooter(ctx, d.isNew ? 'Discard the settings' : 'Remove the settings', `Delete the device section ${name}`,
+    () => { removeDevice(ctx.draft, d.id); ctx.touched(); ctx.redraw(); },
+    uses.names.length ? `${uses.names.join(', ')} run${uses.names.length > 1 ? '' : 's'} on this device: removing it is refused until ${uses.names.length > 1 ? 'they are' : 'it is'} rebound or removed.` : null)));
 }
 
 //#endregion

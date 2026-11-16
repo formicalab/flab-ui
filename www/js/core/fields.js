@@ -105,6 +105,10 @@ export const CHECKS = {
   path: v => (/^\/\S+$/.test(v) ? null : 'must be an absolute path without spaces'),
   seed: v => (v === '0' || /^\/\S+$/.test(v) ? null : 'must be 0 or an absolute path without spaces'),
   ifname: v => (/^[A-Za-z0-9_.-]+$/.test(v) ? null : 'must be a network interface name (letters, digits, _ . -)'),
+  // Wireless radio options: a channel or a range of channels, a data rate in kb/s, a high throughput capability.
+  wifichannels: v => { const m = /^(\d{1,3})(?:-(\d{1,3}))?$/.exec(v); return m && (!m[2] || +m[1] <= +m[2]) ? null : 'must be a channel or a range such as 36 or 1-11'; },
+  wifirate: v => (/^\d+$/.test(v) && +v > 0 ? null : 'must be a rate in kb/s, such as 6000'),
+  htcapab: v => (/^\[?[A-Za-z0-9+-]+\]?$/.test(v) ? null : 'must be a capability such as SHORT-GI-40 or LDPC'),
   // The characters ddns-scripts accepts in a host name or DNS server (it also allows "@") and in a domain (which may also hold "*").
   ddnshost: v => (/^[@A-Za-z0-9.:_-]+$/.test(v) ? null : 'may only contain letters, digits and @ . : _ -'),
   ddnsdomain: v => (/^[@A-Za-z0-9._*-]+$/.test(v) ? null : 'may only contain letters, digits and @ . _ * -'),

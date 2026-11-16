@@ -1,14 +1,14 @@
-// Devices and Interfaces page (route #interfaces): the network board. How the network is built, from the physical ports up, on one screen. The page has two
-// views, chosen by the tabs in the command bar: the board (below) and the Ethernet ports (the old Ethernet page, network/index.js, which the route #network
-// still opens); the ports' Settings button switches to the board and opens that port in its drawer.
+// Devices and Interfaces page (route #interfaces): the network board. How the network is built on one screen. The page has two views, chosen by the tabs
+// in the command bar: the board (below) and the connected devices (connected/index.js). The ports and the radios are not edited here: their cards link to
+// the Ethernet ports and the Wi-Fi radios pages, which read and change that hardware.
 //
 //   Ports and radios  ->  Devices (bridges, VLANs)  ->  Interfaces (protocol, addresses)  ->  Firewall zones and services
 //
 // boardmodel.js resolves the lanes and the connections between their cards from the flab.network devices, netifd's interface dump, the radios
-// and the editor's draft; board.js draws them. A click on a card opens it in the drawer (core/drawer.js) on the right, with the editing panel from
-// panels.js (an interface, a device or a port) or a read-only recap (a firewall zone). Everything is edited through one shared draft
-// (editor.js): the review banner in the command bar lists the changes and "Save and apply" applies them with the rollback countdown. The page
-// redraws on every poll and after every edit; the open panel is rebuilt each time and keeps its scroll position and focus. Polling is paused
+// and the editor's draft; board.js draws them. A click on an interface, a device or a zone opens it in the drawer (core/drawer.js) on the right, with the
+// editing panel from panels.js or a read-only recap (a firewall zone); a click on a port or a radio goes to its hardware page. Everything is edited through
+// one shared draft (editor.js): the review banner in the command bar lists the changes and "Save and apply" applies them with the rollback countdown. The
+// page redraws on every poll and after every edit; the open panel is rebuilt each time and keeps its scroll position and focus. Polling is paused
 // while a panel for an editable item is open, so the form is never replaced under the user's hands.
 import { h } from '../../core/dom.js';
 import { tile, tiles, healthBanner, button, muted } from '../../core/ui.js';
@@ -17,44 +17,24 @@ import { ubus, optional } from '../../core/ubus.js';
 import { pauseControl, refreshControl, tabsControl } from '../../core/controls.js';
 import { openDrawer } from '../../core/drawer.js';
 import { bridgeFindings } from '../network/util.js';
-import { ports } from '../network/index.js';
-import { bindRedraw } from '../network/ports.js';
-import { liveHooks } from '../network/portlive.js';
-import { hooks as portHooks } from '../network/cable.js';
+import { connected } from '../connected/index.js';
 import { buildBoard, editSource } from './boardmodel.js';
 import { boardView } from './board.js';
 import { livePanel, zonePanel } from './livepanel.js';
-import { radioPanel } from './radiopanel.js';
 import { editContext, editNotes, editor, loadNetworkEdit, safetyNote } from './editor.js';
 import { addDevice } from './model.js';
 import * as panels from './panels.js';
 import { wizardOpen } from './wizard.js';
 
-// Module-level so the Pause button state, the chosen view and the open panel survive the redraw on every poll. `tab` is the view ('board' or 'ports'),
+// Module-level so the Pause button state, the chosen view and the open panel survive the redraw on every poll. `tab` is the view ('board' or 'connected'),
 // `open` is the id of the open board item (or 'globals'), `handle` the drawer, `editable` whether the open panel holds a form.
 const state = { tab: 'board', paused: false, open: null, handle: null, editable: false };
 
 // The views, as the tabs offer them.
-const TABS = [['board', 'Board'], ['ports', 'Ethernet ports']];
+const TABS = [['board', 'Board'], ['connected', 'Connected devices']];
 
-// Chooses the view before the page is built (the route #network does, through pages/index.js).
-export function openView(name) { if (TABS.some(([t]) => t === name)) state.tab = name; }
-
-// The tab strip of the command bar, kept to redraw it when the view changes by another way than a click.
+// The tab strip of the command bar.
 let tabs = null;
-
-// An item another page asked to open (pages/index.js openBoardItem), taken by the first view after it: controls() closes the drawer when the
-// page is built, so the request cannot set `state.open` directly. It is always shown on the board.
-let pendingOpen = null;
-export function openBoardItem(id) { pendingOpen = id; state.tab = 'board'; }
-
-// The Settings button of a port on the Ports view: shows the board and opens the port in its drawer.
-function showBoardItem(id) {
-  openBoardItem(id);
-  tabs?.setOptions(TABS);
-  shell.reload();
-}
-
 // What the current view was built from, for the handlers of the board and the drawer.
 const cur = { board: null, ctx: null, data: null, node: null };
 
@@ -75,7 +55,7 @@ function summary(board) {
 }
 
 // The icon of the drawer for an item.
-const drawerIcon = item => icon(item?.kind === 'zone' ? 'shield-check' : item?.kind === 'interface' ? 'diagram-3' : item?.kind === 'radio' ? 'wifi' : item?.kind === 'device' && item.type === 'bridge' ? 'diagram-2' : item?.kind === 'port' || item?.kind === 'device' ? 'ethernet' : 'gear', 20);
+const drawerIcon = item => icon(item?.kind === 'zone' ? 'shield-check' : item?.kind === 'interface' ? 'diagram-3' : item?.kind === 'device' && item.type === 'bridge' ? 'diagram-2' : item?.kind === 'device' ? 'ethernet' : 'gear', 20);
 
 // The panel for the open item: { title, subtitle, body, footer, form, icon } (`form` is true when the panel holds editing controls), or null.
 function panelFor(id) {
@@ -85,12 +65,11 @@ function panelFor(id) {
     return { ...p, form: Boolean(ctx && panels.globalsPanel), icon: icon('gear', 20) };
   }
   const item = board.items.get(id);
-  if (!item || item.kind === 'wifi' || item.kind === 'mesh') return null;
-  if (item.kind === 'radio') return { ...radioPanel(item, data), form: false, icon: drawerIcon(item) };
+  // Wi-Fi interfaces, ports and radios have no drawer: their cards link to the page that edits them.
+  if (!item || item.kind === 'wifi' || item.kind === 'mesh' || item.kind === 'port' || item.kind === 'radio') return null;
   let p = null;
   if (ctx && item.kind === 'interface' && item.section && ctx.draft.ifaces[item.section]) p = panels.interfacePanel(ctx, item.section);
   else if (ctx && item.kind === 'device' && item.type !== 'unknown') p = panels.devicePanel(ctx, item.section ? { id: item.section } : { name: item.name });
-  else if (ctx && item.kind === 'port') p = panels.devicePanel(ctx, item.settings ? { id: item.settings.id } : { name: item.name });
   const form = Boolean(p);
   p ??= item.kind === 'zone' ? zonePanel(item) : livePanel(item, data);
   return { ...p, form, icon: drawerIcon(item) };
@@ -203,17 +182,16 @@ export default {
   label: 'Devices and Interfaces',
   title: 'Devices and Interfaces',
   icon: 'diagram-3',
-  // The ports view counts bytes between polls, so it is read more often than the board.
-  interval: () => (state.tab === 'ports' ? 3000 : 5000),
-  css: ['css/forms.css', 'css/netedit.css', 'css/board.css', 'css/drawer.css', ...ports.css],
+  interval: 5000,
+  css: ['css/forms.css', 'css/netedit.css', 'css/board.css', 'css/drawer.css', ...connected.css],
   // Board: no polling over unsaved edits, a focused control of the form, a save in progress, an open panel with a form or an open wizard (it adds to the
-  // draft it was opened on, which a poll would replace). Ports: while the VLAN editor is open or busy.
-  isPaused: () => state.paused || (state.tab === 'ports' ? ports.isPaused() : state.editable || wizardOpen() || editor.paused('.ne-form')),
+  // draft it was opened on, which a poll would replace).
+  isPaused: () => state.paused || (state.tab === 'connected' ? connected.isPaused() : state.editable || wizardOpen() || editor.paused('.ne-form')),
 
   // The data of the chosen view. The flab.radio and flab.mesh calls of the board are optional: without them the page works with the wired layers only, and
   // bridges show no mesh peers; so is the editable config. The data says which view it is for, so a redraw between a tab click and its load shows nothing stale.
   load: async () => {
-    if (state.tab === 'ports') return { tab: 'ports', ...(await ports.load()) };
+    if (state.tab === 'connected') return { tab: 'connected', ...(await connected.load()) };
     const [data, hw, mesh] = await Promise.all([loadNetworkEdit(), optional(ubus('flab.radio', 'status')), optional(ubus('flab.mesh', 'status'))]);
     return { tab: 'board', ...data, radios: hw?.radios ?? [], mesh };
   },
@@ -222,21 +200,22 @@ export default {
     shell.rerender = rerender;
     shell.reload = reload;
     closeDrawer();
-    portHooks.openItem = showBoardItem;
-    liveHooks.paused = () => state.paused;
     tabs = tabsControl(state, 'tab', () => { closeDrawer(); reload(); });
     tabs.setOptions(TABS);
-    return { nodes: [tabs.node, pauseControl(state), refreshControl(reload), editor.attach(reload), ports.attach(reload)] };
+    const filters = connected.attach(rerender);
+    connected.setActive(state.tab === 'connected');
+    return {
+      nodes: [tabs.node, filters, pauseControl(state), refreshControl(reload), editor.attach(reload)],
+      // The filter box and the radio selector show on the Connected devices view only.
+      update: data => { connected.setActive(data.tab === 'connected'); if (data.tab === 'connected') connected.update(data); },
+    };
   },
 
-  // The Ports view; or the board: summary tiles, the findings banner, the board and, over it, the drawer of the open item.
+  // The connected devices; or the board: summary tiles, the findings banner, the board and, over it, the drawer of the open item.
   view(data, rerender) {
     shell.rerender = rerender;
     if (data.tab !== state.tab) return [h('div', { className: 'text-center muted p-5' }, h('div', { className: 'spinner-border spinner-border-sm' }))];
-    if (state.tab === 'ports') return ports.view(data, rerender);
-    // A port's details in its drawer use the Details and cable-test buttons of the Ethernet ports view: point them at this page's redraw.
-    bindRedraw(rerender);
-    if (pendingOpen) { state.open = pendingOpen; pendingOpen = null; }
+    if (state.tab === 'connected') return connected.view(data, rerender);
     const before = focusedInput(state.handle, cur.ctx?.inputs ?? {});
     const ctx = editContext(data, rerender, shell);
     const board = buildBoard(data, ctx ? editSource(ctx.base, ctx.draft) : null);
@@ -252,7 +231,7 @@ export default {
       ctx ? h('div', { className: 'nb-toolbar' }, button('Network-wide settings', 'gear', () => openItem('globals')), muted('The ULA prefix, packet steering and other options that apply to the whole network configuration.')) : null,
       h('p', { className: 'muted small nb-legend' },
         h('b', {}, 'How to read the board: '), 'a network device (a port, a Wi-Fi interface, a bridge or a VLAN device) carries frames; an interface puts a protocol and addresses on one device; the firewall zone groups interfaces. ',
-        'Click a card to see and change it; hover a card to see what it is connected to.'),
+        'Click an interface, a device or a zone to see and change it; a port or a radio opens the page of that hardware. Hover a card to see what it is connected to.'),
       node,
       ctx ? safetyNote() : null,
     ];

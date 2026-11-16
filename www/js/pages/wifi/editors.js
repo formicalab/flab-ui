@@ -130,7 +130,14 @@ export function radioSettings(name, edit) {
   return h('details', { className: 'wf-block', open: opened.get(id) ?? false, ontoggle: e => opened.set(id, e.target.open) },
     h('summary', {}, icon('gear'), h('strong', {}, 'Radio settings'), d.disabled ? badge('disabled', 'warning') : null,
       muted(`${d.htmode || 'default mode'} · ${d.country || 'default country'}${d.txpower ? ` · ${d.txpower} dBm` : ''}`)),
-    h('div', { className: 'wf-block-body' }, groups));
+    h('div', { className: 'wf-block-body' }, identity(r), groups));
+}
+
+// The read-only identification of a radio, as the file holds it (the driver type, the phy, the MAC address, the device path and the band, which are detected
+// by themselves and should not be changed), or nothing when the file holds none of them.
+function identity(r) {
+  const rows = ['type', 'phy', 'radio', 'macaddr', 'path', 'band'].filter(k => r.values?.[k] != null && r.values[k] !== '').map(k => `${k} ${r.values[k]}`);
+  return rows.length ? h('p', { className: 'muted small mono' }, `Identified by: ${rows.join(' · ')}. These are detected by themselves and are not edited here.`) : null;
 }
 
 //#endregion

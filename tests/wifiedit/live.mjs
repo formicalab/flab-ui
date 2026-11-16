@@ -186,8 +186,9 @@ await ctx.route('**/ubus', async route => {
   const reply = body ? answer(body) : null;
   return reply ? route.fulfill({ contentType: 'application/json', body: JSON.stringify(reply) }) : route.continue();
 });
-// Opens the Wi-Fi page with a session in sessionStorage, the way a real sign-in leaves the tab.
-const open = async (acls, selector = '.rd-card, .login-form') => {
+// Opens the Wi-Fi radios page (the radios' own settings and channel) or, with `route` 'wifi', the Wi-Fi page (the wireless networks) with a session in
+// sessionStorage, the way a real sign-in leaves the tab.
+const open = async (acls, selector = '.rd-card, .login-form', route = 'radios') => {
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(String(e)));
   p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -195,11 +196,14 @@ const open = async (acls, selector = '.rd-card, .login-form') => {
     sessionStorage.setItem('sid', id);
     sessionStorage.setItem('acls', JSON.stringify(a));
   }, [sid, acls ?? rootAcls]);
-  await p.goto(`${baseUrl}#wifi`);
+  await p.goto(`${baseUrl}#${route}`);
   await p.waitForSelector(selector, { timeout: 20000 });
   return p;
 };
 let page = await open();
+// Goes to the other page of the pair without reloading: the draft of the shared editor stays. 'radios' has the radios' settings and channel pickers, 'wifi' the
+// wireless networks.
+const go = async route => { await page.evaluate(r => { location.hash = `#${r}`; }, route); await page.waitForSelector(route === 'radios' ? '.rd-hero' : '.rd-ifaces', { timeout: 20000 }); await page.waitForTimeout(400); };
 
 // Helpers: a radio's card, its settings block, a network's editor, the controls of a block, the banner, and screenshots.
 const card = name => page.locator('.rd-card').filter({ has: page.locator('.rd-head .name', { hasText: new RegExp(`^${name}$`) }) });
@@ -244,7 +248,9 @@ const bodyText = () => page.locator('main').innerText();
 console.log('== the real router: the editors from its own configuration (read only) ==');
 const cards = await page.locator('.rd-card').count();
 check(cards >= 1 && await page.locator('details.wf-block').count() === cards, 'every radio card has a "Radio settings" block', `${cards} cards, ${await page.locator('details.wf-block').count()} blocks`);
-check(await page.locator('details.wf-iface').count() >= 1, 'the wireless networks of the router have an editor each', String(await page.locator('details.wf-iface').count()));
+check(await page.locator('details.wf-iface').count() === 0, 'the Wi-Fi radios page has no editor of the wireless networks: they are on the Wi-Fi page');
+await go('wifi');
+check(await page.locator('details.wf-block').count() === 0 && await page.locator('details.wf-iface').count() >= 1, 'the wireless networks of the router have an editor each, on the Wi-Fi page', String(await page.locator('details.wf-iface').count()));
 await openAll(page.locator('.rd-grid'));
 check(await page.locator('.wf-nets-editor').count() === cards && await page.locator('.wf-addbar button').count() === cards * 2, 'each radio has its buttons to add an access point or a client network');
 const ssids = await page.locator('.wf-iface .set-field:has(> label.form-label:text-is("SSID")) input').evaluateAll(e => e.map(x => x.value));
@@ -262,6 +268,7 @@ await shot('real');
 console.log('\n== the mock router: the radio settings ==');
 mock.on = true;
 await refresh();
+await go('radios');
 const r1 = settings('radio1');
 check(await settings('radio0').count() === 1 && /Radio settings/.test(await head(settings('radio0')).innerText()) && /HE40 · IT/.test(await head(settings('radio0')).innerText()), 'a radio\'s settings fold to a line with its mode and country', await head(settings('radio0')).innerText());
 await openAll(r1);
@@ -271,6 +278,7 @@ const modes0 = await input(settings('radio0'), 'Mode and channel width').locator
 check(modes0.includes('HT40+') && modes0.includes('HT40-') && !modes0.includes('VHT80'), 'on 2.4 GHz the explicit HT40+ and HT40- are offered, and no mode the radio lacks', modes0.join());
 check(await input(r1, 'Mode and channel width').inputValue() === 'HE160' && await input(r1, 'Country').inputValue() === 'IT' && (await input(r1, 'Country').locator('option').allInnerTexts()).some(t => /DE · Germany/.test(t)), 'the current values are selected, the countries come from the driver');
 check(await checkbox(settings('radio0'), 'Allow legacy 802.11b rates').count() === 1 && await checkbox(r1, 'Allow legacy 802.11b rates').count() === 0 && await checkbox(r1, 'Skip the coexistence scan').count() === 1, 'options that apply to one band only are shown on that band (legacy rates on 2.4 GHz; the 5 GHz radio keeps the noscan it has set)');
+await openAll(settings('radio0'));
 check((await settings('radio0').locator('.set-hint').allInnerTexts()).every(t => t.length > 25), 'the radio options have hints');
 await shotOf(settings('radio1'), 'radio-settings');
 
@@ -322,6 +330,7 @@ check(await bar().locator('.set-outcome.ok').count() === 1 && await saveBtn().is
 await shot('saved-radio');
 
 console.log('\n== editing a wireless network ==');
+await go('wifi');
 const home = net('home', 'radio0');
 await openAll(home);
 check(await head(home).innerText().then(t => /home/.test(t) && /access point/.test(t) && /WPA2\/WPA3-Personal/.test(t) && /running/.test(t)), 'the summary says what the network is and that it runs', await head(home).innerText());
@@ -469,6 +478,7 @@ check(/^Saved/.test(await outcome()) && !mock.secs.some(s => s.section === 'wifi
 await page.waitForTimeout(700);
 
 console.log('\n== a change the router does not keep ==');
+await go('radios');
 mock.dropWrites = true;
 await openAll(settings('radio0'));
 await type(settings('radio0'), 'Transmit power (dBm)', '15');
@@ -494,6 +504,7 @@ check(/radio0 did not come back up/.test(down) && /rolled back/.test(down) && mo
 check(!mock.secs.find(s => s.section === 'radio0').values.txpower, 'and the power is back');
 mock.radioDown = false;
 await discard();
+await go('wifi');
 await card('radio1').locator('.wf-addbar button:has-text("Add access point")').click();
 await page.waitForTimeout(300);
 const broken = card('radio1').locator('details.wf-new');
@@ -506,6 +517,7 @@ const nodown = await outcome();
 check(/radio1 did not come back up/.test(nodown) && mock.calls.includes('uci.rollback') && !mock.secs.some(s => s.section === 'wifinet0'), 'a new network that does not start makes the router undo the change', nodown);
 mock.ifaceDown = null;
 await discard();
+await go('radios');
 mock.confirmFails = true;
 await openAll(settings('radio0'));
 await type(settings('radio0'), 'Transmit power (dBm)', '15');
@@ -532,6 +544,10 @@ const ro = await open(readOnly, '.wf-block');
 check(/not allowed to change the configuration/.test(await ro.locator('main').innerText()) && await ro.locator('details.wf-block').count() === 2 && await ro.locator('.rd-pick').count() === 0, 'the settings are shown, read only, with a note saying why');
 await ro.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; }));
 await ro.waitForTimeout(200);
+await ro.evaluate(() => { location.hash = '#wifi'; });
+await ro.waitForSelector('.wf-iface');
+await ro.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; }));
+await ro.waitForTimeout(200);
 check((await ro.locator('.wf-iface input:not([type=hidden]), .wf-iface select, .wf-block input, .wf-block select').evaluateAll(e => e.every(x => x.disabled))) && await ro.locator('.wf-addbar button').evaluateAll(e => e.every(b => b.disabled)), 'every control and the add buttons are disabled');
 await ro.close();
 
@@ -551,6 +567,7 @@ await none.close();
 mock.noPlugin = false;
 
 console.log('\n== theme ==');
+await go('wifi');
 await refresh();
 await openAll(net('guests', 'radio1'));
 await page.emulateMedia({ colorScheme: 'dark' });
@@ -561,6 +578,7 @@ await page.emulateMedia({ colorScheme: 'light' });
 await discard();
 
 console.log('\n== the session expires ==');
+await go('radios');
 await openAll(settings('radio0'));
 await type(settings('radio0'), 'Transmit power (dBm)', '12');
 mock.expired = true;
