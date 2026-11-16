@@ -96,3 +96,32 @@
 {"tool":"mtr","host":"1.1.1.1","resolve":"yes"}
 {"tool":"mtr","host":"1.1.1.1","asn":"true;touch /tmp/flab-diag-canary"}
 {"tool":"mtr","host":"1.1.1.1","size":0}
+{"tool":"check","host":"localhost","port":0}
+{"tool":"check","host":"localhost","port":65536}
+{"tool":"check","host":"localhost","port":"25;touch /tmp/flab-diag-canary"}
+{"tool":"capture"}
+{"tool":"capture","iface":"nope0"}
+{"tool":"capture","iface":"lo;touch /tmp/flab-diag-canary"}
+{"tool":"capture","iface":"-i"}
+{"tool":"capture","iface":"lo","proto":"tcp;touch /tmp/flab-diag-canary"}
+{"tool":"capture","iface":"lo","proto":"tcp or udp"}
+{"tool":"capture","iface":"lo","host":"1.1.1.1 or host 2.2.2.2"}
+{"tool":"capture","iface":"lo","host":"example.com"}
+{"tool":"capture","iface":"lo","host":"$(touch /tmp/flab-diag-canary)"}
+{"tool":"capture","iface":"lo","port":0}
+{"tool":"capture","iface":"lo","port":70000}
+{"tool":"capture","iface":"lo","proto":"icmp","port":80}
+{"tool":"capture","iface":"lo","seconds":301}
+{"tool":"capture","iface":"lo","seconds":"5;touch /tmp/flab-diag-canary"}
+{"tool":"capture","iface":"lo","packets":20001}
+{"tool":"capture","iface":"lo","snaplen":100}
+{"tool":"capture","iface":"lo","filter":"-w /tmp/flab-diag-canary"}
+{"tool":"capture","iface":"lo","filter":"port 80'; touch /tmp/flab-diag-canary; '"}
+{"tool":"capture","iface":"lo","filter":"port 80; touch /tmp/flab-diag-canary"}
+{"tool":"capture","iface":"lo","filter":"$(touch /tmp/flab-diag-canary)"}
+{"tool":"capture","iface":"lo","filter":"`touch /tmp/flab-diag-canary`"}
+{"tool":"capture","iface":"lo","filter":"port 80\\nport 81"}
+{"tool":"capture","iface":"lo","filter":"port 80 \\\\ port 81"}
+{"tool":"capture","iface":"lo","filter":"host \"x\""}
+{"tool":"capture","iface":"lo","filter":{"a":1}}
+{"tool":"capture","iface":"lo","filter":"portxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx 80"}

@@ -117,7 +117,7 @@ flab-ui/
         toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, dispatch of the result views; Wake-on-LAN),
                              diagviews.js (ping, traceroute, DNS, check, comparison and certificate views), diagmodel.js (pure: request
                              checks, output parsing, the check's verdict), iperfmodel.js / iperfview.js (the iperf3 server),
-                             dnstracemodel.js / dnstraceview.js (the DNS trace), pathmodel.js / pathview.js (mtr and AS data),
+                             dnstracemodel.js / dnstraceview.js (the DNS trace), pathmodel.js / pathview.js (mtr, AS data and the route strip), capturemodel.js / captureview.js (the packet capture),
                              charts.js (SVG ping and throughput charts), tlsdiagram.js (certificate chain and expiry timeline)
         traffic/             Traffic: index.js (page, tabs, state, polling), model.js (pure: interfaces and totals, WAN, findings, entries, NAT,
                              merging hosts by MAC, protocol rows), live.js, connections.js, usage.js, settings.js (the Settings tab: cards and saving),

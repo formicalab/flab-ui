@@ -4,10 +4,13 @@ export const MAX_JOB_OUTPUT = 262144;
 
 // Run in a freshly-created private job directory. A separate bounded pump, rather than a post-hoc head,
 // guarantees out never grows past the total budget. Reaching it terminates the producer immediately.
-export function launch_job(command, seconds) {
+// `fsize` is the size limit of the files the job writes, in 512 byte blocks (a packet capture needs more than the default).
+export function launch_job(command, seconds, fsize) {
+	if (fsize == null)
+		fsize = 512;
 	return replace(`mkfifo stream || exit 1
 	(
-		ulimit -f 512
+		ulimit -f ${fsize}
 		(
 			start=$(date +%s)
 			timeout -k 2 ${seconds} ${command} >stream 2>&1 & p=$!

@@ -25,7 +25,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |
 | Traffic | Bandwidth, connections and nlbwmon usage; edit the nlbwmon settings. |
 | Services | List, start, stop, restart, enable and disable services. |
-| Toolbox | Ping, traceroute, MTR, DNS, TLS checks, an iperf3 server and Wake-on-LAN. |
+| Toolbox | Ping, traceroute, MTR, DNS, TLS checks, a packet capture with pcap download, an iperf3 server and Wake-on-LAN. |
 | Logs | System and kernel log. |
 | System settings | `/etc/config/system`: general, time zone and NTP, logging, kernel and cron. |
 

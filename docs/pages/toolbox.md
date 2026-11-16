@@ -1,6 +1,6 @@
 # Toolbox (route `#toolbox`)
 Diagnostic tools that run on the router and show their output as it arrives: a connectivity check, ping, traceroute, MTR,
-DNS lookups (of one server, or of several to compare), a DNS trace, a TLS certificate check, an iperf3 server and Wake-on-LAN. The form has a tool
+DNS lookups (of one server, or of several to compare), a DNS trace, a TLS certificate check, a packet capture, an iperf3 server and Wake-on-LAN. The form has a tool
 selector, the host, and the options of the tool:
 for ping the count
 (1 to 60), the packet size (0 to 1400), the address family and the interface to send from (a dropdown of the router's
@@ -9,16 +9,20 @@ probes, whether to look up host names and networks, family and source; for MTR t
 packet size, whether to look up host names and networks, family and source; for
 DNS the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and the servers to ask (the router's resolver by default); for the DNS trace the record type and the address family; for
 the certificate check the port, a server name and a STARTTLS
-protocol; for the iperf3 server the time to run, the port and the address to listen on. A tool is offered only when the router has what it needs (the certificate check needs `openssl`,
-MTR needs `mtr`, the DNS trace needs `kdig`, the iperf3 server needs `iperf3`, the DNS tools
+protocol; for the connectivity check the port of its last step; for the packet capture the interface, a protocol, an address, a port, an advanced filter, the duration, the number of packets and how much of each to keep; for the iperf3 server the time to run, the port and the address to listen on. A tool is offered only when the router has what it needs (the certificate check needs `openssl`,
+MTR needs `mtr`, the DNS trace needs `kdig`, the packet capture needs `tcpdump`, the iperf3 server needs `iperf3`, the DNS tools
 and the check need a DNS tool). The form is checked in the browser
 first (a host with a space, a leading `-` or shell characters never reaches the router), and the plugin checks everything
 again. The form remembers its values while the page is open; Run is disabled for a login that may not start diagnostics.
 - **Connectivity check:** one click that walks down the stack and says where it breaks: the default route, the next hop
   (found the way the kernel would route to 1.1.1.1, a PPP peer address when the link has no gateway) and a ping of it, two
   public addresses (1.1.1.1 and 8.8.8.8), a DNS lookup through the router's resolver and through 1.1.1.1, the IPv6
-  equivalents (skipped when there is no IPv6 default route) and a TLS handshake to the host (`example.com` unless another is
-  given). The steps turn from waiting to done while it runs, and a verdict says what is wrong in the order the problems
+  equivalents (skipped when there is no IPv6 default route) and a connection to the host (`example.com` unless another is
+  given), on port 443 as a TLS handshake unless another **port** is given. With another port the last step is called
+  "Connection to host:port": a TLS service is judged as usual, a service that answers but does not speak TLS (an SSH or
+  SMTP banner, a silent service) is a plain TCP connection that works, and a refusal or silence is a failure of its own, said
+  in the verdict after the earlier steps (`openssl s_client` prints `CONNECTED` once the TCP connection is made, which tells the cases apart).
+  The steps turn from waiting to done while it runs, and a verdict says what is wrong in the order the problems
   matter: no default route; a dead next hop; a next hop that answers while the internet does not; a router resolver that
   fails while a public one answers; no DNS at all (port 53 blocked); a certificate that is not yet valid or expired (the
   router's clock is the first suspect); an IPv6 route that leads nowhere (a note, not the verdict). A script that cannot run
@@ -111,7 +115,23 @@ again. The form remembers its values while the page is open; Run is disabled for
   one label), whether it is expired, not yet valid or ends within 14 days, a weak RSA key or a SHA-1 or MD5 signature, a
   protocol older than TLS 1.2, and why a connection failed (refused, timed out, name not found, or a server that hung up
   without sending a certificate).
-- **iperf3 server:** starts `iperf3 -s` on the router for a chosen time (1, 2, 5, 15 or 30 minutes; 2 is the default) so a
+- **Packet capture:** records the packets that cross an interface (or every interface, `any`) with `tcpdump` and lists them as
+  they arrive. The filter is built from the form: a protocol (TCP, UDP, ICMP, ICMPv6, ARP), an IP address (packets to or from
+  it; an address, not a name), a port (TCP and UDP only) and an **advanced filter**, a tcpdump (BPF) expression such as
+  `not port 443`, `host 10.0.0.1 or host 10.0.0.2` or `tcp[tcpflags] & tcp-syn != 0`, which goes in brackets and is joined with
+  the others by `and`. The expression may only hold letters, digits, spaces and `. : / _ ( ) ! & | = < > [ ] , -`, at most 200
+  characters, may not start with `-` and is passed after `--`, so it can never be taken for an option; an expression tcpdump
+  does not accept ends the job at once with tcpdump's complaint as the result. The capture stops by itself at the duration (10
+  seconds to 5 minutes) or the number of packets (100 to 20,000), or on Stop (reported as stopped), and keeps 96 bytes of each
+  packet (headers), 256 or the whole packet. The page shows the figures (packets captured, matched by the filter, dropped by the
+  kernel, connection attempts and resets), findings (dropped packets, a capture that ended at its packet limit, many resets, no
+  packet at all, tcpdump's own failure), the protocols and the five busiest conversations, and a table (time, protocol,
+  source and destination with ports, length, tcpdump's words; resets in red) of the first 1000 packets, 500 of them drawn. The
+  **Download .pcap** button on a finished capture fetches the whole file, which has every packet, in pieces of 192 KB (`flab.diag
+  download`, base64) and saves it as `capture-<interface>-<date>-<time>.pcap` for Wireshark; it is offered to every finished
+  capture, and disabled with the reason for a session opened before the plugin offered the permission (sign out and in again).
+  A capture sees everyone's traffic, including what is not encrypted, so the form warns about it. Only one capture runs at a
+  time; the file lives in memory (tmpfs), is removed when a newer capture starts and ten minutes after the job ends.- **iperf3 server:** starts `iperf3 -s` on the router for a chosen time (1, 2, 5, 15 or 30 minutes; 2 is the default) so a
   computer on the LAN can measure the path to the router. The server prints one JSON event per line (`--json-stream`,
   flushed as produced) and stops by itself when the time is up (the job's `timeout` ends it, code 124); Stop ends it
   earlier (iperf3 then exits with 0, so the page records the Stop itself). The port is 5201 unless changed (1024 to
@@ -147,10 +167,10 @@ again. The form remembers its values while the page is open; Run is disabled for
 
 `flab.diag` runs the tools detached under `timeout -k 2`, with a bounded FIFO output pump and exit status file,
 under `/tmp/flab-diag/<id>/`: a ping may run its count plus 10 seconds, a traceroute 60 (with the AS lookups up to 108 more),
-MTR its rounds plus 15 (with AS lookups up to 108 more), a DNS trace 60, a DNS lookup of one server 15, a certificate check 25, a lookup of several servers
+MTR its rounds plus 15 (with AS lookups up to 108 more), a packet capture its seconds plus 20, a DNS trace 60, a DNS lookup of one server 15, a certificate check 25, a lookup of several servers
 (the plugin's `compare` tool) 60, the connectivity check 75 and the iperf3 server the minutes asked for. The check, the
 multi-server lookup, the certificate check,
-the DNS trace and a traceroute or MTR run with AS lookups are small shell scripts (`job.sh`,
+the DNS trace, the packet capture and a traceroute or MTR run with AS lookups are small shell scripts (`job.sh`,
 written with LF line endings only, because BusyBox sh rejects a carriage return) that print their output in blocks
 (`### BEGIN <step> <uptime> <detail>` … `### END <exit code> <uptime>`), which the page
 splits and reads; a block without an END line is still running. Every command in a script runs under its own `timeout`, and
@@ -160,15 +180,19 @@ iperf3 server's output is fetched in pieces. At most three jobs run at once,
 twelve finished directories are retained and old jobs are swept on a subsequent start request after ten minutes.
 Each output file is capped at 256 KiB; the producer is stopped when it reaches that budget and the page reports it.
 The browser independently caps retained text at 256 KiB, so an older or incompatible backend cannot grow it indefinitely.
-Everything that reaches the shell is
+The capture script writes tcpdump's pcap into a FIFO; `tee` keeps it in `cap.pcap` and passes it to a second tcpdump that
+prints one line per packet, of which `awk` forwards the first 1000 (cut at 180 characters) and counts the rest, so the output
+stays under its cap while the file is complete; everything ends when the writer ends, and the TERM of a Stop is passed on to it.
+The job's file size limit is raised for it (`ulimit -f`, 35 MB, which holds 20,000 packets of 1514 bytes). tcpdump's `-Z root`
+note is dropped from the summary.Everything that reaches the shell is
 validated: the tool, the record type and the STARTTLS protocol come from allow-lists, the host, the server name and the DNS
 servers are made of letters, digits and `. : _ -` and do not start with `-` (they could be taken for an option), the port is
 clamped to 1 to 65535 (1024 to 65535 for the iperf3 server), the MTR method comes from an allow-list (a port needs UDP or TCP, a packet size
 does not go with TCP), a `compare` request takes one to six servers that are each such a name (or `router`), the source is such
-an address or an interface name, the iperf3 time must be one of the offered minutes and the address to listen on one of the router's own addresses,
+an address or an interface name, the iperf3 time must be one of the offered minutes and the address to listen on one of the router's own addresses, a capture's interface must be `any` or an existing device, its protocol and capture size come from lists, its address must be an IP address, its filter is checked as above and a port needs TCP, UDP or no protocol,
 the numbers are clamped to their ranges (a literal 0 is a number, not "absent"), the name-lookup and network-lookup switches must be real
 booleans, the argument list is built from those values
 only, the job id is generated from `/dev/urandom` and checked as exactly twelve hex digits whenever it comes back, and `stop`
-only kills a process whose name is one of the tools (including `mtr`, `mtr-packet` and `iperf3`) or the shell running one of its own `job.sh` scripts (so a recycled pid
+only kills a process whose name is one of the tools (including `mtr`, `mtr-packet`, `iperf3` and `tcpdump`) or the shell running one of its own `job.sh` scripts (so a recycled pid
 is never hit). The ACL fragment
-`rpcd/acl.d/flab-diag.json` grants `status` and `read` (read) and `start`, `stop` and `wake` (write).
+`rpcd/acl.d/flab-diag.json` grants `status` and `read` (read) and `start`, `stop`, `download` and `wake` (write).

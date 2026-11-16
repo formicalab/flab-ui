@@ -12,9 +12,10 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, can, ubus } from '../../core/ubus.js';
 import { badge, button, card, mono, muted } from '../../core/ui.js';
-import { DNS_TYPES, IPERF_MINUTES, MAX_SERVERS, PUBLIC_RESOLVERS, STARTTLS, WEAK_NSLOOKUP, blankForm, endOf, fmtMs, isAddress, isMac, normMac, parseBlocks, parseDns, parsePing, parseTraceroute, pingVerdict, requestOf, scriptProblem } from './diagmodel.js';
+import { CAPTURE, DNS_TYPES, IPERF_MINUTES, MAX_SERVERS, PUBLIC_RESOLVERS, STARTTLS, WEAK_NSLOOKUP, blankForm, endOf, fmtMs, isAddress, isMac, normMac, parseBlocks, parseDns, parsePing, parseTraceroute, pingVerdict, requestOf, scriptProblem } from './diagmodel.js';
 import { checkBody, compareBody, stat, tlsBody, wolBody } from './diagviews.js';
 import { pingChart } from './charts.js';
+import { captureBody } from './captureview.js';
 import { iperfBody } from './iperfview.js';
 import { dnsTraceBody } from './dnstraceview.js';
 import { asnLine, asPathView, mtrBody } from './pathview.js';
@@ -27,15 +28,15 @@ const READ_EVERY = 500;
 const STATUS_TTL = 60000;
 
 // The tools offered, with their labels and titles.
-const TOOLS = [['check', 'Connectivity check'], ['ping', 'Ping'], ['traceroute', 'Traceroute'], ['mtr', 'MTR'], ['dns', 'DNS lookup'], ['trace', 'DNS trace'], ['tls', 'TLS certificate'], ['iperf', 'iperf3 server'], ['wol', 'Wake-on-LAN']];
+const TOOLS = [['check', 'Connectivity check'], ['ping', 'Ping'], ['traceroute', 'Traceroute'], ['mtr', 'MTR'], ['dns', 'DNS lookup'], ['trace', 'DNS trace'], ['tls', 'TLS certificate'], ['capture', 'Packet capture'], ['iperf', 'iperf3 server'], ['wol', 'Wake-on-LAN']];
 
 // The heading of a result for each job (a DNS lookup of two or more servers runs as the plugin's `compare` tool).
-const TITLES = { ping: 'Ping', traceroute: 'Traceroute', mtr: 'MTR', dns: 'DNS lookup', trace: 'DNS trace', check: 'Connectivity check', compare: 'DNS lookup', tls: 'TLS certificate', iperf: 'iperf3 server', wol: 'Wake-on-LAN' };
+const TITLES = { ping: 'Ping', traceroute: 'Traceroute', mtr: 'MTR', dns: 'DNS lookup', trace: 'DNS trace', check: 'Connectivity check', compare: 'DNS lookup', tls: 'TLS certificate', capture: 'Packet capture', iperf: 'iperf3 server', wol: 'Wake-on-LAN' };
 
 // Whether the router has what `tool` needs (`status` is the plugin's answer).
 const available = (status, tool) => {
   const t = status.tools ?? {};
-  return { ping: t.ping, traceroute: t.traceroute, mtr: t.mtr, dns: Boolean(status.dns_tool), trace: t.kdig, check: t.ping && Boolean(status.dns_tool), tls: t.openssl, iperf: Boolean(status.iperf), wol: Boolean(status.wol) }[tool];
+  return { ping: t.ping, traceroute: t.traceroute, mtr: t.mtr, dns: Boolean(status.dns_tool), trace: t.kdig, check: t.ping && Boolean(status.dns_tool), tls: t.openssl, capture: Boolean(status.capture), iperf: Boolean(status.iperf), wol: Boolean(status.wol) }[tool];
 };
 
 // The select value of "Another MAC address…" in the Wake-on-LAN host list.
@@ -74,10 +75,20 @@ async function start(state) {
   if (req.error) { d.formError = req.error; return state.rerender(); }
   d.formError = null;
   const job = {
-    tool: req.args.tool, host: req.args.tool === 'iperf' ? '' : req.args.host ?? req.args.mac ?? cached?.check_host ?? 'example.com', id: null, command: '', text: '', size: 0, running: true, exit: null, stopped: false, stopRequested: false, timedOut: false, error: null, limit: null, t0: Date.now(), t1: null,
+    tool: req.args.tool, host: req.args.tool === 'iperf' || req.args.tool === 'capture' ? '' : req.args.host ?? req.args.mac ?? cached?.check_host ?? 'example.com', id: null, command: '', text: '', size: 0, running: true, exit: null, stopped: false, stopRequested: false, timedOut: false, error: null, limit: null, t0: Date.now(), t1: null,
     name: req.args.sni ?? (isAddress(req.args.host) ? null : req.args.host), target: req.args.port ? `${req.args.host}:${req.args.port}` : req.args.host, total: req.args.servers?.length ?? null,
     dnsType: req.args.type ?? null, asn: Boolean(req.args.asn), iperf: req.args.tool === 'iperf' ? { port: req.args.port ?? d.status?.iperf?.port ?? 5201, bind: req.args.bind ?? null, minutes: req.args.minutes } : null,
   };
+  // The connectivity check's port is shown with its host; without a host the plugin's default name is used.
+  if (req.args.tool === 'check') {
+    job.port = req.args.port ?? null;
+    job.target = job.port ? `${job.host}:${job.port}` : job.host;
+  }
+  // A packet capture remembers what it was asked for, to say how it ended and to name the file.
+  if (req.args.tool === 'capture') {
+    const a = req.args;
+    job.cap = { iface: a.iface, seconds: a.seconds, packets: a.packets, snaplen: a.snaplen, filter: [a.proto, a.host && `host ${a.host}`, a.port && `port ${a.port}`, a.filter && (a.proto || a.host || a.port ? `(${a.filter})` : a.filter)].filter(Boolean).join(' and ') };
+  }
   d.job = job;
   state.rerender();
   // Waking a host is one quick call, not a job to follow: its answer is the whole result.
@@ -263,6 +274,8 @@ function formCard(state, status) {
   const allowed = can('flab.diag', f.tool === 'wol' ? 'wake' : 'start');
   const tools = TOOLS.filter(([t]) => available(status, t));
   if (!tools.some(([t]) => t === f.tool) && tools.length) f.tool = tools[0][0];
+  // A capture starts on the LAN bridge when the router has one, otherwise on every interface.
+  if (f.tool === 'capture' && !f.capIface) f.capIface = (status.devices ?? []).includes('br-lan') ? 'br-lan' : 'any';
   // The address family field, shared by the tools that resolve names.
   const family = () => field('Address family', 'Force IPv4 or IPv6 name resolution', selectInput(state, 'family', [['', 'automatic'], ['4', 'IPv4'], ['6', 'IPv6']], running));
   // The optional source field (the interface the probes leave from), shared by ping and traceroute.
@@ -287,6 +300,8 @@ function formCard(state, status) {
     field('Host names', 'Look up the name of every router that answers. It shows who runs each hop, but is slower when the resolver has no reverse records', selectInput(state, 'resolve', [['', 'addresses only'], ['1', 'look up names']], running)),
     status.asn ? field('Networks (AS)', 'Look up which network (autonomous system) and organization each router that answered belongs to, from Team Cymru\'s DNS service, asked through the router\'s resolver once the run has ended', selectInput(state, 'asn', [['1', 'look up'], ['', 'off']], running)) : null,
     family(), source(),
+  ] : f.tool === 'check' ? [
+    field('Port', 'The port of the last step. 443 (the default) is a TLS handshake; another port is a TCP connection, which is also judged as TLS when the service speaks it', textInput(state, 'checkPort', { type: 'number', placeholder: '443', disabled: running })),
   ] : f.tool === 'dns' ? [
     field('Record type', 'The kind of DNS record to ask for', selectInput(state, 'type', DNS_TYPES.map(t => [t, t]), running)),
   ] : f.tool === 'trace' ? [
@@ -300,36 +315,46 @@ function formCard(state, status) {
     field('Run for', 'The server stops by itself after this time', selectInput(state, 'minutes', [...IPERF_MINUTES].sort((a, b) => a - b).map(m => [String(m), `${m} minute${m === 1 ? '' : 's'}`]), running)),
     field('Port', 'The TCP and UDP port the server listens on (1024 to 65535, default 5201)', textInput(state, 'iperfPort', { type: 'number', placeholder: '5201', disabled: running })),
     field('Listen on', 'Every address of the router (the firewall decides who can connect), or just one of them', selectInput(state, 'bind', [['', 'every address'], ...(status.iperf?.addresses ?? []).map(a => [a.ip, `${a.ip} (${a.iface}${a.zone ? `, ${a.zone}` : ''})`])], running)),
+  ] : f.tool === 'capture' ? [
+    field('Interface', 'Where to listen: one network device, or every interface at once (any)', selectInput(state, 'capIface', [['any', 'all interfaces (any)'], ...(status.devices ?? []).map(x => [x, x])], running)),
+    field('Protocol', 'Only packets of this protocol', selectInput(state, 'capProto', [['', 'all'], ...CAPTURE.protos], running)),
+    !f.capProto || f.capProto === 'tcp' || f.capProto === 'udp' ? field('Port', 'Only packets to or from this port', textInput(state, 'capPort', { type: 'number', placeholder: 'any', disabled: running })) : null,
+    field('Advanced filter (optional)', 'A tcpdump (BPF) expression, combined with the choices above by "and". Examples: not port 443 · host 10.0.0.1 or host 10.0.0.2 · tcp[tcpflags] & tcp-syn != 0 · net 192.168.1.0/24 and not arp', textInput(state, 'capFilter', { placeholder: 'e.g. not port 443', mono: true, disabled: running }), 'rt-capfilter'),
+    field('Duration', 'The capture stops by itself after this time', selectInput(state, 'capSeconds', CAPTURE.seconds.map(s => [String(s), s < 60 ? `${s} seconds` : `${s / 60} minute${s === 60 ? '' : 's'}`]), running)),
+    field('Packets', 'It also stops after this many packets', selectInput(state, 'capPackets', CAPTURE.packets.map(n => [String(n), n.toLocaleString('en')]), running)),
+    field('Keep per packet', 'How much of each packet is stored. Headers are enough to see who talks to whom; whole packets also keep what is not encrypted', selectInput(state, 'capSnap', [['96', 'headers only (96 bytes)'], ['256', '256 bytes'], ['1514', 'whole packets (1514 bytes)']], running)),
   ] : f.tool === 'wol' ? [
     field('Interface', 'The network the host is on. Automatic uses the interface the router last saw the host on, or br-lan', selectInput(state, 'iface', [['', 'automatic'], ...(status.devices ?? []).map(x => [x, x])], running)),
   ] : [];
 
   const weak = f.tool === 'dns' && status.dns_tool === 'nslookup' && WEAK_NSLOOKUP.includes(f.type);
-  const hostLabel = f.tool === 'check' ? 'Host to test (optional)' : f.tool === 'dns' ? 'Name to look up' : f.tool === 'trace' ? 'Name to trace' : f.tool === 'wol' ? 'Host to wake' : 'Host or address';
-  const hostHint = f.tool === 'check' ? `The name used for the DNS and TLS steps (${status.check_host ?? 'example.com'} by default)` : f.tool === 'dns' ? 'The name every server is asked about (an address for a PTR lookup)' : f.tool === 'trace' ? 'The name whose path from the root servers is traced' : f.tool === 'wol' ? 'A host the router knows: its DHCP reservations first, then the other hosts it has seen. Or enter another MAC address' : 'The name or address to probe';
-  const hostHolder = f.tool === 'check' ? (status.check_host ?? 'example.com') : f.tool === 'wol' ? 'aa:bb:cc:dd:ee:ff' : f.tool === 'trace' ? 'e.g. www.example.com' : 'e.g. example.com or 1.1.1.1';
+  const hostLabel = f.tool === 'check' ? 'Host to test (optional)' : f.tool === 'capture' ? 'Host to filter on (optional)' : f.tool === 'dns' ? 'Name to look up' : f.tool === 'trace' ? 'Name to trace' : f.tool === 'wol' ? 'Host to wake' : 'Host or address';
+  const hostHint = f.tool === 'check' ? `The name used for the DNS and TLS steps (${status.check_host ?? 'example.com'} by default)` : f.tool === 'capture' ? 'Only packets to or from this IP address (an address, not a name)' : f.tool === 'dns' ? 'The name every server is asked about (an address for a PTR lookup)' : f.tool === 'trace' ? 'The name whose path from the root servers is traced' : f.tool === 'wol' ? 'A host the router knows: its DHCP reservations first, then the other hosts it has seen. Or enter another MAC address' : 'The name or address to probe';
+  const hostHolder = f.tool === 'check' ? (status.check_host ?? 'example.com') : f.tool === 'capture' ? 'e.g. 192.168.1.50' : f.tool === 'wol' ? 'aa:bb:cc:dd:ee:ff' : f.tool === 'trace' ? 'e.g. www.example.com' : 'e.g. example.com or 1.1.1.1';
   const hostControl = f.tool === 'wol' ? wolPicker(state, status, running) : textInput(state, 'host', { placeholder: hostHolder, mono: true, disabled: running });
   const serving = f.tool === 'iperf';
+  const capturing = f.tool === 'capture';
   return card([icon('activity'), 'Diagnostics', h('span', { className: 'sub' }, 'Run a tool on the router and watch its output as it arrives')],
     h('div', { className: 'card-body rt-diag' },
-      segment(tools, f.tool, v => { f.tool = v; if (v === 'wol' && !isMac(f.host)) f.host = ''; d.formError = null; state.rerender(); }, running),
+      segment(tools, f.tool, v => { f.tool = v; if (v === 'wol' && !isMac(f.host)) f.host = ''; if (v === 'capture' && !isAddress(f.host)) f.host = ''; d.formError = null; state.rerender(); }, running),
       h('div', { className: 'rt-diagform' },
         serving ? null : field(hostLabel, hostHint, hostControl, 'rt-host'),
         ...options,
         h('div', { className: 'rt-actions' },
-          running ? button(serving ? 'Stop server' : 'Stop', 'x-lg', () => stop(state)) : runButton(state, allowed, serving ? 'Start server' : 'Run'),
+          running ? button(serving ? 'Stop server' : capturing ? 'Stop capture' : 'Stop', 'x-lg', () => stop(state)) : runButton(state, allowed, serving ? 'Start server' : capturing ? 'Start capture' : 'Run'),
           d.job && !running ? button('Clear', 'x-lg', () => { d.job = null; d.formError = null; state.rerender(); }) : null)),
       f.tool === 'dns' ? serverPicker(state, status, running) : null,
       d.formError ? h('div', { className: 'rt-error' }, icon('exclamation-triangle'), d.formError) : null,
       !allowed ? h('div', { className: 'rt-error' }, icon('exclamation-triangle'), 'This login is not allowed to run diagnostics.') : null,
       weak ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `This router only has busybox nslookup, which cannot show ${f.type} records in full. Installing bind-dig, knot-dig or ldns-drill gives complete answers.`) : null,
       ['dns', 'check'].includes(f.tool) && status.dns_tool && status.dns_tool !== 'nslookup' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Using ${status.dns_tool}.`) : null,
-      f.tool === 'check' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Walks down the stack: default route, next hop, internet, DNS (through the router and a public resolver), IPv6 and a secure connection. About 15 seconds.') : null,
+      f.tool === 'check' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Walks down the stack: default route, next hop, internet, DNS (through the router and a public resolver), IPv6 and a connection to the host (a secure one on port 443; with another port, a plain TCP connection unless the service speaks TLS). About 15 seconds.') : null,
       f.tool === 'trace' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Asks a root server, then the servers it points to, down to the one that answers: the way a resolver finds a name. It shows who answered, how long each step took and the DNSSEC records on the way, and ends with what the router\'s own resolver says.') : null,
       f.tool === 'traceroute' && status.tools?.mtr ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'MTR sends the same probes for several rounds and shows the loss and delay of every hop, which tells a router that merely limits its replies from a real fault.',
         h('button', { type: 'button', className: 'btn btn-sm btn-link', disabled: running, onclick: () => { f.tool = 'mtr'; d.formError = null; state.rerender(); } }, 'Use MTR')) : null,
       f.tool === 'mtr' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Probes every hop once a second for the chosen number of rounds and keeps its loss and delay up to date, like ping and traceroute in one. Loss that does not reach the last hop is a router limiting its own replies, not a fault. It follows one path per run, so it does not show the alternatives of a load-balanced hop; Traceroute does.') : null,
       serving ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Starts an iperf3 server on the router that stops by itself. From a computer in the network run the command shown once it listens; the test measures the path to the router (and the router\'s CPU), not to the internet.') : null,
+      capturing ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Records the packets that cross the chosen interface with tcpdump and lists them as they arrive. It sees everyone\'s traffic, including what is not encrypted, so keep the filter narrow and the capture short. The capture stops by itself at the time or the packet count, is kept in the router\'s memory (the newest only, for ten minutes after it ends) and can be downloaded as a .pcap file for Wireshark. Traffic between two devices on the same switch port does not pass the router and is not seen; the page\'s own connection to the router is, when you capture its address.') : null,
       f.tool === 'wol' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Sends one magic packet${status.wol === 'etherwake' ? ' as an Ethernet frame (etherwake)' : ' as a UDP broadcast to port 9 (socat)'}. The host has to be switched off but connected, with Wake-on-LAN enabled in its firmware and operating system, and on the same network as the chosen interface.`) : null));
 }
 
@@ -398,20 +423,20 @@ function resultNodes(d) {
   const job = d.job;
   if (!job) return [];
   const bodies = {
-    ping: pingBody, traceroute: traceBody, mtr: mtrBody, dns: dnsBody, trace: dnsTraceBody, check: checkBody, compare: j => compareBody(j, d.status), tls: tlsBody,
+    ping: pingBody, traceroute: traceBody, mtr: mtrBody, dns: dnsBody, trace: dnsTraceBody, check: checkBody, compare: j => compareBody(j, d.status), tls: tlsBody, capture: captureBody,
     iperf: j => iperfBody(j, d.status), wol: j => wolBody(j, d.status, ip => d.openPing(ip)),
   };
   const problem = scriptProblem(job);
   const body = job.error && !job.text ? h('div', { className: 'rt-error' }, icon('x-circle'), job.error)
     : problem && !parseBlocks(job.text).length ? null : bodies[job.tool](job);
-  const subject = job.tool === 'iperf' ? '' : ` · ${job.tool === 'tls' ? job.target : job.host}`;
+  const subject = job.tool === 'iperf' ? '' : job.tool === 'capture' ? ` · ${job.cap.iface}${job.cap.filter ? ` · ${job.cap.filter}` : ''}` : ` · ${job.tool === 'tls' || job.tool === 'check' ? job.target : job.host}`;
   return [card([icon('activity'), `${TITLES[job.tool]}${subject}`, job.command ? h('span', { className: 'sub mono' }, job.command) : null, h('span', { className: 'rt-state' }, statusBadge(job))],
     h('div', { className: 'card-body' },
       problem ? h('div', { className: 'rt-error' }, icon('x-circle'), problem) : null,
       body,
       job.error && job.text ? h('div', { className: 'rt-error' }, icon('x-circle'), job.error) : null,
       // The open state of "Raw output" is kept in the page state, because the result is rebuilt every time output arrives.
-      job.tool !== 'dns' && job.text ? h('details', { className: 'rt-raw', open: d.rawOpen, ontoggle: e => { d.rawOpen = e.target.open; } }, h('summary', {}, 'Raw output'), h('pre', {}, job.text)) : null))];
+      job.tool !== 'dns' && job.tool !== 'capture' && job.text ? h('details', { className: 'rt-raw', open: d.rawOpen, ontoggle: e => { d.rawOpen = e.target.open; } }, h('summary', {}, 'Raw output'), h('pre', {}, job.text)) : null))];
 }
 
 //#endregion

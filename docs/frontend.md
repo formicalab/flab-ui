@@ -138,7 +138,7 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   lookup answer's buttons use; `diag.js` is the form, job polling and the choice of result view, `diagviews.js`
   the ping, traceroute, DNS, check, comparison and certificate views, `diagmodel.js` the pure parts (the request a form may
   build, the parsers for the classic tools' output, the check's verdict), and the newer tools have a model and a view each
-  (`iperfmodel.js`/`iperfview.js`, `dnstracemodel.js`/`dnstraceview.js`, `pathmodel.js`/`pathview.js`) plus `charts.js` and
+  (`iperfmodel.js`/`iperfview.js`, `dnstracemodel.js`/`dnstraceview.js`, `pathmodel.js`/`pathview.js`, `capturemodel.js`/`captureview.js`) plus `charts.js` and
   `tlsdiagram.js` for the pictures.
   The BGP tab is `bgp/`: `tab.js` composes the sections; `topology.js`, `peer.js`, `routes.js`,
   `announced.js` and `system.js` each export card builders that take the backend data; `util.js` holds the

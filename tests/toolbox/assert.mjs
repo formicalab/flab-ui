@@ -95,6 +95,8 @@ const c2 = load('out-diag-check2.read.json');
 check(fs.readFileSync(file('out-diag-check.cr'), 'utf8').trim() === '0', 'the script carries no carriage return, even though the plugin source has CRLF line endings (BusyBox sh rejects them)');
 check(c2 && c2.running === false && c2.exit === 143 && c2.stopped === true && /^### BEGIN route4 /.test(c2.text), 'a script job can be stopped: exit 143, reported as stopped, with the blocks it had run');
 check(fs.readFileSync(file('out-diag-check2.procs.txt'), 'utf8').trim() === '0', 'stopping the connectivity check leaves no ping or openssl behind');
+const c3 = load('out-diag-check3.start.json');
+check(c3.ok && c3.command === 'connectivity check (localhost:22)', 'the connectivity check with a port names it', j(c3));
 
 console.log('== mtr, traceroute with AS lookups, DNS trace ==');
 const mtrStart = load('out-diag-mtr.start.json'), mtrRead = load('out-diag-mtr.read.json');
@@ -125,6 +127,30 @@ const ipStop = load('out-diag-iperf.stop.json'), ipAfter = load('out-diag-iperf.
 check(ipStop.ok && ipAfter.running === false && ipAfter.exit === 0 && ipAfter.timed_out === false, 'the server ends cleanly when asked (iperf3 exits 0 on SIGTERM, so the page tracks the stop itself)', j(ipAfter).slice(0, 200));
 check(fs.readFileSync(file('out-diag-iperf.procs.txt'), 'utf8').trim() === '0', 'no iperf3 process is left behind');
 
+console.log('== the packet capture ==');
+const cp = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/toolbox/capturemodel.js')).href);
+const capStart = load('out-diag-capture.start.json'), capSecond = load('out-diag-capture.second.json'), capRun = load('out-diag-capture.running.json'), capRead = load('out-diag-capture.read.json');
+check(capStart.ok && capStart.tool === 'capture' && capStart.limit === 80 && capStart.command === 'tcpdump -i lo icmp and host 127.0.0.1 (60 s, up to 1000 packets, 256 bytes each)', 'a capture names its interface, its filter and its limits', j(capStart));
+check(capSecond.ok === false && /already running/.test(capSecond.error), 'a second capture is refused while one runs', j(capSecond));
+const capNow = cp.parseCapture(capRun.text);
+check(capRun.running === true && !capNow.done && capNow.packets.length >= 6 && capNow.packets.every(p => p.proto === 'ICMP' && p.src === '127.0.0.1' && p.dst === '127.0.0.1') && capNow.packets[0].info.startsWith('ICMP echo request'), 'the packets of three pings stream in while the capture runs: at least six ICMP packets, requests and replies', j(capNow.packets.slice(0, 2)));
+const capDone = cp.parseCapture(capRead.text);
+check(capRead.running === false && capRead.exit === 143 && capRead.stopped === true && capDone.done && capDone.captured >= 6 && capDone.dropped === 0 && capDone.listening === 'lo' && capDone.snaplen === 256 && capDone.error === null && !/dropped privs/.test(capRead.text), 'Stop ends it cleanly (exit 143, reported as stopped) with the summary of the packets', j(capRead).slice(0, 300));
+const capDl = load('out-diag-capture.download.json'), capPast = load('out-diag-capture.past.json');
+const capB64 = fs.readFileSync(file('out-diag-capture.b64'), 'utf8').trim();
+check(capDl.ok && capDl.done && capDl.from === 0 && capDl.length === capDl.size && capDl.size > 24 && capDl.data === capB64 && capDl.running === false, 'the download returns the whole capture file as base64, identical to the file', j(capDl).slice(0, 200));
+check(Buffer.from(capDl.data, 'base64').readUInt32LE(0) === 0xa1b2c3d4 && +fs.readFileSync(file('out-diag-capture.pcount'), 'utf8').trim() === capDone.captured, 'the file is a pcap that tcpdump reads back as the same packets the summary counts');
+check(capPast.ok && capPast.done && capPast.length === 0 && capPast.data === '', 'a download from past the end of the file is empty and done');
+check(fs.readFileSync(file('out-diag-capture.procs.txt'), 'utf8').trim() === '0', 'no tcpdump or tee process is left behind after Stop');
+const capF = load('out-diag-capture.filter.json'), capFR = load('out-diag-capture.filter.read.json');
+check(capF.ok && capF.command === 'tcpdump -i lo tcp and (tcp[tcpflags] & tcp-syn != 0 and (port 1 or port 2)) (2 s, up to 1 packets, 96 bytes each)', 'an advanced filter is combined with the protocol, in brackets', j(capF));
+const capFD = cp.parseCapture(capFR.text);
+check(capFR.running === false && capFR.exit === 0 && capFD.done && capFD.captured === 0 && capFD.error === null, 'tcpdump accepts it: the capture ran its two seconds and saw nothing', j(capFR).slice(0, 300));
+const capB = load('out-diag-capture.badexpr.json'), capBR = load('out-diag-capture.badexpr.read.json');
+const capBD = cp.parseCapture(capBR.text);
+check(capB.ok && capBR.running === false && capBD.done && /can't parse filter expression/.test(capBD.error ?? '') && cp.captureNotes(capBD, {})[0].level === 'bad', 'a filter tcpdump does not accept ends at once with its own complaint as the result', j(capBR).slice(0, 300));
+check(fs.readFileSync(file('out-diag-capture.procs2.txt'), 'utf8').trim() === '0', 'no tcpdump or tee process is left waiting after either');
+
 console.log('== the options that are allowed ==');
 const v1 = load('out-diag-variant1.json'), v2 = load('out-diag-variant2.json'), v3 = load('out-diag-variant3.json'), v4 = load('out-diag-variant4.json'), v5 = load('out-diag-variant5.json'), v6 = load('out-diag-variant6.json');
 check(v5.ok && v5.command === 'mtr --raw -c 3 -i 1 -G 2 -T -P 80 -a 127.0.0.1 127.0.0.1', 'mtr with TCP, a port, names and an address as source', v5.command);
@@ -144,8 +170,8 @@ check(refused.every(r => typeof r.error === 'string' && r.error.length > 5), 'ev
 const counts = fs.readFileSync(file('out-diag-refused.count'), 'utf8').trim().split(/\s+/).map(Number);
 check(counts[0] === counts[1], 'no job was created by a refused request', counts.join(' -> '));
 check(fs.readFileSync(file('out-diag-canary.txt'), 'utf8').trim() === 'no', 'the canary file was never created: nothing in a refused request reached the shell');
-const ids = [0, 1, 2, 3, 4, 5].map(i => [load(`out-diag-badid-${i}.read.json`), load(`out-diag-badid-${i}.stop.json`)]);
-check(ids.every(([r, s]) => r && s && r.ok === false && s.ok === false && /no such job/.test(r.error) && /no such job/.test(s.error)), 'job ids that are not ones the plugin made (paths, wrong length, empty) are refused by read and stop', j(ids[0]));
+const ids = [0, 1, 2, 3, 4, 5].map(i => [load(`out-diag-badid-${i}.read.json`), load(`out-diag-badid-${i}.stop.json`), load(`out-diag-badid-${i}.download.json`)]);
+check(ids.every(([r, s, dl]) => r && s && dl && r.ok === false && s.ok === false && dl.ok === false && /no such job/.test(r.error) && /no such job/.test(s.error) && /no such job/.test(dl.error)), 'job ids that are not ones the plugin made (paths, wrong length, empty) are refused by read, stop and download', j(ids[0]));
 
 console.log('== at most three at once ==');
 const before = fs.readFileSync(file('out-diag-cap.before'), 'utf8').trim();

@@ -29,7 +29,7 @@ const HOSTS = [{ mac: '34:c6:dd:35:4d:db', name: 'H7c', ip: '192.168.1.7', dev: 
 const LIMITS = { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75, trace: 60, mtr: 15 };
 const IPERF_ADDRESSES = [{ iface: 'lan', device: 'br-lan', ip: '192.168.1.1', family: 4, zone: 'lan', input: 'ACCEPT' }, { iface: 'lan6', device: 'br-lan', ip: '2001:db8:1::1', family: 6, zone: 'lan', input: 'ACCEPT' }, { iface: 'wan', device: 'wan', ip: '203.0.113.9', family: 4, zone: 'wan', input: 'REJECT' }];
 // The mock `status` reply: available tools, limits, devices, and hosts, reflecting the current `mock` switches.
-const STATUS = () => ({ generated: 1, tools: { ping: true, traceroute: true, nslookup: true, dig: false, kdig: mock.kdig, drill: true, openssl: mock.openssl, mtr: mock.mtr, iperf3: mock.iperf3 }, dns_tool: mock.dnsTool, asn: true, types: ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'], devices: ['br-lan', 'lo', 'wan'], limits: LIMITS, max_pings: 60, mtr_cycles: [3, 60, 10], starttls: ['smtp', 'imap', 'pop3', 'ftp'], upstream: ['2a01:8d0:601:5002:91:80:35:166', '1.1.1.1'], check_host: 'example.com', wol: mock.wol, hosts: mock.noHosts ? [] : HOSTS, iperf: mock.iperf3 ? { minutes: [1, 2, 5, 15, 30], port: 5201, min_port: 1024, addresses: IPERF_ADDRESSES, exposed: mock.exposed ? ['wan'] : [] } : null });
+const STATUS = () => ({ generated: 1, tools: { ping: true, traceroute: true, nslookup: true, dig: false, kdig: mock.kdig, drill: true, openssl: mock.openssl, mtr: mock.mtr, iperf3: mock.iperf3 }, dns_tool: mock.dnsTool, asn: true, types: ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'], devices: ['br-lan', 'lo', 'wan'], limits: LIMITS, max_pings: 60, mtr_cycles: [3, 60, 10], starttls: ['smtp', 'imap', 'pop3', 'ftp'], upstream: ['2a01:8d0:601:5002:91:80:35:166', '1.1.1.1'], check_host: 'example.com', capture: mock.capture ? { seconds: [10, 30, 60, 120, 300], packets: [100, 500, 2000, 10000, 20000], snaplen: [96, 256, 1514], protos: ['tcp', 'udp', 'icmp', 'icmp6', 'arp'], shown: 1000 } : null, wol: mock.wol, hosts: mock.noHosts ? [] : HOSTS, iperf: mock.iperf3 ? { minutes: [1, 2, 5, 15, 30], port: 5201, min_port: 1024, addresses: IPERF_ADDRESSES, exposed: mock.exposed ? ['wan'] : [] } : null });
 
 // A block of the connectivity check's output with its body replaced (the END line keeps the given exit code).
 function swapBlock(text, id, body, exit = 1) {
@@ -40,6 +40,36 @@ const DNS_TIMEOUT = ';; WARNING: response timeout for 127.0.0.1@53(UDP)\n;; ERRO
 const CHECK_DNSFAIL = swapBlock(CHECK_OK, 'dns_router', DNS_TIMEOUT);
 const DEAD = '--- x ping statistics ---\n2 packets transmitted, 0 packets received, 100% packet loss\n';
 const CHECK_NOLINK = ['gateway'].reduce((t, id) => swapBlock(t, id, DEAD), CHECK_OK).replace(/(### BEGIN internet4 [^\n]*\n)[\s\S]*?(\n### END )\d+/g, (m, a, b) => `${a}${DEAD}\n${b}1`);
+
+// The filter of a capture request as the plugin joins it: the protocol, the address and the port, and the advanced expression in brackets.
+const capFilter = a => [a.proto, a.host && `host ${a.host}`, a.port && `port ${a.port}`, a.filter && (a.proto || a.host || a.port ? `(${a.filter})` : a.filter)].filter(Boolean).join(' and ');
+// A capture as the plugin prints it: the packets, the count of those left out, and tcpdump's summary.
+const CAPTURE_SAMPLE = `### BEGIN capture 100.00 br-lan tcp and host 192.168.1.50 and port 443
+1794843326.000000 IP 192.168.1.50.54321 > 93.184.216.34.443: Flags [S], seq 1, win 64240, options [mss 1460,sackOK,TS val 1 ecr 0,nop,wscale 7], length 0
+1794843326.020000 IP 93.184.216.34.443 > 192.168.1.50.54321: Flags [S.], seq 10, ack 2, win 65535, length 0
+1794843326.020100 IP 192.168.1.50.54321 > 93.184.216.34.443: Flags [.], ack 1, win 502, length 0
+1794843326.030000 IP 192.168.1.50.54321 > 93.184.216.34.443: Flags [P.], seq 1:518, ack 1, win 502, length 517
+1794843326.500000 IP 192.168.1.50.54400 > 10.0.0.5.22: Flags [R.], seq 1, ack 1, win 0, length 0
+1794843326.600000 IP 192.168.1.50.5353 > 224.0.0.251.5353: 0 PTR (QM)? _services._dns-sd._udp.local. (46)
+1794843326.700000 IP 192.168.1.50.40000 > 192.168.1.1.53: 12345+ A? example.com. (29)
+1794843326.800000 IP 192.168.1.1 > 192.168.1.50: ICMP echo reply, id 1, seq 1, length 64
+1794843326.900000 IP6 fe80::1 > ff02::1: ICMP6, router advertisement, length 56
+1794843327.000000 ARP, Request who-has 192.168.1.1 tell 192.168.1.50, length 28
+1794843327.100000 wan In IP 1.2.3.4.51820 > 5.6.7.8.51820: UDP, length 148
+1794843327.300000 IP6 2001:db8::1.443 > 2001:db8::2.51234: Flags [S.], seq 5, ack 1, win 65535, length 0
+### MORE 12
+
+### END 0 110.00
+### BEGIN stats 110.01 
+tcpdump: listening on br-lan, link-type EN10MB (Ethernet), snapshot length 96 bytes
+24 packets captured
+30 packets received by filter
+0 packets dropped by kernel
+
+### END 0 110.02
+`;
+// The bytes the mock's `download` returns, in two pieces: a recognizable pattern, so the page's assembly can be checked.
+const PCAP_BYTES = Buffer.from(Array.from({ length: 200 }, (_, i) => (i * 7) % 251));
 
 // The text of a sample revealed in `steps` cumulative pieces (a job that prints as it goes), at line boundaries.
 function reveal(text, steps) {
@@ -59,9 +89,17 @@ function script(a) {
     if (h === 'broken.example.com') return { chunks: ['job.sh: line 37: syntax error: unexpected end of file (expecting "fi")\n'], exit: 2 };
     if (h === 'dnsfail.example.com') return { chunks: reveal(CHECK_DNSFAIL, 3), exit: 0 };
     if (h === 'nolink.example.com') return { chunks: reveal(CHECK_NOLINK, 3), exit: 0 };
+    // The last step against another port: closed, a service that is not TLS, or TLS (the healthy sample).
+    if (a.port === 25) return { chunks: reveal(swapBlock(CHECK_OK, 'tls', 'Connecting to 93.184.216.34\nconnect:errno=111'), 3), exit: 0 };
+    if (a.port === 22) return { chunks: reveal(swapBlock(CHECK_OK, 'tls', 'Connecting to 93.184.216.34\nCONNECTED(00000003)\n40F7:error:0A00010B:SSL routines:tls_validate_record_header:wrong version number:ssl/record/methods/tlsany_meth.c:77:\n---\nno peer certificate available\n---'), 3), exit: 0 };
     return { chunks: reveal(CHECK_OK, 8), exit: 0 };
   }
   if (a.tool === 'compare') return { chunks: reveal(h === 'nx.example' ? COMPARE_NX : COMPARE, 4), exit: 0 };
+  // A capture that ends by itself, or (the longest duration) one that keeps running until it is stopped, as a real one does.
+  if (a.tool === 'capture') {
+    if (a.seconds === 300) return { chunks: reveal(CAPTURE_SAMPLE, 4), hold: true, capture: true };
+    return { chunks: reveal(CAPTURE_SAMPLE, 5), exit: 0 };
+  }
   if (a.tool === 'tls') {
     const sample = { 'expired.example': TLS_EXPIRED, 'self-signed.example': TLS_SELFSIGNED, 'leaf-only.example': TLS_LEAFONLY, 'gap.example': TLS_GAP, 'reset.example': TLS_RESET, 'closed.example': TLS_REFUSED }[h] ?? TLS_EXAMPLE;
     return { chunks: reveal(sample, 3), exit: 0 };
@@ -103,7 +141,7 @@ function script(a) {
   return { chunks: [a.type === 'MX' ? DRILL : KDIG], exit: 0 };
 }
 
-const mock = { dnsTool: 'kdig', kdig: true, mtr: true, iperf3: true, exposed: false, openssl: true, wol: 'etherwake', noHosts: false, wakes: [], jobs: new Map(), starts: [], stops: [], reads: 0, next: 1, writes: [] };
+const mock = { dnsTool: 'kdig', kdig: true, mtr: true, iperf3: true, capture: true, exposed: false, openssl: true, wol: 'etherwake', noHosts: false, wakes: [], jobs: new Map(), starts: [], stops: [], downloads: [], reads: 0, next: 1, writes: [] };
 
 // The text of an endless job after its current read: the header and one line per read.
 function textOf(job) {
@@ -128,14 +166,20 @@ function answer(body) {
         dns: () => `${mock.dnsTool} ${args.host} ${args.type}`,
         compare: () => `${mock.dnsTool} ${args.host} ${args.type} @${args.servers.join(' @')}`,
         tls: () => `openssl s_client -connect ${args.host}:${args.port}${args.starttls ? ` -starttls ${args.starttls}` : ''}`,
-        check: () => `connectivity check (${args.host ?? 'example.com'})`,
+        check: () => `connectivity check (${args.host ?? 'example.com'}${args.port ? `:${args.port}` : ''})`,
         mtr: () => ['mtr --raw', ...(args.resolve ? [] : ['-n']), `-c ${args.cycles} -i 1 -G 2`, ...(args.family ? [`-${args.family}`] : []), ...(args.method ? [{ udp: '-u', tcp: '-T' }[args.method]] : []), ...(args.port ? [`-P ${args.port}`] : []), ...(args.size ? [`-s ${args.size}`] : []), ...(args.source ? [`${/^[\d.]+$|:/.test(args.source) ? '-a' : '-I'} ${args.source}`] : []), args.host].join(' ') + (args.asn ? ' (with AS lookups)' : ''),
         trace: () => `DNS trace ${args.host} ${args.type ?? 'A'}`,
         iperf: () => `iperf3 -s -p ${args.port ?? 5201}${args.bind ? ` -B ${args.bind}` : ''} (stops after ${args.minutes} minute${args.minutes === 1 ? '' : 's'})`,
+        capture: () => `tcpdump -i ${args.iface}${capFilter(args) ? ` ${capFilter(args)}` : ''} (${args.seconds} s, up to ${args.packets} packets, ${args.snaplen} bytes each)`,
       }[args.tool]();
       const s = script(args);
       mock.jobs.set(id, { id, args, script: s, pos: 0, reads: 0, stopped: false });
-      return ok({ ok: true, id, tool: args.tool, command: cmd, limit: args.tool === 'iperf' ? args.minutes * 60 : LIMITS[args.tool], dns_tool: args.tool === 'dns' ? mock.dnsTool : null, started: 1 });
+      return ok({ ok: true, id, tool: args.tool, command: cmd, limit: args.tool === 'iperf' ? args.minutes * 60 : args.tool === 'capture' ? args.seconds + 20 : LIMITS[args.tool], dns_tool: args.tool === 'dns' ? mock.dnsTool : null, started: 1 });
+    }
+    if (method === 'download') {
+      mock.downloads.push(args);
+      const from = args.from ?? 0, piece = PCAP_BYTES.subarray(from, from + 100);
+      return ok({ ok: true, id: args.id, from, size: PCAP_BYTES.length, length: piece.length, data: piece.toString('base64'), done: from + piece.length >= PCAP_BYTES.length, running: false });
     }
     if (method === 'read') {
       mock.reads++;
@@ -152,12 +196,12 @@ function answer(body) {
       } else {
         const last = job.script.chunks.length - 1;
         const cur = job.pos;
-        text = job.script.chunks[cur];
+        text = job.stopped && job.script.capture ? job.script.chunks[last] : job.script.chunks[cur];
         running = !job.stopped && (cur < last || job.script.hold === true);
         if (!job.stopped && cur < last) job.pos++;
       }
       const timedOut = !running && !job.stopped && job.script.timedOut === true;
-      return ok({ ok: true, id: job.id, running, exit: running ? null : job.stopped ? (job.script.hold ? 0 : 143) : job.script.exit, size: text.length, text: text.slice(args.from ?? 0), truncated: false, timed_out: timedOut, stopped: job.stopped && !job.script.hold });
+      return ok({ ok: true, id: job.id, running, exit: running ? null : job.stopped ? (job.script.hold && !job.script.capture ? 0 : 143) : job.script.exit, size: text.length, text: text.slice(args.from ?? 0), truncated: false, timed_out: timedOut, stopped: job.stopped && (!job.script.hold || job.script.capture === true) });
     }
     if (method === 'wake') {
       mock.wakes.push(args);
@@ -231,7 +275,7 @@ console.log('== the page and the form ==');
 check((await page.locator('.nav-pane a.active').innerText()).trim() === 'Toolbox' && (await page.locator('.cmdbar h1').innerText()).trim() === 'Toolbox' && await page.locator('.cmdbar .seg-tab').count() === 0, 'the Toolbox is its own page, with no tabs');
 const navItems = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
 check(navItems.indexOf('Toolbox') === navItems.indexOf('Logs') - 1 && navItems.indexOf('Toolbox') > 0, 'it sits just above Logs in the navigation', navItems.join(' | '));
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,TLS certificate,iperf3 server,Wake-on-LAN', 'the Toolbox offers the connectivity check, ping, traceroute, one DNS lookup (also for comparing servers), the certificate check and Wake-on-LAN');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,TLS certificate,Packet capture,iperf3 server,Wake-on-LAN', 'the Toolbox offers the connectivity check, ping, traceroute, one DNS lookup (also for comparing servers), the certificate check and Wake-on-LAN');
 check(await tool('MTR').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Rounds').locator('input').inputValue() === '10' && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'a router that has mtr opens on MTR, with its defaults, and nothing is shown before the first run');
 await tool('Ping').click();
 check(await tool('Ping').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Pings').locator('input').inputValue() === '4' && await fieldOf('Size (bytes)').locator('input').inputValue() === '56' && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'ping has its defaults');
@@ -355,7 +399,7 @@ await fieldOf('One more (optional)').locator('input').fill(''); await page.locat
 
 console.log('\n== the connectivity check ==');
 await tool('Connectivity check').click(); await host().fill('');
-check(await fieldOf('Host to test (optional)').count() === 1 && /Walks down the stack/.test(await page.locator('.rt-note').last().innerText()) && await page.locator('.rt-diagform label').count() === 1, 'the check asks only for an optional host');
+check(await fieldOf('Host to test (optional)').count() === 1 && await fieldOf('Port').locator('input').getAttribute('placeholder') === '443' && /Walks down the stack/.test(await page.locator('.rt-note').last().innerText()) && await page.locator('.rt-diagform label').count() === 2, 'the check asks for an optional host and an optional port');
 await runBtn().click();
 let stepsSeen = false;
 for (let i = 0; i < 80 && !(await page.locator('.rt-state .fl-badge').count()); i++) {
@@ -376,6 +420,17 @@ await host().fill('broken.example.com'); await runBtn().click(); await waitDone(
 check(/The job script could not run: job\.sh: line 37: syntax error/.test(await page.locator('.rt-result-slot .rt-error').innerText()) && /^Failed \(exit code 2\)/.test(await badgeText()) && await page.locator('.rt-step').count() === 0, 'a script that cannot run is reported with the shell\'s message and the failed status, not an empty checklist');
 await host().fill('a b'); await runBtn().click();
 check(/Enter a host name, or leave it empty/.test(await page.locator('.rt-diag .rt-error').innerText()), 'a bad host is refused in the form');
+await host().fill('ports.example');
+await fieldOf('Port').locator('input').fill('25'); await runBtn().click(); await waitDone();
+check(j(mock.starts.at(-1)) === j({ tool: 'check', host: 'ports.example', port: 25 }) && /Connectivity check · ports\.example:25/.test((await page.locator('.rt-result-slot .card-header').innerText()).replace(/\s+/g, ' ')), 'another port is sent with the host and shown with it');
+check((await page.locator('.rt-step-title').allInnerTexts()).at(-1) === 'Connection to ports.example:25' && await page.locator('.rt-step.bad').count() === 1 && /^The router reaches the internet and resolves names, but ports\.example:25 refused the connection/.test(await page.locator('.rt-verdict').innerText()), 'a closed port is the one red step and the verdict');
+await fieldOf('Port').locator('input').fill('22'); await runBtn().click(); await waitDone();
+check(await page.locator('.rt-step.ok').count() === 8 && /ports\.example:22 accepts connections\. It does not speak TLS/.test(await resultText()) && /connects to ports\.example:22/.test(await page.locator('.rt-verdict.ok').innerText()), 'a service that is not TLS is a plain connection that works');
+await fieldOf('Port').locator('input').fill('8443'); await runBtn().click(); await waitDone();
+check((await page.locator('.rt-step-title').allInnerTexts()).at(-1) === 'Connection to ports.example:8443' && await page.locator('.rt-step.ok').count() === 8 && /makes secure connections/.test(await page.locator('.rt-verdict.ok').innerText()), 'a TLS service on another port is judged as TLS');
+await fieldOf('Port').locator('input').fill('70000'); await runBtn().click();
+check(/port must be a whole number from 1 to 65535/.test(await page.locator('.rt-diag .rt-error').innerText()), 'a port outside 1 to 65535 is refused in the form');
+await fieldOf('Port').locator('input').fill('');
 await host().fill('');
 
 console.log('\n== the DNS lookup of several servers (a comparison) ==');
@@ -629,11 +684,55 @@ check(/zone wan accepts traffic for the router/.test(await page.locator('.rt-ipe
 await page.locator('.rt-diag button:has-text("Stop server")').click(); await waitDone(/Stopped/);
 mock.exposed = false;
 
+// The Start capture button (the other tools' is Run).
+const capBtn = () => page.locator('.rt-diag button:has-text("Start capture")');
+console.log('\n== the packet capture ==');
+await tool('Packet capture').click(); await host().fill('');
+check(await fieldOf('Interface').locator('select').inputValue() === 'br-lan' && (await fieldOf('Interface').locator('option').evaluateAll(o => o.map(x => x.value))).join() === 'any,br-lan,lo,wan' && await fieldOf('Duration').locator('select').inputValue() === '30' && await fieldOf('Packets').locator('select').inputValue() === '2000' && await fieldOf('Keep per packet').locator('select').inputValue() === '96' && await fieldOf('Port').count() === 1 && await fieldOf('Host to filter on (optional)').count() === 1 && /Start capture/.test(await capBtn().innerText()) && /sees everyone's traffic/.test(await page.locator('.rt-note').last().innerText()), 'the form offers the interface (the LAN bridge to begin with), the filter, the limits and Start capture, and warns what a capture sees');
+await fieldOf('Protocol').locator('select').selectOption('icmp');
+check(await fieldOf('Port').count() === 0, 'a protocol with no ports hides the port');
+await fieldOf('Protocol').locator('select').selectOption('tcp');
+await host().fill('example.com'); await capBtn().click();
+check(/filters by IP address/.test(await page.locator('.rt-diag .rt-error').innerText()) && !mock.starts.some(s => s.tool === 'capture'), 'a name is refused in the form: a capture filters by address');
+await host().fill('192.168.1.50'); await fieldOf('Port').locator('input').fill('443');
+check(await fieldOf('Advanced filter (optional)').count() === 1 && await fieldOf('Advanced filter (optional)').locator('input').getAttribute('placeholder') === 'e.g. not port 443', 'the form has an advanced filter field for a tcpdump expression');
+await fieldOf('Advanced filter (optional)').locator('input').fill('port 80; reboot'); await capBtn().click();
+check(/advanced filter may only hold letters/.test(await page.locator('.rt-diag .rt-error').innerText()) && !mock.starts.some(s => s.tool === 'capture'), 'shell characters in the advanced filter are refused in the form');
+await fieldOf('Advanced filter (optional)').locator('input').fill('-w /tmp/x'); await capBtn().click();
+check(/must not start with "-"/.test(await page.locator('.rt-diag .rt-error').innerText()), 'an expression that starts like an option is refused');
+await fieldOf('Advanced filter (optional)').locator('input').fill('not port 22');
+await capBtn().click();
+const capCounts = new Set();
+for (let i = 0; i < 100 && !(await page.locator('.rt-state .fl-badge').count()); i++) { capCounts.add(await page.locator('.rt-captable tbody tr').count()); await page.waitForTimeout(60); }
+await waitDone();
+check(j(mock.starts.at(-1)) === j({ tool: 'capture', iface: 'br-lan', proto: 'tcp', host: '192.168.1.50', port: 443, filter: 'not port 22', seconds: 30, packets: 2000, snaplen: 96 }), 'the interface, the filter (with the advanced expression) and the limits are sent', j(mock.starts.at(-1)));
+check([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].some(n => capCounts.has(n)) && await page.locator('.rt-captable tbody tr').count() === 12, 'packets appear in the table as they arrive', j([...capCounts]));
+check(/Packet capture · br-lan · tcp and host 192\.168\.1\.50 and port 443 and \(not port 22\)/.test((await page.locator('.rt-result-slot .card-header').innerText()).replace(/\s+/g, ' ')) && /tcpdump -i br-lan tcp and host 192\.168\.1\.50 and port 443 and \(not port 22\) \(30 s, up to 2000 packets, 96 bytes each\)/.test(await page.locator('.rt-result-slot .card-header .sub').innerText()), 'the header names the interface and the filter, and shows the limits');
+check(await stat('Packets captured') === '24' && await stat('Matched the filter') === '30' && await stat('Dropped by the kernel') === '0' && await stat('New connections (SYN)') === '1' && await stat('Resets (RST)') === '1' && await page.locator('.rt-stat.ok').count() === 1, 'the summary: packets captured, matched by the filter, dropped by the kernel (none, in green), connection attempts and resets');
+const capRows = await page.locator('.rt-captable tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+check(/^0\.000000 TCP 192\.168\.1\.50:54321 93\.184\.216\.34:443 0 Flags \[S\]/.test(capRows[0]) && /^0\.500000 TCP 192\.168\.1\.50:54400 10\.0\.0\.5:22 0 Flags \[R\.\]/.test(capRows[4]) && /ARP 192\.168\.1\.50 192\.168\.1\.1 28 Request who-has/.test(capRows[9]) && /^1\.100000 UDP 1\.2\.3\.4:51820 5\.6\.7\.8:51820 148 wan In UDP, length 148/.test(capRows[10]) && await page.locator('.rt-captable tr.rt-rst').count() === 1, 'each packet shows its time, protocol, both endpoints with ports and length; the reset is marked', capRows.slice(0, 3).join(' | '));
+check(/Busiest conversations/.test(await page.locator('.rt-cap-talkers').innerText()) && /192\.168\.1\.50 ↔ 93\.184\.216\.34 · 4 packets · 517 B/.test((await page.locator('.rt-cap-talkers').innerText()).replace(/\s+/g, ' ')) && /TCP 6/.test((await page.locator('.rt-cap-protos').innerText()).replace(/\s+/g, ' ')), 'the busiest conversations and the protocols are listed');
+check(/table and the figures cover the first 12 packets; the file has all 24/.test(await page.locator('.rt-findings').innerText()), 'when the table holds fewer packets than the file, the page says so');
+await shot('capture');
+const dlWait = page.waitForEvent('download');
+await page.locator('button:has-text("Download .pcap")').click();
+const dl = await dlWait;
+check(/^capture-br-lan-\d{8}-\d{6}\.pcap$/.test(dl.suggestedFilename()) && j(mock.downloads.map(d => d.from)) === j([0, 100]) && Buffer.compare(fs.readFileSync(await dl.path()), PCAP_BYTES) === 0, 'Download .pcap fetches the file in two pieces and hands the browser the same bytes', j([dl.suggestedFilename(), mock.downloads]));
+await page.waitForFunction(() => /Downloaded|Download \.pcap/.test(document.querySelector('.rt-mtr-actions .btn')?.textContent ?? ''), null, { timeout: 5000 });
+await fieldOf('Duration').locator('select').selectOption('300');
+await capBtn().click();
+await page.locator('.rt-captable tbody tr').first().waitFor({ timeout: 10000 });
+check(await page.locator('.rt-running').count() === 1 && await stopBtn().isVisible() && /Stop capture/.test(await stopBtn().innerText()) && await page.locator('button:has-text("Download .pcap")').count() === 0, 'a running capture shows Stop capture, the packets so far, and no download yet');
+await stopBtn().click(); await waitDone(/Stopped/);
+check(/^Stopped/.test(await badgeText()) && await page.locator('button:has-text("Download .pcap")').count() === 1, 'Stop ends it as stopped, and the file can be downloaded');
+await fieldOf('Duration').locator('select').selectOption('30');
+await host().fill('');
+
 console.log('\n== tools the router does not have ==');
-mock.mtr = false; mock.kdig = false; mock.iperf3 = false;
+mock.mtr = false; mock.kdig = false; mock.iperf3 = false; mock.capture = false;
 page = await open();
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,TLS certificate,Wake-on-LAN', 'mtr, the DNS trace and the iperf3 server are not offered without mtr, kdig and iperf3');
-mock.mtr = true; mock.kdig = true; mock.iperf3 = true;
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,TLS certificate,Wake-on-LAN', 'mtr, the DNS trace, the packet capture and the iperf3 server are not offered without mtr, kdig, tcpdump and iperf3');
+mock.mtr = true; mock.kdig = true; mock.iperf3 = true; mock.capture = true;
 page = await open();
 
 console.log('\n== a refused start ==');
@@ -681,11 +780,11 @@ await p3.close();
 console.log('\n== a router without openssl ==');
 mock.openssl = false;
 page = await open();
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,iperf3 server,Wake-on-LAN', 'the certificate check is not offered without openssl');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,Packet capture,iperf3 server,Wake-on-LAN', 'the certificate check is not offered without openssl');
 mock.openssl = true;
 mock.wol = '';
 page = await open();
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,TLS certificate,iperf3 server', 'Wake-on-LAN is not offered on a router that has neither etherwake nor socat');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,TLS certificate,Packet capture,iperf3 server', 'Wake-on-LAN is not offered on a router that has neither etherwake nor socat');
 mock.wol = 'etherwake';
 mock.openssl = true;
 

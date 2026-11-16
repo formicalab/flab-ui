@@ -4,6 +4,16 @@
 
 ### Toolbox
 
+- New **Packet capture** tool (needs `tcpdump`): records the packets of an interface (or all) and lists them as they arrive, with
+  figures (captured, matched, dropped, new connections, resets), findings, the protocols and busiest conversations. The filter
+  has a protocol, an address and a port, and an **advanced filter** for any tcpdump expression (checked against a safe
+  alphabet and passed after `--`). It stops at its duration or packet count, or on Stop. **Download .pcap** saves the whole
+  capture for Wireshark (`flab.diag download`, in pieces; the new permission means a session opened before the update has to sign
+  in again). Only one capture runs at a time and the file lives in memory.
+- The **connectivity check** takes a **port** for its last step: 443 is the TLS handshake as before; another port is a
+  connection that is judged as TLS when the service speaks it, as a plain TCP service that works when it does not, and as a
+  failure when it refuses or stays silent.
+
 - MTR does what Traceroute does: the form gains TCP SYN probes with a port (for a firewall that only passes web traffic), a
   packet size, a source (an address or an interface), host names and the **Networks (AS)** lookup. Each router shows its AS
   number, organization and country.

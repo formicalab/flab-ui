@@ -185,6 +185,16 @@
 .rt-route-bar > i { display: block; height: 100%; background: var(--fl-brand); opacity: .75; }
 .rt-route-arrow { align-self: center; color: var(--fl-muted); }
 .rt-mtr-actions { margin-top: .75rem; }
+.rt-capture { display: grid; gap: .9rem; }
+.rt-cap-protos { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .9rem; }
+.rt-cap-proto { font-family: var(--fl-mono); font-size: .85rem; }
+.rt-cap-talkers { display: grid; gap: .2rem; font-size: .875rem; }
+.rt-captable td, .rt-captable th { white-space: nowrap; }
+.rt-capture .grid-wrap { max-height: 32rem; overflow: auto; }
+.rt-pkt-info { max-width: 38rem; overflow: hidden; text-overflow: ellipsis; font-size: .8rem; }
+.rt-rst td { color: var(--fl-bad-fg); }
+.rt-capfilter { grid-column: span 2; min-width: 0; }
+.rt-capfilter input { min-width: 0; }
 .rt-hchart { display: grid; gap: .35rem; margin-bottom: 1rem; max-width: 760px; }
 .rt-hrow { display: grid; grid-template-columns: 12rem minmax(0, 1fr); align-items: center; gap: .75rem; }
 .rt-hlabel { font-size: .875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

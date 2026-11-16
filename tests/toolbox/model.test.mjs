@@ -209,6 +209,25 @@ ck = m.parseCheck(CHECK_OK.split('### BEGIN dns_public')[0] + '### BEGIN dns_pub
 check(ck.steps[4].state === 'running' && ck.steps[5].state === 'pending' && ck.verdict === null && !ck.done, 'a check that is running shows the running and the waiting steps and no verdict yet');
 ck = m.parseCheck(CHECK_OK.split('### BEGIN dns_public')[0], false, { name: 'example.com' }, NOW);
 check(ck.steps[5].state === 'skip' && ck.steps[7].state === 'skip', 'steps that never ran (the job was stopped) are skipped, not pending');
+// The check with a port other than 443: the last step is "Connection to host:port".
+const headOf = CHECK_OK.split('### BEGIN tls')[0];
+const lastStep = (body, exit, port) => m.parseCheck(`${headOf}### BEGIN tls 492328.42 example.com ${port}\n${body}\n\n### END ${exit} 492340.42\n`, false, { name: 'example.com', port }, NOW);
+ck = lastStep('Connecting to 93.184.216.34\n40F7:error:8000006F:system library:BIO_connect:Connection refused:crypto/bio/bio_sock2.c:114:calling connect()\nconnect:errno=111', 1, 25);
+check(ck.steps[7].title === 'Connection to example.com:25' && ck.steps[7].state === 'bad' && /^example\.com:25 refused the connection/.test(ck.steps[7].text) && ck.verdict.level === 'bad' && /^The router reaches the internet and resolves names, but example\.com:25 refused/.test(ck.verdict.text) && !ck.steps[7].tls, 'a closed port is a failure of the last step, said in the verdict', j([ck.steps[7], ck.verdict]));
+ck = lastStep('Connecting to 93.184.216.34\nconnect:errno=110', 124, 25);
+check(ck.steps[7].state === 'bad' && /did not answer in time/.test(ck.steps[7].text) && ck.verdict.level === 'bad', 'a port that does not answer is a failure too');
+ck = lastStep('Connecting to 93.184.216.34', 124, 25);
+check(ck.steps[7].state === 'bad' && /did not answer in time/.test(ck.steps[7].text), 'a connection that never came is the same, even without a message');
+ck = lastStep('Connecting to 93.184.216.34\nCONNECTED(00000003)\n40F7:error:0A00010B:SSL routines:tls_validate_record_header:wrong version number:ssl/record/methods/tlsany_meth.c:77:\n---\nno peer certificate available\n---', 1, 22);
+check(ck.steps[7].state === 'ok' && /^example\.com:22 accepts connections\. It does not speak TLS/.test(ck.steps[7].text) && ck.verdict.level === 'ok' && /connects to example\.com:22\.$/.test(ck.verdict.text) && !ck.steps[7].tls, 'a service that answers but is not TLS is a plain TCP connection that works', j([ck.steps[7], ck.verdict]));
+ck = lastStep('Connecting to 93.184.216.34\nCONNECTED(00000003)', 124, 8080);
+check(ck.steps[7].state === 'ok' && /does not speak TLS/.test(ck.steps[7].text), 'a service that stays silent after the connection is made is a plain TCP service');
+ck = lastStep('Connecting to 93.184.216.34\nCONNECTED(00000003)\n40F7:error:0A000438:SSL routines:ssl3_read_bytes:tlsv1 alert internal error:ssl/record/rec_layer_s3.c:916:SSL alert number 80\n---\nno peer certificate available\n---', 1, 8443);
+check(ck.steps[7].state === 'bad' && !/plain TCP/.test(ck.steps[7].text) && ck.steps[7].tls && ck.steps[7].title === 'Connection to example.com:8443', 'a TLS server that sends an alert is judged as TLS, not as a plain service');
+ck = m.parseCheck(CHECK_OK.replace('### BEGIN tls 492328.42 example.com', '### BEGIN tls 492328.42 example.com 8443'), false, { name: 'example.com', port: 8443 }, NOW);
+check(ck.steps[7].state === 'ok' && ck.steps[7].tls.chain.length === 4 && ck.steps[7].title === 'Connection to example.com:8443' && /makes secure connections/.test(ck.verdict.text), 'a TLS service on another port is judged as usual');
+ck = m.parseCheck(CHECK_OK, false, { name: 'example.com', port: 443 }, NOW);
+check(ck.steps[7].title === 'Secure connection (TLS)' && m.portOutcome({ output: 'Connecting to x\nCONNECTED(00000003)\n---\nCertificate chain\n 0 s:CN=x', exit: 0 }) === 'tls', 'port 443 keeps the secure connection step');
 
 console.log('== how a job ended ==');
 check(j(m.outsideBlocks(CHECK_OK)) === '[]' && j(m.outsideBlocks('job.sh: line 37: syntax error\n### BEGIN a 1.0 x\nhi\n### END 0 2.0\nstray after\n')) === j(['job.sh: line 37: syntax error', 'stray after']), 'text outside the blocks is found (the shell\'s own complaints)');

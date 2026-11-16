@@ -42,6 +42,15 @@ export const STARTTLS = ['smtp', 'imap', 'pop3', 'ftp'];
 // Types busybox nslookup cannot show in full (it prints "mail exchanger = 0" with no host, for instance).
 export const WEAK_NSLOOKUP = ['MX', 'TXT', 'NS', 'CNAME', 'SOA', 'SRV', 'CAA'];
 
+// The packet capture's choices, as the plugin accepts them (the plugin enforces the same lists): durations in seconds, packet
+// counts, how many bytes of each packet are kept, and the protocols of the filter with their labels.
+export const CAPTURE = {
+  seconds: [10, 30, 60, 120, 300], packets: [100, 500, 2000, 10000, 20000], snaplen: [96, 256, 1514],
+  protos: [['tcp', 'TCP'], ['udp', 'UDP'], ['icmp', 'ICMP'], ['icmp6', 'ICMPv6'], ['arp', 'ARP']],
+  // The advanced filter: at most this long, made of these characters only, not starting with "-" (as the plugin enforces).
+  filterMax: 200, filterChars: /^[A-Za-z0-9 .:/_()!&|=<>[\],-]+$/,
+};
+
 // The empty form: the values each tool starts with.
 export const blankForm = () => ({
   tool: 'ping', host: '', family: '', source: '',
@@ -49,9 +58,10 @@ export const blankForm = () => ({
   hops: String(LIMITS.hops[2]), probes: String(LIMITS.probes[2]), method: 'udp', resolve: '', asn: '1',
   cycles: String(LIMITS.cycles[2]), mtrMethod: 'icmp', mtrSize: '', mtrPort: '',
   type: 'A',
-  port: '', sni: '', starttls: '',
+  port: '', sni: '', starttls: '', checkPort: '',
   servers: ['router'], extraServer: '', iface: '', wolOther: false,
   minutes: String(IPERF_MINUTES[0]), iperfPort: String(LIMITS.iperfPort[2]), bind: '',
+  capIface: '', capProto: '', capPort: '', capSeconds: '30', capPackets: '2000', capSnap: '96', capFilter: '',
 });
 
 // A whole number between the limits of `field`, or null when the text is not one. Empty text is the default.
@@ -73,10 +83,14 @@ export function requestOf(form) {
     if (iface && !/^[A-Za-z0-9_.:-]{1,15}$/.test(iface)) return { error: 'The interface must be a network device name.' };
     return { args: iface ? { tool: 'wol', mac: normMac(host), iface } : { tool: 'wol', mac: normMac(host) } };
   }
-  // The connectivity check works without a host (it uses the plugin's default name).
+  // The connectivity check works without a host (it uses the plugin's default name). The port of its last step is optional:
+  // empty and 443 are the same (a TLS handshake); another port is sent.
   if (form.tool === 'check') {
     if (host && !isHost(host)) return { error: 'Enter a host name, or leave it empty to use the default.' };
-    return { args: host ? { tool: 'check', host } : { tool: 'check' } };
+    const t = String(form.checkPort ?? '').trim();
+    const port = t === '' ? LIMITS.port[2] : numberOf(t, 'port');
+    if (port == null) return { error: `The port must be a whole number from ${LIMITS.port[0]} to ${LIMITS.port[1]}.` };
+    return { args: { tool: 'check', ...(host ? { host } : {}), ...(port !== LIMITS.port[2] ? { port } : {}) } };
   }
   // The iperf3 server has no host: it listens for a chosen number of minutes on a port, on every address or on one of the
   // router's own.
@@ -88,6 +102,30 @@ export function requestOf(form) {
     const bind = String(form.bind ?? '').trim();
     if (bind && !isAddress(bind)) return { error: 'The address to listen on must be an IP address of the router.' };
     return { args: { tool: 'iperf', minutes, ...(port !== LIMITS.iperfPort[2] ? { port } : {}), ...(bind ? { bind } : {}) } };
+  }
+  // A packet capture has no target: it listens on an interface (or all of them), for the packets that match an optional
+  // protocol, address and port, until the time or the packet count is used up. The port only applies to TCP, UDP or all.
+  if (form.tool === 'capture') {
+    const iface = String(form.capIface ?? '');
+    if (iface !== 'any' && !/^[A-Za-z0-9_.:-]{1,15}$/.test(iface)) return { error: 'Choose the interface to capture on.' };
+    const proto = String(form.capProto ?? '');
+    if (proto && !CAPTURE.protos.some(([p]) => p === proto)) return { error: 'Choose one of the protocols, or all.' };
+    if (host && !isAddress(host)) return { error: 'A capture filters by IP address: enter an IPv4 or IPv6 address, or leave the host empty.' };
+    const t = String(form.capPort ?? '').trim();
+    let port = null;
+    if (t !== '' && (!proto || proto === 'tcp' || proto === 'udp')) {
+      if (!/^\d+$/.test(t) || +t < 1 || +t > 65535) return { error: 'The port must be a whole number from 1 to 65535.' };
+      port = +t;
+    }
+    const seconds = +form.capSeconds, packets = +form.capPackets, snaplen = +form.capSnap;
+    if (!CAPTURE.seconds.includes(seconds) || !CAPTURE.packets.includes(packets) || !CAPTURE.snaplen.includes(snaplen)) return { error: 'Choose the duration, the number of packets and how much of each to keep from the lists.' };
+    const filter = String(form.capFilter ?? '').trim();
+    if (filter) {
+      if (filter.length > CAPTURE.filterMax) return { error: `The advanced filter may be at most ${CAPTURE.filterMax} characters.` };
+      if (filter.startsWith('-')) return { error: 'The advanced filter must not start with "-".' };
+      if (!CAPTURE.filterChars.test(filter)) return { error: 'The advanced filter may only hold letters, digits, spaces and . : / _ ( ) ! & | = < > [ ] , -' };
+    }
+    return { args: { tool: 'capture', iface, ...(proto ? { proto } : {}), ...(host ? { host } : {}), ...(port != null ? { port } : {}), ...(filter ? { filter } : {}), seconds, packets, snaplen } };
   }
   if (!isHost(host)) return { error: 'Enter a host name or an IPv4 or IPv6 address.' };
   const source = String(form.source ?? '').trim();
@@ -331,7 +369,7 @@ export function outsideBlocks(text) {
 // or a traceroute with AS lookups) in words, or null: the shell's own complaint when the script could not run, or a note
 // that nothing was produced. A job that was stopped or hit its time limit is not a failure of the script.
 export function scriptProblem(job) {
-  const script = ['check', 'compare', 'tls', 'trace'].includes(job.tool) || (['traceroute', 'mtr'].includes(job.tool) && job.asn);
+  const script = ['check', 'compare', 'tls', 'trace', 'capture'].includes(job.tool) || (['traceroute', 'mtr'].includes(job.tool) && job.asn);
   if (job.running || job.stopped || job.timedOut || !script) return null;
   const stray = outsideBlocks(job.text);
   if (stray.length) return `The job script could not run: ${stray.slice(0, 3).join(' ')}`;
@@ -585,6 +623,22 @@ function pingOf(block) {
   return { p, ok: p.replies.length > 0 && p.lossPct === 0, partial: p.replies.length > 0 && p.lossPct > 0, avg: p.stats?.avg ?? null };
 }
 
+// How the connection of the check's last step went, from the s_client block: 'refused', 'timeout', 'name' (could not be
+// resolved), 'plain' (the TCP connection was made but the service does not speak TLS: a reply that is not a TLS record, or
+// silence until the time ran out, without a certificate) or 'tls' (everything else, including a TLS server that refused the
+// handshake). s_client prints `CONNECTED(` once the TCP connection is made.
+export function portOutcome(block) {
+  const o = block.output;
+  if (/errno=111|Connection refused/.test(o)) return 'refused';
+  if (/errno=110|errno=113|Operation timed out/i.test(o) || (block.exit === 124 && !/^CONNECTED\(/m.test(o))) return 'timeout';
+  if (/Name or service not known|getaddrinfo|Temporary failure in name resolution|bad address/i.test(o)) return 'name';
+  if (/^CONNECTED\(/m.test(o) && !/^Certificate chain|-----BEGIN CERTIFICATE-----/m.test(o)) {
+    if (/wrong version number|packet length too long|unknown protocol|record layer failure|http request/i.test(o)) return 'plain';
+    if (block.exit === 124 && !/alert/i.test(o)) return 'plain';
+  }
+  return 'tls';
+}
+
 // The connectivity check: the steps with their state and the verdict.
 //   { steps: [{ id, title, state: 'pending' | 'running' | 'ok' | 'warn' | 'bad' | 'skip', text, output, tls? }], verdict, done }
 // `verdict` is { level, text, notes: [text] } once the check is far enough to tell, otherwise null. `running` says whether
@@ -596,6 +650,12 @@ export function parseCheck(text, running, ctx = {}, now = Date.now()) {
   // The first block with the given id, or null.
   const first = id => of(id)[0] ?? null;
   const steps = CHECK_STEPS.map(([id, title]) => ({ id, title, state: running ? 'pending' : 'skip', text: '', output: '' }));
+  // A port other than 443 turns the last step into "Connection to host:port": a TLS service is judged as usual, a service that
+  // does not speak TLS is a plain TCP connection that works, and a refusal or silence is a failure of its own.
+  const port = ctx.port && ctx.port !== 443 ? ctx.port : null;
+  const target = port ? `${ctx.name}:${port}` : ctx.name;
+  if (port) steps.find(s => s.id === 'tls').title = `Connection to ${target}`;
+  let plain = false;
   // The step with the given id.
   const step = id => steps.find(s => s.id === id);
   // Records the outcome of a step: its state, message and the output of the blocks it was judged from.
@@ -664,13 +724,23 @@ export function parseCheck(text, running, ctx = {}, now = Date.now()) {
   // TLS
   const tlsBlock = first('tls');
   let tls = null;
+  let portFailed = false;
   if (tlsBlock && tlsBlock.running) busy('tls');
   else if (tlsBlock) {
-    tls = parseTls(text, { name: ctx.name, target: ctx.name }, now);
-    const leaf = tls.chain[0];
-    const bad = tls.findings.find(x => x.level === 'bad') ?? tls.findings.find(x => x.level === 'warn' && x.chain);
-    set('tls', tls.error ? 'bad' : tls.level, tls.error ?? (bad ? bad.text : leaf ? `${tls.protocol ?? 'TLS'} · certificate for ${ctx.name ?? 'the server'} is trusted, ${leaf.daysLeft} days left` : 'No certificate was received.'), [tlsBlock]);
-    step('tls').tls = tls;
+    const outcome = port ? portOutcome(tlsBlock) : 'tls';
+    if (outcome === 'tls') {
+      tls = parseTls(text, { name: ctx.name, target }, now);
+      const leaf = tls.chain[0];
+      const bad = tls.findings.find(x => x.level === 'bad') ?? tls.findings.find(x => x.level === 'warn' && x.chain);
+      set('tls', tls.error ? 'bad' : tls.level, tls.error ?? (bad ? bad.text : leaf ? `${tls.protocol ?? 'TLS'} · certificate for ${ctx.name ?? 'the server'} is trusted, ${leaf.daysLeft} days left` : 'No certificate was received.'), [tlsBlock]);
+      step('tls').tls = tls;
+    } else if (outcome === 'plain') {
+      plain = true;
+      set('tls', 'ok', `${target} accepts connections. It does not speak TLS, so it is a plain TCP service.`, [tlsBlock]);
+    } else {
+      portFailed = true;
+      set('tls', 'bad', { refused: `${target} refused the connection. Nothing is listening on that port, or a firewall rejects it.`, timeout: `${target} did not answer in time. The service may be down, or a firewall drops the traffic.`, name: `The name ${ctx.name} could not be resolved.` }[outcome], [tlsBlock]);
+    }
   }
 
   // The state of a step once it has been judged.
@@ -684,10 +754,11 @@ export function parseCheck(text, running, ctx = {}, now = Date.now()) {
   else if (state('internet') === 'bad') verdict = { level: 'bad', text: `${state('gateway') === 'ok' ? 'The next hop answers, but nothing' : 'Nothing'} on the internet does. The provider may have an outage, or a firewall or routing rule is blocking the traffic.` };
   else if (state('dns_router') === 'bad' && state('dns_public') === 'ok') verdict = { level: 'bad', text: 'The internet works, but the router\'s DNS resolver fails while a public one answers. Check the resolver on the router (Unbound or dnsmasq) and the servers it asks.' };
   else if (state('dns_router') === 'bad' && state('dns_public') === 'bad' && state('internet') === 'ok') verdict = { level: 'bad', text: 'The internet works, but no name can be looked up through either the router or a public resolver. DNS traffic (port 53) may be blocked.' };
+  else if (portFailed) verdict = { level: 'bad', text: `The router reaches the internet and resolves names, but ${step('tls').text}` };
   else if (tls && (tls.error || tls.level === 'bad')) {
     const code = tls.verify?.code;
     verdict = { level: 'warn', text: (code === 9 || code === 10) ? 'Connections work, but the certificate looks out of date: this often means the router\'s clock is wrong. Check the time on the System page.' : tls.error ? 'Connections work, but the secure connection test failed.' : 'Connections and names work, but the certificate of the test server is not trusted. The router may be missing its CA bundle, or something on the path is intercepting TLS.' };
-  } else if (!anyPending && steps.every(s => s.state === 'ok' || s.state === 'skip')) verdict = { level: 'ok', text: 'Everything works: the router reaches the internet, resolves names and makes secure connections.' };
+  } else if (!anyPending && steps.every(s => s.state === 'ok' || s.state === 'skip')) verdict = { level: 'ok', text: plain ? `Everything works: the router reaches the internet, resolves names and connects to ${target}.` : 'Everything works: the router reaches the internet, resolves names and makes secure connections.' };
   else if (!anyPending) verdict = { level: 'warn', text: 'The router is online, with some warnings in the steps above.' };
   return { steps, verdict: verdict ? { ...verdict, notes } : null, done: !anyPending && !running, tls };
 }

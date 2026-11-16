@@ -1,6 +1,6 @@
 {
   "flab": {
-    "description": "flab-ui Toolbox: run ping, traceroute, DNS and TLS checks as background jobs and read their output; send a Wake-on-LAN packet",
+    "description": "flab-ui Toolbox: run ping, traceroute, DNS, TLS checks and packet captures as background jobs and read their output; download a capture; send a Wake-on-LAN packet",
     "read": {
       "ubus": {
         "flab.diag": ["status", "read"]
@@ -8,7 +8,7 @@
     },
     "write": {
       "ubus": {
-        "flab.diag": ["start", "stop", "wake"]
+        "flab.diag": ["start", "stop", "download", "wake"]
       }
     }
   }

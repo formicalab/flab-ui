@@ -38,6 +38,9 @@ r = m.requestOf(form({ tool: 'mtr', asn: '', mtrPort: '443', mtrSize: '100' }));
 check(j(r.args) === j({ tool: 'mtr', host: 'www.example.com', cycles: 10, size: 100 }), 'with ICMP the port is not sent', j(r));
 check(m.requestOf(form({ tool: 'mtr', cycles: '2' })).error && m.requestOf(form({ tool: 'mtr', cycles: '61' })).error && m.requestOf(form({ tool: 'mtr', host: '' })).error && m.requestOf(form({ tool: 'mtr', host: '1.1.1.1; reboot' })).error, 'mtr refuses rounds outside 3 to 60 and a bad host');
 check(m.requestOf(form({ tool: 'mtr', mtrSize: '27' })).error && m.requestOf(form({ tool: 'mtr', mtrSize: '1401' })).error && m.requestOf(form({ tool: 'mtr', mtrSize: 'x' })).error && m.requestOf(form({ tool: 'mtr', mtrMethod: 'tcp', mtrPort: '0' })).error && m.requestOf(form({ tool: 'mtr', mtrMethod: 'tcp', mtrPort: '70000' })).error && m.requestOf(form({ tool: 'mtr', source: 'br lan' })).error, 'mtr refuses a size outside 28 to 1400, a port outside 1 to 65535 and a bad source');
+r = m.requestOf(form({ tool: 'check', host: '', checkPort: '25' }));
+check(j(r.args) === j({ tool: 'check', port: 25 }) && j(m.requestOf(form({ tool: 'check', checkPort: '8443' })).args) === j({ tool: 'check', host: 'www.example.com', port: 8443 }) && j(m.requestOf(form({ tool: 'check', checkPort: '443' })).args) === j({ tool: 'check', host: 'www.example.com' }) && j(m.requestOf(form({ tool: 'check', host: '' })).args) === j({ tool: 'check' }), 'the connectivity check sends a port other than 443, and none for 443 or an empty field', j(r));
+check(m.requestOf(form({ tool: 'check', checkPort: '0' })).error && m.requestOf(form({ tool: 'check', checkPort: '65536' })).error && m.requestOf(form({ tool: 'check', checkPort: '25; reboot' })).error, 'the check refuses a port outside 1 to 65535 and one that is not a number');
 r = m.requestOf(form({ tool: 'trace', type: 'AAAA', family: '6', server: '9.9.9.9', source: 'wan' }));
 check(j(r.args) === j({ tool: 'trace', host: 'www.example.com', type: 'AAAA', family: '6' }), 'a DNS trace asks for the name, the type and the family only', j(r));
 check(j(m.requestOf(form({ tool: 'trace' })).args) === j({ tool: 'trace', host: 'www.example.com', type: 'A' }) && m.requestOf(form({ tool: 'trace', host: '' })).error && m.requestOf(form({ tool: 'trace', host: '$(id)' })).error, 'the trace defaults to type A (IPv4 is not sent) and needs a safe name');
@@ -201,5 +204,79 @@ check(rl[0] === 'MTR to 1.1.1.1' && rl[1] === 'mtr --raw -n -c 10 1.1.1.1' && /^
 check(/\nNetworks: AS30722 Fastweb SpA \(hop 1, \+\d+\.\d ms\) > no reply \(hops 2-5\) > AS13335 Cloudflare, Inc\. \(hops 6-7, \+\d+\.\d ms\)\n/.test(report) && /\nFindings:\n- No probe to the destination was lost\.\n/.test(report) && report.endsWith('\n') && !report.includes('\r'), 'it lists the networks crossed with the delay each adds, then the findings');
 check(!/Networks:/.test(pm.mtrReport({ host: 'x', command: 'c', when: 'w', hops: fixtureMtr, asn: null, segments: [], notes: [] })) && !/Findings:/.test(pm.mtrReport({ host: 'x', command: 'c', when: 'w', hops: fixtureMtr, asn: null, segments: [], notes: [] })), 'without AS data or findings those parts are left out');
 
-console.log(failed ? `\n${failed} check(s) FAILED` : '\nall new-tool checks passed');
-process.exit(failed ? 1 : 0);
+console.log('== packet capture ==');
+const cm = await mod('capturemodel.js');
+const CAPTURE_TEXT = `### BEGIN capture 100.00 br-lan tcp and host 192.168.1.50
+1794843326.000000 IP 192.168.1.50.54321 > 93.184.216.34.443: Flags [S], seq 1, win 64240, options [mss 1460,sackOK,TS val 1 ecr 0,nop,wscale 7], length 0
+1794843326.020000 IP 93.184.216.34.443 > 192.168.1.50.54321: Flags [S.], seq 10, ack 2, win 65535, length 0
+1794843326.020100 IP 192.168.1.50.54321 > 93.184.216.34.443: Flags [.], ack 1, win 502, length 0
+1794843326.030000 IP 192.168.1.50.54321 > 93.184.216.34.443: Flags [P.], seq 1:518, ack 1, win 502, length 517
+1794843326.500000 IP 192.168.1.50.54400 > 10.0.0.5.22: Flags [R.], seq 1, ack 1, win 0, length 0
+1794843326.600000 IP 192.168.1.50.5353 > 224.0.0.251.5353: 0 PTR (QM)? _services._dns-sd._udp.local. (46)
+1794843326.700000 IP 192.168.1.50.40000 > 192.168.1.1.53: 12345+ A? example.com. (29)
+1794843326.800000 IP 192.168.1.1 > 192.168.1.50: ICMP echo reply, id 1, seq 1, length 64
+1794843326.900000 IP6 fe80::1 > ff02::1: ICMP6, router advertisement, length 56
+1794843327.000000 ARP, Request who-has 192.168.1.1 tell 192.168.1.50, length 28
+1794843327.100000 wan In IP 1.2.3.4.51820 > 5.6.7.8.51820: UDP, length 148
+1794843327.200000 IP 192.168.1.50 > 8.8.8.8: GREv0, length 100: IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 2, seq 1, length 64
+1794843327.300000 IP6 2001:db8::1.443 > 2001:db8::2.51234: Flags [S.], seq 5, ack 1, win 65535, length 0
+### MORE 12
+
+### END 0 110.00
+### BEGIN stats 110.01 
+dropped privs to root
+tcpdump: listening on br-lan, link-type EN10MB (Ethernet), snapshot length 96 bytes
+25 packets captured
+30 packets received by filter
+0 packets dropped by kernel
+
+### END 0 110.02
+`;
+let pk = cm.parsePacket('1794843326.000000 IP 192.168.1.50.54321 > 93.184.216.34.443: Flags [S], seq 1, win 64240, length 0');
+check(pk.proto === 'TCP' && pk.src === '192.168.1.50' && pk.sport === 54321 && pk.dst === '93.184.216.34' && pk.dport === 443 && pk.len === 0 && pk.iface === null && /^Flags \[S\]/.test(pk.info), 'a TCP packet: protocol, both endpoints with their ports, length and the tool\'s own words', j(pk));
+check(cm.parsePacket('1794843326.600000 IP 192.168.1.50.5353 > 224.0.0.251.5353: 0 PTR (QM)? _services._dns-sd._udp.local. (46)').proto === 'mDNS' && cm.parsePacket('1794843326.700000 IP 192.168.1.50.40000 > 192.168.1.1.53: 12345+ A? example.com. (29)').proto === 'DNS' && cm.parsePacket('1794843326.700000 IP 192.168.1.50.40000 > 192.168.1.1.53: 12345+ A? example.com. (29)').len === 29, 'mDNS and DNS are told by their ports; a payload length in parentheses is the length');
+pk = cm.parsePacket('1794843326.800000 IP 192.168.1.1 > 192.168.1.50: ICMP echo reply, id 1, seq 1, length 64');
+check(pk.proto === 'ICMP' && pk.sport === null && pk.src === '192.168.1.1' && pk.len === 64 && cm.parsePacket('1794843326.900000 IP6 fe80::1 > ff02::1: ICMP6, router advertisement, length 56').proto === 'ICMPv6', 'ICMP and ICMPv6 have no ports');
+pk = cm.parsePacket('1794843327.300000 IP6 2001:db8::1.443 > 2001:db8::2.51234: Flags [S.], seq 5, ack 1, win 65535, length 0');
+check(pk.proto === 'TCP' && pk.src === '2001:db8::1' && pk.sport === 443 && pk.dst === '2001:db8::2' && pk.dport === 51234, 'an IPv6 endpoint carries its port after a dot');
+pk = cm.parsePacket('1794843327.000000 ARP, Request who-has 192.168.1.1 tell 192.168.1.50, length 28');
+check(pk.proto === 'ARP' && pk.src === '192.168.1.50' && pk.dst === '192.168.1.1' && pk.len === 28 && cm.parsePacket('1794843327.000000 ARP, Reply 192.168.1.1 is-at aa:bb:cc:dd:ee:ff, length 28').src === '192.168.1.1', 'ARP: who asks whom, or who answers');
+pk = cm.parsePacket('1794843327.100000 wan In IP 1.2.3.4.51820 > 5.6.7.8.51820: UDP, length 148');
+check(pk.iface === 'wan' && pk.dir === 'In' && pk.proto === 'UDP' && pk.src === '1.2.3.4' && pk.len === 148 && cm.parsePacket('1794843327.200000 IP 192.168.1.50 > 8.8.8.8: GREv0, length 100: IP 10.0.0.1 > 10.0.0.2: ICMP echo request').proto === 'GRE', 'a capture on every interface names the interface and the direction; tunnels are named by their protocol');
+check(cm.parsePacket('not a packet') === null && cm.parsePacket('') === null && cm.parsePacket('1794843327.5 something unknown here').proto === '?', 'a line that is not a packet is ignored; an unknown format keeps its text');
+
+const cc = cm.parseCapture(CAPTURE_TEXT);
+check(cc.packets.length === 13 && cc.more === 12 && cc.done && cc.captured === 25 && cc.received === 30 && cc.dropped === 0 && cc.snaplen === 96 && cc.listening === 'br-lan' && cc.error === null, 'the packets, the ones left out, and the summary of the capture (without the "dropped privs" line)', j([cc.packets.length, cc.more, cc.captured, cc.received, cc.dropped, cc.error]));
+check(cc.packets[0].rel === 0 && Math.abs(cc.packets[3].rel - 0.03) < 1e-6 && Math.abs(cc.span - 1.3) < 1e-6, 'times are counted from the first packet');
+check(cc.syn === 1 && cc.rst === 1 && cc.tcp === 6 && cc.protocols[0][0] === 'TCP' && cc.protocols[0][1] === 6 && cc.protocols.some(([n, c]) => n === 'ARP' && c === 1), 'connection attempts, resets and the protocols are counted over the packets shown', j([cc.syn, cc.rst, cc.tcp, cc.protocols]));
+check(cc.conversations[0].a === '192.168.1.50' && cc.conversations[0].b === '93.184.216.34' && cc.conversations[0].packets === 4 && cc.conversations[0].bytes === 517 && cc.conversations.length <= 5, 'the busiest conversation is counted in both directions', j(cc.conversations[0]));
+const midway = cm.parseCapture(CAPTURE_TEXT.split('### BEGIN stats')[0].replace('\n### MORE 12\n\n### END 0 110.00\n', '\n'));
+check(!midway.done && midway.captured === null && midway.packets.length === 13 && cm.captureNotes(midway, { packets: 2000 }).length === 0, 'a running capture has packets but no summary, and nothing is said yet');
+let cn = cm.captureNotes(cc, { packets: 2000, seconds: 30 });
+check(cn.length === 1 && /table and the figures cover the first 13 packets; the file has all 25/.test(cn[0].text), 'when packets were left out of the table the page says the file has them all', j(cn));
+cn = cm.captureNotes({ ...cc, more: 0, dropped: 7, captured: 2000 }, { packets: 2000, seconds: 30 });
+check(cn.some(n => n.level === 'warn' && /dropped 7 packets/.test(n.text)) && cn.some(n => /ended at its limit of 2000 packets/.test(n.text)), 'dropped packets are a warning, and the packet limit is named as the reason it ended');
+cn = cm.captureNotes({ ...cc, more: 0, rst: 5, tcp: 20 }, { packets: 2000, seconds: 30 });
+check(cn.some(n => n.level === 'warn' && /5 of 20 TCP packets are resets/.test(n.text)) && !cm.captureNotes({ ...cc, more: 0, rst: 1, tcp: 20 }, {}).some(n => /resets/.test(n.text)), 'a tenth of the TCP packets being resets is a warning, fewer is not');
+const empty = cm.parseCapture('### BEGIN capture 1.0 br-lan\n\n### END 0 2.0\n### BEGIN stats 2.0 \ntcpdump: listening on br-lan, link-type EN10MB (Ethernet), snapshot length 96 bytes\n0 packets captured\n0 packets received by filter\n0 packets dropped by kernel\n\n### END 0 2.0\n');
+check(empty.done && empty.captured === 0 && cm.captureNotes(empty, {})[0].level === 'warn' && /No packet matched/.test(cm.captureNotes(empty, {})[0].text), 'a capture that saw nothing says so, with where to look');
+const bad = cm.parseCapture('### BEGIN capture 1.0 nope0\n\n### END 0 2.0\n### BEGIN stats 2.0 \ntcpdump: nope0: No such device exists\n\n### END 0 2.0\n');
+check(bad.error === 'nope0: No such device exists' && cm.captureNotes(bad, {})[0].level === 'bad' && /capture failed: nope0: No such device exists/.test(cm.captureNotes(bad, {})[0].text), 'tcpdump\'s own complaint is shown as the failure');
+check(!cm.parseCapture('').done && cm.parseCapture('').packets.length === 0, 'no output yet is an empty capture');
+
+console.log('== requests for a capture ==');
+r = m.requestOf(form({ tool: 'capture', host: '', capIface: 'br-lan' }));
+check(j(r.args) === j({ tool: 'capture', iface: 'br-lan', seconds: 30, packets: 2000, snaplen: 96 }), 'a capture with the defaults sends only the interface and the limits', j(r));
+r = m.requestOf(form({ tool: 'capture', host: '192.168.1.50', capIface: 'any', capProto: 'tcp', capPort: '443', capSeconds: '120', capPackets: '10000', capSnap: '1514' }));
+check(j(r.args) === j({ tool: 'capture', iface: 'any', proto: 'tcp', host: '192.168.1.50', port: 443, seconds: 120, packets: 10000, snaplen: 1514 }), 'the protocol, the address, the port and the limits are sent', j(r));
+r = m.requestOf(form({ tool: 'capture', host: '', capIface: 'wan', capProto: 'icmp', capPort: '443' }));
+check(j(r.args) === j({ tool: 'capture', iface: 'wan', proto: 'icmp', seconds: 30, packets: 2000, snaplen: 96 }), 'a port that is left in the form is not sent when the protocol has none');
+check(m.requestOf(form({ tool: 'capture', host: 'example.com', capIface: 'lan' })).error && m.requestOf(form({ tool: 'capture', host: '1.1.1.1; reboot', capIface: 'lan' })).error && m.requestOf(form({ tool: 'capture', host: '', capIface: '' })).error && m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan; reboot' })).error && m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan', capPort: '0' })).error && m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan', capPort: '70000' })).error && m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan', capProto: 'tcp or udp' })).error && m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan', capSeconds: '7' })).error && m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan', capSnap: '100' })).error, 'a capture refuses a name instead of an address, injections, a bad interface, port, protocol, duration or size');
+
+r = m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan', capFilter: '  not port 443 and (len > 100 or tcp[tcpflags] & tcp-syn != 0)  ' }));
+check(j(r.args) === j({ tool: 'capture', iface: 'lan', filter: 'not port 443 and (len > 100 or tcp[tcpflags] & tcp-syn != 0)', seconds: 30, packets: 2000, snaplen: 96 }), 'the advanced filter is sent trimmed, after the choices of the form', j(r));
+check(j(m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan', capFilter: '   ' })).args) === j({ tool: 'capture', iface: 'lan', seconds: 30, packets: 2000, snaplen: 96 }) && j(m.requestOf(form({ tool: 'capture', host: '10.0.0.1', capIface: 'lan', capProto: 'udp', capPort: '53', capFilter: 'net 10.0.0.0/8' })).args) === j({ tool: 'capture', iface: 'lan', proto: 'udp', host: '10.0.0.1', port: 53, filter: 'net 10.0.0.0/8', seconds: 30, packets: 2000, snaplen: 96 }), 'an empty advanced filter is not sent; it goes with every other choice');
+const badFilters = ['-w /tmp/x', 'port 80; reboot', '$(id)', 'a`id`', 'x\'y', 'a\\b', 'host "x"', 'port 80\nport 81', 'x'.repeat(201)];
+check(badFilters.every(f => m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan', capFilter: f })).error), 'the advanced filter refuses an option, shell characters, quotes, backslashes, line breaks and more than 200 characters', j(badFilters.filter(f => !m.requestOf(form({ tool: 'capture', host: '', capIface: 'lan', capFilter: f })).error)));
+
+console.log(failed ? `\n${failed} check(s) FAILED` : '\nall new-tool checks passed');process.exit(failed ? 1 : 0);

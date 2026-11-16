@@ -33,7 +33,7 @@ function stepRow(s) {
 
 // The connectivity check: the verdict first (once there is one), then the steps with their findings.
 export function checkBody(job) {
-  const c = parseCheck(job.text, job.running, { name: job.host });
+  const c = parseCheck(job.text, job.running, { name: job.host, port: job.port });
   const v = c.verdict;
   return h('div', { className: 'rt-checkbody' },
     v ? h('div', { className: `rt-verdict ${v.level}` },

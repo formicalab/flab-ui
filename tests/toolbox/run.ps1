@@ -60,13 +60,18 @@ function Invoke-Remote {
     .SYNOPSIS
     Runs a POSIX shell script on the router over ssh.
     .DESCRIPTION
-    Normalizes line endings to LF because BusyBox sh rejects CRLF.
+    Normalizes line endings to LF because BusyBox sh rejects CRLF. The script is sent on the standard input of `sh -s`
+    (from a file, so that no line ending is added), not as the ssh command: dropbear refuses commands longer than a few
+    kilobytes ("String too long"), and the diagnostics script is longer.
     .PARAMETER Script
     Shell script text.
     #>
     param([string]$Script)
 
-    Invoke-Native 'ssh' @($Router, ($Script -replace "`r`n", "`n"))
+    $file = Join-Path $env:TEMP "flab-toolbox-remote-$PID.sh"
+    [IO.File]::WriteAllText($file, ($Script -replace "`r`n", "`n"), (New-Object Text.UTF8Encoding($false)))
+    try { Invoke-Native 'cmd' @('/c', "ssh $Router sh -s < `"$file`"") }
+    finally { Remove-Item $file -ErrorAction SilentlyContinue }
 }
 #endregion
 
@@ -95,6 +100,16 @@ cd @REMOTE@
 d() { FLAB_DIAG_ROOT=@REMOTE@/jobs FLAB_PLUGIN=@REMOTE@/flab.diag.uc FLAB_METHOD="$1" FLAB_ARGS="$2" ucode -L "@REMOTE@/*.uc" harness.uc; }
 idof() { sed -n 's/.*"id": "\([0-9a-f]*\)".*/\1/p'; }
 sizeof() { sed -n 's/.*"size": \([0-9]*\).*/\1/p'; }
+# Jobs that are still running (not finished, and the process alive).
+running_jobs() {
+  n=0
+  for j in @REMOTE@/jobs/*; do
+    [ -d "$j" ] || continue
+    [ -f "$j/rc" ] && continue
+    pid=$(cat "$j/pid" 2>/dev/null); [ -n "$pid" ] && [ -d "/proc/$pid" ] && n=$((n + 1))
+  done
+  echo $n
+}
 rm -rf @REMOTE@/jobs
 d status '' > out-diag-status.json
 
@@ -148,6 +163,8 @@ d start '{"tool":"check"}' > out-diag-check2.start.json
 sleep 1; d stop "{\"id\":\"$(idof < out-diag-check2.start.json)\"}" > /dev/null
 sleep 1; d read "{\"id\":\"$(idof < out-diag-check2.start.json)\",\"from\":0}" > out-diag-check2.read.json
 ps | grep -cE '[o]penssl s_client|[p]ing -4 -c 2' > out-diag-check2.procs.txt || true
+d start '{"tool":"check","host":"localhost","port":22}' > out-diag-check3.start.json
+sleep 1; d stop "{\"id\":\"$(idof < out-diag-check3.start.json)\"}" > /dev/null
 
 # mtr against loopback, a traceroute with AS lookups (loopback has no AS, so none is looked up) and a DNS trace of a real name.
 d start '{"tool":"mtr","host":"127.0.0.1","cycles":3}' > out-diag-mtr.start.json
@@ -172,6 +189,29 @@ d stop "{\"id\":\"$id\"}" > out-diag-iperf.stop.json
 sleep 1; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-iperf.after.json
 pidof iperf3 | wc -w > out-diag-iperf.procs.txt || true
 
+# Earlier jobs may still be running, and three at once is the limit: wait for them before the capture.
+for t in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [ "$(running_jobs)" -eq 0 ] && break; sleep 1; done
+# A packet capture on loopback: the packets of three pings stream in, a second capture is refused while it runs, Stop ends it
+# cleanly (exit 143) with the file and the summary, and the download returns the file.
+d start '{"tool":"capture","iface":"lo","seconds":60,"packets":1000,"snaplen":256,"proto":"icmp","host":"127.0.0.1"}' > out-diag-capture.start.json
+id=$(idof < out-diag-capture.start.json); sleep 1
+d start '{"tool":"capture","iface":"lo","seconds":5}' > out-diag-capture.second.json
+ping -c 3 -W 1 127.0.0.1 > /dev/null; sleep 2
+d read "{\"id\":\"$id\",\"from\":0}" > out-diag-capture.running.json
+d stop "{\"id\":\"$id\"}" > /dev/null; sleep 3
+d read "{\"id\":\"$id\",\"from\":0}" > out-diag-capture.read.json
+d download "{\"id\":\"$id\",\"from\":0}" > out-diag-capture.download.json
+d download "{\"id\":\"$id\",\"from\":100000}" > out-diag-capture.past.json
+openssl base64 -A -in @REMOTE@/jobs/$id/cap.pcap > out-diag-capture.b64
+tcpdump -nn -r @REMOTE@/jobs/$id/cap.pcap 2>/dev/null | wc -l > out-diag-capture.pcount
+ps | grep -cE '[t]cpdump|[t]ee cap.pcap' > out-diag-capture.procs.txt || true
+# An advanced filter that is a real expression, and one that tcpdump does not accept (its complaint is the result; the writer never opens the FIFO, which must not leave anything waiting).
+d start '{"tool":"capture","iface":"lo","seconds":2,"packets":1,"proto":"tcp","filter":"tcp[tcpflags] & tcp-syn != 0 and (port 1 or port 2)"}' > out-diag-capture.filter.json
+sleep 4; d read "{\"id\":\"$(idof < out-diag-capture.filter.json)\",\"from\":0}" > out-diag-capture.filter.read.json
+d start '{"tool":"capture","iface":"lo","seconds":2,"filter":"nosuchkeyword 5"}' > out-diag-capture.badexpr.json
+sleep 4; d read "{\"id\":\"$(idof < out-diag-capture.badexpr.json)\",\"from\":0}" > out-diag-capture.badexpr.read.json
+ps | grep -cE '[t]cpdump|[t]ee cap.pcap' > out-diag-capture.procs2.txt || true
+
 # Requests that must be refused: nothing may run, no job may appear, the canary file must not be created.
 before=$(ls @REMOTE@/jobs | wc -l)
 i=0
@@ -189,19 +229,11 @@ n=0
 for bad in '../../etc' 'zzzzzzzzzzzz' '061e2960506' '' '061e29605065/../x' '..'; do
   d read "{\"id\":\"$bad\"}" > out-diag-badid-$n.read.json
   d stop "{\"id\":\"$bad\"}" > out-diag-badid-$n.stop.json
+  d download "{\"id\":\"$bad\"}" > out-diag-badid-$n.download.json
   n=$((n + 1))
 done
 
 # At most three jobs at once; then stop them all. Wait for every earlier job to end first, and record how many were still running.
-running_jobs() {
-  n=0
-  for j in @REMOTE@/jobs/*; do
-    [ -d "$j" ] || continue
-    [ -f "$j/rc" ] && continue
-    pid=$(cat "$j/pid" 2>/dev/null); [ -n "$pid" ] && [ -d "/proc/$pid" ] && n=$((n + 1))
-  done
-  echo $n
-}
 for t in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ "$(running_jobs)" -eq 0 ] && break; sleep 1; done
 running_jobs > out-diag-cap.before
 ids=''

@@ -53,7 +53,7 @@ const MAX_OUTPUT = 65536;
 // follows from the number of pings, the cycles or the minutes asked for.
 const LIMITS = { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75, trace: 60, mtr: 15 };
 // The tools `start` accepts.
-const TOOLS = [ 'ping', 'traceroute', 'dns', 'tls', 'compare', 'check', 'trace', 'mtr', 'iperf' ];
+const TOOLS = [ 'ping', 'traceroute', 'dns', 'tls', 'compare', 'check', 'trace', 'mtr', 'iperf', 'capture' ];
 // The protocols s_client can upgrade to TLS in (STARTTLS), and the most servers one comparison asks.
 const STARTTLS = [ 'smtp', 'imap', 'pop3', 'ftp' ];
 const MAX_SERVERS = 6;
@@ -73,8 +73,25 @@ const IPERF_MIN_PORT = 1024;
 // The most hop addresses one traceroute looks up the autonomous system of.
 const MAX_ASN = 30;
 const MAX_WHOIS = 8;
+// What a packet capture may be asked for: the durations and packet counts (the page offers lists, the plugin accepts any
+// value up to the maximum), the capture sizes per packet, the protocols of the filter, how many packets are shown as text
+// and the size limit of the job's files, in 512 byte blocks. The largest capture (20000 packets of 1514 bytes) is about
+// 30 MB, and the limit leaves room for it; the file lives in tmpfs, so only the newest capture is kept.
+const CAPTURE_SECONDS = [ 10, 30, 60, 120, 300 ];
+const CAPTURE_PACKETS = [ 100, 500, 2000, 10000, 20000 ];
+const CAPTURE_SNAPLEN = [ 96, 256, 1514 ];
+const CAPTURE_PROTOS = [ 'tcp', 'udp', 'icmp', 'icmp6', 'arp' ];
+const CAPTURE_SHOWN = 1000;
+const CAPTURE_FSIZE = 70000;
+// The advanced filter: a tcpdump (BPF) expression of at most this many characters, made of these characters only (no
+// quotes, backslashes, `$`, backticks, `;` or line breaks, so it stays one harmless word inside single quotes), not
+// starting with "-" (and passed after `--` anyway, so it can never be taken for an option).
+const CAPTURE_FILTER_MAX = 200;
+const CAPTURE_FILTER_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .:/_()!&|=<>[],-';
+// The bytes of the capture file one `download` reply returns (the reply carries them as base64).
+const DOWNLOAD_CHUNK = 196608;
 // The process names of everything a job can run (/proc/<pid>/comm), checked before `stop` sends a kill.
-const OURS = [ 'timeout', 'ping', 'ping6', 'traceroute', 'traceroute6', 'nslookup', 'dig', 'kdig', 'drill', 'mtr', 'mtr-packet', 'iperf3' ];
+const OURS = [ 'timeout', 'ping', 'ping6', 'traceroute', 'traceroute6', 'nslookup', 'dig', 'kdig', 'drill', 'mtr', 'mtr-packet', 'iperf3', 'tcpdump' ];
 
 //#region Validation
 
@@ -297,8 +314,10 @@ function verify_options(name) {
 // 1.1.1.1; a PPP link has no gateway address, so its peer address is used), pings of the gateway and of two public
 // addresses, a lookup through the router's resolver and through a public one, the IPv6 equivalents, and a TLS
 // handshake that also shows a wrong clock (a certificate that is "not yet valid" or "expired"). `name` is the host
-// used for the lookups and the handshake. Every block's raw output goes to the page, which draws the verdict.
-function check_script(tool, name) {
+// used for the lookups and the handshake, `port` the port of the handshake: s_client also shows whether the TCP
+// connection itself was made, so a port that does not speak TLS is told apart from one that is closed. Every block's raw
+// output goes to the page, which draws the verdict.
+function check_script(tool, name, port) {
 	let s = PRELUDE;
 	s += `blk route4\n/sbin/ip -4 route show default 2>&1\nend 0\n`;
 	s += `blk route6\n/sbin/ip -6 route show default 2>&1\nend 0\n`;
@@ -315,7 +334,7 @@ if [ -n "$gw" ]; then run 8 ping -c 2 -W 2 -w 6 "$gw"; else echo "no next hop ad
 	s += block('dns_public', name, 8, dns_argv(tool, name, 'A', '1.1.1.1'));
 	s += block('internet6', '2606:4700:4700::1111', 8, [ 'ping', '-6', '-c', 2, '-W', 2, '-w', 6, '2606:4700:4700::1111' ]);
 	s += block('dns6', name, 8, dns_argv(tool, name, 'AAAA', null));
-	s += `blk tls ${name}\ncap tls.raw 12 openssl s_client -connect '${name}:443' ${verify_options(name)} </dev/null\nrc=$?\ncat tls.raw\nend $rc\n`;
+	s += `blk tls ${name} ${port}\ncap tls.raw 12 openssl s_client -connect '${name}:${port}' ${verify_options(name)} </dev/null\nrc=$?\ncat tls.raw\nend $rc\n`;
 	return s;
 }
 
@@ -544,12 +563,16 @@ function build_compare(a) {
 	return { script: compare_script(tool, a.host, type_, servers), limit: LIMITS.compare, tool, display: `${tool} ${a.host} ${type_} @${join(' @', servers)}` };
 }
 
-// The connectivity check, which takes an optional host (default CHECK_HOST) to look up and connect to.
+// The connectivity check, which takes an optional host (default CHECK_HOST) to look up and connect to, and an optional port
+// (default 443) for the last step.
 function build_check(a) {
 	let tool = dns_tool();
 	if (tool == '')
 		return { error: 'The router has no DNS lookup tool (dig, kdig, drill or nslookup).' };
-	return { script: check_script(tool, a.host), limit: LIMITS.check, tool, display: `connectivity check (${a.host})` };
+	let port = int_in(a.port, 1, 65535, 443);
+	if (port == null)
+		return { error: 'The port must be between 1 and 65535.' };
+	return { script: check_script(tool, a.host, port), limit: LIMITS.check, tool, display: `connectivity check (${a.host}${port != 443 ? `:${port}` : ''})` };
 }
 
 // The argument list of a traceroute. Output is numeric unless `resolve` is true: busybox then looks up a host name for
@@ -663,6 +686,91 @@ function build_trace(a) {
 
 //#endregion
 
+//#region Packet capture
+
+// The script of a packet capture. tcpdump writes the capture into a FIFO; `tee` keeps it in cap.pcap and passes it on to a
+// second tcpdump that prints one line per packet (the first CAPTURE_SHOWN lines reach the page, awk counts and drops the
+// rest), so the page shows packets while the capture runs and the file is the whole capture. Everything ends by itself
+// when the writer ends (time, packet count or Stop: the TERM sent to the script is passed on to it). A writer that failed
+// before opening the FIFO would leave `tee` waiting for it, so the FIFO is opened once to let it go. `iface` is "any" or an
+// existing device name and `bpf` is made of allow-listed words and validated values only.
+function capture_script(iface, bpf, seconds, packets, snaplen) {
+	let s = PRELUDE;
+	s += `set -f\nmkfifo f1\nstopped=0\nwpid=\ntrap 'stopped=1; kill $wpid 2>/dev/null' TERM\n`;
+	s += `blk capture '${iface}'${bpf != '' ? ` '${bpf}'` : ''}\n`;
+	s += `timeout -k 2 ${seconds} tcpdump -i '${iface}' -n -s ${snaplen} -c ${packets} -U -Z root -w f1${bpf != '' ? ` -- '${bpf}'` : ''} 2>w.err &\nwpid=$!\n`;
+	s += `(tee cap.pcap < f1 | tcpdump -r - -nn -tt -l 2>/dev/null | awk 'NR <= ${CAPTURE_SHOWN} { print substr($0, 1, 180); fflush() } END { if (NR > ${CAPTURE_SHOWN}) printf "### MORE %d\\n", NR - ${CAPTURE_SHOWN} }') &\nrpid=$!\n`;
+	s += `while kill -0 $wpid 2>/dev/null; do wait $wpid; done\n`;
+	s += `[ -e cap.pcap ] || timeout 1 sh -c ': >f1' 2>/dev/null\n`;
+	s += `wait $rpid\nend 0\n`;
+	s += `blk stats\ngrep -v '^dropped privs' w.err\nend 0\n`;
+	s += `[ "$stopped" = 1 ] && exit 143\nexit 0\n`;
+	return s;
+}
+
+// A packet capture: the interface ("any" or one of the router's devices), an optional filter (a protocol, an address and a
+// port, and an advanced tcpdump expression made of safe characters only, joined with "and" into one filter expression) how
+// long, at most how many packets
+// and how much of each packet to keep. Only one capture runs at a time, and the files of earlier captures are removed when a
+// new one starts, because they live in memory.
+function build_capture(a) {
+	if (trim(run('command -v tcpdump 2>/dev/null') ?? '') == '')
+		return { error: 'The router has no tcpdump.' };
+	let iface = a.iface;
+	if (type(iface) != 'string' || (iface != 'any' && !(valid_iface(iface) && stat(`/sys/class/net/${iface}`) != null)))
+		return { error: 'The interface must be "any" or a network device of this router.' };
+	let seconds = int_in(a.seconds, 1, CAPTURE_SECONDS[length(CAPTURE_SECONDS) - 1], 30);
+	if (seconds == null)
+		return { error: `The duration must be between 1 and ${CAPTURE_SECONDS[length(CAPTURE_SECONDS) - 1]} seconds.` };
+	let packets = int_in(a.packets, 1, CAPTURE_PACKETS[length(CAPTURE_PACKETS) - 1], 2000);
+	if (packets == null)
+		return { error: `The number of packets must be between 1 and ${CAPTURE_PACKETS[length(CAPTURE_PACKETS) - 1]}.` };
+	let snaplen = int_in(a.snaplen, 1, 65535, CAPTURE_SNAPLEN[0]);
+	if (snaplen == null || index(CAPTURE_SNAPLEN, snaplen) < 0)
+		return { error: 'The size kept of each packet must be one of ' + join(', ', CAPTURE_SNAPLEN) + ' bytes.' };
+	let proto = a.proto == null ? '' : a.proto;
+	if (proto != '' && index(CAPTURE_PROTOS, proto) < 0)
+		return { error: 'The protocol must be one of ' + join(', ', CAPTURE_PROTOS) + '.' };
+	let host = a.host == null ? '' : a.host;
+	if (host != '' && !is_address(host))
+		return { error: 'The host to filter on must be an IPv4 or IPv6 address.' };
+	// 0 stands for "not given": int_in returns it only for an absent value, and a literal 0 is out of range.
+	let port = int_in(a.port, 1, 65535, 0);
+	if (port == null)
+		return { error: 'The port must be between 1 and 65535.' };
+	if (port != 0 && proto != '' && proto != 'tcp' && proto != 'udp')
+		return { error: 'A port needs TCP or UDP, or no protocol.' };
+	let custom = a.filter == null ? '' : a.filter;
+	if (type(custom) != 'string' || length(custom) > CAPTURE_FILTER_MAX)
+		return { error: `The advanced filter must be text of at most ${CAPTURE_FILTER_MAX} characters.` };
+	custom = trim(custom);
+	if (custom != '') {
+		if (substr(custom, 0, 1) == '-')
+			return { error: 'The advanced filter must not start with "-".' };
+		for (let c in split(custom, ''))
+			if (index(CAPTURE_FILTER_CHARS, c) < 0)
+				return { error: 'The advanced filter may only hold letters, digits, spaces and . : / _ ( ) ! & | = < > [ ] , -' };
+	}
+	if (trim(run('pidof tcpdump 2>/dev/null') ?? '') != '')
+		return { error: 'A packet capture is already running on this router. Stop it first.' };
+	let terms = [];
+	if (proto != '')
+		push(terms, proto);
+	if (host != '')
+		push(terms, `host ${host}`);
+	if (port != 0)
+		push(terms, `port ${port}`);
+	if (custom != '')
+		push(terms, length(terms) ? `(${custom})` : custom);
+	let bpf = join(' and ', terms);
+	return {
+		script: capture_script(iface, bpf, seconds, packets, snaplen), limit: seconds + 20, fsize: CAPTURE_FSIZE, capture: true,
+		display: `tcpdump -i ${iface}${bpf != '' ? ` ${bpf}` : ''} (${seconds} s, up to ${packets} packets, ${snaplen} bytes each)`,
+	};
+}
+
+//#endregion
+
 //#region Jobs
 
 // A job id: twelve lowercase hex digits.
@@ -745,12 +853,13 @@ function start(request) {
 	let tool = a.tool;
 	if (index(TOOLS, tool) < 0)
 		return { ok: false, error: 'The tool must be one of ' + join(', ', TOOLS) + '.' };
-	// The connectivity check has a default host; the iperf3 server has none; every other tool needs one.
+	// The connectivity check has a default host; the iperf3 server and a packet capture have none (a capture filters by an
+	// address of its own); every other tool needs one.
 	if (tool == 'check' && (a.host == null || a.host == ''))
 		a.host = CHECK_HOST;
-	if (tool != 'iperf' && !valid_host(a.host))
+	if (tool != 'iperf' && tool != 'capture' && !valid_host(a.host))
 		return { ok: false, error: 'Enter a host name or an IPv4 or IPv6 address.' };
-	let builders = { ping: build_ping, traceroute: build_traceroute, dns: build_dns, tls: build_tls, compare: build_compare, check: build_check, trace: build_trace, mtr: build_mtr, iperf: build_iperf };
+	let builders = { ping: build_ping, traceroute: build_traceroute, dns: build_dns, tls: build_tls, compare: build_compare, check: build_check, trace: build_trace, mtr: build_mtr, iperf: build_iperf, capture: build_capture };
 	let built = builders[tool](a);
 	if (built.error != null)
 		return { ok: false, error: built.error };
@@ -770,7 +879,10 @@ function start(request) {
 		// A script is written with LF line endings only: BusyBox sh rejects a carriage return, and the source file may carry CRLF
 	// (a Windows checkout) inside the multi-line parts of the templates.
 	writefile(`${ROOT}/${id}/job.sh`, replace(built.script, /\r/g, ''));
-	let launched = command_result(`cd ${ROOT}/${id} || exit 1\n${launch_job(command, built.limit)}`);
+	// Earlier captures live in memory (tmpfs) and only one capture runs at a time, so their files go before a new one starts.
+	if (built.capture)
+		run(`rm -f ${ROOT}/*/cap.pcap`);
+	let launched = command_result(`cd ${ROOT}/${id} || exit 1\n${launch_job(command, built.limit, built.fsize)}`);
 	if (!launched.ok)
 		return { ok: false, error: 'Could not launch the diagnostic job.' };
 	return { ok: true, id, tool, command: built.display ?? command, limit: built.limit, max_output: MAX_JOB_OUTPUT, dns_tool: built.tool ?? null, started: time() };
@@ -814,6 +926,28 @@ function read(request) {
 		timed_out: stat(`${ROOT}/${id}/timed_out`) != null || s.exit == 124 || s.exit == 137,
 		stopped: s.exit == 143 && stat(`${ROOT}/${id}/timed_out`) == null && stat(`${ROOT}/${id}/truncated`) == null,
 	};
+}
+
+// The reply of `download`: the capture file of a packet-capture job from byte offset `from`, DOWNLOAD_CHUNK bytes at most,
+// as base64 (the page asks again from `from + length` until `done`, and puts the pieces together into a .pcap file). The
+// file is whatever has been written so far while the capture still runs.
+function download(request) {
+	let id = request?.args?.id;
+	if (!valid_id(id) || stat(`${ROOT}/${id}`) == null)
+		return { ok: false, error: 'There is no such job.' };
+	let path = `${ROOT}/${id}/cap.pcap`;
+	let st = stat(path);
+	if (st == null)
+		return { ok: false, error: 'This job has no capture file. A newer capture may have replaced it.' };
+	let from = int_in(request.args.from, 0, 1000000000, 0) ?? 0;
+	let data = '';
+	let f = from < st.size ? open(path, 'r') : null;
+	if (f != null) {
+		f.seek(from);
+		data = f.read(DOWNLOAD_CHUNK) ?? '';
+		f.close();
+	}
+	return { ok: true, id, from, size: st.size, length: length(data), data: b64enc(data), done: from + length(data) >= st.size, running: job_state(id).running };
 }
 
 // The reply of `stop`: ends a running job (a kill for `timeout`, which passes it on to the tool).
@@ -978,12 +1112,13 @@ function wake(request) {
 // what an iperf3 server needs to be offered.
 function status() {
 	let tools = {};
-	for (let t in [ 'ping', 'traceroute', 'nslookup', 'dig', 'kdig', 'drill', 'openssl', 'mtr', 'iperf3' ])
+	for (let t in [ 'ping', 'traceroute', 'nslookup', 'dig', 'kdig', 'drill', 'openssl', 'mtr', 'iperf3', 'tcpdump' ])
 		tools[t] = trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '';
 	let devices = sort(filter(lsdir('/sys/class/net') ?? [], valid_iface));
 	return {
 		generated: time(), tools, dns_tool: dns_tool(), asn: asn_tool() != '', types: TYPES, devices, limits: LIMITS, max_pings: MAX_PINGS, mtr_cycles: MTR_CYCLES,
 		starttls: STARTTLS, upstream: upstream_resolvers(), check_host: CHECK_HOST, wol: wol_method(), hosts: wol_hosts(), iperf: tools.iperf3 ? iperf_info() : null,
+		capture: tools.tcpdump ? { seconds: CAPTURE_SECONDS, packets: CAPTURE_PACKETS, snaplen: CAPTURE_SNAPLEN, protos: CAPTURE_PROTOS, shown: CAPTURE_SHOWN, filter_max: CAPTURE_FILTER_MAX } : null,
 	};
 }
 
@@ -998,7 +1133,7 @@ return deferred({
 			},
 		},
 		start: {
-			args: { tool: '', host: '', count: 0, size: 0, hops: 0, probes: 0, resolve: false, asn: false, family: '', source: '', method: '', type: '', server: '', port: 0, sni: '', starttls: '', servers: [], cycles: 0, minutes: 0, bind: '' },
+			args: { tool: '', host: '', count: 0, size: 0, hops: 0, probes: 0, resolve: false, asn: false, family: '', source: '', method: '', type: '', server: '', port: 0, sni: '', starttls: '', servers: [], cycles: 0, minutes: 0, bind: '', iface: '', proto: '', seconds: 0, packets: 0, snaplen: 0, filter: '' },
 			call: function(request) {
 				return start(request);
 			},
@@ -1007,6 +1142,12 @@ return deferred({
 			args: { id: '', from: 0 },
 			call: function(request) {
 				return read(request);
+			},
+		},
+		download: {
+			args: { id: '', from: 0 },
+			call: function(request) {
+				return download(request);
 			},
 		},
 		stop: {
