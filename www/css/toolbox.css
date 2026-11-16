@@ -174,6 +174,17 @@
 .rt-asn { display: block; font-size: .8rem; color: var(--fl-muted); }
 .rt-aspath { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 .rt-aspath-arrow { color: var(--fl-muted); }
+.rt-route { display: flex; align-items: stretch; flex-wrap: wrap; gap: .4rem; margin: 0 0 1rem; }
+.rt-route-card { display: grid; gap: .2rem; min-width: 11rem; max-width: 22rem; padding: .5rem .75rem; border: 1px solid var(--fl-stroke); border-left: 4px solid var(--fl-brand); border-radius: 8px; background: var(--fl-surface); }
+.rt-route-card.gap { align-content: center; border-left-color: var(--fl-stroke); border-style: dashed; background: transparent; }
+.rt-route-card.lossy { border-left-color: var(--fl-warn-fg); }
+.rt-route-name { overflow-wrap: anywhere; }
+.rt-route-sub { font-size: .8rem; color: var(--fl-muted); font-family: var(--fl-mono); }
+.rt-route-loss { color: var(--fl-warn-fg); font-weight: 600; }
+.rt-route-bar { height: 4px; border-radius: 2px; background: var(--fl-surface-hover); overflow: hidden; }
+.rt-route-bar > i { display: block; height: 100%; background: var(--fl-brand); opacity: .75; }
+.rt-route-arrow { align-self: center; color: var(--fl-muted); }
+.rt-mtr-actions { margin-top: .75rem; }
 .rt-hchart { display: grid; gap: .35rem; margin-bottom: 1rem; max-width: 760px; }
 .rt-hrow { display: grid; grid-template-columns: 12rem minmax(0, 1fr); align-items: center; gap: .75rem; }
 .rt-hlabel { font-size: .875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

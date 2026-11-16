@@ -46,7 +46,7 @@ let cachedAt = 0;
 
 // The state of this tab: the form, the error under it, the current job and its timer and result element, and whether the
 // result's "Raw output" is open.
-export const newDiag = () => ({ form: blankForm(), formError: null, job: null, timer: null, resultEl: null, autorun: false, status: null, rawOpen: false });
+export const newDiag = () => ({ form: blankForm(), formError: null, job: null, timer: null, resultEl: null, autorun: false, status: null, rawOpen: false, defaulted: false });
 
 // Reads what the router can run (the tools, the DNS tool it would use, its interfaces), reusing the last answer for a
 // minute because it does not change while the page is open.
@@ -281,8 +281,12 @@ function formCard(state, status) {
     family(), source(),
   ] : f.tool === 'mtr' ? [
     field('Rounds', `How many probes each hop gets, one a second (${status.mtr_cycles?.[0] ?? 3} to ${status.mtr_cycles?.[1] ?? 60})`, textInput(state, 'cycles', { type: 'number', disabled: running })),
-    field('Method', 'ICMP echo is what mtr sends by default; UDP passes some firewalls that block ICMP', selectInput(state, 'mtrMethod', [['icmp', 'ICMP echo'], ['udp', 'UDP']], running)),
-    family(),
+    field('Method', 'ICMP echo is what mtr sends by default; UDP passes some firewalls that block ICMP; TCP SYN passes a firewall that only lets web traffic through (to the port you give)', selectInput(state, 'mtrMethod', [['icmp', 'ICMP echo'], ['udp', 'UDP'], ['tcp', 'TCP SYN']], running)),
+    f.mtrMethod !== 'icmp' ? field('Port', f.mtrMethod === 'tcp' ? 'The TCP port to connect to (80 when empty)' : 'The UDP destination port; empty lets mtr pick one per probe', textInput(state, 'mtrPort', { type: 'number', placeholder: f.mtrMethod === 'tcp' ? '80' : 'automatic', disabled: running })) : null,
+    f.mtrMethod !== 'tcp' ? field('Size (bytes)', 'The packet size with its headers (28 to 1400); empty uses the 64 bytes mtr sends by default', textInput(state, 'mtrSize', { type: 'number', placeholder: '64', disabled: running })) : null,
+    field('Host names', 'Look up the name of every router that answers. It shows who runs each hop, but is slower when the resolver has no reverse records', selectInput(state, 'resolve', [['', 'addresses only'], ['1', 'look up names']], running)),
+    status.asn ? field('Networks (AS)', 'Look up which network (autonomous system) and organization each router that answered belongs to, from Team Cymru\'s DNS service, asked through the router\'s resolver once the run has ended', selectInput(state, 'asn', [['1', 'look up'], ['', 'off']], running)) : null,
+    family(), source(),
   ] : f.tool === 'dns' ? [
     field('Record type', 'The kind of DNS record to ask for', selectInput(state, 'type', DNS_TYPES.map(t => [t, t]), running)),
   ] : f.tool === 'trace' ? [
@@ -322,7 +326,9 @@ function formCard(state, status) {
       ['dns', 'check'].includes(f.tool) && status.dns_tool && status.dns_tool !== 'nslookup' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Using ${status.dns_tool}.`) : null,
       f.tool === 'check' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Walks down the stack: default route, next hop, internet, DNS (through the router and a public resolver), IPv6 and a secure connection. About 15 seconds.') : null,
       f.tool === 'trace' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Asks a root server, then the servers it points to, down to the one that answers: the way a resolver finds a name. It shows who answered, how long each step took and the DNSSEC records on the way, and ends with what the router\'s own resolver says.') : null,
-      f.tool === 'mtr' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Probes every hop once a second for the chosen number of rounds and keeps its loss and delay up to date, like ping and traceroute in one. Loss that does not reach the last hop is a router limiting its own replies, not a fault.') : null,
+      f.tool === 'traceroute' && status.tools?.mtr ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'MTR sends the same probes for several rounds and shows the loss and delay of every hop, which tells a router that merely limits its replies from a real fault.',
+        h('button', { type: 'button', className: 'btn btn-sm btn-link', disabled: running, onclick: () => { f.tool = 'mtr'; d.formError = null; state.rerender(); } }, 'Use MTR')) : null,
+      f.tool === 'mtr' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Probes every hop once a second for the chosen number of rounds and keeps its loss and delay up to date, like ping and traceroute in one. Loss that does not reach the last hop is a router limiting its own replies, not a fault. It follows one path per run, so it does not show the alternatives of a load-balanced hop; Traceroute does.') : null,
       serving ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Starts an iperf3 server on the router that stops by itself. From a computer in the network run the command shown once it listens; the test measures the path to the router (and the router\'s CPU), not to the internet.') : null,
       f.tool === 'wol' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Sends one magic packet${status.wol === 'etherwake' ? ' as an Ethernet frame (etherwake)' : ' as a UDP broadcast to port 9 (socat)'}. The host has to be switched off but connected, with Wake-on-LAN enabled in its firmware and operating system, and on the same network as the chosen interface.`) : null));
 }
@@ -414,6 +420,12 @@ function resultNodes(d) {
 export function diagView(data, state) {
   const d = state.diag;
   d.status = data.status;
+  // The page opens on MTR when the router has it (it does what ping and traceroute do, with loss per hop), unless a tool was
+  // asked for by a button elsewhere (the Routing page, Wake-on-LAN).
+  if (!d.defaulted) {
+    d.defaulted = true;
+    if (!d.autorun && !d.job && d.form.tool === 'ping' && data.status.tools?.mtr) d.form.tool = 'mtr';
+  }
   const result = h('div', { className: 'rt-result-slot' }, ...resultNodes(d));
   d.resultEl = result;
   // The Wake-on-LAN result offers a ping of the host it woke: fill the form in and run it.

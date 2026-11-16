@@ -128,7 +128,9 @@ d start '{"tool":"ping","host":"127.0.0.1","count":1,"size":100,"family":"4","so
 d start '{"tool":"traceroute","host":"127.0.0.1","hops":5,"probes":3,"method":"icmp","family":"4","source":"127.0.0.1"}' > out-diag-variant2.json
 d start '{"tool":"dns","host":"127.0.0.1","type":"PTR"}' > out-diag-variant3.json
 d start '{"tool":"dns","host":"localhost","type":"mx","server":"127.0.0.1"}' > out-diag-variant4.json
-sleep 5
+d start '{"tool":"mtr","host":"127.0.0.1","cycles":3,"method":"tcp","port":80,"source":"127.0.0.1","resolve":true}' > out-diag-variant5.json
+d start '{"tool":"mtr","host":"127.0.0.1","cycles":3,"method":"udp","size":100,"source":"lo"}' > out-diag-variant6.json
+sleep 8
 
 # The certificate check against this router's own HTTPS server (a certificate for its name, so the address does not
 # match), a STARTTLS run against a closed port, the comparison against the router and loopback, and the connectivity check
@@ -150,6 +152,9 @@ ps | grep -cE '[o]penssl s_client|[p]ing -4 -c 2' > out-diag-check2.procs.txt ||
 # mtr against loopback, a traceroute with AS lookups (loopback has no AS, so none is looked up) and a DNS trace of a real name.
 d start '{"tool":"mtr","host":"127.0.0.1","cycles":3}' > out-diag-mtr.start.json
 id=$(idof < out-diag-mtr.start.json); sleep 7; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-mtr.read.json
+d start '{"tool":"mtr","host":"127.0.0.1","cycles":3,"asn":true}' > out-diag-mtrasn.start.json
+id=$(idof < out-diag-mtrasn.start.json); sleep 8; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-mtrasn.read.json
+grep -c "$(printf '\r')" @REMOTE@/jobs/$id/job.sh > out-diag-mtrasn.cr || true
 d start '{"tool":"traceroute","host":"127.0.0.1","hops":3,"probes":1,"asn":true}' > out-diag-asn.start.json
 id=$(idof < out-diag-asn.start.json); sleep 4; d read "{\"id\":\"$id\",\"from\":0}" > out-diag-asn.read.json
 grep -c "$(printf '\r')" @REMOTE@/jobs/$id/job.sh > out-diag-asn.cr || true

@@ -64,6 +64,8 @@ const TYPES = [ 'A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'C
 // How many pings one run may send, and the range of mtr cycles (one probe per hop and second each).
 const MAX_PINGS = 60;
 const MTR_CYCLES = [ 3, 60, 10 ];
+// The packet sizes mtr accepts here, headers included.
+const MTR_SIZE = [ 28, 1400 ];
 // The minutes an iperf3 server may stay up (the page offers these), its default port and the lowest port it may use.
 const IPERF_MINUTES = [ 1, 2, 5, 15, 30 ];
 const IPERF_PORT = 5201;
@@ -140,23 +142,6 @@ function build_ping(a) {
 	}
 	push(argv, a.host);
 	return { argv, limit: count + 10 };
-}
-
-// The argument list of an mtr run: `cycles` rounds of one probe per hop, in raw mode (a line per probe, which the page
-// turns into the live table). Addresses only: a name lookup per hop would slow the first rounds down.
-function build_mtr(a) {
-	let cycles = int_in(a.cycles, MTR_CYCLES[0], MTR_CYCLES[1], MTR_CYCLES[2]);
-	if (cycles == null)
-		return { error: `The number of rounds must be between ${MTR_CYCLES[0]} and ${MTR_CYCLES[1]}.` };
-	if (trim(run('command -v mtr 2>/dev/null') ?? '') == '')
-		return { error: 'The router has no mtr.' };
-	let argv = [ 'mtr', '--raw', '-n', '-c', cycles, '-i', 1, '-G', 2 ];
-	if (a.family == '4' || a.family == '6')
-		push(argv, `-${a.family}`);
-	if (a.method == 'udp')
-		push(argv, '-u');
-	push(argv, a.host);
-	return { argv, limit: cycles + 15 };
 }
 
 //#region iperf3 server
@@ -400,15 +385,16 @@ const WHOIS_AWK = `NF == 0 { if (n) exit; next }
 { n = 1 }
 /^(inetnum|inet6num|netname|country):/ || (/^descr:/ && !d) { if (/^descr:/) d = 1; print }`;
 
-// The script of a traceroute with AS lookups: the trace itself (its output streams as usual, inside a `trace` block), then
+// The script of a traceroute or mtr run with AS lookups: the run itself (its output streams as usual, inside a block named
+// `id`, for `seconds`), then
 // for each public address that answered a TXT lookup of its origin record at Team Cymru (`asn` blocks: the AS number, the
 // prefix and the registry), for the first MAX_WHOIS of those without an origin (an address no AS announces, such as an
 // operator's own infrastructure range) a whois query to RIPE for the registered network name (`net` blocks), then one
 // lookup per distinct AS number for its name (`asname` blocks). `argv` is the
-// validated traceroute command, `tool` dig or kdig.
-function trace_asn_script(tool, argv) {
+// validated traceroute or mtr command, `tool` dig or kdig.
+function trace_asn_script(tool, argv, id, seconds) {
 	let s = PRELUDE;
-	s += `set -f\nblk trace\nrun ${LIMITS.traceroute} ${join(' ', map(argv, (w) => `'${w}'`))}\n`;
+	s += `set -f\nblk ${id}\nrun ${seconds} ${join(' ', map(argv, (w) => `'${w}'`))}\n`;
 	s += `awk '${ASN_AWK}' out > ips.all\nhead -n ${MAX_ASN} ips.all > ips.txt\n: > asns.txt\nnw=0\n`;
 	s += `while read ip rev; do\n  blk asn "$ip"\n  cap a.out 4 ${tool} +short TXT "$rev"\n  rc=$?\n  cat a.out\n  end $rc\n`;
 	s += `  awk -F'|' 'NR == 1 { gsub(/[^0-9]/, "", $1); if ($1 != "") print $1 }' a.out >> asns.txt\n`;
@@ -600,7 +586,67 @@ function build_traceroute(a) {
 	let tool = asn_tool();
 	if (tool == '')
 		return { error: 'Looking up the networks needs dig or kdig, which this router does not have.' };
-	return { script: trace_asn_script(tool, argv), limit: LIMITS.traceroute + MAX_ASN * 2 + MAX_WHOIS * 6, display: join(' ', argv) + ' (with AS lookups)' };
+	return { script: trace_asn_script(tool, argv, 'trace', LIMITS.traceroute), limit: LIMITS.traceroute + MAX_ASN * 2 + MAX_WHOIS * 6, display: join(' ', argv) + ' (with AS lookups)' };
+}
+
+// The argument list of an mtr run: `cycles` rounds of one probe per hop, in raw mode (a line per probe, which the page
+// turns into the live table). Addresses only unless `resolve` is true: a name lookup per hop slows the first rounds down.
+// The method is ICMP (the default), UDP or TCP SYN; a port applies to the last two, a packet size to all but TCP, and a
+// source is an address (-a) or an interface (-I). With `asn` set the run becomes a script that follows it with the AS
+// lookups of the routers that answered, as a traceroute does.
+function build_mtr(a) {
+	let cycles = int_in(a.cycles, MTR_CYCLES[0], MTR_CYCLES[1], MTR_CYCLES[2]);
+	if (cycles == null)
+		return { error: `The number of rounds must be between ${MTR_CYCLES[0]} and ${MTR_CYCLES[1]}.` };
+	let method = a.method == null || a.method == '' ? 'icmp' : a.method;
+	if (index([ 'icmp', 'udp', 'tcp' ], method) < 0)
+		return { error: 'The method must be icmp, udp or tcp.' };
+	// 0 stands for "not given": int_in returns it only for an absent value, and a literal 0 is out of range.
+	let port = int_in(a.port, 1, 65535, 0);
+	if (port == null)
+		return { error: 'The port must be between 1 and 65535.' };
+	if (port != 0 && method == 'icmp')
+		return { error: 'A port needs UDP or TCP probes.' };
+	let size = int_in(a.size, MTR_SIZE[0], MTR_SIZE[1], 0);
+	if (size == null)
+		return { error: `The packet size must be between ${MTR_SIZE[0]} and ${MTR_SIZE[1]} bytes.` };
+	if (size != 0 && method == 'tcp')
+		return { error: 'TCP probes carry no payload, so they have no packet size.' };
+	if (a.resolve != null && a.resolve !== true && a.resolve !== false)
+		return { error: 'Resolving names must be true or false.' };
+	if (a.asn != null && a.asn !== true && a.asn !== false)
+		return { error: 'Looking up the networks must be true or false.' };
+	if (trim(run('command -v mtr 2>/dev/null') ?? '') == '')
+		return { error: 'The router has no mtr.' };
+	let argv = [ 'mtr', '--raw', '-c', cycles, '-i', 1, '-G', 2 ];
+	if (a.resolve !== true)
+		splice(argv, 2, 0, '-n');
+	if (a.family == '4' || a.family == '6')
+		push(argv, `-${a.family}`);
+	if (method == 'udp')
+		push(argv, '-u');
+	else if (method == 'tcp')
+		push(argv, '-T');
+	if (port != 0)
+		push(argv, '-P', port);
+	if (size != 0)
+		push(argv, '-s', size);
+	if (a.source != null && a.source != '') {
+		if (is_address(a.source))
+			push(argv, '-a', a.source);
+		else if (valid_iface(a.source))
+			push(argv, '-I', a.source);
+		else
+			return { error: 'The source must be an address or an interface name.' };
+	}
+	push(argv, a.host);
+	let limit = cycles + 15;
+	if (a.asn !== true)
+		return { argv, limit };
+	let tool = asn_tool();
+	if (tool == '')
+		return { error: 'Looking up the networks needs dig or kdig, which this router does not have.' };
+	return { script: trace_asn_script(tool, argv, 'mtr', limit), limit: limit + MAX_ASN * 2 + MAX_WHOIS * 6, display: join(' ', argv) + ' (with AS lookups)' };
 }
 
 // The DNS trace: the name, a record type and the address family (4 or 6, default 4). It needs kdig, whose output names the

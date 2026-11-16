@@ -22,7 +22,7 @@ export const normMac = text => (isMac(text) ? String(text).toLowerCase().replace
 export const hostOf = (hosts, mac) => (hosts ?? []).find(x => x.mac === normMac(mac)) ?? null;
 
 // The number limits of each field, as the plugin enforces them: [min, max, default].
-const LIMITS = { count: [1, 60, 4], size: [0, 1400, 56], hops: [1, 30, 20], probes: [1, 3, 2], port: [1, 65535, 443], cycles: [3, 60, 10], iperfPort: [1024, 65535, 5201] };
+const LIMITS = { count: [1, 60, 4], size: [0, 1400, 56], hops: [1, 30, 20], probes: [1, 3, 2], port: [1, 65535, 443], cycles: [3, 60, 10], mtrSize: [28, 1400], mtrPort: [1, 65535], iperfPort: [1024, 65535, 5201] };
 
 // The minutes an iperf3 server may run for, as the plugin allows them (the first is the default).
 export const IPERF_MINUTES = [2, 1, 5, 15, 30];
@@ -47,7 +47,7 @@ export const blankForm = () => ({
   tool: 'ping', host: '', family: '', source: '',
   count: String(LIMITS.count[2]), size: String(LIMITS.size[2]),
   hops: String(LIMITS.hops[2]), probes: String(LIMITS.probes[2]), method: 'udp', resolve: '', asn: '1',
-  cycles: String(LIMITS.cycles[2]), mtrMethod: 'icmp',
+  cycles: String(LIMITS.cycles[2]), mtrMethod: 'icmp', mtrSize: '', mtrPort: '',
   type: 'A',
   port: '', sni: '', starttls: '',
   servers: ['router'], extraServer: '', iface: '', wolOther: false,
@@ -110,7 +110,19 @@ export function requestOf(form) {
     if (form.asn === '1') args.asn = true;
   } else if (form.tool === 'mtr') {
     problem = need('cycles', 'The number of rounds');
-    if (form.mtrMethod === 'udp') args.method = 'udp';
+    if (form.mtrMethod === 'udp' || form.mtrMethod === 'tcp') args.method = form.mtrMethod;
+    // The port and the packet size are optional (empty: the tool's own default); the port needs UDP or TCP and TCP has no size.
+    const optional = (field, label, used) => {
+      const t = String(form[field] ?? '').trim();
+      if (!used || t === '') return null;
+      const [lo, hi] = LIMITS[field];
+      if (!/^\d+$/.test(t) || +t < lo || +t > hi) return `${label} must be a whole number from ${lo} to ${hi}.`;
+      args[field === 'mtrPort' ? 'port' : 'size'] = +t;
+      return null;
+    };
+    problem ??= optional('mtrPort', 'The port', Boolean(args.method)) ?? optional('mtrSize', 'The packet size', args.method !== 'tcp');
+    if (form.resolve === '1') args.resolve = true;
+    if (form.asn === '1') args.asn = true;
   } else if (form.tool === 'trace') {
     args.type = form.type;
   } else if (form.tool === 'dns') {
@@ -142,11 +154,8 @@ export function requestOf(form) {
     return { error: 'Choose a tool.' };
   }
   if (problem) return { error: problem };
-  if (form.tool === 'ping' || form.tool === 'traceroute') {
-    if (form.family === '4' || form.family === '6') args.family = form.family;
-    if (source) args.source = source;
-  }
-  if ((form.tool === 'mtr' || form.tool === 'trace') && (form.family === '4' || form.family === '6')) args.family = form.family;
+  if (['ping', 'traceroute', 'mtr', 'trace'].includes(form.tool) && (form.family === '4' || form.family === '6')) args.family = form.family;
+  if (['ping', 'traceroute', 'mtr'].includes(form.tool) && source) args.source = source;
   return { args };
 }
 
@@ -322,7 +331,7 @@ export function outsideBlocks(text) {
 // or a traceroute with AS lookups) in words, or null: the shell's own complaint when the script could not run, or a note
 // that nothing was produced. A job that was stopped or hit its time limit is not a failure of the script.
 export function scriptProblem(job) {
-  const script = ['check', 'compare', 'tls', 'trace'].includes(job.tool) || (job.tool === 'traceroute' && job.asn);
+  const script = ['check', 'compare', 'tls', 'trace'].includes(job.tool) || (['traceroute', 'mtr'].includes(job.tool) && job.asn);
   if (job.running || job.stopped || job.timedOut || !script) return null;
   const stray = outsideBlocks(job.text);
   if (stray.length) return `The job script could not run: ${stray.slice(0, 3).join(' ')}`;

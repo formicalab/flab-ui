@@ -5,7 +5,8 @@ selector, the host, and the options of the tool:
 for ping the count
 (1 to 60), the packet size (0 to 1400), the address family and the interface to send from (a dropdown of the router's
 interfaces, "automatic" by default; the plugin also accepts an address); for traceroute the maximum hops (1 to 30), the probes per hop (1 to 3), UDP or ICMP
-probes, whether to look up host names and networks, family and source; for MTR the rounds (3 to 60) and ICMP or UDP; for
+probes, whether to look up host names and networks, family and source; for MTR the rounds (3 to 60), ICMP, UDP or TCP, a port, a
+packet size, whether to look up host names and networks, family and source; for
 DNS the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and the servers to ask (the router's resolver by default); for the DNS trace the record type and the address family; for
 the certificate check the port, a server name and a STARTTLS
 protocol; for the iperf3 server the time to run, the port and the address to listen on. A tool is offered only when the router has what it needs (the certificate check needs `openssl`,
@@ -43,12 +44,30 @@ again. The form remembers its values while the page is open; Run is disabled for
   addresses of a job; `nc` is needed) and shown as "not announced · NETNAME · country", with the registered range in the
   tooltip; a range RIPE does not manage, or an answer that does not come, leaves "no AS data". The addresses leave the
   router only inside those DNS queries and the whois queries.
-- **MTR:** `mtr --raw` against the host for the chosen rounds (one probe a second per hop; ICMP or UDP). The table fills as
-  the events arrive: per hop the address, loss with a small bar, probes sent, last, average, best, worst, the spread and a
-  sparkline of the delay over time; hops after the first repeated address are cut. Findings in words: whether any probe to
+- **MTR:** `mtr --raw` against the host for the chosen rounds (one probe a second per hop). The page opens on MTR when the
+  router has it (otherwise on Ping), and Traceroute offers a "Use MTR" button that keeps the host. Besides the rounds the
+  form has the method (ICMP, UDP or TCP SYN, which gets through a firewall that only lets web traffic in), a port (TCP and
+  UDP; empty is 80 for TCP), a packet size (28 to 1400 bytes with the headers, empty is mtr's 64; not for TCP, whose SYN
+  packets carry none), "Host names" (off by default; on, mtr resolves each router and the page shows the name above the
+  address), "Networks (AS)", the address family and the source (an address is passed as `-a`, an interface as `-I`).
+  "Networks (AS)" (on by default, when the router has `dig` or `kdig`) turns the job into the same kind of script as a
+  traceroute's: the mtr run is the first block and the lookups of the public addresses that answered follow once it has
+  ended, so each router shows its AS number, organization and country beneath its address. A **route strip** above the
+  table groups the hops by network, from the router to the destination: one card per network (AS number, organization,
+  country, the hops inside it, the delay it adds and a bar of its share of the whole delay), a dashed card for hops that
+  never answer between two networks, and an address no AS announces under the registry's network name. A card turns amber when loss starts inside it. A
+  delay jump is then placed in words: at the handoff between two networks or inside one (25 ms or more and at least doubling), which
+  replaces the hop-to-hop sentence; a network that adds half of the delay or more is named (paths of 20 ms or more); and loss
+  that reaches the destination is placed in the network where it starts, with what that network usually is (the first after the
+  router is generally the ISP's access link, the last is the destination's own). Once the run has ended, **Copy report**
+  puts the run on the clipboard as plain text for a support ticket: the host, the command and the time, an aligned table (address,
+  name, network, loss, sent, last, average, best, worst, spread; `???` for a hop that never answers), the networks crossed with the
+  delay each adds, and the findings. The table fills in as the events arrive: per hop the address, loss with a small bar, probes sent,
+  last, average, best, worst, the spread and a sparkline of the delay over time; hops after the first repeated address are cut. Findings in words: whether any probe to
   the destination was lost, a middle hop that shows loss while the later hops do not (it only limits its own replies, so the
   path is fine; shown in green, not as a fault), a destination that never answered, and a jump in delay between two hops. A probe
-  still in flight is not counted as lost while the run goes on.
+  still in flight is not counted as lost while the run goes on. mtr follows one path per run, so a hop served by several
+  routers shows only one of them (Traceroute lists them all); the `-I` option needs mtr 0.94 or newer.
 - **DNS lookup:** asks the same question of one server or of up to six. The server list offers the router's own resolver
   (the default), the upstream resolvers the router was given (read from `resolv.conf.auto`, loopback left out), Cloudflare,
   Google and Quad9, and a field for one more of your choice. With **one server** the result shows how it went (the number
@@ -128,10 +147,10 @@ again. The form remembers its values while the page is open; Run is disabled for
 
 `flab.diag` runs the tools detached under `timeout -k 2`, with a bounded FIFO output pump and exit status file,
 under `/tmp/flab-diag/<id>/`: a ping may run its count plus 10 seconds, a traceroute 60 (with the AS lookups up to 108 more),
-MTR its rounds plus 15, a DNS trace 60, a DNS lookup of one server 15, a certificate check 25, a lookup of several servers
+MTR its rounds plus 15 (with AS lookups up to 108 more), a DNS trace 60, a DNS lookup of one server 15, a certificate check 25, a lookup of several servers
 (the plugin's `compare` tool) 60, the connectivity check 75 and the iperf3 server the minutes asked for. The check, the
 multi-server lookup, the certificate check,
-the DNS trace and a traceroute with AS lookups are small shell scripts (`job.sh`,
+the DNS trace and a traceroute or MTR run with AS lookups are small shell scripts (`job.sh`,
 written with LF line endings only, because BusyBox sh rejects a carriage return) that print their output in blocks
 (`### BEGIN <step> <uptime> <detail>` … `### END <exit code> <uptime>`), which the page
 splits and reads; a block without an END line is still running. Every command in a script runs under its own `timeout`, and
@@ -144,7 +163,8 @@ The browser independently caps retained text at 256 KiB, so an older or incompat
 Everything that reaches the shell is
 validated: the tool, the record type and the STARTTLS protocol come from allow-lists, the host, the server name and the DNS
 servers are made of letters, digits and `. : _ -` and do not start with `-` (they could be taken for an option), the port is
-clamped to 1 to 65535 (1024 to 65535 for the iperf3 server), a `compare` request takes one to six servers that are each such a name (or `router`), the source is such
+clamped to 1 to 65535 (1024 to 65535 for the iperf3 server), the MTR method comes from an allow-list (a port needs UDP or TCP, a packet size
+does not go with TCP), a `compare` request takes one to six servers that are each such a name (or `router`), the source is such
 an address or an interface name, the iperf3 time must be one of the offered minutes and the address to listen on one of the router's own addresses,
 the numbers are clamped to their ranges (a literal 0 is a number, not "absent"), the name-lookup and network-lookup switches must be real
 booleans, the argument list is built from those values

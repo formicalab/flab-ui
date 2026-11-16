@@ -83,7 +83,13 @@ function script(a) {
     if (h === 'v6.example') return { chunks: reveal(wrap(a.resolve ? TRACE6_NAMES : TRACE6), 3), exit: 0 };
     return { chunks: reveal(wrap(a.resolve ? TRACE_NAMES : TRACE), 4), exit: 0 };
   }
-  if (a.tool === 'mtr') return { chunks: reveal(fx('mtr.txt'), 5), exit: 0 };
+  if (a.tool === 'mtr') {
+    // With the AS lookups on (the default) the job is a script: the run in one block, then the lookups of the routers that
+    // answered (the same path as the traceroute fixture's).
+    const asnTail = fx('traceroute-asn.txt').slice(fx('traceroute-asn.txt').indexOf('### BEGIN asn'));
+    const run = fx('mtr.txt') + (a.resolve ? 'd 0 gw.example.net\nd 6 one.one.one.one\n' : '');
+    return { chunks: reveal(a.asn ? `### BEGIN mtr 1.0 \n${run}\n### END 0 2.0\n${asnTail}` : run, 5), exit: 0 };
+  }
   if (a.tool === 'trace') {
     const sample = { 'www.ibm.com': 'trace-ibm.txt', 'www.github.com': 'trace-github.txt', 'nope-flab-test.example.com': 'trace-nxdomain.txt' }[h] ?? (a.family === '6' ? 'trace-v6.txt' : 'trace-example.txt');
     return { chunks: reveal(fx(sample), 6), exit: 0 };
@@ -123,7 +129,7 @@ function answer(body) {
         compare: () => `${mock.dnsTool} ${args.host} ${args.type} @${args.servers.join(' @')}`,
         tls: () => `openssl s_client -connect ${args.host}:${args.port}${args.starttls ? ` -starttls ${args.starttls}` : ''}`,
         check: () => `connectivity check (${args.host ?? 'example.com'})`,
-        mtr: () => `mtr --raw -n -c ${args.cycles} -i 1 -G 2 ${args.host}`,
+        mtr: () => ['mtr --raw', ...(args.resolve ? [] : ['-n']), `-c ${args.cycles} -i 1 -G 2`, ...(args.family ? [`-${args.family}`] : []), ...(args.method ? [{ udp: '-u', tcp: '-T' }[args.method]] : []), ...(args.port ? [`-P ${args.port}`] : []), ...(args.size ? [`-s ${args.size}`] : []), ...(args.source ? [`${/^[\d.]+$|:/.test(args.source) ? '-a' : '-I'} ${args.source}`] : []), args.host].join(' ') + (args.asn ? ' (with AS lookups)' : ''),
         trace: () => `DNS trace ${args.host} ${args.type ?? 'A'}`,
         iperf: () => `iperf3 -s -p ${args.port ?? 5201}${args.bind ? ` -B ${args.bind}` : ''} (stops after ${args.minutes} minute${args.minutes === 1 ? '' : 's'})`,
       }[args.tool]();
@@ -226,7 +232,9 @@ check((await page.locator('.nav-pane a.active').innerText()).trim() === 'Toolbox
 const navItems = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
 check(navItems.indexOf('Toolbox') === navItems.indexOf('Logs') - 1 && navItems.indexOf('Toolbox') > 0, 'it sits just above Logs in the navigation', navItems.join(' | '));
 check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,TLS certificate,iperf3 server,Wake-on-LAN', 'the Toolbox offers the connectivity check, ping, traceroute, one DNS lookup (also for comparing servers), the certificate check and Wake-on-LAN');
-check(await tool('Ping').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Pings').locator('input').inputValue() === '4' && await fieldOf('Size (bytes)').locator('input').inputValue() === '56' && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'ping is the default tool, with its defaults, and nothing is shown before the first run');
+check(await tool('MTR').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Rounds').locator('input').inputValue() === '10' && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'a router that has mtr opens on MTR, with its defaults, and nothing is shown before the first run');
+await tool('Ping').click();
+check(await tool('Ping').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Pings').locator('input').inputValue() === '4' && await fieldOf('Size (bytes)').locator('input').inputValue() === '56' && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'ping has its defaults');
 check((await fieldOf('From').locator('option').evaluateAll(o => o.map(x => x.value))).join() === ',br-lan,lo,wan' && await fieldOf('From').locator('select').inputValue() === '', 'the router\'s interfaces are offered as sources in a dropdown, automatic being the default');
 await shot('empty');
 
@@ -519,15 +527,55 @@ await fieldOf('Networks (AS)').locator('select').selectOption('1');
 console.log('\n== mtr ==');
 await tool('MTR').click(); await host().fill('1.1.1.1');
 check(await fieldOf('Rounds').locator('input').inputValue() === '10' && await fieldOf('Method').locator('select').inputValue() === 'icmp', 'mtr offers the number of rounds (10) and ICMP by default');
+check(await fieldOf('Port').count() === 0 && await fieldOf('Size (bytes)').locator('input').inputValue() === '' && await fieldOf('Host names').locator('select').inputValue() === '' && await fieldOf('Networks (AS)').locator('select').inputValue() === '1' && await fieldOf('From').locator('select').inputValue() === '' && await fieldOf('Address family').count() === 1, 'with ICMP there is no port; the size is empty, names are off, the networks are looked up, and the family and the source are offered');
+await fieldOf('Networks (AS)').locator('select').selectOption('');
 await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'mtr', host: '1.1.1.1', cycles: 10 }), 'mtr sends the host and the rounds', j(mock.starts.at(-1)));
 const mrows = await page.locator('.rt-mtrtable tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 check(mrows.length === 7 && /^1 37\.179\.98\.1 0% 6 /.test(mrows[0]) && /^2 no reply no reply 6 /.test(mrows[1]) && /^5 185\.210\.48\.77 33\.3% 6 /.test(mrows[4]) && /^7 1\.1\.1\.1 0% 6 /.test(mrows[6]) && await page.locator('.rt-mtrtable tr.rt-hit').count() === 1, 'seven hops with loss, the silent ones marked and the destination highlighted', mrows.join(' | '));
 check(/No probe to the destination was lost/.test(await page.locator('.rt-findings').innerText()) && /limits its own replies/.test(await page.locator('.rt-findings').innerText()) && await page.locator('.rt-loss').count() === 5, 'the findings say the destination lost nothing and that hop 5 only limits its own replies');
+check(await page.locator('.rt-asn').count() === 0 && await page.locator('.rt-route').count() === 0 && await page.locator('.rt-actions button:has-text("Copy report")').count() === 1, 'with the lookups off no network is shown, but the finished run can still be copied as a report');
 await shot('mtr');
 await fieldOf('Rounds').locator('input').fill('2'); await runBtn().click();
 check(/rounds must be a whole number from 3 to 60/.test(await page.locator('.rt-error').innerText()), 'a number of rounds outside its limits is refused', await page.locator('.rt-error').innerText());
 await fieldOf('Rounds').locator('input').fill('10');
+
+console.log('\n== mtr: networks, names, TCP, size and source ==');
+await host().fill('asn.example');
+await fieldOf('Networks (AS)').locator('select').selectOption('1'); await runBtn().click(); await waitDone();
+const masn = await page.locator('.rt-mtrtable tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+check(mock.starts.at(-1).asn === true && /^1 37\.179\.98\.1 AS30722 Fastweb SpA · IT 0% /.test(masn[0]) && /^4 185\.210\.48\.76 no AS data /.test(masn[3]) && /^7 1\.1\.1\.1 AS13335 Cloudflare, Inc\./.test(masn[6]) && masn.length === 7, 'each router that answered is followed by its network, as in a traceroute, and the table is still complete', masn.join(' | '));
+const strip = (await page.locator('.rt-route > *').allInnerTexts()).map(x => x.replace(/\s+/g, ' ').trim());
+check(strip.length === 5 && /^AS30722 Fastweb SpA · IT hop 1 · \+\d/.test(strip[0]) && strip[1] === '→' && /^no reply hops 2–5$/.test(strip[2]) && /^AS13335 Cloudflare, Inc\. · .* hops 6–7$/.test(strip[4]) && await page.locator('.rt-route-card.gap').count() === 1 && await page.locator('.rt-aspath').count() === 0, 'the route strip groups the hops by network: the ISP, a stretch that never answers, and Cloudflare, with the delay each adds', strip.join(' | '));
+check(/mtr --raw -n -c 10 .* \(with AS lookups\)/.test(await page.locator('.rt-result-slot .card-header .sub').innerText()) && await page.locator('.rt-actions button:has-text("Copy report")').count() === 1, 'the header says the lookups ran, and the finished run offers a copy of the report');
+await shot('mtr-asn');
+await fieldOf('Networks (AS)').locator('select').selectOption('');
+await fieldOf('Host names').locator('select').selectOption('1'); await runBtn().click(); await waitDone();
+const mnames = await page.locator('.rt-mtrtable tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
+check(mock.starts.at(-1).resolve === true && /^1 gw\.example\.net 37\.179\.98\.1 /.test(mnames[0]) && /^7 one\.one\.one\.one 1\.1\.1\.1 /.test(mnames[6]) && /^4 185\.210\.48\.76 /.test(mnames[3]), 'with names asked for, a hop mtr could name shows the name above its address', mnames.join(' | '));
+await fieldOf('Host names').locator('select').selectOption('');
+await fieldOf('Method').locator('select').selectOption('tcp');
+check(await fieldOf('Port').locator('input').getAttribute('placeholder') === '80' && await fieldOf('Size (bytes)').count() === 0, 'TCP offers a port (80 by default) and no packet size');
+await fieldOf('Port').locator('input').fill('443'); await fieldOf('From').locator('select').selectOption('lo'); await runBtn().click(); await waitDone();
+check(j(mock.starts.at(-1)) === j({ tool: 'mtr', host: 'asn.example', cycles: 10, method: 'tcp', port: 443, source: 'lo' }) && /mtr --raw -n -c 10 -i 1 -G 2 -T -P 443 -I lo asn\.example$/.test(await page.locator('.rt-result-slot .card-header .sub').innerText()), 'TCP sends the port and the interface as the source', j(mock.starts.at(-1)));
+await fieldOf('Port').locator('input').fill('70000'); await runBtn().click();
+check(/port must be a whole number from 1 to 65535/.test(await page.locator('.rt-error').innerText()), 'a port outside 1 to 65535 is refused', await page.locator('.rt-error').innerText());
+await fieldOf('Port').locator('input').fill('');
+await fieldOf('Method').locator('select').selectOption('udp');
+await fieldOf('Size (bytes)').locator('input').fill('27'); await runBtn().click();
+check(/packet size must be a whole number from 28 to 1400/.test(await page.locator('.rt-error').innerText()), 'a packet size outside 28 to 1400 is refused', await page.locator('.rt-error').innerText());
+await fieldOf('Size (bytes)').locator('input').fill('100'); await runBtn().click(); await waitDone();
+check(j(mock.starts.at(-1)) === j({ tool: 'mtr', host: 'asn.example', cycles: 10, method: 'udp', size: 100, source: 'lo' }), 'UDP sends the size and no port when it is empty', j(mock.starts.at(-1)));
+await fieldOf('Method').locator('select').selectOption('icmp');
+await fieldOf('Size (bytes)').locator('input').fill(''); await fieldOf('From').locator('select').selectOption('');
+await fieldOf('Networks (AS)').locator('select').selectOption('1');
+
+console.log('\n== the hint under traceroute ==');
+await tool('Traceroute').click();
+check(/MTR sends the same probes for several rounds/.test(await page.locator('.rt-diag .rt-note').innerText()), 'traceroute points to MTR when the router has it');
+await host().fill('1.1.1.1');
+await page.locator('.rt-note button:has-text("Use MTR")').click();
+check(await tool('MTR').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '1.1.1.1', 'a click on it switches to MTR and keeps the host');
 
 console.log('\n== DNS trace ==');
 await tool('DNS trace').click(); await host().fill('www.example.com');

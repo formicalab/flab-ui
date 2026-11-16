@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Toolbox
+
+- MTR does what Traceroute does: the form gains TCP SYN probes with a port (for a firewall that only passes web traffic), a
+  packet size, a source (an address or an interface), host names and the **Networks (AS)** lookup. Each router shows its AS
+  number, organization and country.
+- MTR shows the route as a strip of networks: one card per AS with the hops inside it, the delay it adds and its share of the
+  whole delay; loss starting inside a network turns its card amber. The findings place a delay jump at the handoff between two
+  networks or inside one, name the network that adds most of the delay, and say in which network loss that reaches the
+  destination starts (and whether that is the ISP's side, the middle or the destination's own).
+- **Copy report** on a finished MTR run copies it as plain text (table with networks, networks crossed, findings) for a support
+  ticket.
+- The Toolbox opens on MTR when the router has `mtr`, and Traceroute offers a "Use MTR" button that keeps the host. Ping and
+  Traceroute stay as they are: they need nothing installed, and Traceroute still lists every router of a load-balanced hop.
+
 ## 0.1.6 - 2026-11-15
 
 ### Ethernet

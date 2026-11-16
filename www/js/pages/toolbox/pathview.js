@@ -1,11 +1,12 @@
 // The path tools' views: the live mtr table (loss, delay and a trend for every hop, with plain-language findings) and the
 // line that names the network of a traceroute hop. The meaning of the output comes from pathmodel.js; the views are repainted
 // every time new output arrives, so the table fills in and the figures move while mtr runs.
+import { copyButton } from '../../core/clipboard.js';
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, mono, muted, sparkline } from '../../core/ui.js';
 import { fmtMs } from './diagmodel.js';
-import { asName, asPath, lossKind, parseMtr, pathNotes } from './pathmodel.js';
+import { asName, asPath, lossKind, mtrReport, networkNotes, networkSegments, parseAsn, parseMtr, pathNotes } from './pathmodel.js';
 
 // The cell of a hop's loss: the percentage with a small bar, in the color of its kind. A silent hop shows "no reply" and a
 // rate-limited one says why its loss is not a fault.
@@ -21,16 +22,24 @@ function lossCell(hop, hops) {
 // A number of milliseconds, or a dash.
 const ms = v => (v == null ? muted('–') : fmtMs(v));
 
-// The mtr result: the findings, then a row per hop with its loss, last, average, best and worst delay and a trend chart.
-// Without any hop yet it says it is waiting for the first.
+// The mtr result: the findings, the networks the path crosses, then a row per hop with its loss, last, average, best and
+// worst delay and a trend chart. Without any hop yet it says it is waiting for the first. With AS lookups the network of each
+// router shows under its address, the route strip groups the hops by network with the delay each adds, the findings place
+// delay and loss in a network, and a finished run can be copied as a plain-text report.
 export function mtrBody(job) {
   const m = parseMtr(job.text, job.running);
   if (m.error && !m.hops.length) return h('div', { className: 'rt-error' }, icon('x-circle'), `mtr failed: ${m.error}`);
-  const notes = pathNotes(m.hops, job.running);
+  const asn = job.asn ? parseAsn(job.text) : null;
+  const segments = asn?.any ? networkSegments(m.hops, asn) : [];
+  const netNotes = networkNotes(segments, m.hops, job.running);
+  // A delay jump placed in a network replaces the one that only names two hops.
+  const notes = [...pathNotes(m.hops, job.running).filter(n => !(n.kind === 'jump' && netNotes.some(x => x.kind === 'jump'))), ...netNotes];
   const dest = m.hops.at(-1);
   const rows = m.hops.map(hop => h('tr', { className: hop === dest && m.reached ? 'rt-hit' : '' },
     h('td', { className: 'num mono' }, String(hop.n)),
-    h('td', {}, hop.addr ? mono(hop.addr) : muted('no reply'), hop.addrs.length > 1 ? muted(` +${hop.addrs.length - 1}`) : null),
+    h('td', {}, hop.addr ? h('div', { className: 'rt-hops' }, h('div', { className: 'rt-router' },
+      hop.name ? [h('span', { className: 'rt-rname', title: hop.name }, hop.name), h('span', { className: 'rt-raddr mono' }, hop.addr, hop.addrs.length > 1 ? muted(` +${hop.addrs.length - 1}`) : null)] : h('span', {}, mono(hop.addr), hop.addrs.length > 1 ? muted(` +${hop.addrs.length - 1}`) : null),
+      asn ? asnLine(asn, hop.addr) : null)) : muted('no reply')),
     h('td', {}, lossCell(hop, m.hops)),
     h('td', { className: 'num' }, String(hop.sent)),
     h('td', { className: 'num' }, ms(hop.last)), h('td', { className: 'num' }, ms(hop.avg)), h('td', { className: 'num' }, ms(hop.best)), h('td', { className: 'num' }, ms(hop.worst)),
@@ -38,9 +47,31 @@ export function mtrBody(job) {
     h('td', {}, hop.history.length > 2 ? sparkline([{ values: hop.history, cls: 'rx' }], { width: 110, height: 24 }) : null)));
   return h('div', { className: 'rt-mtr' },
     notes.length ? h('div', { className: 'rt-findings' }, notes.map(n => h('div', { className: `rt-finding ${n.level}` }, icon({ ok: 'check-circle', warn: 'exclamation-triangle', bad: 'x-circle' }[n.level]), n.text))) : null,
+    routeStrip(segments, asn?.pending),
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-trace rt-mtrtable' },
       h('thead', {}, h('tr', {}, ['Hop', 'Router', 'Loss', 'Sent', 'Last', 'Average', 'Best', 'Worst', 'Spread', 'Delay over time'].map((c, i) => h('th', { className: [0, 3, 4, 5, 6, 7, 8].includes(i) ? 'num' : '' }, c)))),
-      h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 10, className: 'muted' }, job.running ? 'Waiting for the first hop…' : 'No hops'))))));
+      h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 10, className: 'muted' }, job.running ? 'Waiting for the first hop…' : 'No hops'))))),
+    !job.running && m.hops.length ? h('div', { className: 'rt-actions rt-mtr-actions' }, copyButton(mtrReport({ host: job.host, command: job.command, when: new Date(job.t0).toLocaleString(), hops: m.hops, asn, segments, notes }), 'Copy report')) : null);
+}
+
+// The route strip: one card per network the path crosses, from the router to the destination, with the hops inside it, the
+// delay it adds and a bar of its share of the whole delay. A card turns amber when loss starts inside it; hops that never
+// answer between two networks are a dashed card of their own. Null until a hop has network data. `pending` says lookups
+// are still running.
+function routeStrip(segments, pending) {
+  if (!segments.some(s => !s.gap)) return null;
+  const total = Math.max(1, ...segments.map(s => s.endMs ?? 0));
+  const range = s => (s.first === s.last ? `hop ${s.first}` : `hops ${s.first}–${s.last}`);
+  const cards = segments.flatMap((s, i) => {
+    const arrow = i ? [h('span', { className: 'rt-route-arrow' }, '→')] : [];
+    if (s.gap) return [...arrow, h('div', { className: 'rt-route-card gap', title: 'These routers never answer, so their network is unknown' }, h('span', { className: 'muted' }, 'no reply'), h('span', { className: 'rt-route-sub' }, range(s)))];
+    const tip = [s.prefix, s.registry, s.short, s.hops.map(x => x.addr).filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+    return [...arrow, h('div', { className: `rt-route-card ${s.loss ? 'lossy' : ''}`, title: tip },
+      h('div', { className: 'rt-route-name' }, s.unannounced ? muted('not announced') : badge(`AS${s.asn}`, 'info'), ' ', h('strong', {}, s.unannounced ? s.netname : s.org ?? s.short ?? ''), s.country ? h('span', { className: 'muted' }, ` · ${s.country}`) : null),
+      h('div', { className: 'rt-route-sub' }, range(s), s.addMs >= 0.05 ? ` · +${fmtMs(s.addMs)}` : '', s.loss ? h('span', { className: 'rt-route-loss' }, ` · ${s.loss.pct}% loss`) : null),
+      s.addMs >= 0.05 ? h('span', { className: 'rt-route-bar' }, h('i', { style: `width:${Math.max(3, s.addMs / total * 100).toFixed(0)}%` })) : null)];
+  });
+  return h('div', { className: 'rt-route' }, cards, pending ? muted('looking up…') : null);
 }
 
 // The line under a traceroute hop's address that names its network: the AS number with the organization and country; for

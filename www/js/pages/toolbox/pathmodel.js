@@ -5,7 +5,7 @@ import { parseBlocks } from './diagmodel.js';
 //#region mtr
 
 // What `mtr --raw` has printed so far as one row per hop, in the order of the hops.
-//   { hops: [{ n, addr, addrs, sent, recv, lossPct, last, avg, best, worst, stdev, history }], reached, error }
+//   { hops: [{ n, addr, addrs, name, sent, recv, lossPct, last, avg, best, worst, stdev, history }], reached, error }
 // mtr prints a line per event: `x <hop> <seq>` when a probe is sent, `h <hop> <address>` when a hop is first seen (and again
 // with each reply), `d <hop> <name>` for a name and `p <hop> <microseconds> <seq>` for a reply. Hops are numbered from 0.
 // The last unanswered probe of a hop is still in flight while the run goes on, so it is not counted as lost until the run
@@ -16,13 +16,14 @@ export function parseMtr(text, running = false) {
   let error = null;
   // The record of hop `i` (0-based), created on first use.
   const hop = i => {
-    if (!hops.has(i)) hops.set(i, { n: i + 1, addrs: [], sent: 0, recv: 0, sum: 0, sumSq: 0, last: null, best: null, worst: null, history: [], answered: new Set(), lastSeq: null });
+    if (!hops.has(i)) hops.set(i, { n: i + 1, addrs: [], name: null, sent: 0, recv: 0, sum: 0, sumSq: 0, last: null, best: null, worst: null, history: [], answered: new Set(), lastSeq: null });
     return hops.get(i);
   };
   for (const line of String(text ?? '').split('\n')) {
     const p = line.trim().split(/\s+/);
     if (p[0] === 'x' && p.length >= 3) { const h = hop(+p[1]); h.sent++; h.lastSeq = p[2]; }
     else if (p[0] === 'h' && p.length >= 3) { const h = hop(+p[1]); if (!h.addrs.includes(p[2])) h.addrs.push(p[2]); }
+    else if (p[0] === 'd' && p.length >= 3) { const h = hop(+p[1]); h.name ??= p[2]; }
     else if (p[0] === 'p' && p.length >= 4) {
       const h = hop(+p[1]);
       const ms = +p[2] / 1000;
@@ -47,7 +48,7 @@ export function parseMtr(text, running = false) {
     const pending = running && h.lastSeq != null && !h.answered.has(h.lastSeq) ? 1 : 0;
     const counted = h.sent - pending;
     return {
-      n: h.n, addr: h.addrs[0] ?? null, addrs: h.addrs, sent: h.sent, recv: h.recv,
+      n: h.n, addr: h.addrs[0] ?? null, addrs: h.addrs, name: h.name && h.name !== h.addrs[0] ? h.name : null, sent: h.sent, recv: h.recv,
       lossPct: counted > 0 ? Math.round((counted - h.recv) / counted * 1000) / 10 : null,
       last: h.last, avg: h.recv ? h.sum / h.recv : null, best: h.best, worst: h.worst,
       stdev: h.recv > 1 ? Math.sqrt(Math.max(0, h.sumSq / h.recv - (h.sum / h.recv) ** 2)) : null,
@@ -86,7 +87,7 @@ export function pathNotes(hops, running) {
   for (const h of hops) if (lossKind(h, hops) === 'limited') notes.push({ level: 'ok', text: `Hop ${h.n} (${h.addr}) shows ${h.lossPct}% loss but later hops do not: it limits its own replies, so the path is fine.` });
   for (let i = 1; i < answering.length; i++) {
     const a = answering[i - 1], b = answering[i];
-    if (b.avg - a.avg >= 25 && b.avg >= 2 * a.avg) { notes.push({ level: 'warn', text: `The delay rises by ${Math.round(b.avg - a.avg)} ms between hop ${a.n} and hop ${b.n} (${b.addr}).` }); break; }
+    if (b.avg - a.avg >= 25 && b.avg >= 2 * a.avg) { notes.push({ level: 'warn', kind: 'jump', text: `The delay rises by ${Math.round(b.avg - a.avg)} ms between hop ${a.n} and hop ${b.n} (${b.addr}).` }); break; }
   }
   return notes;
 }
@@ -147,12 +148,12 @@ export function asName(name) {
 }
 
 // The networks a path crosses, in order: one entry per run of hops in the same autonomous system, taken from the first
-// router of each hop that has AS data. `hops` are parseTraceroute's hops, `asn` is parseAsn's result.
+// router of each hop that has AS data. `hops` are parseTraceroute's or parseMtr's hops, `asn` is parseAsn's result.
 //   [{ asn, name, country }]
 export function asPath(hops, asn) {
   const out = [];
   for (const hop of hops) {
-    const e = hop.routers.map(r => asn.byAddr.get(r.addr)).find(x => x?.asn);
+    const e = (hop.routers ?? hop.addrs.map(addr => ({ addr }))).map(r => asn.byAddr.get(r.addr)).find(x => x?.asn);
     if (!e) continue;
     if (out.at(-1)?.asn !== e.asn) {
       const n = asName(e.name);
@@ -160,6 +161,135 @@ export function asPath(hops, asn) {
     }
   }
   return out;
+}
+
+//#endregion
+
+//#region Networks along the path
+
+// The network a hop's first address belongs to, as a key: "AS<n>" for an address an AS announces, "net:<name>" for one that
+// no AS announces but the registry lists under a network name, null for a hop with neither (silent, or not looked up).
+function networkKey(hop, asn) {
+  const e = hop.addr ? asn.byAddr.get(hop.addr) : null;
+  if (e?.asn) return `AS${e.asn}`;
+  if (e?.net?.netname) return `net:${e.net.netname}`;
+  return null;
+}
+
+// How a segment is named in words: "AS30722 Fastweb SpA", "VODAFONE-IT (not announced)" or "no reply".
+export function segmentLabel(s) {
+  if (s.gap) return 'no reply';
+  if (s.unannounced) return `${s.netname} (not announced)`;
+  return `AS${s.asn}${s.org ? ` ${s.org}` : ''}`;
+}
+
+// The hops of an mtr table grouped into the networks the path crosses, in order, with the delay each network adds.
+//   [{ key, gap, unannounced, asn, org, short, country, netname, prefix, registry, hops, first, last, addMs, entryMs, innerMs,
+//      prevMs, startMs, endMs, loss: { pct, hop } | null }]
+// Consecutive hops of the same network form one segment. A hop with no network data (it never answers, or was not looked
+// up) between two hops of the same network belongs to it; between different networks it forms a `gap` segment of its own,
+// because there is no telling which side it is on. `addMs` is how much later the segment's last answering hop is than the
+// last answering hop before it (never negative, as the averages jitter): the delay the network adds. `entryMs` is the part of
+// it at the first answering hop (the handoff into the network) and `innerMs` the rest (inside the network). `endMs` is the
+// average delay at the segment's last answering hop. `loss` is the first hop whose loss is real (reaches the destination).
+export function networkSegments(hops, asn) {
+  const keys = hops.map(h => networkKey(h, asn));
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i] != null) continue;
+    let j = i;
+    while (j < keys.length && keys[j] == null) j++;
+    const before = i > 0 ? keys[i - 1] : null, after = j < keys.length ? keys[j] : null;
+    if (before != null && before === after) for (let k = i; k < j; k++) keys[k] = before;
+    i = j;
+  }
+  const segments = [];
+  hops.forEach((hop, i) => {
+    const last = segments.at(-1);
+    if (last && last.key === keys[i]) last.hops.push(hop);
+    else segments.push({ key: keys[i], hops: [hop] });
+  });
+  let prev = 0;
+  return segments.map(s => {
+    const e = s.key ? asn.byAddr.get(s.hops.find(h => h.addr && networkKey(h, asn) === s.key)?.addr) : null;
+    const name = asName(e?.name);
+    const answering = s.hops.filter(h => h.avg != null);
+    let addMs = null, entryMs = null, innerMs = null, endMs = null, startMs = null;
+    const prevMs = prev;
+    if (answering.length) {
+      const first = answering[0], end = answering.at(-1);
+      entryMs = Math.max(0, first.avg - prev);
+      innerMs = Math.max(0, end.avg - first.avg);
+      addMs = Math.max(0, end.avg - prev);
+      startMs = first.avg;
+      endMs = end.avg;
+      prev = end.avg;
+    }
+    const bad = s.hops.find(h => ['warning', 'danger'].includes(lossKind(h, hops)));
+    return {
+      ...s, gap: s.key == null, unannounced: Boolean(s.key?.startsWith('net:')),
+      asn: e?.asn ?? null, org: name.org, short: name.short, country: e?.country ?? e?.net?.country ?? null,
+      netname: e?.net?.netname ?? null, prefix: e?.prefix ?? null, registry: e?.registry ?? null,
+      first: s.hops[0].n, last: s.hops.at(-1).n, addMs, entryMs, innerMs, prevMs, startMs, endMs,
+      loss: bad ? { pct: bad.lossPct, hop: bad.n } : null,
+    };
+  });
+}
+
+// What the path says in terms of networks: [{ level, kind, text }]. A jump in delay is placed at the handoff between two
+// networks or inside one; most of the delay being added by one network is named; and loss that reaches the destination
+// is placed in the network where it starts, with what that network usually is (the first one after the router is generally
+// the ISP's, the last is the destination's own). Nothing is said while the run goes on, because the figures still move.
+// A `jump` note replaces the hop-level one of pathNotes.
+export function networkNotes(segments, hops, running) {
+  const notes = [];
+  const real = segments.filter(s => !s.gap);
+  if (running || !real.length) return notes;
+  const total = Math.max(0, ...segments.map(s => s.endMs ?? 0));
+  real.forEach(s => {
+    const index = real.indexOf(s);
+    if (index > 0 && s.entryMs >= 25 && s.startMs >= 2 * s.prevMs) {
+      const from = real[index - 1];
+      notes.push({ level: 'warn', kind: 'jump', text: `The delay rises by ${Math.round(s.entryMs)} ms where the path passes from ${segmentLabel(from)} to ${segmentLabel(s)} (hop ${from.last} to hop ${s.first}).` });
+    }
+    if (s.innerMs >= 25 && s.endMs >= 2 * s.startMs) {
+      notes.push({ level: 'warn', kind: 'jump', text: `The delay rises by ${Math.round(s.innerMs)} ms inside ${segmentLabel(s)} (hops ${s.first} to ${s.last}).` });
+    }
+  });
+  if (real.length > 1 && total >= 20) {
+    const top = real.reduce((a, b) => ((b.addMs ?? 0) > (a.addMs ?? 0) ? b : a));
+    if (top.addMs >= total / 2) notes.push({ level: 'ok', kind: 'share', text: `${Math.round(top.addMs / total * 100)}% of the delay (${Math.round(top.addMs)} of ${Math.round(total)} ms) is added in ${segmentLabel(top)}.` });
+  }
+  const lossy = real.find(s => s.loss);
+  const dest = hops.at(-1);
+  if (lossy && dest?.recv > 0 && dest.lossPct > 0) {
+    const where = lossy === real[0] ? 'the first network after the router, usually the ISP\'s access link' : lossy === real.at(-1) ? 'the destination\'s own network' : 'a network between the ISP and the destination';
+    notes.push({ level: lossy.loss.pct >= 10 ? 'bad' : 'warn', kind: 'loss', text: `Loss of ${lossy.loss.pct}% starts at hop ${lossy.loss.hop} in ${segmentLabel(lossy)} and reaches the destination (${dest.lossPct}%). That is ${where}.` });
+  }
+  return notes;
+}
+
+// The plain-text report of an mtr run, for a support ticket or a chat: the host, the command and the time, one line per hop
+// (address, name, network, loss and delays), the networks crossed with the delay each adds, and the findings in words.
+// `asn` and `segments` may be empty; `when` is the start time already formatted.
+export function mtrReport({ host, command, when, hops, asn, segments, notes }) {
+  const ms = v => (v == null ? '-' : v.toFixed(1));
+  const network = hop => {
+    const e = hop.addr ? asn?.byAddr.get(hop.addr) : null;
+    if (e?.asn) return `AS${e.asn} ${asName(e.name).org ?? ''}${e.country ? ` (${e.country})` : ''}`.trim();
+    if (e?.net) return `${e.net.netname} (not announced${e.net.country ? `, ${e.net.country}` : ''})`;
+    return '';
+  };
+  const rows = hops.map(h => [String(h.n), h.addr ? `${h.addr}${h.name ? ` (${h.name})` : ''}` : '???', network(h), h.lossPct == null ? '-' : `${h.lossPct}%`, String(h.sent), ms(h.last), ms(h.avg), ms(h.best), ms(h.worst), ms(h.stdev)]);
+  const head = ['Hop', 'Address', 'Network', 'Loss', 'Sent', 'Last', 'Avg', 'Best', 'Worst', 'StDev'];
+  const widths = head.map((c, i) => Math.max(c.length, ...rows.map(r => r[i].length)));
+  const line = cells => cells.map((c, i) => (i === 0 || i >= 3 ? c.padStart(widths[i]) : c.padEnd(widths[i]))).join('  ').trimEnd();
+  const out = [`MTR to ${host}`, `${command}`, when, '', line(head), ...rows.map(line)];
+  if (segments?.some(s => !s.gap)) {
+    out.push('', 'Networks: ' + segments.map(s => `${segmentLabel(s)} (hop${s.first === s.last ? ` ${s.first}` : `s ${s.first}-${s.last}`}${s.addMs != null && !s.gap ? `, +${s.addMs.toFixed(1)} ms` : ''})`).join(' > '));
+  }
+  const all = notes ?? [];
+  if (all.length) out.push('', 'Findings:', ...all.map(n => `- ${n.text}`));
+  return out.join('\n') + '\n';
 }
 
 //#endregion

@@ -81,3 +81,18 @@
 {"tool":"iperf","minutes":2,"bind":"-B"}
 {"tool":"iperf","minutes":2,"bind":"127.0.0.1"}
 {"tool":"iperf","minutes":2,"bind":"127.0.0.1;touch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"1.1.1.1","method":"icmp;touch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"1.1.1.1","method":"sctp"}
+{"tool":"mtr","host":"1.1.1.1","port":80}
+{"tool":"mtr","host":"1.1.1.1","method":"tcp","port":0}
+{"tool":"mtr","host":"1.1.1.1","method":"tcp","port":65536}
+{"tool":"mtr","host":"1.1.1.1","method":"tcp","port":"80;touch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"1.1.1.1","method":"tcp","size":100}
+{"tool":"mtr","host":"1.1.1.1","size":27}
+{"tool":"mtr","host":"1.1.1.1","size":1401}
+{"tool":"mtr","host":"1.1.1.1","size":"64;touch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"1.1.1.1","source":"eth0;touch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"1.1.1.1","source":"-x"}
+{"tool":"mtr","host":"1.1.1.1","resolve":"yes"}
+{"tool":"mtr","host":"1.1.1.1","asn":"true;touch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"1.1.1.1","size":0}

@@ -27,10 +27,17 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 
 console.log('== requests for the new tools ==');
 let r = m.requestOf(form({ tool: 'mtr' }));
-check(j(r.args) === j({ tool: 'mtr', host: 'www.example.com', cycles: 10 }), 'mtr asks for the host and the number of rounds (ICMP is the default and is not sent)', j(r));
-r = m.requestOf(form({ tool: 'mtr', cycles: '20', mtrMethod: 'udp', family: '6', source: 'br-lan', count: '999' }));
-check(j(r.args) === j({ tool: 'mtr', host: 'www.example.com', cycles: 20, method: 'udp', family: '6' }), 'mtr sends UDP and the family, but no source and none of the ping fields', j(r));
+check(j(r.args) === j({ tool: 'mtr', host: 'www.example.com', cycles: 10, asn: true }), 'mtr asks for the host, the number of rounds and the AS lookup (ICMP, addresses only and no port or size are not sent)', j(r));
+r = m.requestOf(form({ tool: 'mtr', asn: '' }));
+check(j(r.args) === j({ tool: 'mtr', host: 'www.example.com', cycles: 10 }), 'mtr without the AS lookup is just the host and the rounds', j(r));
+r = m.requestOf(form({ tool: 'mtr', asn: '', cycles: '20', mtrMethod: 'udp', family: '6', source: 'br-lan', resolve: '1', mtrSize: '100', count: '999' }));
+check(j(r.args) === j({ tool: 'mtr', host: 'www.example.com', cycles: 20, method: 'udp', size: 100, resolve: true, family: '6', source: 'br-lan' }), 'mtr sends UDP, the size, the names switch, the family and the source, but none of the ping fields', j(r));
+r = m.requestOf(form({ tool: 'mtr', asn: '', mtrMethod: 'tcp', mtrPort: '443', mtrSize: '100', source: '192.168.1.1' }));
+check(j(r.args) === j({ tool: 'mtr', host: 'www.example.com', cycles: 10, method: 'tcp', port: 443, source: '192.168.1.1' }), 'mtr over TCP sends the port and an address as the source, and no size (SYN packets carry none)', j(r));
+r = m.requestOf(form({ tool: 'mtr', asn: '', mtrPort: '443', mtrSize: '100' }));
+check(j(r.args) === j({ tool: 'mtr', host: 'www.example.com', cycles: 10, size: 100 }), 'with ICMP the port is not sent', j(r));
 check(m.requestOf(form({ tool: 'mtr', cycles: '2' })).error && m.requestOf(form({ tool: 'mtr', cycles: '61' })).error && m.requestOf(form({ tool: 'mtr', host: '' })).error && m.requestOf(form({ tool: 'mtr', host: '1.1.1.1; reboot' })).error, 'mtr refuses rounds outside 3 to 60 and a bad host');
+check(m.requestOf(form({ tool: 'mtr', mtrSize: '27' })).error && m.requestOf(form({ tool: 'mtr', mtrSize: '1401' })).error && m.requestOf(form({ tool: 'mtr', mtrSize: 'x' })).error && m.requestOf(form({ tool: 'mtr', mtrMethod: 'tcp', mtrPort: '0' })).error && m.requestOf(form({ tool: 'mtr', mtrMethod: 'tcp', mtrPort: '70000' })).error && m.requestOf(form({ tool: 'mtr', source: 'br lan' })).error, 'mtr refuses a size outside 28 to 1400, a port outside 1 to 65535 and a bad source');
 r = m.requestOf(form({ tool: 'trace', type: 'AAAA', family: '6', server: '9.9.9.9', source: 'wan' }));
 check(j(r.args) === j({ tool: 'trace', host: 'www.example.com', type: 'AAAA', family: '6' }), 'a DNS trace asks for the name, the type and the family only', j(r));
 check(j(m.requestOf(form({ tool: 'trace' })).args) === j({ tool: 'trace', host: 'www.example.com', type: 'A' }) && m.requestOf(form({ tool: 'trace', host: '' })).error && m.requestOf(form({ tool: 'trace', host: '$(id)' })).error, 'the trace defaults to type A (IPv4 is not sent) and needs a safe name');
@@ -140,6 +147,11 @@ check(notes.some(n => n.level === 'ok' && /No probe to the destination was lost/
 const fake = pm.parseMtr('x 0 1\nh 0 10.0.0.1\np 0 1000 1\nx 1 1\nh 1 20.0.0.1\np 1 90000 1\nx 0 2\nx 1 2\n', true);
 check(fake.hops[0].sent === 2 && fake.hops[0].lossPct === 0 && fake.hops[1].lossPct === 0 && pm.parseMtr('x 0 1\nh 0 10.0.0.1\np 0 1000 1\nx 0 2\n', false).hops[0].lossPct === 50, 'the probe still in flight is not counted as lost while the run goes on, and is once it has ended');
 check(pm.pathNotes(fake.hops, false).some(n => /delay rises by 89 ms between hop 1 and hop 2/.test(n.text)) && pm.parseMtr('', false).hops.length === 0 && pm.parseMtr('mtr: failed to start', false).error === 'mtr: failed to start', 'a jump in delay is pointed out; no output is no hops; a failure is reported');
+const named = pm.parseMtr('x 0 1\nh 0 10.0.0.1\nd 0 gw.example.net\np 0 1000 1\nx 1 1\nh 1 20.0.0.1\nd 1 20.0.0.1\np 1 2000 1\nx 2 1\nh 2 30.0.0.1\n', false);
+check(named.hops[0].name === 'gw.example.net' && named.hops[1].name === null && named.hops[2].name === null && mt.hops.every(x => x.name === null), 'a hop with a name from mtr has it, one that mtr could only name by its address or has no name for has none');
+check(pm.asPath(named.hops, { byAddr: new Map([['10.0.0.1', { asn: '64500', name: 'EXAMPLE - Example Net, US', country: 'US' }], ['20.0.0.1', { asn: '64500', name: 'EXAMPLE - Example Net, US', country: 'US' }], ['30.0.0.1', { asn: '64501', name: 'OTHER - Other Ltd, DE', country: 'DE' }]]) }).map(p => p.asn).join() === '64500,64501', 'the networks of an mtr path are read from its hops\' addresses, one entry per run of hops in the same network');
+const withAsn = fixture('mtr.txt') + '### BEGIN asn 9.0 1.1.1.1\n"13335 | 1.1.1.0/24 | AU | apnic | 2011-08-11"\n### END 0 9.5\n';
+check(pm.parseMtr(withAsn, false).hops.length === 7 && pm.parseAsn(withAsn).byAddr.get('1.1.1.1').asn === '13335', 'the AS blocks that follow mtr\'s output in a script job do not disturb its table');
 
 const asn = pm.parseAsn(fixture('traceroute-asn.txt'));
 check(asn.any && !asn.pending && asn.byAddr.get('37.179.98.1').asn === '30722' && asn.byAddr.get('37.179.98.1').prefix === '37.179.96.0/19' && asn.byAddr.get('37.179.98.1').country === 'IT' && asn.byAddr.get('37.179.98.1').registry === 'ripencc', 'the origin of an address: AS number, prefix, country and registry', j([...asn.byAddr.entries()][0]));
@@ -152,6 +164,42 @@ const cut = fixture('traceroute-asn-timeout.txt');
 const asn2 = pm.parseAsn(cut);
 check(asn2.byAddr.get('37.179.98.1').asn === '30722' && asn2.byAddr.get('37.179.98.1').net === null && asn2.byAddr.get('185.210.48.132').asn === null && j(asn2.byAddr.get('185.210.48.132').net) === j({ range: '185.210.48.0 - 185.210.48.255', netname: 'VODAFONE-IT', country: 'IT', descr: null }), 'an address no AS announces is described by the registry\'s record of its range (here the router\'s next hop at Fastweb, a trace that hit its time limit with 13 silent hops)', j([...asn2.byAddr.entries()]));
 check(m.parseTraceroute(cut).hops.length === 17 && m.parseTraceroute(cut).hops[3].addrs[0] === '185.210.48.132' && pm.parseAsn(cut.split('### BEGIN net')[0] + '### BEGIN net 1.0 185.210.48.132\n').pending && pm.parseAsn('### BEGIN asn 1.0 8.8.8.8\n\n### END 0 2.0\n### BEGIN net 2.0 8.8.8.8\nnetname:        NON-RIPE-NCC-MANAGED-ADDRESS-BLOCK\n\n### END 0 3.0\n').byAddr.get('8.8.8.8').net === null, 'the trace that was cut by its time limit is still read; a whois answer for a range the registry does not manage says nothing; a running whois is pending');
+
+console.log('== networks along an mtr path ==');
+// A hop as parseMtr gives it: `avg` in ms, `loss` in percent (the hop answers unless avg is null).
+const hop = (n, addr, avg, loss = 0) => ({ n, addr, addrs: addr ? [addr] : [], name: null, sent: 10, recv: avg == null ? 0 : Math.round(10 * (1 - loss / 100)), lossPct: avg == null ? 100 : loss, last: avg, avg, best: avg, worst: avg, stdev: 0, history: [] });
+// The AS data of `list` ([address, AS number, name]) in the shape parseAsn gives.
+const asnOf = list => ({ byAddr: new Map(list.map(([a, n, name, net]) => [a, { asn: n, name: name ?? null, country: n ? 'US' : null, prefix: null, registry: null, net: net ?? null }])), asns: new Map(), pending: false, any: true });
+const fixtureMtr = pm.parseMtr(fixture('mtr.txt'), false).hops;
+const segs = pm.networkSegments(fixtureMtr, asn);
+check(segs.length === 3 && segs[0].asn === '30722' && segs[0].org === 'Fastweb SpA' && segs[0].first === 1 && segs[0].last === 1 && segs[1].gap && segs[1].first === 2 && segs[1].last === 5 && segs[2].asn === '13335' && segs[2].org === 'Cloudflare, Inc.' && segs[2].first === 6 && segs[2].last === 7, 'the real path is the ISP, a stretch that never answers, and Cloudflare', j(segs.map(s => [s.key, s.first, s.last])));
+check(near(segs[0].addMs, fixtureMtr[0].avg) && segs[1].addMs != null && segs[2].endMs === fixtureMtr[6].avg && segs[0].loss === null && segs[2].loss === null, 'each network adds the delay between the last hop before it and its own last hop; the gap\'s hops that answered count for the gap', j(segs.map(s => [s.addMs, s.endMs])));
+const same = pm.networkSegments([hop(1, 'a', 5), hop(2, null, null), hop(3, 'c', 7)], asnOf([['a', '1', 'ONE - One Net, US'], ['c', '1', 'ONE - One Net, US']]));
+check(same.length === 1 && same[0].first === 1 && same[0].last === 3, 'a silent hop between two hops of the same network belongs to it');
+const unann = pm.networkSegments([hop(1, 'a', 5), hop(2, 'b', 6), hop(3, 'c', 7)], asnOf([['a', '1', 'ONE - One Net, US'], ['b', null, null, { netname: 'VODAFONE-IT', country: 'IT' }], ['c', '2', 'TWO - Two Net, US']]));
+check(unann.length === 3 && unann[1].unannounced && unann[1].netname === 'VODAFONE-IT' && unann[1].country === 'IT' && pm.segmentLabel(unann[1]) === 'VODAFONE-IT (not announced)' && pm.segmentLabel(unann[0]) === 'AS1 One Net' && pm.segmentLabel(segs[1]) === 'no reply', 'an address no AS announces is a network of its own under the registry\'s name');
+const ab = asnOf([['a', '1', 'ONE - One Net, US'], ['b', '2', 'TWO - Two Net, US'], ['c', '2', 'TWO - Two Net, US'], ['d', '3', 'THREE - Three Net, US']]);
+
+let nn = pm.networkNotes(pm.networkSegments([hop(1, 'a', 5), hop(2, 'b', 60), hop(3, 'c', 61), hop(4, 'd', 62)], ab), [], false);
+check(nn.some(n => n.kind === 'jump' && /rises by 55 ms where the path passes from AS1 One Net to AS2 Two Net \(hop 1 to hop 2\)/.test(n.text)) && nn.some(n => n.kind === 'share' && /90% of the delay \(56 of 62 ms\) is added in AS2 Two Net/.test(n.text)), 'a jump in delay is placed at the handoff between two networks, and the network that adds most of the delay is named', j(nn));
+nn = pm.networkNotes(pm.networkSegments([hop(1, 'a', 5), hop(2, 'b', 6), hop(3, 'c', 130), hop(4, 'd', 132)], ab), [], false);
+check(nn.some(n => n.kind === 'jump' && /rises by 124 ms inside AS2 Two Net \(hops 2 to 3\)/.test(n.text)) && !nn.some(n => /passes from/.test(n.text)), 'a jump between two hops of the same network is placed inside it', j(nn));
+nn = pm.networkNotes(pm.networkSegments([hop(1, 'a', 5), hop(2, 'b', 6), hop(3, 'c', 8), hop(4, 'd', 10)], ab), [], false);
+check(nn.length === 0, 'a path with no jump and no loss has nothing to say');
+let lossHops = [hop(1, 'a', 5), hop(2, 'b', 6), hop(3, 'c', 8, 20), hop(4, 'd', 10, 20)];
+nn = pm.networkNotes(pm.networkSegments(lossHops, ab), lossHops, false);
+check(nn.length === 1 && nn[0].kind === 'loss' && nn[0].level === 'bad' && /Loss of 20% starts at hop 3 in AS2 Two Net and reaches the destination \(20%\)\. That is a network between the ISP and the destination\./.test(nn[0].text), 'loss that reaches the destination is placed in the network where it starts', j(nn));
+lossHops = [hop(1, 'a', 5, 5), hop(2, 'b', 6, 5), hop(3, 'c', 8, 5), hop(4, 'd', 10, 5)];
+nn = pm.networkNotes(pm.networkSegments(lossHops, ab), lossHops, false);
+check(nn.length === 1 && nn[0].level === 'warn' && /Loss of 5% starts at hop 1 in AS1 One Net .* the first network after the router, usually the ISP's access link/.test(nn[0].text), 'loss from the first hop is the ISP side, and under 10% is a warning');
+lossHops = [hop(1, 'a', 5), hop(2, 'b', 6, 40), hop(3, 'c', 8), hop(4, 'd', 10)];
+check(pm.networkNotes(pm.networkSegments(lossHops, ab), lossHops, false).every(n => n.kind !== 'loss'), 'a hop that loses probes while the destination does not is rate limiting, not a network fault');
+check(pm.networkNotes(pm.networkSegments(lossHops, ab), lossHops, true).length === 0 && pm.networkNotes([], [], false).length === 0, 'nothing is said while the run goes on or before there are networks');
+const report = pm.mtrReport({ host: '1.1.1.1', command: 'mtr --raw -n -c 10 1.1.1.1', when: '16/11/2026, 13:00:00', hops: fixtureMtr, asn, segments: segs, notes: pm.pathNotes(fixtureMtr, false) });
+const rl = report.split('\n');
+check(rl[0] === 'MTR to 1.1.1.1' && rl[1] === 'mtr --raw -n -c 10 1.1.1.1' && /^Hop +Address +Network +Loss +Sent +Last +Avg +Best +Worst +StDev$/.test(rl[4]) && /^ +1  37\.179\.98\.1 +AS30722 Fastweb SpA \(IT\) +0% +6 /.test(rl[5]) && /^ +2  \?\?\? /.test(rl[6]) && /^ +7  1\.1\.1\.1 +AS13335 Cloudflare, Inc\. \(AU\) /.test(rl[11]), 'the report has a header, an aligned table with the network of each hop and ??? for the silent ones', report);
+check(/\nNetworks: AS30722 Fastweb SpA \(hop 1, \+\d+\.\d ms\) > no reply \(hops 2-5\) > AS13335 Cloudflare, Inc\. \(hops 6-7, \+\d+\.\d ms\)\n/.test(report) && /\nFindings:\n- No probe to the destination was lost\.\n/.test(report) && report.endsWith('\n') && !report.includes('\r'), 'it lists the networks crossed with the delay each adds, then the findings');
+check(!/Networks:/.test(pm.mtrReport({ host: 'x', command: 'c', when: 'w', hops: fixtureMtr, asn: null, segments: [], notes: [] })) && !/Findings:/.test(pm.mtrReport({ host: 'x', command: 'c', when: 'w', hops: fixtureMtr, asn: null, segments: [], notes: [] })), 'without AS data or findings those parts are left out');
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nall new-tool checks passed');
 process.exit(failed ? 1 : 0);

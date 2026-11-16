@@ -102,6 +102,10 @@ check(mtrStart.ok && mtrStart.command === 'mtr --raw -n -c 3 -i 1 -G 2 127.0.0.1
 const mtr = pm.parseMtr(mtrRead.text, false);
 check(mtrRead.running === false && mtrRead.exit === 0 && mtr.hops.length === 1 && mtr.hops[0].addr === '127.0.0.1' && mtr.hops[0].sent === 3 && mtr.hops[0].recv === 3 && mtr.reached, 'the path to loopback is one hop that answered all three rounds', j(mtrRead).slice(0, 200));
 const asnStart = load('out-diag-asn.start.json'), asnRead = load('out-diag-asn.read.json');
+const mtrAsnStart = load('out-diag-mtrasn.start.json'), mtrAsnRead = load('out-diag-mtrasn.read.json');
+check(mtrAsnStart.ok && mtrAsnStart.command === 'mtr --raw -n -c 3 -i 1 -G 2 127.0.0.1 (with AS lookups)' && mtrAsnStart.limit === 18 + 30 * 2 + 8 * 6, 'an mtr run with AS lookups says so and allows the lookups their time', j(mtrAsnStart));
+check(mtrAsnRead.running === false && mtrAsnRead.exit === 0 && /^### BEGIN mtr [\d.]+ \n/.test(mtrAsnRead.text) && /\n### END 0 [\d.]+\n/.test(mtrAsnRead.text) && !/### BEGIN asn /.test(mtrAsnRead.text) && pm.parseMtr(mtrAsnRead.text, false).hops[0].addr === '127.0.0.1' && pm.parseMtr(mtrAsnRead.text, false).hops[0].recv === 3, 'the mtr run is one block and still makes the table; loopback is private, so no AS lookup is made', mtrAsnRead.text.slice(0, 200));
+check(fs.readFileSync(file('out-diag-mtrasn.cr'), 'utf8').trim() === '0', 'the script of the mtr run carries no carriage return');
 check(asnStart.ok && /^traceroute .* 127\.0\.0\.1 \(with AS lookups\)$/.test(asnStart.command), 'a traceroute with AS lookups says so', asnStart.command);
 check(asnRead.running === false && asnRead.exit === 0 && /^### BEGIN trace [\d.]+ \n/.test(asnRead.text) && /\n### END 0 [\d.]+\n/.test(asnRead.text) && !/### BEGIN asn /.test(asnRead.text) && m.parseTraceroute(asnRead.text).hops[0].addrs[0] === '127.0.0.1', 'the traceroute is one block; loopback is private, so no AS lookup is made', asnRead.text.slice(0, 200));
 check(fs.readFileSync(file('out-diag-asn.cr'), 'utf8').trim() === '0' && fs.readFileSync(file('out-diag-dnstrace.cr'), 'utf8').trim() === '0', 'the scripts of both carry no carriage return');
@@ -122,7 +126,9 @@ check(ipStop.ok && ipAfter.running === false && ipAfter.exit === 0 && ipAfter.ti
 check(fs.readFileSync(file('out-diag-iperf.procs.txt'), 'utf8').trim() === '0', 'no iperf3 process is left behind');
 
 console.log('== the options that are allowed ==');
-const v1 = load('out-diag-variant1.json'), v2 = load('out-diag-variant2.json'), v3 = load('out-diag-variant3.json'), v4 = load('out-diag-variant4.json');
+const v1 = load('out-diag-variant1.json'), v2 = load('out-diag-variant2.json'), v3 = load('out-diag-variant3.json'), v4 = load('out-diag-variant4.json'), v5 = load('out-diag-variant5.json'), v6 = load('out-diag-variant6.json');
+check(v5.ok && v5.command === 'mtr --raw -c 3 -i 1 -G 2 -T -P 80 -a 127.0.0.1 127.0.0.1', 'mtr with TCP, a port, names and an address as source', v5.command);
+check(v6.ok && v6.command === 'mtr --raw -n -c 3 -i 1 -G 2 -u -s 100 -I lo 127.0.0.1', 'mtr with UDP, a packet size and an interface as source', v6.command);
 check(v1.ok && v1.command === 'ping -c 1 -W 2 -w 6 -s 100 -4 -I lo 127.0.0.1', 'ping with a size, a family and an interface as source', v1.command);
 check(v2.ok && v2.command === 'traceroute -n -w 2 -q 3 -m 5 -I -4 -s 127.0.0.1 127.0.0.1', 'traceroute with ICMP, a family and an address as source', v2.command);
 check(v3.ok && (/-x 127\.0\.0\.1$/.test(v3.command) || /^nslookup -type=PTR 127\.0\.0\.1$/.test(v3.command)), 'a reverse lookup of an address', v3.command);
