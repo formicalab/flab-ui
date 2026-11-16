@@ -87,6 +87,9 @@
 .wf-block { margin: 0; border-top: 1px solid var(--fl-stroke); }
 .wf-block > summary, .wf-iface > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .8rem 1.25rem; cursor: pointer; }
 .wf-block > summary:hover, .wf-iface > summary:hover { background: var(--fl-surface-hover); }
+/* The radio settings keep the native arrow of a details block, like the other folds: a block summary, not a flex row. */
+.wf-block > summary { display: block; }
+.wf-block > summary > * { margin-left: .6rem; }
 .wf-block-body { display: flex; flex-direction: column; gap: .8rem; padding: .3rem 1.25rem 1.1rem; }
 .wf-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
 .wf-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }

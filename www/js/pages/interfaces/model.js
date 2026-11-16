@@ -83,7 +83,7 @@ const valuesOf = (fields, raw, fieldOf = f => f) => Object.fromEntries(fields.ma
 // The form values of an interface section for its protocol.
 const ifaceValues = raw => valuesOf(IFACE_FIELDS, raw, f => ifaceField(f, raw.proto ?? ''));
 // The form values of a device section: the options for its type and the bridge ports.
-const deviceValues = (raw, type) => ({ ...valuesOf(deviceFields(type), raw), ports: valueOf(PORTS_FIELD, raw.ports) });
+export const deviceValues = (raw, type) => ({ ...valuesOf(deviceFields(type), raw), ports: valueOf(PORTS_FIELD, raw.ports) });
 
 // The form's starting values: the router's current values. A section added in the form gets an id of its own (`new1`, ...) because its
 // name is typed into the form and may change until it is saved. `globals` holds the network-wide options, or null when the plugin does not report them.

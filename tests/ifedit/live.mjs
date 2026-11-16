@@ -664,21 +664,21 @@ check(await page.locator('.fl-drawer').count() === 0, 'leaving the page closes t
 check(await bar().isVisible() && /1 unsaved change/.test(await summaryText()) && /br-guest: MAC aging time/.test(await changes()), 'the Ethernet ports page shows the same pending change in its review banner');
 
 console.log('\n== the settings of a port are on the Ethernet ports page ==');
-check(await page.locator('.port-table tr:has(.port-role:text-is("CPU link")) .port-settings').count() === 0 && await page.locator('.port-table .port-settings').count() >= 5, 'every front-panel port has a Settings button, the internal CPU link has none');
-await page.locator('.port-table tr:has(strong:text-is("lan1")) .port-settings').click();
+check(await page.locator('.port-table tr:has(.port-role:text-is("CPU link")) .port-set-block').count() === 0 && await page.locator('.port-table .port-set-block').count() >= 5, 'every front-panel port has a collapsible Settings section, the internal CPU link has none');
+await page.locator('.port-set-block[data-port="lan1"] > summary').click();
 await page.waitForSelector('.port-set .ne-form');
-check(await page.locator('.fl-drawer').count() === 0 && await page.locator('.port-set button:has-text("Add settings for this port")').count() === 1, 'it opens under the port\'s row, not in a drawer; a port without a device section offers to add one');
-await page.locator('.port-set button:has-text("Add settings for this port")').click();
-await page.waitForTimeout(400);
+check(await page.locator('.fl-drawer').count() === 0 && await page.locator('.port-set button:has-text("Add settings")').count() === 0 && await page.locator('.port-set .ne-form input').count() > 0, 'it opens under the port\'s row, not in a drawer; a port without a device section shows the form at once, with no step to add settings');
+check(await bar().isHidden() || !/Add settings of device lan1/.test(await changes()), 'opening the form changes nothing in the draft');
 const ps = page.locator('.port-set .ne-form');
 await input(ps, 'MTU').fill('1500');
 await ps.locator('details.np-adv').evaluateAll(ds => ds.forEach(d => { d.open = true; }));
 await page.waitForTimeout(100);
 await box(ps, 'Isolate port').click();
 check(await errorCount() === 0 && /Add settings of device lan1/.test(await changes()) && /br-guest: MAC aging time/.test(await changes()) && /\d+ unsaved changes/.test(await summaryText()), 'device settings for a port are accepted and join the pending change of the draft', await notes());
-await page.locator('.port-table tr:has(strong:text-is("lan1")) .port-settings').click();
+check(await page.locator('.port-set button:has-text("Drop the new settings")').count() === 1 && /not saved yet/.test(await page.locator('.port-set .np-foot-note').innerText()), 'the button that undoes new settings says what it does and the note explains it');
+await page.locator('.port-set-block[data-port="lan1"] > summary').click();
 await page.waitForTimeout(300);
-check(await page.locator('.port-set').count() === 0, 'the Hide settings button closes the form (the draft keeps the settings)');
+check(await page.locator('.port-set').count() === 0, 'the section closes again (the draft keeps the settings)');
 await page.click('a[href="#interfaces"]');
 await page.waitForSelector('.nb-card');
 check(await bar().isVisible() && /\d+ unsaved changes/.test(await summaryText()) && /br-guest: MAC aging time/.test(await changes()) && /Add settings of device lan1/.test(await changes()), 'unsaved edits of both pages are still pending when the board is opened again');

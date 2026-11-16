@@ -19,7 +19,7 @@ import { badge, button, kv, mono, muted } from '../../core/ui.js';
 import { note } from '../../core/forms.js';
 import { fmtDur } from '../../core/format.js';
 import { DEVICE_FIELDS, DEVICE_TYPES, GLOBALS_FIELDS, GLOBALS_READONLY, IFACE_FIELDS, idOf } from './schema.js';
-import { addDevice, deviceList, ifaceList, protoLabel, removeDevice, removeInterface, restoreDevice, restoreInterface, setProto } from './model.js';
+import { addDevice, deviceList, deviceValues, ifaceList, protoLabel, removeDevice, removeInterface, restoreDevice, restoreInterface, setProto } from './model.js';
 import { controlFor, deviceField, extraOptions, interfaceField, nameControl, portsPicker, stateBadge } from './controls.js';
 import {
   DEVICE_NAME_MAX, OWNER_PAGES, SETTINGS_LEAD, deviceItems, deviceSettings, droppedBy, effectiveDevice, interfaceNameMax, interfaceSettings, isSet, otherProtoText,
@@ -324,36 +324,58 @@ export function devicePanel(ctx, ref) {
 
 //#region Port settings
 
-// The settings of the port `name` for the Ethernet ports page, built where the table puts them (under the port's row): the device section of the port (MTU,
-// MAC address, link speed, flow control and the rest, Advanced folded) and a button that removes it, or, for a port without a section, the button that gives it
-// one. Such a section is optional: without one the port works with its defaults. It edits the one shared draft of editor.js through `ctx`.
-export function portSettings(ctx, name) {
-  const d = deviceList(ctx.base, ctx.draft).find(x => x.type === 'plain' && x.name.trim() === name);
-  if (!d) {
-    const add = button('Add settings for this port', 'plus-lg', () => {
-      const id = addDevice(ctx.base, ctx.draft, 'plain');
-      ctx.draft.devAdded.find(a => a.id === id).name = name;
-      ctx.touched();
-      ctx.redraw();
-    });
-    add.disabled = !ctx.canEdit;
-    return panelBody(section(null, 'Settings', 'The port works with its defaults, which is normal. Give it settings of its own (MTU, MAC address, link speed, flow control) by adding a device section for it.', h('div', {}, add)));
-  }
-  if (d.removed) return removedBody(`The device section for ${name}`, () => { restoreDevice(ctx.draft, d.id); ctx.touched(); ctx.redraw(); });
-  if (!d.editable) return panelBody(section(null, 'Settings', 'This page does not edit this device section: its options are shown as they are in the file.', kv(Object.entries(d.raw).map(([k, val]) => [mono(k), mono(Array.isArray(val) ? val.join(', ') : String(val))]))));
-  const v = ctx.draft.devices[d.id];
-  const settings = deviceSettings('plain');
-  const known = new Set([...DEVICE_FIELDS.map(f => f.key), 'name', 'type', 'ports']);
-  const control = f => controlFor(ctx, deviceField(ctx, d, f), `dev:${d.id}:${idOf(f)}`, v, false);
-  const uses = deviceUses(ctx, name, 'port');
-  const sec = section(null, d.isNew ? 'Settings (not saved yet)' : 'Settings', 'These change how the network device itself behaves. The device section is optional: without one the port works with its defaults.',
-    settings.essential.length ? h('div', { className: 'set-fields np-fields' }, settings.essential.map(control)) : null,
-    advancedBlock(`dev:${d.id}`, settings.groups, control, v, extraOptions(d.raw, d.secrets, known, 'device section')));
-  return panelBody(sec, h('div', { className: 'np-foot' }, ...removeFooter(ctx, d.isNew ? 'Discard the settings' : 'Remove the settings', `Delete the device section ${name}`,
-    () => { removeDevice(ctx.draft, d.id); ctx.touched(); ctx.redraw(); },
-    uses.names.length ? `${uses.names.join(', ')} run${uses.names.length > 1 ? '' : 's'} on this device: removing it is refused until ${uses.names.length > 1 ? 'they are' : 'it is'} rebound or removed.` : null)));
+// The values of the form of a port that has no device section yet: the defaults, until the first change. That change adds the section to the draft
+// (named after the port), moves the inputs already on the page to the names of the new section and from then on writes to it, so the form needs no
+// separate step to start. onAdd(id) is called then, to show what only a section has (the reset button).
+function pendingValues(ctx, name, onAdd) {
+  const defaults = deviceValues({}, 'plain');
+  let real = null;
+  return new Proxy(defaults, {
+    get: (t, k) => (real ?? t)[k],
+    set: (t, k, v) => {
+      if (!real) {
+        const id = addDevice(ctx.base, ctx.draft, 'plain');
+        ctx.draft.devAdded.find(a => a.id === id).name = name;
+        real = ctx.draft.devices[id];
+        onAdd(id);
+        const from = `dev:${name}:`;
+        for (const key of Object.keys(ctx.inputs).filter(k2 => k2.startsWith(from))) { ctx.inputs[`dev:${id}:${key.slice(from.length)}`] = ctx.inputs[key]; delete ctx.inputs[key]; }
+      }
+      real[k] = v;
+      return true;
+    },
+  });
 }
 
+// The settings of the port `name` for the Ethernet ports page, built where the table puts them (under the port's row): the device settings of the port (MTU,
+// MAC address, link speed, flow control and the rest, Advanced folded). A port without a device section shows the same form with the defaults, and the first
+// change gives it a section (it is optional: without one the port works with its defaults); a section can be reset to the defaults with the button below.
+// It edits the one shared draft of editor.js through `ctx`.
+export function portSettings(ctx, name) {
+  const d = deviceList(ctx.base, ctx.draft).find(x => x.type === 'plain' && x.name.trim() === name);
+  if (d?.removed) return removedBody(`The device section for ${name}`, () => { restoreDevice(ctx.draft, d.id); ctx.touched(); ctx.redraw(); });
+  if (d && !d.editable) return panelBody(section(null, 'Settings', 'This page does not edit this device section: its options are shown as they are in the file.', kv(Object.entries(d.raw).map(([k, val]) => [mono(k), mono(Array.isArray(val) ? val.join(', ') : String(val))]))));
+  const foot = h('div', { className: 'np-foot' });
+  // The reset button of the section `id`, with a note on what it does and on what still runs on the device.
+  const fill = (id, isNew) => {
+    const uses = deviceUses(ctx, name, 'port');
+    const what = isNew ? 'This section is not saved yet: dropping it keeps the port as it is now, with its defaults.' : 'Resets the port to its defaults: the device section is deleted from the configuration when you save.';
+    foot.replaceChildren(...removeFooter(ctx, isNew ? 'Drop the new settings' : 'Reset to defaults', `Delete the device section ${name}`,
+      () => { removeDevice(ctx.draft, id); ctx.touched(); ctx.redraw(); },
+      uses.names.length ? `${what} ${uses.names.join(', ')} run${uses.names.length > 1 ? '' : 's'} on this device: this is refused until ${uses.names.length > 1 ? 'they are' : 'it is'} rebound or removed.` : what));
+  };
+  if (d) fill(d.id, d.isNew);
+  const v = d ? ctx.draft.devices[d.id] : pendingValues(ctx, name, id => fill(id, true));
+  const settings = deviceSettings('plain');
+  const known = new Set([...DEVICE_FIELDS.map(f => f.key), 'name', 'type', 'ports']);
+  const control = f => controlFor(ctx, deviceField(ctx, { name }, f), `dev:${d ? d.id : name}:${idOf(f)}`, v, false);
+  const text = d ? 'These change how the network device itself behaves. The device section is optional: without one the port works with its defaults.'
+    : 'The port works with its defaults, which is normal. Change a value to give it settings of its own (MTU, MAC address, link speed, flow control): the first change adds a device section for it.';
+  const sec = section(null, d?.isNew ? 'Settings (not saved yet)' : 'Settings', text,
+    settings.essential.length ? h('div', { className: 'set-fields np-fields' }, settings.essential.map(control)) : null,
+    advancedBlock(`port:${name}`, settings.groups, control, v, d ? extraOptions(d.raw, d.secrets, known, 'device section') : null));
+  return panelBody(sec, foot);
+}
 //#endregion
 
 //#region Network-wide settings

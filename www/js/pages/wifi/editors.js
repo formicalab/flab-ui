@@ -128,7 +128,7 @@ export function radioSettings(name, edit) {
   });
   const id = `radio:${name}`;
   return h('details', { className: 'wf-block', open: opened.get(id) ?? false, ontoggle: e => opened.set(id, e.target.open) },
-    h('summary', {}, icon('gear'), h('strong', {}, 'Radio settings'), d.disabled ? badge('disabled', 'warning') : null,
+    h('summary', {}, h('strong', {}, 'Radio settings'), d.disabled ? badge('disabled', 'warning') : null,
       muted(`${d.htmode || 'default mode'} · ${d.country || 'default country'}${d.txpower ? ` · ${d.txpower} dBm` : ''}`)),
     h('div', { className: 'wf-block-body' }, identity(r), groups));
 }

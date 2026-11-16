@@ -76,7 +76,7 @@ export default {
       // The notes about staged leftovers are the VLAN editor's while it is open (it shows them itself): the two editors stage the same config.
       ...(vlanCtx?.edit || !ctx ? [] : editNotes(data)),
       ...(findings.length ? [healthBanner(findings, '')] : []),
-      ...portsPanel(data.net, rerender, vlanCtx, { available, ctx }),
+      ...portsPanel(data.net, rerender, vlanCtx, { available, ctx, has: name => (data.cfg?.devices ?? []).some(d => !d.values?.type && String(d.values?.name ?? '').trim() === name) }),
     ];
     // The settings forms registered their controls in ctx.inputs while the table was built; the errors are marked on them now.
     ctx?.sync();

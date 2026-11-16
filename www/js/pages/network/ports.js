@@ -18,6 +18,8 @@ const settingsOpen = new Set();
 // page (interfaces/editor.js editContext), which exists only while a form is open or edits are pending. Set by portsPanel before the table is built.
 let settingsAvailable = false;
 let settingsCtx = null;
+// Whether the config holds a device section for a port name (a function the page hands over).
+let settingsHas = () => false;
 
 // Whether a settings form is open: the page then needs the editing context.
 export const settingsFormOpen = () => settingsOpen.size > 0;
@@ -90,8 +92,8 @@ function roleOf(p) {
 }
 
 // The Port column: the jack icon (green up, amber warning, gray no link), the name, its LAN/WAN role, its MAC and, for a front-panel
-// port, a Settings button that opens the port's device settings (MTU, MAC address, speed, flow control, ...) under its row. The
-// tooltip of the icon lists the hardware.
+// port, whose device settings (MTU, MAC address, speed, flow control, ...) are a collapsible section under its row. The tooltip of the icon lists the
+// hardware.
 function portCell(p) {
   const title = [`${p.name} · ${p.mac ?? ''}`, p.carrier ? `Link ${fmtSpeed(p.speed)} ${p.duplex ?? ''}` : 'No link', ...hwLines(p).map(([k, v]) => `${k}: ${v}`)].join('\n');
   const role = roleOf(p);
@@ -101,11 +103,7 @@ function portCell(p) {
       h('div', {},
         h('div', {}, h('strong', {}, p.name), role ? h('span', { className: 'port-role' }, role) : null,
           p.sfp?.present ? badge('SFP', p.sfp.alarms?.length ? 'danger' : 'info', [p.sfp.vendor, p.sfp.part].filter(Boolean).join(' ')) : null),
-        h('div', { className: 'muted small mono' }, p.mac ?? ''),
-        p.role === 'conduit' || !settingsAvailable ? null : button(settingsOpen.has(p.name) ? 'Hide settings' : 'Settings', settingsOpen.has(p.name) ? 'chevron-up' : 'gear', () => {
-          if (settingsOpen.has(p.name)) settingsOpen.delete(p.name); else settingsOpen.add(p.name);
-          rerender();
-        }, 'btn-fl port-settings'))));
+        h('div', { className: 'muted small mono' }, p.mac ?? ''))));
 }
 
 // The Throughput column: the live rate in each direction, the totals and a graph of the recent rates. A port without counters of its
@@ -135,6 +133,24 @@ export function bridgeCell(p) {
 // The VLAN devices on a port, with their state.
 export const vlansCell = p => ((p.vlans ?? []).length ? p.vlans.map(v => badge(`${v.name} (${v.vid})`, v.up ? 'success' : 'danger')) : muted('–'));
 
+// The collapsible settings section of a port, under its row: the summary says whether the config holds a device section for the port, and the form
+// (interfaces/panels.js portSettings) is built only while it is open, because it needs the editing context, which the page makes only then. Opening or
+// closing it redraws the page.
+function settingsBlock(p) {
+  const open = settingsOpen.has(p.name);
+  const set = settingsHas(p.name);
+  const block = h('details', { className: 'port-set-block', open, ontoggle: e => {
+    // The toggle event also fires for a section drawn open: only a change the user made counts.
+    if (e.target.open === settingsOpen.has(p.name)) return;
+    if (e.target.open) settingsOpen.add(p.name); else settingsOpen.delete(p.name);
+    rerender();
+  } },
+  h('summary', {}, h('strong', {}, 'Settings'), set ? badge('device section', 'info', 'The network config holds device settings for this port') : h('span', { className: 'muted small' }, 'defaults')),
+    open && settingsCtx ? h('div', { className: 'port-set' }, portSettings(settingsCtx, p.name)) : null);
+  block.dataset.port = p.name;
+  return block;
+}
+
 // The table row(s) of one port: the port itself, plus the breakdown row while its Details are open and the cable-test result.
 function row(p) {
   const main = h('tr', {},
@@ -150,7 +166,7 @@ function row(p) {
   if (p.diagnostics && expanded.has(p.name)) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, diagnosticsPanel(p))));
   const cable = cablePanel(p);
   if (cable) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, cable)));
-  if (settingsCtx && settingsOpen.has(p.name)) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS, className: 'port-set' }, portSettings(settingsCtx, p.name))));
+  if (settingsAvailable && p.role !== 'conduit') rows.push(h('tr', { className: 'port-set-row' }, h('td', { colSpan: COLS }, settingsBlock(p))));
   return rows;
 }
 
@@ -194,6 +210,7 @@ export function portsPanel(net, redraw, vlan, settings) {
   bindRedraw(redraw);
   settingsAvailable = Boolean(settings?.available);
   settingsCtx = settings?.ctx ?? null;
+  settingsHas = settings?.has ?? (() => false);
   // A port that vanished must not leave a stale open panel behind.
   for (const name of [...expanded, ...settingsOpen]) if (!net.ports.some(p => p.name === name)) { expanded.delete(name); settingsOpen.delete(name); }
   return [details(net), ...vlanCards(net, vlan)];

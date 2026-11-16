@@ -6,7 +6,7 @@
 
 - **Two hardware pages: Ethernet ports and Wi-Fi radios.** They read and change the hardware, and everything about it is configured there, not in drawers.
   **Ethernet ports** (`#network`) is the Ports table of the old Ethernet page (link, negotiation, hardware, traffic graph, errors, bridge, VLAN devices, cable
-  test, the editable VLAN tables) with a **Settings** button on every port: the port's device settings (MTU, MAC address, link speed, flow control and
+  test, the editable VLAN tables) with a collapsible **Settings** section under every port: the port's device settings (MTU, MAC address, link speed, flow control and
   the rest) open under its row, and a port without a device section can get one. **Wi-Fi radios** (`#radios`) has a card per radio with its live figures,
   channel utilization, configuration, the channel picker and the radio settings, moved from the Wi-Fi page; the radio settings now cover every `wifi-device` option of the
   OpenWrt wireless documentation (the channels of automatic selection, the basic and supported rates, the HT capabilities, the antennas, the HT coexistence flag,
