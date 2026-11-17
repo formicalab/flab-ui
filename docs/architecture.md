@@ -64,6 +64,7 @@ flab-ui/
   www/                       Static site, installed to /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
+    vendor/qrcode.js        qrcode-generator 2.0.4 (MIT), the QR encoder; imported by core/qr.js only when a QR code is shown
     css/
       base.css               Fluent tokens, app shell, shared component styles (including the folds of core/fold.js), sign-in screen
       <page>.css             Page-specific styles, loaded on first visit
@@ -85,6 +86,7 @@ flab-ui/
         login.js             Sign-in screen (inline SVG and CSS only)
         dom.js               h() element builder (XSS-safe), byId(), sleep(ms)
         download.js          saveFile(name, data, type): the browser's own download of generated text or bytes
+        qr.js                qrMatrix(), qrSvg(), qrBox(): a QR code as inline SVG (the WireGuard client configuration)
         ui.js                Components: card, tile(s), table, badge, chip, kv, section, button, lifebar, meter, sparkline,
                              emptyState, healthBanner, muted, mono, GRADE_KIND
         controls.js          Command-bar controls: search, select, tabs, pause, toggle, refresh
@@ -106,7 +108,7 @@ flab-ui/
         wifi/                The editing of the wireless configuration, used by the radios page: editor.js (the editor), editors.js (the radio settings and the network forms), schema.js (the option tables), model.js (pure: draft, validation, UCI operations,
                              check after a save), channels.js (pure model of the channel change), picker.js (the channel picker)
         ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
-        wireguard/           index.js (page, tiles, the editor), iface.js (interface card, peers table, findings), edit.js (interface form, peer editor, key controls, confirmation), device.js (the add-a-device dialog), schema.js (option tables), model.js (pure: draft, validation, UCI plan, check after a save), addr.js (pure: address math), keys.js (pure: key checks, X25519)
+        wireguard/           index.js (page, tiles, the editor), iface.js (interface card, peers table, findings), edit.js (interface form, peer editor, key controls, confirmation), client.js (the add-a-device dialog), schema.js (option tables), model.js (pure: draft, validation, UCI plan, check after a save), addr.js (pure: address math), keys.js (pure: key checks, X25519)
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js; the editor: schema.js (option tables), check.js (value checks), edit.js (reading and the draft), validate.js, plan.js (review list, UCI operations, check after a save), view.js (the draft laid over the live state), describe.js (plain words), itemdialog.js, controls.js, defaults.js (global settings), parts.js (row buttons, badge, enable switch, group fold)
         dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, rows.js (the row parts the reservations and boot tables share), pools.js (daemon and pool cards), boot6.js (network boot card)
         dns/                 DNS: index.js (page, state, the editing wiring), schema.js (the options and their areas, ZONE_FIELDS and ZONE_TYPES), edit.js (pure: draft, changes, problems, the UCI plan, the check after a save), zones.js (pure: the zone blocks of Unbound and the server entries of dnsmasq as a draft: items, changes, validation, plan, checks), model.js (pure: tiles, findings, activity, option areas), zonescard.js (the Zones card), zoneform.js (the dialog that adds or edits a zone), fold.js (the card that folds down to its header, used by Zones and Activity), cards.js (Configuration, Activity)

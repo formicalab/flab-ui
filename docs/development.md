@@ -81,6 +81,8 @@ filters) in a DOM-free module with a unit test.
 - **Log volume**: logd's buffer holds thousands of lines (every SSH login is several); the plugin asks
   `logread -l N` for the tail instead of reading everything.
 - **No favicon request**: `index.html` uses an empty data-URI icon.
+- **Module file names end in `.js`.** uhttpd serves `.mjs` as `application/octet-stream`, which browsers refuse for a module, so a
+  vendored ES module (`www/vendor/qrcode.js`) keeps the `.js` extension.
 
 ## Conventions
 

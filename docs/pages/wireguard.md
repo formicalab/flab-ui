@@ -6,8 +6,8 @@ poll (flagged as not in the configuration). The page also edits the configuratio
 - **Tiles**: interfaces up, peers connected, latest handshake, live traffic (rates derived in the browser from
   the byte counters).
 - **Interface card**: state, firewall zone, addresses, listen port, public key (not secret), MTU, firewall
-  mark, totals; the buttons *Add remote device*, *Add remote peer* and *Remove interface*; a note with a link to the Firewall page when the interface is in no
-  zone; the peers table; and the foldable *Interface settings* form. An interface that only the kernel has (made with `wg-quick` or `ip link`) is
+  mark, totals; the buttons *Add client*, *Add peer manually* and *Remove interface*; a note with a link to the Firewall page when the interface is in no
+  zone; the foldable *Interface settings* form (above the live values and the peers); the peers table. An interface that only the kernel has (made with `wg-quick` or `ip link`) is
   shown read only with a note.
 - **Peers table**: name (UCI `description`) and a role badge from the allowed IPs (*client*: host routes only,
   *site*: a whole network behind the peer, *all traffic*: a `/0`), shortened public key (full key on hover),
@@ -33,13 +33,16 @@ poll (flagged as not in the configuration). The page also edits the configuratio
   X25519 a small BigInt implementation of RFC 7748 derives the public key from random bytes of the browser's own generator; where there is no
   secure random generator at all, the button is disabled and the page says to paste a key made with `wg genkey`). The public key of a typed or
   generated private key is shown next to the box (with *Copy*). A pre-shared key is 32 random bytes from the same generator.
-- **Add remote device**: a dialog for a phone or laptop of an interface that is running (*Add remote peer* is for a peer whose public key you already have, such as another router). It takes a name, the router's public address (offered: the
-  host name the page was opened with), the UDP port, what the device sends through the tunnel (the tunnel networks, everything, or a list),
-  an optional DNS server, a keepalive and whether to use a pre-shared key. It makes the device's key pair in the browser, adds the device as a peer
+- **Add client**: a dialog (the wide one, so that the hints do not wrap much) for a phone or laptop of an interface that is running; *Add peer manually* is for
+  a peer you enter by hand, such as the router of another site or a gateway, whose public key you have. It takes a name, the router's public address (offered: the
+  host name the page was opened with), the UDP port, what the client sends through the tunnel (the tunnel networks, everything, or a list),
+  an optional DNS server, a keepalive and whether to use a pre-shared key. It makes the client's key pair in the browser, adds the client as a peer
   of the form (its public key and the next free address of each family from the interface's tunnel network, skipping what other peers allow) and shows
-  the device's WireGuard configuration once (`[Interface]` with its private key and address, `[Peer]` with the router's public key as `wg show`
-  reports it, the endpoint and the allowed IPs), with *Copy* and *Download* (`<interface>-<device>.conf`). The device's private key exists
-  only in the dialog; the peer reaches the router only when you press *Save and apply*. A QR code is not offered.
+  the client's WireGuard configuration once ([Interface] with its private key and address, [Peer] with the router's public key as wg show
+  reports it, the endpoint and the allowed IPs) as a **QR code** that the WireGuard app of a phone scans (*add a tunnel*, then scan) and as text with *Copy* and *Download*
+  (<interface>-<client>.conf). The code is drawn in the browser (core/qr.js with the vendored www/vendor/qrcode.js, loaded only when it is first needed, error correction level L)
+  and holds the same text, so it is as secret as the private key: it exists only in the dialog, and the peer reaches the router only when you press *Save and apply*.
+  A configuration too long for the largest QR code (about 2.9 KB) shows a note instead of the code.
 - **Validation** (errors block Save; warnings do not): the interface name, a listen port that is a number and that no other enabled interface (or
   an interface only the kernel has) uses, addresses as CIDR (a dotted netmask is accepted), the MTU range and the firewall mark, a typed key that is
   44 base64 characters with the right padding bits, a peer's public key (required, not the interface's own, not repeated on the interface),

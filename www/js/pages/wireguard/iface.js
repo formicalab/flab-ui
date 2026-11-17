@@ -1,6 +1,6 @@
 // One card per WireGuard interface: its identity and settings, and a table of its peers with the state of the
 // last handshake, endpoint, allowed IPs and traffic (live rates are derived from successive byte counters). The card also holds
-// the editing controls: add a device or a peer, remove the interface, edit a peer in place, and the interface's settings form.
+// the editing controls: add a client or a peer, remove the interface, edit a peer in place, and the interface's settings form.
 // Also exports the findings (what looks wrong) and the rate recorder.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
@@ -10,7 +10,7 @@ import { createTracker, latest } from '../../core/rates.js';
 import { fmtBytes, fmtLine, fmtSpan } from '../../core/format.js';
 import { adminLinks, adminSentence, addPeer, peerList, removeInterface, removePeer, restoreInterface, restorePeer, shortKey } from './model.js';
 import { confirmDanger, interfaceForm, opened, peerEditor } from './edit.js';
-import { openDeviceDialog } from './device.js';
+import { openClientDialog } from './client.js';
 
 // Module-level so the rate history survives the redraw on every poll; a peer series is keyed by the
 // interface and the peer's public key.
@@ -158,15 +158,15 @@ function peersTable(ctx, item) {
     h('tbody', {}, peers.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No peers are configured on this interface.')))));
 }
 
-// The row of buttons under the header: add a device, add a peer, and remove the interface (or discard it when it is new, or undo).
+// The row of buttons under the header: add a client, add a peer, and remove the interface (or discard it when it is new, or undo).
 function toolbar(ctx, item, onDialog) {
   const key = `if:${item.id}`;
   if (item.removed) return h('div', { className: 'wg-toolbar' }, muted(`${item.name} and its peers are removed when you save.`), h('span', { className: 'wg-spacer' }),
     button('Undo', 'arrow-counterclockwise', () => { restoreInterface(ctx.draft, item.id); ctx.touched(); ctx.redraw(); }));
   const canEdit = ctx.canEdit;
-  const device = button('Add remote device', 'plus-lg', () => { onDialog(true); openDeviceDialog(ctx, item, () => onDialog(false)); }, 'btn-brand',
-    item.isNew ? { disabled: true, title: 'Save the interface first: the device needs the interface\'s public key.' } : { disabled: !canEdit, title: 'Set up a phone, a laptop or another client: its key pair is made here and its configuration can be copied or downloaded' });
-  const peer = button('Add remote peer', 'plus-lg', () => { opened.add(`peer:${item.id}:${addPeer(ctx.draft, item.id)}`); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !canEdit, title: 'Add a remote peer whose public key you already have, such as another router or a site' });
+  const client = button('Add client', 'plus-lg', () => { onDialog(true); openClientDialog(ctx, item, () => onDialog(false)); }, 'btn-brand',
+    item.isNew ? { disabled: true, title: 'Save the interface first: the client needs the interface\'s public key.' } : { disabled: !canEdit, title: 'Set up a phone, a laptop or another client: its keys are made here and its configuration is shown once, as a QR code and as text' });
+  const peer = button('Add peer manually', 'plus-lg', () => { opened.add(`peer:${item.id}:${addPeer(ctx.draft, item.id)}`); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !canEdit, title: 'Enter a peer by hand, such as the router of another site or a gateway: you need its public key' });
   const remove = button(item.isNew ? 'Discard interface' : 'Remove interface', 'trash', async () => {
     const you = item.data ? adminSentence(adminLinks(ctx.data), item.name) : null;
     if (you && !(await confirmDanger({ title: `Remove ${item.name}?`, paragraphs: [you, `Removing ${item.name} and its peers ends that connection once you save. If this page cannot reach the router afterwards, the router puts the old settings back by itself within 30 seconds.`], confirmLabel: 'Remove interface' }))) return;
@@ -175,10 +175,10 @@ function toolbar(ctx, item, onDialog) {
     ctx.touched();
     ctx.redraw();
   }, 'btn-fl', { disabled: !canEdit });
-  return h('div', { className: 'wg-toolbar' }, device, peer, h('span', { className: 'wg-spacer' }), remove);
+  return h('div', { className: 'wg-toolbar' }, client, peer, h('span', { className: 'wg-spacer' }), remove);
 }
 
-// The card for one interface of ifaceList(): header, the buttons, notes, then settings next to the peers table and the settings form.
+// The card for one interface of ifaceList(): header, the buttons, notes, the settings form (folded), then the live settings next to the peers table.
 // `onDialog(open)` tells the page that a dialog is open, so it does not poll under it.
 export function interfaceCard(ctx, item, onDialog) {
   const i = item.data;
@@ -188,6 +188,6 @@ export function interfaceCard(ctx, item, onDialog) {
     item.editable ? toolbar(ctx, item, onDialog) : null,
     !item.editable ? h('div', { className: 'wg-notes' }, note('info', `${item.name} is not in /etc/config/network (it was created at run time, for example with wg-quick), so it cannot be edited here.`)) : null,
     editable && i && i.enabled && !i.zone ? h('div', { className: 'wg-notes' }, note('warn', `${item.name} is in no firewall zone, so the default policies apply and its peers cannot reach the router or other networks. Assign it to a zone on the Firewall page. `, h('a', { href: '#firewall' }, 'Open the Firewall page'))) : null,
-    item.removed ? null : h('div', { className: 'wg-body' }, i ? settings(i) : null, peersTable(ctx, item)),
-    editable ? h('div', { className: 'wg-panels' }, interfaceForm(ctx, item)) : null);
+    editable ? h('div', { className: 'wg-panels' }, interfaceForm(ctx, item)) : null,
+    item.removed ? null : h('div', { className: 'wg-body' }, i ? settings(i) : null, peersTable(ctx, item)));
 }

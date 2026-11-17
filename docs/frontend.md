@@ -89,7 +89,7 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   [Configuration changes](architecture.md#configuration-changes).
 - **`modal.js`, `drawer.js`**: `openDialog()` (a native `<dialog>` in Bootstrap's modal markup) and `openDrawer()` (a
   side panel that leaves the page usable beside it, closed by Escape or a route change); each header lists the options.
-  `clipboard.js` has `copyText()` and `copyButton()`.
+  `clipboard.js` has `copyText()` and `copyButton()`; `download.js` has `saveFile()`; `qr.js` draws a QR code as inline SVG (`qrBox()`), importing the vendored encoder only when the first code is shown.
 - **`rates.js`**: `createTracker()` turns the cumulative counters the router reports into per-second rates
   and ratios from successive polls. A series restarts after a gap (polling paused, background tab), a counter
   that goes backwards counts as zero, and `keep()` drops series whose key disappeared. Every page that shows

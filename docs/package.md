@@ -165,7 +165,7 @@ with `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh
 
 ## License
 
-flab-ui is MIT licensed (see `LICENSE`). `www/vendor/bootstrap.min.css` is Bootstrap 5.3.3 and the icon paths in
+flab-ui is MIT licensed (see `LICENSE`). `www/vendor/bootstrap.min.css` is Bootstrap 5.3.3, `www/vendor/qrcode.js` is qrcode-generator 2.0.4 (MIT, Kazuhiko Arase) and the icon paths in
 `www/js/core/icons.js` are Bootstrap Icons 1.11.3; both are MIT licensed (Copyright the Bootstrap Authors).
 `www/LICENSE` carries the application and third-party notices and the MIT permission text; the package's existing
 `www/` install rule includes it at `/www/flab/LICENSE`. Changes made after a published tag require a new release

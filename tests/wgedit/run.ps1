@@ -6,7 +6,7 @@ Tests the WireGuard page's editing without changing the router.
 .DESCRIPTION
 1. Unit tests of the page's pure parts: the address math, the keys (X25519 against the RFC 7748 vectors, WebCrypto against the plain
    implementation), and the model (reading the plugin's reply, the draft, the review list, validation, the UCI operations, the check
-   after a save, the warnings about cutting your own tunnel, the "add a device" helpers).
+   after a save, the warnings about cutting your own tunnel, the "add a client" helpers).
 2. The backend: the repository's flab.wireguard.uc runs on the router against fixtures (FLAB_FIXTURES), so it executes nothing: a router
    with a running interface, a disabled one, one only the kernel has, peers with pre-shared keys, a peer whose public key option holds
    a pasted secret, and the connections /proc/net/tcp and /proc/net/tcp6 list; and a router without WireGuard. It asserts that no key
@@ -15,7 +15,7 @@ Tests the WireGuard page's editing without changing the router.
 3. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1). The page is first shown against the
    router's own configuration with every write blocked (and failing the test if one is attempted, or if the page reads the network
    config with uci get), then driven against a mock of the flab.wireguard plugin built from a stateful mock of rpcd's uci object: the
-   whole editing flow (validation, write-only keys, the key generator, adding and removing interfaces and peers, the add-a-device
+   whole editing flow (validation, write-only keys, the key generator, adding and removing interfaces and peers, the add-a-client
    dialog, the warnings about your own tunnel, saving, a change the router does not keep, an interface that does not come up, a login that
    may not write) WITHOUT touching the router's configuration.
 

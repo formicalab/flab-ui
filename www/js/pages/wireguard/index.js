@@ -1,5 +1,5 @@
 // WireGuard page (route #wireguard): every WireGuard interface and its peers, from the flab.wireguard plugin (UCI network + `wg show`),
-// and the editor of the configuration behind them: interface settings, peers, keys (generated in the browser), and the "add a device"
+// and the editor of the configuration behind them: interface settings, peers, keys (generated in the browser), and the "add a client"
 // helper. Interfaces and peers are rediscovered on every poll, so a new one appears without a reload.
 //
 // The config is read through the plugin, which leaves out the private and pre-shared keys: the browser never receives a secret, and the key

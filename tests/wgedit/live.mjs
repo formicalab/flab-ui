@@ -2,7 +2,7 @@
 // 1. Against the real router, read only: the page shows the router's own interfaces and peers, no key is on the page, and every uci write
 //    that might be sent in this phase is blocked and fails the test, as does any `uci get` of the network config.
 // 2. Against a mock of the flab.wireguard plugin built from a stateful mock of rpcd's `uci` object: the editing flow of interfaces, peers
-//    and keys (validation, the write-only keys and the generator, adding and removing, the add-a-device dialog, the warnings about the
+//    and keys (validation, the write-only keys and the generator, adding and removing, the add-a-client dialog, the warnings about the
 //    tunnel you are working through, saving, a change the router does not keep, an interface that does not come up, leftovers, a login
 //    that may not write, a missing plugin, an expired session) WITHOUT touching the router's configuration.
 // Usage: node live.mjs   (env: FLAB_SID and FLAB_ACLS from tests/TestSession.ps1, FLAB_URL, FLAB_SHOTS)
@@ -216,15 +216,15 @@ const real = await page.evaluate(async () => {
   return { names: r.interfaces.map(i => i.name), configured: r.interfaces.filter(i => i.configured).map(i => i.name), peers: r.interfaces.reduce((n, i) => n + i.peers.length, 0) };
 });
 check(real.names.length >= 1 && await page.locator('.wg-card').count() === real.names.length, 'every interface of the router has a card', JSON.stringify(real));
-check(await page.locator('.wg-table tbody tr').count() >= real.peers && await page.locator('.wg-toolbar button:has-text("Add remote peer")').count() === real.configured.length, 'the peers are listed and every configured interface has its buttons', JSON.stringify(real));
+check(await page.locator('.wg-table tbody tr').count() >= real.peers && await page.locator('.wg-toolbar button:has-text("Add peer manually")').count() === real.configured.length, 'the peers are listed and every configured interface has its buttons', JSON.stringify(real));
 await page.locator('details.wg-panel summary').first().click();
 const pw = page.locator('.wg-form input[type=password]');
 check(await pw.count() >= 1 && await pw.evaluateAll(els => els.every(e => e.value === '')), 'a stored private key is never shown: the box is empty', String(await pw.count()));
 check(await pw.evaluateAll(els => els.some(e => /stored; leave empty/.test(e.placeholder))), 'and says that one is stored');
 check(!/private_key|preshared_key/.test(await page.locator('main').innerText()), 'no secret option on the page');
 check(await saveBtn().isDisabled() && await bar().isHidden(), 'nothing is pending');
-await page.locator('.wg-toolbar button:has-text("Add remote peer")').first().click();
-check(await page.locator('tr.wg-peer-edit').count() === 1 && /1 unsaved change/.test(await page.locator('.set-bar-summary').innerText()), 'Add remote peer adds a draft peer (nothing is written)');
+await page.locator('.wg-toolbar button:has-text("Add peer manually")').first().click();
+check(await page.locator('tr.wg-peer-edit').count() === 1 && /1 unsaved change/.test(await page.locator('.set-bar-summary').innerText()), 'Add peer manually adds a draft peer (nothing is written)');
 await page.click('button:has-text("Discard edits")');
 await page.waitForTimeout(600);
 await shot('real');
@@ -238,7 +238,7 @@ console.log('\n== reading (mock router) ==');
 check(await tile(0) === '1 / 1' && await tile(1) === '1 / 2', 'tiles: the interface is up and one of two enabled peers is connected', `${await tile(0)} | ${await tile(1)}`);
 check(await card('wg0').count() === 1 && await peerRow(card('wg0'), 'Phone').count() === 1 && await card('wg0').locator('.wg-table tbody tr').count() === 3, 'a card with three peers');
 check(/connected/.test(await peerRow(card('wg0'), 'Phone').innerText()) && /site/.test(await peerRow(card('wg0'), 'Site').innerText()) && /routes installed/.test(await peerRow(card('wg0'), 'Site').innerText()), 'the live state and the role of each peer are shown next to the configuration');
-check(await card('wg0').locator('button:has-text("Edit")').count() === 3 && await card('wg0').locator('button:has-text("Add remote device")').isEnabled(), 'each peer can be edited, and a device can be added');
+check(await card('wg0').locator('button:has-text("Edit")').count() === 3 && await card('wg0').locator('button:has-text("Add client")').isEnabled(), 'each peer can be edited, and a client can be added');
 check(!(await card('wg0').locator('details.wg-panel').evaluate(e => e.open)), 'the settings panel starts closed');
 check(!(await page.locator('main').innerText()).includes('CANARY') && !(await page.content()).includes('CANARY'), 'no secret of the mock router is anywhere in the page');
 await shot('mock');
@@ -319,9 +319,9 @@ check(/^Saved/.test(await outcome()), 'saving the peer works');
 check(mock.cfg.cfg0b2c3d.persistent_keepalive === '25' && mock.cfg.cfg0b2c3d.preshared_key === pskTyped && mock.cfg.cfg0b2c3d.endpoint_host === 'site.example.com', 'the peer\'s section was changed in place', JSON.stringify(mock.cfg.cfg0b2c3d));
 
 console.log('\n== adding and removing a peer ==');
-await card('wg0').locator('.wg-toolbar button:has-text("Add remote peer")').click();
+await card('wg0').locator('.wg-toolbar button:has-text("Add peer manually")').click();
 const fresh = card('wg0').locator('tr.wg-peer-edit').last();
-check(await fresh.count() === 1 && /new/.test(await card('wg0').locator('.wg-table tbody tr:not(.wg-peer-edit)').nth(3).innerText()), 'Add remote peer opens an editor for the new peer');
+check(await fresh.count() === 1 && /new/.test(await card('wg0').locator('.wg-table tbody tr:not(.wg-peer-edit)').nth(3).innerText()), 'Add peer manually opens an editor for the new peer');
 await input(fresh, 'Name').fill('Laptop');
 await input(fresh, 'Public key').fill(TABLET);
 await field(fresh, 'Allowed IPs').locator('button:has-text("Add allowed IP")').click();
@@ -371,24 +371,26 @@ mock.sessions = [{ remote: '10.8.0.2', port: 443 }];
 await refresh();
 //#endregion
 
-//#region Adding a device
-console.log('\n== adding a device ==');
-await card('wg0').locator('button:has-text("Add remote device")').click();
+//#region Adding a client
+console.log('\n== adding a client ==');
+await card('wg0').locator('button:has-text("Add client")').click();
 const dev = page.locator('dialog.fl-dialog');
 await dev.waitFor();
-check(/Add a remote device to wg0/.test(await dev.innerText()) && /10\.8\.0\.3\/32 and fd00:8::3\/128/.test(await dev.innerText()), 'the dialog offers the next free address of each family', await dev.innerText());
-await shot('device-dialog-form');
-await dev.locator('button:has-text("Create the device")').click();
-check(/Give the device a name/.test(await dev.innerText()), 'a name is required');
+check(/Add a client to wg0/.test(await dev.innerText()) && /10\.8\.0\.3\/32 and fd00:8::3\/128/.test(await dev.innerText()), 'the dialog offers the next free address of each family', await dev.innerText());
+await shot('client-dialog-form');
+await dev.locator('button:has-text("Create the client")').click();
+check(/Give the client a name/.test(await dev.innerText()), 'a name is required');
 await dev.locator('input[placeholder="My phone"]').fill('My tablet');
 await dev.locator('select').selectOption('custom');
 check(await dev.locator('input[placeholder^="192.168.1.0"]').isVisible(), 'choosing "These networks…" shows a box for them');
 await dev.locator('select').selectOption('all');
 check(await dev.locator('input[placeholder^="192.168.1.0"]').isHidden(), 'and the other choices hide it');
-await dev.locator('button:has-text("Create the device")').click();
+await dev.locator('button:has-text("Create the client")').click();
 await dev.locator('pre.wg-conf').waitFor();
 const conf = await dev.locator('pre.wg-conf').innerText();
-await shot('device-dialog-config');
+await shot('client-dialog-config');
+await dev.locator('.fl-qr svg').waitFor();
+check(await dev.locator('.fl-qr svg path').count() === 1 && (await dev.locator('.fl-qr svg').getAttribute('viewBox')).split(' ')[2] >= 29 && await dev.locator('.modal-dialog.modal-xl').count() === 1, 'the configuration is also shown as a QR code, in the wide dialog');
 const privLine = /PrivateKey = (\S+)/.exec(conf)?.[1];
 const pskLine = /PresharedKey = (\S+)/.exec(conf)?.[1];
 check(/^\[Interface\]/.test(conf) && /Address = 10\.8\.0\.3\/32, fd00:8::3\/128/.test(conf) && new RegExp(`PublicKey = ${SERVER.replace(/[+/=]/g, c => `\\${c}`)}`).test(conf) && /AllowedIPs = 0\.0\.0\.0\/0, ::\/0/.test(conf) && /PersistentKeepalive = 25/.test(conf) && /Endpoint = .+:51821/.test(conf), 'the configuration for the device is shown: its address, the router\'s public key, the endpoint and port, what it routes', conf);
@@ -403,14 +405,14 @@ check(download.suggestedFilename() === 'wg0-My-tablet.conf', 'Download offers th
 await dev.locator('button:has-text("Close")').click();
 await page.waitForTimeout(300);
 check(await page.locator('dialog.fl-dialog').count() === 0 && await peerRow(card('wg0'), 'My tablet').count() === 1 && /New peer on wg0 \(My tablet\)/.test(await page.locator('.set-bar-summary').innerText() + await page.locator('.set-bar').innerText()), 'the dialog closes; the peer is in the form, not saved');
-await shot('device-added');
+await shot('client-added');
 mock.calls = [];
 await saveBtn().click();
-check(/^Saved/.test(await outcome()), 'saving adds the device');
+check(/^Saved/.test(await outcome()), 'saving adds the client');
 const dev1 = Object.values(mock.cfg).find(s => s.description === 'My tablet');
 check(dev1 && dev1.public_key === await publicKeyOf(privLine) && dev1.preshared_key === pskLine && JSON.stringify(dev1.allowed_ips) === JSON.stringify(['10.8.0.3/32', 'fd00:8::3/128']), 'the router got the public key of the shown private key, the pre-shared key and the addresses', JSON.stringify(dev1));
-await card('wg0').locator('button:has-text("Add remote device")').click();
-check(/10\.8\.0\.4\/32/.test(await page.locator('dialog.fl-dialog').innerText()), 'the next device gets the next address');
+await card('wg0').locator('button:has-text("Add client")').click();
+check(/10\.8\.0\.4\/32/.test(await page.locator('dialog.fl-dialog').innerText()), 'the next client gets the next address');
 await page.locator('dialog.fl-dialog button:has-text("Cancel")').click();
 await page.waitForTimeout(300);
 check(await saveBtn().isHidden(), 'Cancel adds nothing');
@@ -425,7 +427,7 @@ await page.waitForTimeout(500);
 check(/new/.test(await nw.locator('.wg-head').innerText()) && await nw.locator('details.wg-panel').evaluate(e => e.open), 'a new card opens with its settings');
 check(await nw.locator('input[placeholder="wg0"]').inputValue() === 'wg1' && await input(nw, 'Listen port').inputValue() === '51820', 'it starts with the next free name and the first port no interface uses');
 check(/^[A-Za-z0-9+/]{43}=$/.test(await nw.locator('.wg-keyfield input').first().inputValue()), 'and a private key made in the browser');
-check(await nw.locator('button:has-text("Add remote device")').isDisabled(), 'a device cannot be added before the interface is saved');
+check(await nw.locator('button:has-text("Add client")').isDisabled(), 'a client cannot be added before the interface is saved');
 check(/is in no firewall zone yet/.test(await notes()), 'the banner says the interface will be in no firewall zone');
 await nw.locator('input[placeholder="wg0"]').fill('lan');
 check(/already an interface or section called "lan"/.test(await notes()) && await saveBtn().isDisabled(), 'a name that is taken by any section is refused');
@@ -436,7 +438,7 @@ await input(nw, 'Listen port').fill('51821');
 check(/also the listen port of wg0/.test(await notes()), 'a port another interface uses is refused');
 await input(nw, 'Listen port').fill('51830');
 await field(nw, 'Addresses').locator('input').first().fill('10.9.0.1/24');
-await nw.locator('button:has-text("Add remote peer")').click();
+await nw.locator('button:has-text("Add peer manually")').click();
 const nped = nw.locator('tr.wg-peer-edit');
 await input(nped, 'Name').fill('First');
 await input(nped, 'Public key').fill(K(21));
@@ -451,7 +453,7 @@ check(hv && hv['.type'] === 'interface' && hv.proto === 'wireguard' && /^[A-Za-z
 const hp = Object.values(mock.cfg).find(s => s['.type'] === 'wireguard_home_vpn');
 check(hp && hp.public_key === K(21) && hp.description === 'First', 'and its peer as a wireguard_home_vpn section');
 check(await card('home_vpn').count() === 1 && /no firewall zone/.test(await card('home_vpn').innerText()) && await card('home_vpn').locator('a[href="#firewall"]').count() === 1, 'the saved interface is listed with a note and a link to the Firewall page, since it is in no zone');
-check(await card('home_vpn').locator('button:has-text("Add remote device")').isEnabled() && /up/.test(await card('home_vpn').locator('.wg-head').innerText()), 'it is running, so devices can be added');
+check(await card('home_vpn').locator('button:has-text("Add client")').isEnabled() && /up/.test(await card('home_vpn').locator('.wg-head').innerText()), 'it is running, so clients can be added');
 
 console.log('\n== an interface that does not come up ==');
 mock.failUp = ['broken'];
@@ -543,7 +545,7 @@ await refresh();
 
 console.log('\n== a login that may not write ==');
 const ro = await open({ ubus: { system: ['board', 'info'], service: ['list'], 'flab.wireguard': ['status'], uci: ['get', 'changes'] } });
-check(/not allowed to change the configuration/.test(await ro.locator('main').innerText()) && await ro.locator('button:has-text("Add WireGuard interface")').isDisabled() && await ro.locator('button:has-text("Add remote peer")').first().isDisabled() && await ro.locator('button:has-text("Edit")').first().isDisabled(), 'the controls are disabled and the page says why');
+check(/not allowed to change the configuration/.test(await ro.locator('main').innerText()) && await ro.locator('button:has-text("Add WireGuard interface")').isDisabled() && await ro.locator('button:has-text("Add peer manually")').first().isDisabled() && await ro.locator('button:has-text("Edit")').first().isDisabled(), 'the controls are disabled and the page says why');
 await ro.locator('details.wg-panel summary').first().click();
 check(await ro.locator('.wg-panel input').first().isDisabled() && /Phone/.test(await ro.locator('.wg-table').first().innerText()), 'the form is read only, and the status is still shown');
 await ro.close();

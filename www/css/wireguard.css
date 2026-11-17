@@ -34,7 +34,7 @@
 .wg-addbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0; }
 
 /* The interface settings form, a fold (disclosure() in core/fold.js) at the bottom of the card, and the editor of one peer under its row. */
-.wg-panels { padding: 0 1.25rem 1.25rem; }
+.wg-panels { padding: .6rem 1.25rem 0; }
 .wg-panel { border: 1px solid var(--fl-stroke); border-radius: 6px; }
 .wg-panel-body { padding: .8rem .9rem 1rem; display: flex; flex-direction: column; gap: 1rem; }
 .wg-peer-edit > td { background: var(--fl-surface-hover); padding: 1rem 1.25rem; white-space: normal; }
@@ -47,5 +47,10 @@
 .wg-extra p { margin: 0 0 .4rem; }
 .wg-extra .kv { margin: 0; }
 
-/* The configuration text of a device, shown once in the dialog. */
-.wg-conf { margin: .8rem 0 0; padding: .8rem 1rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface-hover); white-space: pre-wrap; word-break: break-all; user-select: all; }
+/* The result of "Add client", shown once in the dialog: the QR code beside the configuration text it encodes (stacked on a narrow screen). */
+.wg-result { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; align-items: start; margin-top: .8rem; }
+.wg-qr { display: grid; gap: .4rem; justify-items: center; max-width: 340px; text-align: center; }
+.fl-qr { line-height: 0; border: 1px solid var(--fl-stroke); border-radius: 6px; overflow: hidden; }
+.fl-qr:empty { width: 340px; height: 340px; }
+.wg-conf { margin: 0; padding: .8rem 1rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface-hover); white-space: pre-wrap; word-break: break-all; user-select: all; }
+@media (max-width: 700px) { .wg-result { grid-template-columns: minmax(0, 1fr); } .wg-qr { justify-self: center; } }

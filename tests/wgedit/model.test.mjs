@@ -1,6 +1,6 @@
 // Unit test of the WireGuard page's pure parts (www/js/pages/wireguard): the address math (addr.js), the keys (keys.js), and the
 // model (model.js, schema.js): reading the plugin's reply, the draft, the review list, validation, the UCI operations, the check after a
-// save, the warnings about cutting your own tunnel, and the "add a device" helpers. No router and no browser. Usage: node model.test.mjs
+// save, the warnings about cutting your own tunnel, and the "add a client" helpers. No router and no browser. Usage: node model.test.mjs
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -297,28 +297,28 @@ touched.interfaces.wg0.peers.cfg111111.public_key = NEW;
 check(m.expectations(data0, touched).loaded.length === 1 && m.expectations(data0, touched).loaded[0].key === NEW, 'a peer with a new key must be loaded');
 //#endregion
 
-//#region Adding a device
-console.log('\n== adding a device ==');
-const plan = m.devicePlan(data0, draft0(), 'wg0');
+//#region Adding a client
+console.log('\n== adding a client ==');
+const plan = m.clientPlan(data0, draft0(), 'wg0');
 check(!plan.error && j(plan.addresses) === j(['10.8.0.3/32', 'fd00:8::3/128']) && j(plan.tunnels) === j(['10.8.0.0/24', 'fd00:8::/64']) && plan.serverKey === SERVER && plan.port === '51820', 'the next free address of each family (the phone has .2 and ::2, the disabled peer holds .9 only), the tunnel networks, the server key and the port', j(plan));
 const withP = draft0(); m.addPeer(withP, 'wg0', { allowed_ips: ['10.8.0.3/32'] });
-check(m.devicePlan(data0, withP, 'wg0').addresses[0] === '10.8.0.4/32', 'a device added in the form takes the address too');
-const twoNets = m.devicePlan(data0, edited((_, w) => { w.values.addresses.push('10.8.5.1/24'); }), 'wg0');
-check(j(twoNets.addresses) === j(['10.8.0.3/32', 'fd00:8::3/128']) && twoNets.tunnels.length === 3, 'a device gets one address per family, but is told about every tunnel network', j(twoNets));
+check(m.clientPlan(data0, withP, 'wg0').addresses[0] === '10.8.0.4/32', 'a client added in the form takes the address too');
+const twoNets = m.clientPlan(data0, edited((_, w) => { w.values.addresses.push('10.8.5.1/24'); }), 'wg0');
+check(j(twoNets.addresses) === j(['10.8.0.3/32', 'fd00:8::3/128']) && twoNets.tunnels.length === 3, 'a client gets one address per family, but is told about every tunnel network', j(twoNets));
 const dis = draft0(); dis.interfaces.wg0.peers.cfg333333.disabled = false;
-check(m.devicePlan(data0, dis, 'wg0').addresses[0] === '10.8.0.3/32', 'an enabled peer\'s .9 does not block .3');
-check(/new private key/.test(m.devicePlan(data0, edited((_, w) => { w.values.private_key = SITE; }), 'wg0').error), 'a private key that is not saved yet blocks it: the device would be given the old public key');
-check(/not running yet/.test(m.devicePlan(data0, nd, nid).error) && /not running yet/.test(m.devicePlan(dd0, m.draftFrom(dd0), 'wg0').error), 'a new interface and one that is down cannot take a device');
+check(m.clientPlan(data0, dis, 'wg0').addresses[0] === '10.8.0.3/32', 'an enabled peer\'s .9 does not block .3');
+check(/new private key/.test(m.clientPlan(data0, edited((_, w) => { w.values.private_key = SITE; }), 'wg0').error), 'a private key that is not saved yet blocks it: the device would be given the old public key');
+check(/not running yet/.test(m.clientPlan(data0, nd, nid).error) && /not running yet/.test(m.clientPlan(dd0, m.draftFrom(dd0), 'wg0').error), 'a new interface and one that is down cannot take a device');
 const noPort = clone(status()); noPort.interfaces[0].listen_port = null;
-check(/no listen port/.test(m.devicePlan(m.readWireguard(noPort), edited((_, w) => { w.values.listen_port = ''; }), 'wg0').error) && m.devicePlan(m.readWireguard(noPort), draft0(), 'wg0').port === '51820', 'the listen port comes from the form, else from the running interface; without one there is no device');
-check(/no address with a prefix length/.test(m.devicePlan(data0, edited((_, w) => { w.values.addresses = ['10.8.0.1']; }), 'wg0').error), 'an interface without a tunnel network cannot take a device');
-check(/no free address/.test(m.devicePlan(data0, edited((_, w) => { w.values.addresses = ['10.8.0.1/30']; w.peers.cfg111111.allowed_ips = ['10.8.0.2/32', '10.8.0.3/32']; }), 'wg0').error), 'a full network cannot take a device');
-check(j(m.deviceAllowedIps('tunnel', ['10.8.0.0/24'], '').list) === j(['10.8.0.0/24']) && j(m.deviceAllowedIps('all', [], '').list) === j(['0.0.0.0/0', '::/0']) && j(m.deviceAllowedIps('custom', [], '192.168.1.0/24, 10.0.0.0/8').list) === j(['192.168.1.0/24', '10.0.0.0/8']) && m.deviceAllowedIps('custom', [], 'nope').error && m.deviceAllowedIps('custom', [], '').error, 'what the device routes into the tunnel');
+check(/no listen port/.test(m.clientPlan(m.readWireguard(noPort), edited((_, w) => { w.values.listen_port = ''; }), 'wg0').error) && m.clientPlan(m.readWireguard(noPort), draft0(), 'wg0').port === '51820', 'the listen port comes from the form, else from the running interface; without one there is no device');
+check(/no address with a prefix length/.test(m.clientPlan(data0, edited((_, w) => { w.values.addresses = ['10.8.0.1']; }), 'wg0').error), 'an interface without a tunnel network cannot take a device');
+check(/no free address/.test(m.clientPlan(data0, edited((_, w) => { w.values.addresses = ['10.8.0.1/30']; w.peers.cfg111111.allowed_ips = ['10.8.0.2/32', '10.8.0.3/32']; }), 'wg0').error), 'a full network cannot take a device');
+check(j(m.clientAllowedIps('tunnel', ['10.8.0.0/24'], '').list) === j(['10.8.0.0/24']) && j(m.clientAllowedIps('all', [], '').list) === j(['0.0.0.0/0', '::/0']) && j(m.clientAllowedIps('custom', [], '192.168.1.0/24, 10.0.0.0/8').list) === j(['192.168.1.0/24', '10.0.0.0/8']) && m.clientAllowedIps('custom', [], 'nope').error && m.clientAllowedIps('custom', [], '').error, 'what the device routes into the tunnel');
 check(m.endpointText('vpn.example.com', '51820') === 'vpn.example.com:51820' && m.endpointText('2001:db8::1', '51820') === '[2001:db8::1]:51820' && m.endpointText('203.0.113.7', '1') === '203.0.113.7:1', 'the endpoint line brackets an IPv6 address');
-const conf = m.deviceConfig({ privateKey: 'PRIV', addresses: ['10.8.0.3/32', 'fd00:8::3/128'], dns: '10.8.0.1', serverKey: SERVER, presharedKey: 'PSK', endpoint: 'vpn.example.com:51820', allowedIps: ['10.8.0.0/24'], keepalive: '25' });
+const conf = m.clientConfig({ privateKey: 'PRIV', addresses: ['10.8.0.3/32', 'fd00:8::3/128'], dns: '10.8.0.1', serverKey: SERVER, presharedKey: 'PSK', endpoint: 'vpn.example.com:51820', allowedIps: ['10.8.0.0/24'], keepalive: '25' });
 check(conf === `[Interface]\nPrivateKey = PRIV\nAddress = 10.8.0.3/32, fd00:8::3/128\nDNS = 10.8.0.1\n\n[Peer]\nPublicKey = ${SERVER}\nPresharedKey = PSK\nEndpoint = vpn.example.com:51820\nAllowedIPs = 10.8.0.0/24\nPersistentKeepalive = 25\n`, 'the device\'s configuration text', conf);
-check(!m.deviceConfig({ privateKey: 'P', addresses: ['a'], dns: '', serverKey: 'S', presharedKey: '', endpoint: 'e:1', allowedIps: ['x'], keepalive: '' }).match(/DNS|PresharedKey|PersistentKeepalive/), 'optional lines are left out');
-check(m.deviceFileName('wg0', 'My phone') === 'wg0-My-phone.conf' && m.deviceFileName('wg0', 'A very long device name') === 'wg0-A-very-long.conf' && m.deviceFileName('', '') === 'wireguard.conf' && m.deviceFileName('wg0', '../x') === 'wg0-x.conf', 'the file name is safe and short', m.deviceFileName('wg0', 'A very long device name'));
+check(!m.clientConfig({ privateKey: 'P', addresses: ['a'], dns: '', serverKey: 'S', presharedKey: '', endpoint: 'e:1', allowedIps: ['x'], keepalive: '' }).match(/DNS|PresharedKey|PersistentKeepalive/), 'optional lines are left out');
+check(m.clientFileName('wg0', 'My phone') === 'wg0-My-phone.conf' && m.clientFileName('wg0', 'A very long client name') === 'wg0-A-very-long.conf' && m.clientFileName('', '') === 'wireguard.conf' && m.clientFileName('wg0', '../x') === 'wg0-x.conf', 'the file name is safe and short', m.clientFileName('wg0', 'A very long client name'));
 check(m.ownAddress({ addresses: ['10.8.0.1/24'] }) === '10.8.0.1' && m.ownAddress({ addresses: [''] }) === '', 'the router\'s own tunnel address');
 //#endregion
 

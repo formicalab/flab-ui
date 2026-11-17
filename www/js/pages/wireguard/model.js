@@ -1,6 +1,6 @@
 // Pure model of the WireGuard page: the data the plugin reports, the form's draft, the review list, validation, the UCI operations a
-// save makes, the check after a save, and the helpers of the "add a device" flow (the next free tunnel address, the configuration
-// text for the device) and of the warnings about changes that may cut the tunnel the administrator is working through. No DOM and no
+// save makes, the check after a save, and the helpers of the "add a client" flow (the next free tunnel address, the configuration
+// text for the client) and of the warnings about changes that may cut the tunnel the administrator is working through. No DOM and no
 // network, so it is unit-tested on its own (tests/wgedit/model.test.mjs).
 //
 // The config is edited through rpcd's `uci` object, but it is read through the flab.wireguard plugin, which leaves out the keys:
@@ -128,7 +128,7 @@ export function restoreInterface(draft, id) {
   delete draft.removed[id];
 }
 
-// Adds a peer to an interface of the draft and returns its id. `values` overrides the starting values (the add-a-device flow).
+// Adds a peer to an interface of the draft and returns its id. `values` overrides the starting values (the add-a-client flow).
 export function addPeer(draft, ifId, values = {}) {
   const id = `p${draft.next++}`;
   const d = draft.interfaces[ifId];
@@ -551,40 +551,40 @@ export function checkApplied(after, draft, base) {
 
 //#endregion
 
-//#region Adding a device
+//#region Adding a client
 
-// The plan for adding a device (a client) to an interface: { error } when it cannot be done, else { addresses, tunnels, serverKey, port }.
+// The plan for adding a client (a client) to an interface: { error } when it cannot be done, else { addresses, tunnels, serverKey, port }.
 // `addresses` holds the next free tunnel address of each family the interface has (host addresses: "10.8.0.2/32"), `tunnels` the
-// tunnel networks ("10.8.0.0/24") the device should reach, `serverKey` the interface's public key, which the router reports once
+// tunnel networks ("10.8.0.0/24") the client should reach, `serverKey` the interface's public key, which the router reports once
 // the interface runs, and `port` its listen port. The addresses skip everything the interface's peers (also the ones added in the form)
 // already allow.
-export function devicePlan(data, draft, ifId) {
+export function clientPlan(data, draft, ifId) {
   const item = ifaceList(data, draft).find(i => i.id === ifId);
   const d = draft.interfaces[ifId];
   if (!item || !d) return { error: 'This interface cannot be edited.' };
-  if (item.isNew || !item.data.up || !item.data.public_key) return { error: `${item.name} is not running yet, so the router cannot tell the device its public key. Save the interface (and wait until it runs) before adding a device.` };
-  if (normalize({ type: 'string' }, d.values.private_key) !== '') return { error: `You have typed or generated a new private key for ${item.name}. Save it first: the device must be given the public key the router really uses.` };
+  if (item.isNew || !item.data.up || !item.data.public_key) return { error: `${item.name} is not running yet, so the router cannot tell the client its public key. Save the interface (and wait until it runs) before adding a client.` };
+  if (normalize({ type: 'string' }, d.values.private_key) !== '') return { error: `You have typed or generated a new private key for ${item.name}. Save it first: the client must be given the public key the router really uses.` };
   const port = d.values.listen_port.trim() || (item.data.listen_port != null ? String(item.data.listen_port) : '');
-  if (!port) return { error: `${item.name} has no listen port. Set one, save, and then add the device.` };
+  if (!port) return { error: `${item.name} has no listen port. Set one, save, and then add the client.` };
   const nets = parsedList(d.values.addresses, { bare: true, mask: true }).filter(n => n.prefix < n.bits);
-  if (!nets.length) return { error: `${item.name} has no address with a prefix length (for example 10.8.0.1/24), so there is no tunnel network to give the device an address from.` };
+  if (!nets.length) return { error: `${item.name} has no address with a prefix length (for example 10.8.0.1/24), so there is no tunnel network to give the client an address from.` };
   const taken = Object.values(d.peers).filter(v => !v.disabled).flatMap(v => parsedList(v.allowed_ips)).filter(c => c.prefix > 0);
   const addresses = [], tunnels = [], families = new Set();
   for (const n of nets) {
     tunnels.push(networkText(n));
-    // A device gets one address per address family, from the first tunnel network of that family.
+    // A client gets one address per address family, from the first tunnel network of that family.
     if (families.has(n.family)) continue;
     families.add(n.family);
     const host = nextFreeHost(n, taken);
     if (host) { addresses.push(host); taken.push(parseCidr(host)); }
   }
-  if (!addresses.length) return { error: `The tunnel network of ${item.name} has no free address left for a device.` };
+  if (!addresses.length) return { error: `The tunnel network of ${item.name} has no free address left for a client.` };
   return { addresses, tunnels, serverKey: item.data.public_key, port };
 }
 
-// The allowed IPs a device routes into the tunnel, as a list: `mode` is 'tunnel' (the tunnel networks), 'all' (every address) or
+// The allowed IPs a client routes into the tunnel, as a list: `mode` is 'tunnel' (the tunnel networks), 'all' (every address) or
 // 'custom' (the comma or space separated `custom` text). Returns { list } or { error }.
-export function deviceAllowedIps(mode, tunnels, custom) {
+export function clientAllowedIps(mode, tunnels, custom) {
   if (mode === 'all') return { list: ['0.0.0.0/0', '::/0'] };
   if (mode === 'tunnel') return { list: [...tunnels] };
   const list = custom.split(/[\s,]+/).filter(Boolean);
@@ -593,11 +593,11 @@ export function deviceAllowedIps(mode, tunnels, custom) {
   return bad ? { error: `"${bad}" is not an address with a prefix length such as 192.168.1.0/24.` } : { list };
 }
 
-// Where the device connects: the host and port as WireGuard's `Endpoint` line writes them (an IPv6 address in square brackets).
+// Where the client connects: the host and port as WireGuard's `Endpoint` line writes them (an IPv6 address in square brackets).
 export const endpointText = (host, port) => `${parseAddress(host)?.family === 6 ? `[${host}]` : host}:${port}`;
 
-// The WireGuard configuration text for a device (the file the WireGuard app or wg-quick reads).
-export function deviceConfig({ privateKey, addresses, dns, serverKey, presharedKey, endpoint, allowedIps, keepalive }) {
+// The WireGuard configuration text for a client (the file the WireGuard app or wg-quick reads).
+export function clientConfig({ privateKey, addresses, dns, serverKey, presharedKey, endpoint, allowedIps, keepalive }) {
   return [
     '[Interface]',
     `PrivateKey = ${privateKey}`,
@@ -614,11 +614,11 @@ export function deviceConfig({ privateKey, addresses, dns, serverKey, presharedK
   ].filter(l => l != null).join('\n');
 }
 
-// A file name for a device's configuration: the interface and device names with anything but letters, digits, underscore and
+// A file name for a client's configuration: the interface and client names with anything but letters, digits, underscore and
 // hyphen replaced, at most 15 characters before ".conf" (the length wg-quick allows for a tunnel name).
-export const deviceFileName = (iface, device) => `${`${iface}-${device}`.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '').slice(0, 15) || 'wireguard'}.conf`;
+export const clientFileName = (iface, client) => `${`${iface}-${client}`.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '').slice(0, 15) || 'wireguard'}.conf`;
 
-// The address of the first of an interface's own addresses, for suggesting a DNS server to the device ("10.8.0.1"), or ''.
+// The address of the first of an interface's own addresses, for suggesting a DNS server to the client ("10.8.0.1"), or ''.
 export const ownAddress = values => {
   const c = parsedList(values.addresses, { bare: true, mask: true })[0];
   return c ? addressText(c) : '';
