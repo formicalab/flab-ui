@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.8 - 2026-11-17
 
 ### Interface
 
@@ -8,7 +8,7 @@
 - **WireGuard: Add client shows a QR code.** The dialog is wider (fewer wrapped hints) and, after the keys are made, shows the client's configuration as a QR code that the WireGuard app of a phone scans, beside the text with Copy and Download. The code is drawn in the browser with the vendored qrcode-generator (MIT, loaded only when needed); nothing is sent anywhere. Terminology is now **client** (a phone or laptop, made here with its keys) and **peer** (the generic WireGuard word; *Add site-to-site peer* connects the router of another network and starts with routes for its networks on), with *client*, *site-to-site* and *all traffic* as the role badges in the table, explained by a legend above it.
 - Checkboxes, radios and switches had the pale card stroke as their border, so an unchecked, enabled box looked disabled. They now have the same stronger border as the text inputs and the brand color when checked, in both themes; a disabled one is the only faded one.
 - Buttons are built by `button()` (now takes `title`, `disabled` and `ariaLabel`); the icon vocabulary (remove, add, save, revert, error, warning and so on) is applied on every page and documented in `docs/frontend.md`. The Toolbox error and finding banners share one helper.
-- Fixes: WireGuard reported "the protocol handler is not installed" on current OpenWrt, where netifd's handler is `wireguard.uc` (not `wireguard.sh`); both are recognized now. The WireGuard buttons read **Add remote device** and **Add remote peer**, with a tooltip each. A failed sign-in for a reason other than the credentials says why; the DDNS Log and Refresh buttons return to the sign-in screen when the session expired; the Routing lookup fold keeps its state across refreshes; the Ethernet ports cable-test button disappears for a port that cannot run it; the Overview temperature labels no longer assume one board.
+- Fixes: WireGuard reported "the protocol handler is not installed" on current OpenWrt, where netifd's handler is `wireguard.uc` (not `wireguard.sh`); both are recognized now. The WireGuard peer form suggests site-to-site values (a name such as "Branch office", a branch endpoint, a network behind the other router). A failed sign-in for a reason other than the credentials says why; the DDNS Log and Refresh buttons return to the sign-in screen when the session expired; the Routing lookup fold keeps its state across refreshes; the Ethernet ports cable-test button disappears for a port that cannot run it; the Overview temperature labels no longer assume one board.
 
 ### Backend
 
