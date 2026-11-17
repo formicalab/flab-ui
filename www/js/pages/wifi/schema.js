@@ -1,14 +1,14 @@
-// The options of /etc/config/wireless that the Wi-Fi page edits, as tables of fields in the format of core/fields.js (read that
+// The options of /etc/config/wireless that the Wi-Fi radios page edits, as tables of fields in the format of core/fields.js (read that
 // file first), with the explanations taken from the OpenWrt documentation of the wireless configuration
-// (https://openwrt.org/docs/guide-user/network/wifi/basic). Radios are `wifi-device` sections and wireless networks are
-// `wifi-iface` sections of mode `ap` (an access point) or `sta` (a client of another network); mesh interfaces are edited
-// on the Mesh page.
+// (https://openwrt.org/docs/guide-user/network/wifi/basic) and, for the mesh points, of 802.11s
+// (https://openwrt.org/docs/guide-user/network/wifi/mesh/802-11s). Radios are `wifi-device` sections and wireless networks are
+// `wifi-iface` sections of mode `ap` (an access point), `sta` (a client of another network) or `mesh` (an 802.11s mesh point).
 //
 // On top of the usual field keys, a field here has
 //   group      the collapsible group of the card it belongs to (RADIO_GROUPS, IFACE_GROUPS)
 //   secret     a write-only value: the router never sends it to the page, which only shows whether one is stored
 //   dynamic    the list the page fills the options from: 'htmodes', 'countries' or 'encryptions'
-//   modes      (wifi-iface) the modes the option applies to; 'ap' when not given
+//   modes      (wifi-iface) the modes the option applies to; every mode but `mesh` when not given
 //   show       (values, ctx) => whether the control is shown; a hidden option keeps its value in the file and is neither
 //              validated nor written. `ctx` is { mode, info, features, radio }: the interface's mode, what its encryption
 //              means (encryptionInfo), what hostapd was built with, and the radio it is on
@@ -95,7 +95,7 @@ export const countryError = v => (/^[A-Z0-9]{2}$/.test(v) ? null : 'must be a tw
 
 // The groups of a radio's settings, in order: id, title, whether the group starts open and an explanation.
 export const RADIO_GROUPS = [
-  { id: 'general', title: 'Radio', open: true, legend: 'Whether the radio is on, the generation and width it runs, which channels automatic selection may use, where it is (the country decides the channels and the power) and how strong it transmits. The channel is chosen with the tiles above.' },
+  { id: 'general', title: 'Radio', open: true, legend: 'Whether the radio is on, the generation and width it runs, which channels automatic selection may use, where it is (the country decides the channels and the power) and how strong it transmits. The channel is chosen with the tiles under these options.' },
   { id: 'rates', title: 'Rates and coexistence', legend: 'Which data rates the radio offers and how it behaves next to neighbors. Prefer the cell density to the explicit rate lists.' },
   { id: 'advanced', title: 'Advanced', legend: 'Rarely needed. The defaults suit almost every setup. Not every option is used by every driver: the OpenWrt documentation says which ones a chipset reads.' },
 ];
@@ -168,6 +168,7 @@ export const RADIO_FIELDS = [
 // The groups of a wireless network's settings, in order.
 export const IFACE_GROUPS = [
   { id: 'basic', title: 'Network', open: true, legend: 'The name, the networks it is attached to and how it is protected.' },
+  { id: 'mesh', title: 'Mesh options', legend: 'What the wireless configuration can pass to a mesh point. The mesh parameters (forwarding, RSSI threshold, HWMP root mode and the rest) are not among them; the ones in force are listed with the interface.' },
   { id: 'enterprise', title: 'Enterprise authentication', open: true, legend: 'WPA-Enterprise authenticates each user instead of using one shared password: an access point asks a RADIUS server, a client proves itself with EAP.' },
   { id: 'security', title: 'Security options', legend: 'Protected management frames, SAE and WPS.' },
   { id: 'clients', title: 'Clients and traffic', legend: 'Who may connect, how many, and how traffic is handled.' },
@@ -185,21 +186,25 @@ const eapTls = (v, c) => eapSta(v, c) && v.eap_type === 'tls';
 // Whether 802.11r is on.
 const onFt = v => v.ieee80211r;
 
-// The options of a `wifi-iface` section of mode ap or sta. `network` is a list the page draws as check boxes.
+// The options of a `wifi-iface` section of mode ap, sta or mesh. `network` is a list the page draws as check boxes.
 export const IFACE_FIELDS = [
   { key: 'ssid', type: 'string', test: ssidError, modes: ['ap', 'sta'], group: 'basic', label: 'SSID', placeholder: 'network name',
     hint: 'The name this network broadcasts, 1 to 32 bytes. For a client network (sta) it is the name of the network to join.' },
-  { key: 'network', type: 'list', single: true, modes: ['ap', 'sta'], group: 'basic', label: 'Attached to',
+  { key: 'mesh_id', type: 'string', test: ssidError, modes: ['mesh'], group: 'basic', label: 'Mesh ID', placeholder: 'mesh name',
+    hint: 'The name of the mesh as defined in IEEE 802.11s, 1 to 32 bytes. Every node of the mesh must use the same Mesh ID, the same channel and the same password.' },
+  { key: 'network', type: 'list', single: true, modes: ['ap', 'sta', 'mesh'], group: 'basic', label: 'Attached to',
     hint: 'The network interfaces (from /etc/config/network, usually a bridge) the wireless clients become part of. Each should be a layer 3 interface that a wireless network can be added to.' },
-  { key: 'encryption', type: 'enum', dynamic: 'encryptions', modes: ['ap', 'sta'], group: 'basic', label: 'Encryption', blank: 'Open (no encryption)',
+  { key: 'encryption', type: 'enum', dynamic: 'encryptions', modes: ['ap', 'sta', 'mesh'], group: 'basic', label: 'Encryption', blank: 'Open (no encryption)',
     hint: 'How the network is protected. WPA3-Personal (SAE) is the strongest password mode but older devices cannot join it; WPA2/WPA3 mixed lets both join, at the strength of WPA2 for the older ones. WPA2-Personal suits older devices. Open networks, WEP, WPA1 and TKIP offer little or no protection.' },
-  { key: 'key', type: 'string', secret: true, test: keyError, modes: ['ap', 'sta'], group: 'basic', label: 'Password', show: v => needsKey(v),
+  { key: 'key', type: 'string', secret: true, test: keyError, modes: ['ap', 'sta', 'mesh'], group: 'basic', label: 'Password', show: v => needsKey(v),
     hint: 'The passphrase, 8 to 63 characters, or exactly 64 hexadecimal digits taken as the key itself. It is stored in the file but never shown here: leave this empty to keep the stored value, type a new one to replace it.' },
+  { key: 'mcast_rate', type: 'int', number: true, min: 1, modes: ['mesh'], group: 'mesh', label: 'Multicast rate (kb/s)', placeholder: 'driver default',
+    hint: 'A fixed rate for multicast frames over the mesh, in kb/s. Empty leaves the choice to the driver.' },
   { key: 'bssid', type: 'string', check: 'mac', modes: ['sta'], group: 'basic', label: 'Access point (BSSID)', placeholder: 'any access point with this SSID',
     hint: 'Join only the access point with this MAC address, when several share the name.' },
   { key: 'hidden', type: 'bool', group: 'basic', label: 'Hide the SSID', default: false,
     hint: 'Stop broadcasting the name in beacon frames. It does not protect the network, since the name still appears in clients\' requests, and clients may fail to roam and airtime efficiency may drop.' },
-  { key: 'disabled', type: 'bool', modes: ['ap', 'sta'], group: 'basic', label: 'Disable this network', default: false,
+  { key: 'disabled', type: 'bool', modes: ['ap', 'sta', 'mesh'], group: 'basic', label: 'Disable this network', default: false,
     hint: 'The network stays in the file but is not started.' },
 
   { key: 'auth_server', type: 'string', check: 'host', group: 'enterprise', label: 'RADIUS server', placeholder: 'radius.example.com', show: eapAp,

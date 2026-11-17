@@ -10,8 +10,8 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins. It was d
 
 It is installed as the `flab-ui` package (see [OpenWrt package](package.md#openwrt-package)). It signs in with the router's own
 `root` login and creates no login of its own. The pages that only
-read the router are Overview, Mesh, IPsec VPN, Toolbox (which runs diagnostics and sends a Wake-on-LAN packet) and Logs. The others
-edit its configuration through UCI: System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), Dynamic DNS (`/etc/config/ddns`), Wi-Fi (the radios and wireless networks in `/etc/config/wireless`), Devices and Interfaces, which holds the bridges and, on its Ethernet ports tab, the VLAN sections (`/etc/config/network`), WireGuard (the WireGuard interfaces and peers in `/etc/config/network`), Firewall (`/etc/config/firewall`), the static-route editor on Routing (the `route` and `route6` sections of `/etc/config/network`) and the Settings tab of Traffic (`/etc/config/nlbwmon`). The Services page starts, stops and restarts services. How configuration changes are made safely is described in
+read the router are Overview, IPsec VPN, Toolbox (which runs diagnostics and sends a Wake-on-LAN packet) and Logs. The others
+edit its configuration through UCI: System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), Dynamic DNS (`/etc/config/ddns`), Wi-Fi radios (the radios, their wireless networks and mesh points in `/etc/config/wireless`), Devices and Interfaces, which holds the bridges and, on its Ethernet ports tab, the VLAN sections (`/etc/config/network`), WireGuard (the WireGuard interfaces and peers in `/etc/config/network`), Firewall (`/etc/config/firewall`), the static-route editor on Routing (the `route` and `route6` sections of `/etc/config/network`) and the Settings tab of Traffic (`/etc/config/nlbwmon`). The Services page starts, stops and restarts services. How configuration changes are made safely is described in
 [Configuration changes](#configuration-changes) and how services are controlled under [Services](pages/services.md#services-route-services).
 
 ## Architecture at a glance
@@ -59,7 +59,7 @@ flab-ui/
   docs/                      The documentation (start at docs/README.md); one file per page under docs/pages/
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
   tools/package.ps1          Builds the OpenWrt package with an SDK (Linux, or WSL on Windows), installs or removes it on the router with apk, and publishes releases (Action Build, Deploy, Remove or Release)
-  tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi, mesh, WireGuard, firewall, logs, helpers), nlbwedit/, routeedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
+  tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi radios with their mesh points, WireGuard, firewall, logs, helpers), nlbwedit/, routeedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
   www/                       Static site, installed to /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -99,13 +99,10 @@ flab-ui/
         index.js             Page registry and the page contract (read this first)
         overview/            index.js, cpu.js, temperatures.js
         network/             The Ethernet ports page: index.js (page: tiles, findings, ports table with the settings of a port under its row, VLAN cards), shared.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), vlanpage.js (the VLAN editor's wiring), vlanedit.js (the editable VLAN cards), vlanmodel.js (pure: the VLAN sections, tables, draft, validation, UCI operations, check after a save), util.js
-        connected/           The Connected devices view of Devices and Interfaces (hosted by interfaces/index.js): index.js (the Wi-Fi client tables, moved out of wifi/)
-        radios/              The Wi-Fi radios page: index.js (page: tiles, the editor wiring), card.js (the radio cards: live figures, picker, radio settings), parts.js (moved out of wifi/: the rate tracker, findings, state, key figures, utilization, configuration, channel strip)
-        wifi/                index.js (the Wi-Fi page: the wireless networks), editor.js (the editor shared with the radios page), radios.js (radio cards: the SSIDs of a radio), editors.js (the
-                             radio settings and the network forms), schema.js (the option tables), model.js (pure: draft, validation, UCI operations,
-                             check after a save), channels.js (pure model of the channel change), picker.js (the channel picker); mesh interfaces are left to mesh/
-        mesh/                index.js, node.js
-        ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
+        connected/           The Connected devices view of Devices and Interfaces (hosted by interfaces/index.js): index.js (the Wi-Fi client tables, moved out of the old Wi-Fi page)
+        radios/              The Wi-Fi radios page: index.js (page: tiles, the editor wiring, the flab.radio, flab.mesh and flab.network loads), card.js (the radio cards: live figures, findings, picker, networks, radio settings), networks.js (the wireless networks of a card: live part and editor of each access point, client network and mesh point), mesh.js (the live part of a mesh point: peers, paths, parameters, findings, rate recorder), parts.js (the rate tracker, findings, state, key figures, utilization, channel strip)
+        wifi/                The editing of the wireless configuration, used by the radios page: editor.js (the editor), editors.js (the radio settings and the network forms), schema.js (the option tables), model.js (pure: draft, validation, UCI operations,
+                             check after a save), channels.js (pure model of the channel change), picker.js (the channel picker)        ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         wireguard/           index.js (page, tiles, the editor), iface.js (interface card, peers table, findings), edit.js (interface form, peer editor, key controls, confirmation), device.js (the add-a-device dialog), schema.js (option tables), model.js (pure: draft, validation, UCI plan, check after a save), addr.js (pure: address math), keys.js (pure: key checks, X25519)
         firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js; the editor: schema.js (option tables), check.js (value checks), edit.js (reading and the draft), validate.js, plan.js (review list, UCI operations, check after a save), view.js (the draft laid over the live state), describe.js (plain words), itemdialog.js, controls.js, defaults.js (global settings), parts.js
         dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js (daemon and pool cards), boot6.js (network boot card)

@@ -59,11 +59,11 @@ function portCard(item) {
   ];
 }
 
-// The chip of a Wi-Fi or mesh interface inside its radio: a link to the Wi-Fi or Mesh page.
+// The chip of a Wi-Fi or mesh interface inside its radio: a link to the Wi-Fi radios page, where it is configured.
 function wifiChip(item) {
-  const href = item.kind === 'mesh' ? '#mesh' : '#wifi';
+  const href = '#radios';
   const what = [item.kind === 'mesh' ? 'mesh' : item.mode, item.ssid && item.ssid !== item.name ? item.name : null].filter(Boolean).join(' · ');
-  const title = [`${item.name} on ${item.radio ?? 'a radio'}`, item.enabled === false ? 'disabled' : null, 'opens the Wi-Fi page'].filter(Boolean).join(' · ');
+  const title = [`${item.name} on ${item.radio ?? 'a radio'}`, item.enabled === false ? 'disabled' : null, 'opens the Wi-Fi radios page'].filter(Boolean).join(' · ');
   return h('a', { className: 'nb-chip', href, title },
     h('span', { className: `dot ${item.up ? 'up' : 'idle'}` }),
     h('span', { className: 'nb-chip-text' }, h('strong', {}, item.ssid ?? item.name),

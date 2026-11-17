@@ -1,12 +1,12 @@
-// One card per 802.11s mesh interface: identity and radio, where the mesh port sits in the bridge's spanning
-// tree, the peers with their link quality (live traffic is derived from successive byte counters), the
-// mesh paths and the mesh parameters. Also exports the findings (what looks wrong) and the rate recorder.
+// The live part of an 802.11s mesh point on the Wi-Fi radios page: where the mesh port sits in the bridge's spanning tree, the peers with their link
+// quality (live traffic is derived from successive byte counters), the mesh paths and the mesh parameters in force. What is configured (Mesh ID,
+// encryption, password, networks) is in the settings of the interface, not repeated here. Also exports the findings (what looks wrong) and the rate recorder.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, kv, meter, section, muted, mono } from '../../core/ui.js';
 import { createTracker, latest } from '../../core/rates.js';
 import { fmtBytes, fmtLine, fmtNum, fmtSpan } from '../../core/format.js';
-import { STP_ROLE, stpKind } from '../network/util.js';
+import { STP_ROLE } from '../network/util.js';
 
 // Module-level so the rate history survives the redraw on every poll; a peer series is keyed by the
 // interface and the peer's MAC.
@@ -58,10 +58,10 @@ export function findings(n) {
   const peers = n.peers ?? [];
   if (!peers.length) out.push({ level: 'warn', text: `${name}: no mesh peer is connected.` });
   for (const p of peers) {
-    if (p.plink !== 'ESTAB') out.push({ level: 'warn', text: `Peer ${p.mac} is in link state ${p.plink} (not established).` });
+    if (p.plink !== 'ESTAB') out.push({ level: 'warn', text: `${name}: peer ${p.mac} is in link state ${p.plink} (not established).` });
     const s = p.signal_avg ?? p.signal;
-    if (p.plink === 'ESTAB' && s != null && s <= -75) out.push({ level: 'warn', text: `Weak link to ${p.mac}: ${s} dBm.` });
-    if (failRatio(p) != null && failRatio(p) > 10) out.push({ level: 'warn', text: `${p.mac}: ${failRatio(p).toFixed(0)} % of transmissions failed.` });
+    if (p.plink === 'ESTAB' && s != null && s <= -75) out.push({ level: 'warn', text: `${name}: weak link to ${p.mac}, ${s} dBm.` });
+    if (failRatio(p) != null && failRatio(p) > 10) out.push({ level: 'warn', text: `${name}: ${failRatio(p).toFixed(0)} % of the transmissions to ${p.mac} failed.` });
   }
   if (n.params?.mesh_fwding === '0') out.push({ level: 'info', text: `${name}: forwarding is off, so this node does not relay frames for other mesh nodes.` });
   const unresolved = (n.paths ?? []).filter(p => !p.flags.includes('resolved')).length;
@@ -70,21 +70,16 @@ export function findings(n) {
 }
 
 //#region parts
-// Card header: state dot, mesh ID, interface, radio, channel, security, state and the port's STP role.
-function header(n, link) {
-  const state = !n.enabled ? ['disabled', ''] : n.up ? ['up', 'success'] : ['down', 'danger'];
-  const role = link?.member.brport?.role;
-  return h('div', { className: 'mesh-head' },
-    h('span', { className: `dot ${n.up ? 'up' : 'down'}` }),
-    icon('diagram-2', 20),
-    h('strong', { className: 'name' }, n.mesh_id ?? n.section),
-    n.ifname ? badge(n.ifname) : null,
-    n.radio ? badge(n.radio) : null,
-    n.live?.channel ? badge(`ch ${n.live.channel} · ${n.live.width} MHz`, 'info', `${n.live.freq} MHz`) : null,
-    badge(n.security, /WPA3/.test(n.security) ? 'success' : /Open/.test(n.security) ? 'danger' : 'warning'),
-    badge(state[0], state[1]),
-    link && role ? badge(`${link.bridge.name}: ${STP_ROLE[role]}`, stpKind(link.member.brport.state_name), 'Spanning-tree role of this mesh port in its bridge') : null,
-    n.mac ? h('span', { className: 'mesh-mac' }, mono(n.mac)) : null);
+// The badges of a mesh point in the summary line of its block: the peers with an established link out of those heard, and the weakest link.
+export function meshBadges(n) {
+  if (!n?.up) return [];
+  const peers = n.peers ?? [];
+  const estab = peers.filter(p => p.plink === 'ESTAB');
+  const signals = estab.map(p => p.signal_avg ?? p.signal).filter(s => s != null);
+  return [
+    badge(`${estab.length} / ${peers.length} peers`, estab.length ? 'success' : peers.length ? 'warning' : '', 'Peer links in state ESTAB out of the peers heard'),
+    signals.length ? badge(`weakest ${Math.min(...signals)} dBm`, Math.min(...signals) <= -75 ? 'warning' : '', 'Average signal of the weakest established peer') : null,
+  ].filter(Boolean);
 }
 
 // How the mesh port relates to the bridge's spanning tree: a root port means the root bridge is reached through the mesh.
@@ -163,26 +158,27 @@ const PARAM_LABELS = {
   mesh_power_mode: ['Power mode', v => v],
 };
 
-// Mesh ID, security, bridged networks and the reported mesh parameters as key/value rows.
-function configBlock(n) {
+// A folded block of the live part: `title` is its summary.
+const fold = (title, body) => h('details', { className: 'mesh-fold' }, h('summary', {}, title), body);
+
+// The mesh parameters in force as key/value rows, with where they can be set: the wireless configuration cannot hold them, because the interface
+// must be up before the kernel accepts them (the OpenWrt 802.11s page).
+function paramsBlock(n) {
   const rows = Object.entries(PARAM_LABELS).filter(([k]) => n.params?.[k] != null).map(([k, [label, fmt]]) => [label, fmt(n.params[k])]);
-  return kv([
-    ['Mesh ID', n.mesh_id ?? '–'],
-    ['Security', `${n.security} (${n.encryption})`],
-    ['Bridged into', n.networks.length ? n.networks.map(x => badge(x, 'info')) : muted('–')],
-    ...rows,
-  ]);
+  return h('div', {},
+    h('p', { className: 'muted small' }, 'The values the interface runs with now (iw get mesh_param). /etc/config/wireless cannot hold them, because they can only be set once the interface is up: set them with iw from a hotplug script, or with the mesh11sd package.'),
+    rows.length ? kv(rows) : muted('The interface reports no mesh parameters.'));
 }
 //#endregion
 
-// The card for one mesh interface. `net` is the optional flab.network status (null when unavailable); a
-// down interface shows only the header and an explanation.
-export function nodeCard(n, net) {
-  const link = bridgeOf(n, net);
-  return h('div', { className: `card mesh-card ${n.up ? 'is-up' : 'is-down'}` },
-    header(n, link),
-    bridgeNote(n, link),
-    n.up ? h('div', { className: 'mesh-body' },
-      section(`Peers (${(n.peers ?? []).length})`, peersTable(n)),
-      h('div', { className: 'mesh-cols' }, section(`Mesh paths (${(n.paths ?? []).length})`, pathsTable(n)), section('Configuration and parameters', configBlock(n)))) : h('div', { className: 'mesh-body muted' }, 'The interface is not running, so there are no peers or paths to show.'));
+// The live part of the mesh point `n` of the flab.mesh status (null when the router reports none for this interface), for the block of its settings. `net`
+// is the optional flab.network status (null when unavailable); a down interface shows only an explanation.
+export function meshLive(n, net) {
+  if (!n) return null;
+  if (!n.up) return h('p', { className: 'muted small' }, n.enabled ? 'The interface is not running, so there are no peers or paths to show.' : 'The interface is disabled in the configuration.');
+  return h('div', { className: 'mesh-live' },
+    bridgeNote(n, bridgeOf(n, net)),
+    section(`Peers (${(n.peers ?? []).length})`, peersTable(n)),
+    fold(`Mesh paths (${(n.paths ?? []).length})`, pathsTable(n)),
+    fold('Mesh parameters in force', paramsBlock(n)));
 }

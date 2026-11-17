@@ -110,7 +110,7 @@ export function portsPicker(ctx, d) {
   const box = h('div', { className: 'ne-ports' },
     h('div', { className: 'ne-port-grid' }, [...choices.map(c => row(c.name, c.label, c.up, false)), ...extra.map(n => row(n, 'device', false, true))]),
     h('div', { className: 'set-row ne-port-add' }, typed, button('Add', 'plus-lg', addTyped)),
-    wifi.length ? h('div', { className: 'muted small' }, `Wi-Fi interfaces on this bridge (${wifi.map(m => m.name).join(', ')}) join through the "network" option of their Wi-Fi network (Wi-Fi page), not through this list.`) : null);
+    wifi.length ? h('div', { className: 'muted small' }, `Wi-Fi interfaces on this bridge (${wifi.map(m => m.name).join(', ')}) join through the "network" option of their Wi-Fi network (Wi-Fi radios page), not through this list.`) : null);
   ctx.inputs[`dev:${d.id}:ports`] = box;
   return h('div', { className: 'set-field wide' }, h('label', { className: 'form-label' }, 'Ports'),
     box, h('div', { className: 'muted small set-hint' }, 'The devices the bridge joins. A port can be in one bridge only: ticking a port that is in another bridge moves it. Ethernet ports of the router are listed; a VLAN device can be a port too.'));

@@ -299,7 +299,7 @@ test('validation feedback: a taken name, a bad or clashing address, a gateway ou
 
 test('the last page lists what the flow does not do, with links', () => {
   const s = notDone('static'), o = notDone('dhcp');
-  assert.deepEqual(s.map(x => x.href), ['#firewall', '#dhcp', '#wifi', '#routing']);
+  assert.deepEqual(s.map(x => x.href), ['#firewall', '#dhcp', '#radios', '#routing']);
   assert.deepEqual(o.map(x => x.href), ['#firewall', '#routing']);
   const { d, draft } = fresh();
   const lines = summaryLines(bridgeChoice(d, draft));

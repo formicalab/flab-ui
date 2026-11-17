@@ -24,12 +24,11 @@
 /* ── Error breakdown: expandable row under a port with counters, driver statistics and log excerpt ── */
 .diag-btn, .cable-btn { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }
 .diag-btn svg, .cable-btn svg { margin-right: .3rem; }
-/* The collapsible settings section of a port: a one line summary under its row, the form inside. */
+/* The row under a port that holds its Settings fold (the fold's own look is .wf-block in forms.css). */
 .port-table tr.port-set-row > td { padding: 0; border-top: 0; background: color-mix(in srgb, var(--fl-surface-hover) 45%, transparent); white-space: normal; }
-.port-set-block > summary { padding: .35rem 1rem; cursor: pointer; font-size: .85rem; }
-.port-set-block > summary:hover { background: var(--fl-surface-hover); }
-.port-set-block > summary > * { margin-left: .6rem; }
-.port-set { padding: .4rem 1.25rem 1rem; }
+.port-set-row .wf-block { border-top: 0; }
+/* The port's form sits in a wide row, not in a drawer: its controls flow in columns like the radio settings. */
+.port-set .np-panel .set-fields { grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); }
 .port-table tr.diag-row > td { padding: 0; background: color-mix(in srgb, var(--fl-surface-hover) 60%, transparent); }
 .diag { display: grid; gap: .9rem; padding: 1rem 1.25rem 1.25rem; white-space: normal; }
 .diag-head { display: flex; align-items: center; gap: .6rem; }

@@ -89,7 +89,7 @@ test('login imports no page modules; successful sign-in resolves only the select
   await s.signIn();
   assert.deepEqual(s.calls, ['import:overview', 'load:overview']);
   const links = s.app.children[0].children[0].children.filter(n => n?.href);
-  assert.equal(links.map(n => n.href).join(','), '#overview,#network,#radios,#wifi,#mesh,#ipsec,#wireguard,#firewall,#dhcp,#dns,#ddns,#interfaces,#routing,#traffic,#services,#toolbox,#logs,#settings');
+  assert.equal(links.map(n => n.href).join(','), '#overview,#network,#radios,#ipsec,#wireguard,#firewall,#dhcp,#dns,#ddns,#interfaces,#routing,#traffic,#services,#toolbox,#logs,#settings');
   assert.equal(links.at(-1).children.at(-1), 'System settings');
 });
 
@@ -100,6 +100,10 @@ test('aliases invalidate the old route; unknown routes retain the default page',
   assert.equal(s.timers.size, 0);
   await s.navigate('#interfaces');
   assert.equal(s.calls.at(-1), 'load:interfaces');
+  await s.navigate('#wifi');
+  assert.equal(s.context.location.hash, '#radios');
+  await s.navigate('#mesh');
+  assert.equal(s.context.location.hash, '#radios');
   await s.navigate('#missing');
   assert.equal(s.calls.at(-1), 'load:overview');
 });
@@ -107,10 +111,10 @@ test('aliases invalidate the old route; unknown routes retain the default page',
 test('a late import cannot install controls, CSS or polling after navigation or login', async () => {
   const pending = deferred();
   const s = await shell({ imports: { overview: pending } });
-  await s.navigate('#wifi');
+  await s.navigate('#radios');
   pending.resolve();
   await tick();
-  assert.equal(text(s.app).includes('wifi'), true);
+  assert.equal(text(s.app).includes('radios'), true);
   assert.equal(s.calls.includes('load:overview'), false);
   assert.equal(s.styles.some(n => n.href === 'css/overview.css'), false);
   const later = deferred();
@@ -145,15 +149,15 @@ test('late page data, old errors and rerenders cannot replace the newest route o
   await tick();
   assert.equal(text(s.app).includes('newest'), true);
   assert.equal(s.renders.includes('obsolete'), false);
-  await s.navigate('#wifi');
+  await s.navigate('#radios');
   s.controls.overview.rerender();
-  assert.equal(text(s.app).includes('wifi'), true);
+  assert.equal(text(s.app).includes('radios'), true);
   const oldBoard = deferred();
   const t = await shell({ boards: [oldBoard] });
-  await t.navigate('#wifi');
+  await t.navigate('#radios');
   oldBoard.reject(new t.AuthError('old session'));
   await tick();
-  assert.equal(text(t.app).includes('wifi'), true);
+  assert.equal(text(t.app).includes('radios'), true);
 });
 
 test('a poll reply that arrives after the page became paused is dropped, an explicit reload is not', async () => {
@@ -190,7 +194,7 @@ test('a page that gives its period as a function is polled with a timeout that s
   await tick();
   assert.equal(loads(), before + 1, 'the timer polls the page');
   assert.equal(s.timers.size, 2, 'and schedules the next poll');
-  await s.navigate('#wifi');
+  await s.navigate('#radios');
 });
 
 test('openTool still retains its target/autorun state across a lazy Toolbox import', async () => {
@@ -226,7 +230,7 @@ test('the lightweight openTool bridge waits for current Toolbox navigation and k
   assert.equal(s.calls.includes('import:toolbox'), false);
   const navigation = s.navigate('#toolbox');
   await tick();
-  await s.navigate('#wifi');
+  await s.navigate('#radios');
   pending.resolve();
   await navigation;
   assert.equal(s.calls.some(call => call.startsWith('tool:')), false, 'A stale import must not activate a deep link.');

@@ -1,6 +1,6 @@
 # Pages
 
-Navigation order: Overview · Ethernet ports · Wi-Fi radios · Wi-Fi · Mesh · IPsec VPN · WireGuard · Firewall · DHCP · DNS · Dynamic DNS ·
+Navigation order: Overview · Ethernet ports · Wi-Fi radios · IPsec VPN · WireGuard · Firewall · DHCP · DNS · Dynamic DNS ·
 Devices and Interfaces · Routing · Traffic · Services · Toolbox · Logs, then Settings at the bottom, next to Sign out. The network
 pages run from the physical layer up; DHCP and DNS, the services the clients of those networks use, come next; Devices and Interfaces recaps how they fit together, followed by routing
 (the kernel's routes, static-route editing and BGP), traffic (where the bandwidth goes), the procd services, the toolbox
@@ -8,9 +8,7 @@ pages run from the physical layer up; DHCP and DNS, the services the clients of 
 
 - [Overview](overview.md)
 - [Ethernet ports](network.md)
-- [Wi-Fi radios](radios.md)
-- [Wi-Fi](wifi.md)
-- [Mesh](mesh.md)
+- [Wi-Fi radios](radios.md) (with the access points, client networks and mesh points on them)
 - [IPsec VPN](ipsec.md)
 - [WireGuard](wireguard.md)
 - [Firewall](firewall.md)

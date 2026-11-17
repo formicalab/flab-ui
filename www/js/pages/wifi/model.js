@@ -1,4 +1,4 @@
-// Pure model of the Wi-Fi page's editing: the data the plugins report, the form's draft, the review list, validation, the UCI
+// Pure model of the Wi-Fi radios page's editing: the data the plugins report, the form's draft, the review list, validation, the UCI
 // operations a save makes and the check after a save. No DOM and no network, so it is unit-tested on its own
 // (tests/wifiedit/model.test.mjs). The geometry of channels is in channels.js, the option tables in schema.js.
 //
@@ -11,15 +11,22 @@ import { CONFIG, ENCRYPTIONS, IFACE_FIELDS, RADIO_FIELDS, encryptionInfo, encryp
 
 export { CONFIG };
 
+// The modes of wifi-iface the page edits; a section of another mode (adhoc, monitor) is left alone.
+export const EDITABLE_MODES = ['ap', 'sta', 'mesh'];
+
+// The key of the option that names a wireless network: the SSID, or the Mesh ID of a mesh point.
+export const nameKey = mode => (mode === 'mesh' ? 'mesh_id' : 'ssid');
+
 //#region Reading
 
 // The page's data from the replies of `flab.radio status` (`hw`, the live state) and `flab.radio config` (`cfg`, the
 // configuration without secrets; null when the plugin does not offer it, which makes the page read only):
 //   radios   each radio of the status with its raw options (`values`), which secrets are set and the htmodes it supports
-//   ifaces   every wifi-iface in file order: its section, device, mode, options, secrets, whether the page can edit it (ap and
-//            sta only) and the live state of its interface (`live`)
+//   ifaces   every wifi-iface in file order: its section, device, mode, options, secrets, whether the page can edit it (ap, sta
+//            and mesh) and the live state of its interface (`live`)
+//   mesh     the nodes of the flab.mesh status (peers, paths, parameters), for the checks about a mesh point that has peers
 //   networks, countries, features, others, regdomain   what the drop-downs and the checks need
-export function readWifi(hw, cfg) {
+export function readWifi(hw, cfg, mesh = null) {
   const live = new Map((hw?.radios ?? []).flatMap(r => (r.interfaces ?? []).map(i => [i.section, i])));
   const radios = (hw?.radios ?? []).map(r => {
     const c = cfg?.radios?.find(x => x.section === r.name);
@@ -27,12 +34,13 @@ export function readWifi(hw, cfg) {
   });
   const ifaces = (cfg?.interfaces ?? []).map(i => {
     const mode = i.values?.mode ?? 'ap';
-    return { section: i.section, anonymous: Boolean(i.anonymous), device: asList(i.values?.device)[0] ?? '', mode, editable: mode === 'ap' || mode === 'sta',
+    return { section: i.section, anonymous: Boolean(i.anonymous), device: asList(i.values?.device)[0] ?? '', mode, editable: EDITABLE_MODES.includes(mode),
       values: i.values ?? {}, secrets: i.secrets ?? {}, live: live.get(i.section) ?? null };
   });
   return {
     editable: Boolean(cfg) && radios.length > 0,
     radios, ifaces,
+    mesh: mesh?.nodes ?? [],
     networks: (cfg?.networks ?? []).map(n => n.name),
     countries: cfg?.countries ?? [],
     features: cfg?.features ?? {},
@@ -60,9 +68,9 @@ export function ifaceValues(raw) {
 export const radioCtx = radio => ({ radio });
 export const ifaceCtx = (w, i, values) => ({ mode: i.mode, info: encryptionInfo(values.encryption), features: w.features, radio: w.radios.find(r => r.name === i.device) });
 
-// Whether a field is shown for these values: it applies to the mode and its own `show` agrees. A hidden option keeps its value
-// in the file and is neither validated nor written.
-export const isShown = (field, values, ctx) => (!field.modes || field.modes.includes(ctx.mode ?? 'ap')) && (field.show ? Boolean(field.show(values, ctx)) : true);
+// Whether a field is shown for these values: it applies to the mode and its own `show` agrees. A field without `modes` applies to
+// every mode but mesh. A hidden option keeps its value in the file and is neither validated nor written.
+export const isShown = (field, values, ctx) => (field.modes ? field.modes.includes(ctx.mode ?? 'ap') : ctx.mode !== 'mesh') && (field.show ? Boolean(field.show(values, ctx)) : true);
 
 // The form's starting values: the router's current ones. Added networks get an id of their own (`new1`, ...) because they have no
 // section yet.
@@ -74,7 +82,7 @@ export const draftFrom = w => ({
   next: 1,
 });
 
-// The wireless networks the form shows, in order: the router's (ap and sta), then the ones added in the form. Each has an `id`
+// The wireless networks the form shows, in order: the router's (ap, sta and mesh), then the ones added in the form. Each has an `id`
 // (the section name, or `new1`...), its `name` (section name), `device`, `mode`, `isNew` and `removed`.
 export function ifaceList(w, draft) {
   return [
@@ -83,12 +91,16 @@ export function ifaceList(w, draft) {
   ];
 }
 
-// The name a network goes by in messages: its SSID (the saved one for a network that exists, so the name does not change while it is
-// being edited), else its section name, else "New network".
-export const ifaceTitle = (i, values) => (i.isNew ? values.ssid.trim() || 'New network' : i.values.ssid || i.name);
+// The name a network goes by in messages: its SSID or Mesh ID (the saved one for a network that exists, so the name does not change
+// while it is being edited), else its section name, else "New network".
+export const ifaceTitle = (i, values) => (i.isNew ? values[nameKey(i.mode)].trim() || `New ${i.mode === 'mesh' ? 'mesh point' : 'network'}` : i.values[nameKey(i.mode)] || i.name);
+
+// The words for a network of this mode in the review list and in warnings.
+export const modeWords = mode => (mode === 'sta' ? 'client network' : mode === 'mesh' ? 'mesh point' : 'network');
 
 // Adds a wireless network on radio `device` to the draft and returns its id. An access point starts protected (WPA3/WPA2 mixed
-// when hostapd can do SAE, else WPA2) and attached to lan; a client network starts as WPA2 on wwan, when the router has them.
+// when hostapd can do SAE, else WPA2) and attached to lan; a client network starts as WPA2 on wwan, when the router has them; a
+// mesh point starts with SAE on lan (without SAE support it starts open, which the checks then warn about).
 export function addIface(w, draft, device, mode) {
   const id = `new${draft.next++}`;
   const used = new Set([...w.radios.map(r => r.name), ...w.ifaces.map(i => i.section), ...w.others.map(o => o.section), ...draft.added.map(a => a.name)]);
@@ -96,10 +108,11 @@ export function addIface(w, draft, device, mode) {
   while (used.has(`wifinet${n}`)) n++;
   draft.added.push({ id, name: `wifinet${n}`, device, mode });
   const home = mode === 'sta' ? 'wwan' : 'lan';
+  const sae = w.features.sae !== false;
   draft.ifaces[id] = {
     ...ifaceValues({}),
     network: w.networks.includes(home) ? [home] : [],
-    encryption: mode === 'ap' && w.features.sae !== false ? 'sae-mixed' : 'psk2',
+    encryption: mode === 'mesh' ? (sae ? 'sae' : '') : mode === 'ap' && sae ? 'sae-mixed' : 'psk2',
   };
   return id;
 }
@@ -155,8 +168,8 @@ export function changesOf(w, draft) {
   for (const i of ifaceList(w, draft)) {
     const v = draft.ifaces[i.id];
     const title = ifaceTitle(i, v);
-    if (i.isNew) out.push({ key: `if:${i.id}`, label: `New ${i.mode === 'sta' ? 'client network' : 'network'} "${title}" on ${i.device}`, from: 'none', to: encryptionLabel(v.encryption || 'none') });
-    else if (i.removed) out.push({ key: `if:${i.id}`, label: `Remove network "${title}"`, from: `${i.device} · ${encryptionLabel(i.values.encryption || 'none')}`, to: 'removed' });
+    if (i.isNew) out.push({ key: `if:${i.id}`, label: `New ${modeWords(i.mode)} "${title}" on ${i.device}`, from: 'none', to: encryptionLabel(v.encryption || 'none') });
+    else if (i.removed) out.push({ key: `if:${i.id}`, label: `Remove ${i.mode === 'mesh' ? 'mesh point' : 'network'} "${title}"`, from: `${i.device} · ${encryptionLabel(i.values.encryption || 'none')}`, to: 'removed' });
     else diffFields(IFACE_FIELDS, ifaceValues(i.values), v, ifaceCtx(w, i, v), `if:${i.id}`, title, i.secrets, out);
   }
   return out;
@@ -256,8 +269,22 @@ function radioProblems(w, draft, errors, warnings) {
   }
 }
 
-// The words for the features a network change disrupts, for the warning about connected clients.
-const DISRUPTIVE = { ssid: 'the name', network: 'the networks it is attached to', encryption: 'the encryption', key: 'the password', disabled: 'switching it off', ieee80211w: 'protected management frames', sae_pwe: 'the SAE derivation', ocv: 'operating channel validation', hidden: 'hiding the name' };
+// The words for features a network change disrupts, for the warning about connected clients.
+const DISRUPTIVE = { ssid: 'the name', mesh_id: 'the Mesh ID', network: 'the networks it is attached to', encryption: 'the encryption', key: 'the password', disabled: 'switching it off', ieee80211w: 'protected management frames', sae_pwe: 'the SAE derivation', ocv: 'operating channel validation', hidden: 'hiding the name' };
+
+// What is lost when a network of this mode goes away or restarts with other settings: its connected clients, or the peers of a mesh
+// point, in words ("2 clients", "the 3 mesh peers"); `i` is the entry of ifaceList.
+function whoLoses(w, i) {
+  if (i.mode === 'mesh') {
+    const n = (w.mesh ?? []).find(x => x.section === i.section)?.peers?.filter(p => p.plink === 'ESTAB').length;
+    return n ? `${n} mesh peer${n === 1 ? '' : 's'}` : 'its mesh peers';
+  }
+  const n = i.live?.clients;
+  return n ? clients(n) : 'the clients';
+}
+
+// "client network", "mesh" or "Wi-Fi network", for the sentence about managing the router over the network that changes.
+const overWhat = mode => (mode === 'sta' ? 'client network' : mode === 'mesh' ? 'mesh' : 'Wi-Fi network');
 
 // What is weak about an encryption value that `encryptionInfo` calls weak, in words.
 function weakness(enc) {
@@ -280,8 +307,8 @@ function ifaceProblems(w, draft, errors, warnings) {
     const warn = text => warnings.push(`${title}: ${text}`);
 
     if (i.removed) {
-      const n = i.live?.clients ?? 0;
-      if (!(i.values.disabled === '1')) warn(`this network is removed${n ? `, which disconnects ${clients(n)}` : ''}. If you manage the router over this ${i.mode === 'sta' ? 'client network' : 'Wi-Fi network'} you lose access, and the router undoes the change by itself 30 seconds after the apply.`);
+      const who = i.mode === 'mesh' || i.live?.clients ? whoLoses(w, i) : null;
+      if (!(i.values.disabled === '1')) warn(`this ${i.mode === 'mesh' ? 'mesh point' : 'network'} is removed${who ? `, which disconnects ${who}` : ''}. If you manage the router over this ${overWhat(i.mode)} you lose access, and the router undoes the change by itself 30 seconds after the apply.`);
       continue;
     }
 
@@ -292,20 +319,24 @@ function ifaceProblems(w, draft, errors, warnings) {
     const info = ctx.info;
     const radio = ctx.radio;
     const enabled = !v.disabled;
+    const mesh = i.mode === 'mesh';
 
     for (const f of IFACE_FIELDS) {
       if (!isShown(f, v, ctx) || !keys.includes(f.key) || f.key === 'network') continue;
       for (const e of fieldIssues(f, v[f.key], `${title}: ${f.label}`)) errors.push({ ...e, key: `if:${i.id}:${f.key}` });
     }
 
-    if (!radio) err('ssid', `the radio ${i.device} does not exist.`);
+    if (!radio) err(nameKey(i.mode), `the radio ${i.device} does not exist.`);
     if (enabled) {
-      if (!v.ssid.trim()) err('ssid', 'enter the network name (SSID).');
-      if (!v.network.length) err('network', 'choose a network to attach it to, or its clients get no connection.');
+      if (mesh) { if (!v.mesh_id.trim()) err('mesh_id', 'enter the Mesh ID, the name every node of the mesh shares.'); }
+      else if (!v.ssid.trim()) err('ssid', 'enter the network name (SSID).');
+      if (!v.network.length) err('network', mesh ? 'choose a network to attach the mesh to, or it carries no traffic for any network.' : 'choose a network to attach it to, or its clients get no connection.');
       for (const n of v.network) if (!w.networks.includes(n)) warn(`the network "${n}" is not in /etc/config/network.`);
     }
     if (info.needs && w.features[info.needs] === false && (i.isNew || keys.includes('encryption'))) {
-      err('encryption', `this router's hostapd was built without ${{ eap: 'WPA-Enterprise', sae: 'WPA3 (SAE)', owe: 'Enhanced Open (OWE)' }[info.needs]} support, so it cannot be used. Install the full wpad package, or choose another encryption.`);
+      err('encryption', mesh
+        ? 'this router\'s wpad was built without WPA3 (SAE) support, so an encrypted mesh is not possible. Install a wpad with mesh support (wpad-mesh-* or the full wpad), or leave the mesh open.'
+        : `this router's hostapd was built without ${{ eap: 'WPA-Enterprise', sae: 'WPA3 (SAE)', owe: 'Enhanced Open (OWE)' }[info.needs]} support, so it cannot be used. Install the full wpad package, or choose another encryption.`);
     }
     if (enabled && info.key) {
       const stored = i.secrets.key || (info.sae && i.secrets.sae_password) || i.values.wpa_psk_file;
@@ -325,7 +356,7 @@ function ifaceProblems(w, draft, errors, warnings) {
         if (!v.password && !i.secrets.password) err('password', 'enter the EAP password.');
       }
     }
-    if (v.ieee80211w === '0' && (info.pmf || info.sae) && (i.isNew || keys.includes('ieee80211w') || keys.includes('encryption'))) {
+    if (!mesh && v.ieee80211w === '0' && (info.pmf || info.sae) && (i.isNew || keys.includes('ieee80211w') || keys.includes('encryption'))) {
       err('ieee80211w', 'WPA3 and Enhanced Open need protected management frames, so they cannot be disabled. Choose optional or required, or leave the default.');
     }
     if (enabled && v.macfilter === 'allow' && !v.maclist.some(x => x.trim()) && keys.some(k => k === 'macfilter' || k === 'maclist')) {
@@ -338,7 +369,9 @@ function ifaceProblems(w, draft, errors, warnings) {
     if (enabled && info.kind === 'none') {
       warn(i.mode === 'sta'
         ? 'this client network is open: everything the router sends over it is unencrypted.'
-        : `this network is open: anyone in range can join it and reach ${v.network.length ? v.network.join(', ') : 'the network'}. Use WPA2 or WPA3 with a password, or Enhanced Open (OWE) if no password is wanted.`);
+        : mesh
+          ? `this mesh is open: any device in range that uses the Mesh ID "${v.mesh_id.trim()}" and the same channel joins it and reaches ${v.network.length ? v.network.join(', ') : 'the network'}. Use SAE with a password.`
+          : `this network is open: anyone in range can join it and reach ${v.network.length ? v.network.join(', ') : 'the network'}. Use WPA2 or WPA3 with a password, or Enhanced Open (OWE) if no password is wanted.`);
     }
     if (enabled && info.weak && (i.isNew || keys.includes('encryption'))) warn(`${weakness(v.encryption)}. Use WPA2 or WPA3.`);
     if (keys.includes('hidden') && v.hidden) warn('a hidden SSID is not a protection, and clients may fail to roam and waste airtime asking for it.');
@@ -346,11 +379,17 @@ function ifaceProblems(w, draft, errors, warnings) {
     if (radio && i.mode === 'sta' && enabled && keys.length && list.some(o => o.id !== i.id && !o.removed && o.device === i.device && o.mode === 'ap' && !draft.ifaces[o.id].disabled)) {
       warn('an access point and a client network on the same radio share its channel: the access point moves to the channel of the network that the client joins.');
     }
+    // A mesh does not take part in spanning tree (the OpenWrt 802.11s page): frames enter the mesh after the bridge's STP, so a second path between the same nodes loops.
+    if (mesh && enabled && (i.isNew || keys.some(k => k === 'network' || k === 'disabled'))) {
+      const twin = list.find(o => o.id !== i.id && o.mode === 'mesh' && !o.removed && !draft.ifaces[o.id].disabled && draft.ifaces[o.id].network.some(n => v.network.includes(n)));
+      warn(twin
+        ? `it shares a network with the mesh point on ${twin.device}. Two mesh backhauls (2.4 and 5 GHz) on one bridge form a layer 2 loop: spanning tree does not see the mesh. Attach them to different networks, or use mesh11sd or an nftables rule that drops the looping frames.`
+        : 'spanning tree has no effect on a mesh, so a cable between mesh nodes that is also in the same bridge forms a layer 2 loop. Keep a mesh node off the wired backhaul, or use mesh11sd or an nftables rule that drops the looping frames.');
+    }
     if (!i.isNew && !ifaceValues(i.values).disabled) {
       const hit = keys.filter(k => DISRUPTIVE[k] && !(k === 'disabled' && !v.disabled) && !(k === 'hidden' && !v.hidden));
       if (hit.length) {
-        const n = i.live?.clients;
-        warn(`this change (${hit.map(k => DISRUPTIVE[k]).join(', ')}) disconnects ${n ? clients(n) : 'the clients'} connected now, and they must reconnect${hit.includes('key') ? ' with the new password' : ''}. If you manage the router over this ${i.mode === 'sta' ? 'client network' : 'Wi-Fi network'} you lose access, and the router undoes the change by itself 30 seconds after the apply.`);
+        warn(`this change (${hit.map(k => DISRUPTIVE[k]).join(', ')}) disconnects ${whoLoses(w, i)} connected now, and ${mesh ? 'the other nodes must use the same settings to rejoin' : `they must reconnect${hit.includes('key') ? ' with the new password' : ''}`}. If you manage the router over this ${overWhat(i.mode)} you lose access, and the router undoes the change by itself 30 seconds after the apply.`);
       }
     }
   }

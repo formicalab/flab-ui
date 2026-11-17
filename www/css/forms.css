@@ -63,3 +63,17 @@ textarea.form-control { resize: vertical; }
 .fl-folded > :not(.card-header) { display: none; }
 .fl-folded > .card-header { border-bottom: 0; }
 .fl-folded .fl-chevron { transform: none; }
+
+/* The Settings fold of a hardware item (a radio card on the Wi-Fi radios page, a port row on the Ethernet ports page): a summary line that shows what is
+   configured, the controls inside. Both pages use these classes so the two folds look and behave the same. */
+.wf-block { margin: 0; border-top: 1px solid var(--fl-stroke); }
+.wf-block > summary { padding: .8rem 1.25rem; }
+.wf-block > summary:hover { background: var(--fl-surface-hover); }
+.wf-block summary svg { color: var(--fl-brand); }
+/* Every fold of these pages (the settings fold, a network block, a group of options, a folded table) starts with the same arrow, which comes before the
+   icon of the fold: it points right when folded and down when open. */
+.wf-block > summary, .wf-iface > summary, .wf-group > summary, .mesh-fold > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; list-style: none; cursor: pointer; }
+.wf-block > summary::-webkit-details-marker, .wf-iface > summary::-webkit-details-marker, .wf-group > summary::-webkit-details-marker, .mesh-fold > summary::-webkit-details-marker { display: none; }
+.wf-block > summary::before, .wf-iface > summary::before, .wf-group > summary::before, .mesh-fold > summary::before { content: ""; flex: none; width: 0; height: 0; border-left: .5rem solid currentColor; border-top: .3rem solid transparent; border-bottom: .3rem solid transparent; transition: transform .15s; }
+.wf-block[open] > summary::before, .wf-iface[open] > summary::before, .wf-group[open] > summary::before, .mesh-fold[open] > summary::before { transform: rotate(90deg); }
+.wf-block-body { display: flex; flex-direction: column; gap: .8rem; padding: .3rem 1.25rem 1.1rem; }

@@ -24,20 +24,22 @@ let settingsHas = () => false;
 // Whether a settings form is open: the page then needs the editing context.
 export const settingsFormOpen = () => settingsOpen.size > 0;
 
-// Autoneg badge plus the speed limits of both ends and the EEE state; only meaningful while the link is up. A swconfig port
-// reports neither autonegotiation nor the speeds of the ends, so only what it does report is shown.
+// What the link negotiated, shown in the Link column under the speed: only what is not the normal case (a forced speed, a downshift), the EEE state and the
+// speed limits of both ends with the pause frames. Whether auto-negotiation is configured is the port's Settings; a port that negotiates normally says
+// nothing. Only meaningful while the link is up; a swconfig port reports neither autonegotiation nor the speeds of the ends, so only what it does report is shown.
 export function negotiation(p) {
-  if (!p.carrier) return muted('–');
+  if (!p.carrier) return null;
   const flow = p.flow ?? [];
   const limits = p.max_speed != null || p.partner_max != null || flow.length
     ? `${p.max_speed != null ? `max ${fmtSpeed(p.max_speed)} · partner ${fmtSpeed(p.partner_max)}` : ''}${flow.length ? `${p.max_speed != null ? ' · ' : ''}pause ${flow.join('/')}` : ''}`
     : null;
-  return h('div', { className: 'neg' },
-    p.autoneg == null ? null : p.autoneg ? badge('auto-negotiated', '') : badge('forced', 'warning'),
+  const badges = [
+    p.autoneg === false ? badge('forced', 'warning', 'The speed and duplex are set, not negotiated') : null,
     p.downshifted ? badge(`downshifted from ${fmtSpeed(Math.min(p.max_speed, p.partner_max))}`, 'warning', 'Both ends can do better than the negotiated speed') : null,
     p.eee ? badge(p.eee.enabled ? (p.eee.active ? 'EEE active' : 'EEE idle') : 'EEE off', p.eee.active ? 'info' : '',
       'Energy-Efficient Ethernet lets the link sleep between frames. "Idle" means it is on but the link is not sleeping now; turn it off if it causes dropped frames or latency.') : null,
-    limits ? h('div', { className: 'muted small' }, limits) : null);
+  ].filter(Boolean);
+  return badges.length || limits ? h('div', { className: 'neg' }, badges.length ? h('div', { className: 'd-flex flex-wrap gap-1' }, badges) : null, limits ? h('div', { className: 'muted small' }, limits) : null) : null;
 }
 
 // PHY / switch / SoC / driver / medium lines from the device tree and sysfs (see hwLines).
@@ -63,15 +65,17 @@ export function errorsCell(p) {
     }, 'btn-fl diag-btn')) : null);
 }
 
-// The Link column: link state and speed, how often the link changed state (and how many times since the page was opened), an alarm
-// badge when the optical module raises one, and the cable-test button.
+// The Link column: link state and speed, what the link negotiated (see negotiation), how often the link changed state (and how many times since the page
+// was opened), an alarm badge when the optical module raises one, and the cable-test button.
 export function linkCell(p) {
   const alarms = p.sfp?.alarms ?? [];
   const cable = cableButton(p);
+  const neg = negotiation(p);
   return h('div', {},
     p.carrier
       ? h('div', {}, badge('link up', 'success'), h('div', { className: 'mt-1' }, `${fmtSpeed(p.speed)} ${p.duplex ?? ''}`))
       : badge(p.up ? 'no link' : 'disabled', ''),
+    neg,
     p.carrier_changes != null ? h('div', { className: 'muted small' }, `${fmtNum(p.carrier_changes)} link change${p.carrier_changes === 1 ? '' : 's'}`) : null,
     newFlaps(p) ? badge(`+${newFlaps(p)} now`, 'warning') : null,
     alarms.length ? badge('optical alarm', 'danger', alarms.join(', ')) : null,
@@ -121,32 +125,33 @@ export function throughputBody(p) {
 // The Throughput column as a table cell.
 const throughputCell = p => h('td', { className: 'num' }, ...throughputBody(p));
 
-// The bridge a port belongs to, its spanning-tree state and role, and the MAC addresses learned on it; or "not bridged".
+// The Bridge and VLANs column: the bridge a port belongs to with its spanning-tree state and role and the MAC addresses learned on it (or "not bridged"), then
+// the VLAN devices on the port with their state. The VLAN tables of the bridges are the cards below.
 export function bridgeCell(p) {
-  return p.bridge
-    ? h('div', {}, badge(p.bridge, 'info'), p.brport ? badge(p.brport.state_name, stpKind(p.brport.state_name)) : null,
-      p.brport?.role ? h('div', { className: 'muted small' }, `${STP_ROLE[p.brport.role]} · cost ${p.brport.path_cost}`) : null,
-      p.macs != null ? h('div', { className: 'muted small' }, `${fmtNum(p.macs)} MAC${p.macs === 1 ? '' : 's'} learned`) : null)
-    : muted('not bridged');
+  const vlans = p.vlans ?? [];
+  return h('div', {},
+    p.bridge
+      ? h('div', {}, badge(p.bridge, 'info'), p.brport ? badge(p.brport.state_name, stpKind(p.brport.state_name)) : null,
+        p.brport?.role ? h('div', { className: 'muted small' }, `${STP_ROLE[p.brport.role]} · cost ${p.brport.path_cost}`) : null,
+        p.macs != null ? h('div', { className: 'muted small' }, `${fmtNum(p.macs)} MAC${p.macs === 1 ? '' : 's'} learned`) : null)
+      : muted('not bridged'),
+    vlans.length ? h('div', { className: 'mt-1' }, vlans.map(v => badge(`${v.name} (${v.vid})`, v.up ? 'success' : 'danger'))) : null);
 }
 
-// The VLAN devices on a port, with their state.
-export const vlansCell = p => ((p.vlans ?? []).length ? p.vlans.map(v => badge(`${v.name} (${v.vid})`, v.up ? 'success' : 'danger')) : muted('–'));
-
-// The collapsible settings section of a port, under its row: the summary says whether the config holds a device section for the port, and the form
-// (interfaces/panels.js portSettings) is built only while it is open, because it needs the editing context, which the page makes only then. Opening or
-// closing it redraws the page.
+// The collapsible Settings section of a port, under its row: the same fold as the Settings of a radio (forms.css). The summary says whether the config holds a
+// device section for the port, and the form (interfaces/panels.js portSettings) is built only while it is open, because it needs the editing context, which the
+// page makes only then. Opening or closing it redraws the page.
 function settingsBlock(p) {
   const open = settingsOpen.has(p.name);
   const set = settingsHas(p.name);
-  const block = h('details', { className: 'port-set-block', open, ontoggle: e => {
+  const block = h('details', { className: 'wf-block port-set-block', open, ontoggle: e => {
     // The toggle event also fires for a section drawn open: only a change the user made counts.
     if (e.target.open === settingsOpen.has(p.name)) return;
     if (e.target.open) settingsOpen.add(p.name); else settingsOpen.delete(p.name);
     rerender();
   } },
-  h('summary', {}, h('strong', {}, 'Settings'), set ? badge('device section', 'info', 'The network config holds device settings for this port') : h('span', { className: 'muted small' }, 'defaults')),
-    open && settingsCtx ? h('div', { className: 'port-set' }, portSettings(settingsCtx, p.name)) : null);
+  h('summary', {}, icon('gear'), h('strong', {}, 'Port settings'), set ? badge('device section', 'info', 'The network config holds device settings for this port') : muted('defaults')),
+    open && settingsCtx ? h('div', { className: 'wf-block-body port-set' }, portSettings(settingsCtx, p.name)) : null);
   block.dataset.port = p.name;
   return block;
 }
@@ -157,11 +162,9 @@ function row(p) {
     portCell(p),
     h('td', {}, hardwareCell(p)),
     h('td', {}, linkCell(p)),
-    h('td', {}, negotiation(p)),
     throughputCell(p),
     h('td', { className: 'num' }, errorsCell(p)),
-    h('td', {}, bridgeCell(p)),
-    h('td', {}, vlansCell(p)));
+    h('td', {}, bridgeCell(p)));
   const rows = [main];
   if (p.diagnostics && expanded.has(p.name)) rows.push(h('tr', { className: 'diag-row' }, h('td', { colSpan: COLS }, diagnosticsPanel(p))));
   const cable = cablePanel(p);
@@ -171,7 +174,7 @@ function row(p) {
 }
 
 // Column headings of the details table; the breakdown row spans all of them.
-const HEAD = ['Port', 'Hardware', 'Link', 'Negotiation', 'Throughput', 'Errors / drops', 'Bridge / STP', 'VLAN devices'];
+const HEAD = ['Port', 'Hardware', 'Link', 'Throughput', 'Errors / drops', 'Bridge and VLANs'];
 const COLS = HEAD.length;
 
 // Redraw callback handed in by the page; the Details buttons call it. Module-level because errorsCell
@@ -190,10 +193,9 @@ export function bindRedraw(redraw) {
 function details(net) {
   const { ordered } = jackOrder(net);
   const rest = net.ports.filter(p => !ordered.includes(p));
-  const linked = ordered.filter(p => p.carrier).length;
   const lines = (net.switches ?? []).filter(sw => sw.ports.length).map(sw => switchLine(net, sw));
-  return card([icon('ethernet'), h('span', {}, 'Ports'), h('span', { className: 'sub' },
-    `${linked} of ${ordered.length} ports linked${rest.length ? ` · the last row${rest.length === 1 ? ' is' : 's are'} the internal CPU link${rest.length === 1 ? '' : 's'} to the switch, not a port` : ''}`)],
+  return card([icon('ethernet'), h('span', {}, 'Ports'), rest.length ? h('span', { className: 'sub' },
+    `the last row${rest.length === 1 ? ' is' : 's are'} the internal CPU link${rest.length === 1 ? '' : 's'} to the switch, not a port`) : null],
     h('div', {},
       ...lines.map(l => h('div', { className: `cpu-link small ${l.busy ? 'text-danger' : 'muted'}` }, l.text)),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table port-table' },

@@ -104,7 +104,7 @@ export function openWizard(ctx, onDone) {
     inputs['device:ports'] = grid;
     return [
       h('div', { className: 'set-fields np-fields' }, field('Bridge name', nameBox, `Usually br-<something>. At most ${DEVICE_NAME_MAX} characters.`)),
-      h('p', { className: 'small' }, h('strong', {}, 'Ports'), muted(': the network devices to join. A port can be in one bridge only; one that is in another bridge moves out of it. Wi-Fi networks join later, from the Wi-Fi page.')),
+      h('p', { className: 'small' }, h('strong', {}, 'Ports'), muted(': the network devices to join. A port can be in one bridge only; one that is in another bridge moves out of it. Wi-Fi networks join later, from the Wi-Fi radios page.')),
       grid,
     ];
   }

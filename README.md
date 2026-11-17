@@ -13,9 +13,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 |---|---|
 | Overview | Uptime, CPU, load, memory and temperatures. |
 | Ethernet ports | The Ethernet ports as hardware: link, negotiation, traffic, errors, optical modules, cable test; change a port's device settings (MTU, MAC address, speed, flow control); the bridge VLAN tables, which can be edited. |
-| Wi-Fi radios | The radios as hardware: state, live figures, channel utilization; change the channel, the width, the country, the power and the other radio options. |
-| Wi-Fi | The wireless networks (SSIDs) of every radio; edit them. |
-| Mesh | 802.11s mesh peers and paths (read only). |
+| Wi-Fi radios | The radios as hardware, with what runs on them: state, live figures, channel utilization; change the channel, the width, the country, the power and the other radio options; the access points, client networks and 802.11s mesh points on each radio (clients, peers, paths), and edit them. |
 | IPsec VPN | strongSwan connections, tunnels, traffic and a security score (read only). |
 | WireGuard | Interfaces and peers; edit them. |
 | Firewall | Zones, rules and port forwards with live nftables counters; edit them. |

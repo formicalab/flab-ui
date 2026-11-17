@@ -1,5 +1,5 @@
-// The editor of the wireless configuration (/etc/config/wireless), shared by the Wi-Fi radios page (the radios' own settings) and the Wi-Fi page (the
-// wireless networks): one draft, one review banner, one Save, so edits made on one page survive a visit to the other. The configuration is read through
+// The editor of the wireless configuration (/etc/config/wireless), used by the Wi-Fi radios page for the radios' own settings and for their wireless networks
+// (access points, client networks and mesh points): one draft, one review banner, one Save, and edits made there survive a visit to another page. The configuration is read through
 // the flab.radio plugin's `config` method, which leaves out every secret (the browser never calls `uci get` on this config), and written through
 // core/uci.js applyChange(): stage, apply with the rollback countdown, read back, check the radios come up, confirm.
 import { ubus, optional } from '../../core/ubus.js';

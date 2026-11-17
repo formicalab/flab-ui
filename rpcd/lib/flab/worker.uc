@@ -17,7 +17,7 @@ export function deferred(objects) {
 			let handler = method.call;
 			// ucode reuses for-in bindings: capture method classification and object identity before closing over them.
 			let object_name = object;
-			let mutating = index([ 'control', 'start', 'stop', 'wake', 'cable_test' ], name) >= 0;
+			let mutating = index([ 'control', 'start', 'stop', 'wake', 'cable_test', 'wps' ], name) >= 0;
 			method.call = function(request) {
 				// Fixture/direct-call harnesses intentionally keep their synchronous API.
 				if (type(request?.defer) != 'function')

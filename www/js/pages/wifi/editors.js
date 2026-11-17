@@ -1,5 +1,5 @@
-// The editors of the Wi-Fi page: the settings of a radio and its wireless networks (SSIDs), built from the option tables in
-// schema.js through core/forms.js and edited in place in the page's draft (see model.js). Nothing is saved here: every edit
+// The editors of the Wi-Fi radios page: the settings of a radio and its wireless networks (access points, client networks and mesh points), built from the
+// option tables in schema.js through core/forms.js and edited in place in the page's draft (see model.js). Nothing is saved here: every edit
 // goes through `edit.touched()`, which refreshes the review banner, and saving is the page's.
 //
 // `edit` connects the editors to the page:
@@ -60,12 +60,18 @@ function radioField(w, r, f) {
 }
 
 // The field `f` of a wireless network with the encryption choices this router's hostapd can do, and the placeholder of a secret
-// saying whether one is stored.
+// saying whether one is stored. A mesh point is encrypted with SAE or not at all, and its hints say what is special about a mesh.
 function ifaceField(w, i, v, f) {
   if (f.dynamic === 'encryptions') {
+    if (i.mode === 'mesh') {
+      const offered = ENCRYPTIONS.filter(e => e.value === 'sae' || (e.value === v.encryption && e.value !== 'none'));
+      return { ...f, options: offered.map(e => e.value), labels: Object.fromEntries(offered.map(e => [e.value, e.label])),
+        hint: 'WPA3-Personal (SAE) encrypts the mesh and keeps out any node that does not know the password; it needs a wpad with mesh support (wpad-mesh-* or the full wpad). An open mesh lets any device that uses the same Mesh ID and channel join it.' };
+    }
     const offered = ENCRYPTIONS.filter(e => e.value !== 'none' && (encryptionOffered(w, e.value) || e.value === v.encryption));
     return { ...f, options: offered.map(e => e.value), labels: Object.fromEntries(offered.map(e => [e.value, e.label])) };
   }
+  if (i.mode === 'mesh' && f.key === 'network') return { ...f, hint: 'The network interfaces (usually a bridge) the mesh point is bridged into, so the mesh carries their traffic. Spanning tree does not see a mesh: a second path between the same nodes, such as a cable, loops.' };
   if (f.secret) return { ...f, placeholder: i.secrets[f.key] ? 'stored; leave empty to keep it' : 'not set' };
   return f;
 }
@@ -104,31 +110,33 @@ function networkControl(edit, f, id, values, off) {
   return h('div', { className: 'set-field wide' }, h('label', { className: 'form-label' }, f.label), row, f.hint ? h('div', { className: 'muted small set-hint' }, f.hint) : null);
 }
 
-// One group of controls in a collapsible block, remembered open or closed under `id`.
-function group(g, id, controls) {
+// One group of controls in a collapsible block, remembered open or closed under `id`; `extra` is a node shown full width under the controls.
+function group(g, id, controls, extra) {
   return h('details', { className: 'wf-group', open: opened.get(id) ?? Boolean(g.open), ontoggle: e => opened.set(id, e.target.open) },
     h('summary', {}, g.title),
-    h('div', { className: 'wf-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, controls)));
+    h('div', { className: 'wf-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, controls), extra));
 }
 
 //#endregion
 
 //#region Radio settings
 
-// The "Radio settings" block of the radio card of `name`: whether it is on, its mode and width, country and power, and the rates and
-// advanced options, in collapsible groups. The channel is the picker's.
-export function radioSettings(name, edit) {
+// The "Radio settings" block of the radio card of `name`: the Radio group (whether the radio is on, its mode and width, country and power, and under them the
+// channel: `channels` is the node the card built, the picker the draft is edited through or a plain strip when the login may not write; the mode decides which
+// channels fit), and the rates and advanced options, in collapsible groups. The summary line shows the configured mode, country and power, the only place the card shows
+// them besides the live figures.
+export function radioSettings(name, edit, channels) {
   const w = edit.wifi;
   const r = w.radios.find(x => x.name === name);
   const d = edit.draft.radios[name];
   const ctx = radioCtx(r);
   const groups = RADIO_GROUPS.map(g => {
     const fields = RADIO_FIELDS.filter(f => f.group === g.id && isShown(f, d, ctx));
-    return fields.length ? group(g, `radio:${name}:${g.id}`, fields.map(f => control(edit, radioField(w, r, f), `${name}:${f.key}`, d, false, RADIO_REDRAWS))) : null;
+    return fields.length ? group(g, `radio:${name}:${g.id}`, fields.map(f => control(edit, radioField(w, r, f), `${name}:${f.key}`, d, false, RADIO_REDRAWS)), g.id === 'general' ? channels : null) : null;
   });
   const id = `radio:${name}`;
   return h('details', { className: 'wf-block', open: opened.get(id) ?? false, ontoggle: e => opened.set(id, e.target.open) },
-    h('summary', {}, h('strong', {}, 'Radio settings'), d.disabled ? badge('disabled', 'warning') : null,
+    h('summary', {}, icon('gear'), h('strong', {}, 'Radio settings'), d.disabled ? badge('disabled', 'warning') : null,
       muted(`${d.htmode || 'default mode'} · ${d.country || 'default country'}${d.txpower ? ` · ${d.txpower} dBm` : ''}`)),
     h('div', { className: 'wf-block-body' }, identity(r), groups));
 }
@@ -144,9 +152,13 @@ function identity(r) {
 
 //#region Wireless networks
 
+// The words of the mode badge of a network.
+export const MODE_BADGE = { ap: 'access point', sta: 'client', mesh: 'mesh' };
+
 // The editor of one wireless network (`i`, an entry of ifaceList): a collapsible block with its settings in groups, a button to
-// remove it (or to take the removal back), and its state in the summary.
-function ifaceEditor(i, edit) {
+// remove it (or to take the removal back), and its state in the summary. `live` is what the page knows about the running interface,
+// { badges, body }: badges for the summary line (clients, peers) and a node shown above the settings (what the interface is doing now).
+function ifaceEditor(i, edit, live) {
   const w = edit.wifi;
   const v = edit.draft.ifaces[i.id];
   const ctx = ifaceCtx(w, i, v);
@@ -156,42 +168,42 @@ function ifaceEditor(i, edit) {
     const fields = IFACE_FIELDS.filter(f => f.group === g.id && isShown(f, v, ctx));
     if (!fields.length) return null;
     const controls = fields.map(f => (f.key === 'network'
-      ? networkControl(edit, f, `if:${i.id}:network`, v, off)
+      ? networkControl(edit, ifaceField(w, i, v, f), `if:${i.id}:network`, v, off)
       : control(edit, ifaceField(w, i, v, f), `if:${i.id}:${f.key}`, v, off, IFACE_REDRAWS)));
-    return group(g, `if:${i.id}:${g.id}`, controls);
+    return g.id === 'basic' ? h('div', { className: 'set-fields wf-basic' }, controls) : group(g, `if:${i.id}:${g.id}`, controls);
   });
   const state = i.isNew ? badge('new', 'info', 'not saved yet') : i.removed ? badge('to be removed', 'danger')
     : v.disabled ? badge('disabled') : i.live ? (i.live.up ? badge('running', 'success') : badge('not running', 'danger')) : null;
+  const what = i.mode === 'mesh' ? 'mesh point' : 'network';
   const actions = off
     ? h('div', { className: 'wf-actions' }, muted(`"${title}" is removed when you save.`), button('Undo', 'arrow-clockwise', () => { restoreIface(edit.draft, i.id); edit.touched(); edit.redraw(); }))
     : h('div', { className: 'wf-actions' },
       muted(i.isNew ? `Not saved yet. It is added as the section "${i.name}".` : `The wifi-iface section "${i.section}"${i.anonymous ? ' (unnamed)' : ''}.`),
-      h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !edit.canEdit, title: `Remove the network ${title}`,
-        onclick: () => { removeIface(edit.draft, i.id); edit.touched(); edit.redraw(); } }, icon('trash'), i.isNew ? 'Discard network' : 'Remove network'));
+      h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !edit.canEdit, title: `Remove the ${what} ${title}`,
+        onclick: () => { removeIface(edit.draft, i.id); edit.touched(); edit.redraw(); } }, icon('trash'), i.isNew ? `Discard ${what}` : `Remove ${what}`));
   const id = `if:${i.id}`;
   return h('details', { className: `wf-iface${i.isNew ? ' wf-new' : ''}${off ? ' wf-removed' : ''}`, open: opened.get(id) ?? i.isNew, ontoggle: e => opened.set(id, e.target.open) },
-    h('summary', {}, icon('wifi'), h('strong', {}, title), badge(i.mode === 'sta' ? 'client' : 'access point'),
-      badge(encryptionLabel(v.encryption || 'none'), /^$|^none$/.test(v.encryption) ? 'danger' : ''), state),
-    h('div', { className: `wf-iface-body${off ? ' wf-dim' : ''}` }, groups, actions));
+    h('summary', {}, icon(i.mode === 'mesh' ? 'diagram-2' : 'wifi'), h('strong', {}, title), badge(MODE_BADGE[i.mode] ?? i.mode),
+      badge(encryptionLabel(v.encryption || 'none'), /^$|^none$/.test(v.encryption) ? 'danger' : ''), state, ...(live?.badges ?? [])),
+    h('div', { className: `wf-iface-body${off ? ' wf-dim' : ''}` }, off ? null : live?.body, groups, actions));
 }
 
-// The editors of the wireless networks of radio `name`, one block per network, and the buttons that add an access point or a client
-// network to it. Mesh interfaces are not here (the Mesh page edits them), and a network of another mode is left alone.
-export function networksEditor(name, edit) {
+// The editors of the wireless networks of radio `name`, one block per network (`liveOf(i)` gives the live part of each, see ifaceEditor), and the
+// buttons that add an access point, a client network or a mesh point to it. A network of another mode (ad hoc, monitor) is left alone.
+export function networksEditor(name, edit, liveOf = () => null) {
   const w = edit.wifi;
   const mine = ifaceList(w, edit.draft).filter(i => i.device === name);
-  const others = w.ifaces.filter(i => i.device === name && !i.editable && i.mode !== 'mesh');
+  const others = w.ifaces.filter(i => i.device === name && !i.editable);
   const add = (label, mode) => {
     const b = button(label, 'plus-lg', () => { opened.set(`if:${addIface(w, edit.draft, name, mode)}`, true); edit.touched(); edit.redraw(); });
     b.disabled = !edit.canEdit;
     return b;
   };
   return h('div', { className: 'wf-nets-editor' },
-    h('h3', {}, `Wireless networks on ${name}`),
-    mine.length ? mine.map(i => ifaceEditor(i, edit)) : muted('No access point or client network is configured on this radio.'),
+    mine.length ? mine.map(i => ifaceEditor(i, edit, liveOf(i))) : muted('No access point, client network or mesh point is configured on this radio.'),
     others.length ? h('p', { className: 'muted small' }, `Not editable here: ${others.map(i => `${i.section} (${i.mode})`).join(', ')}.`) : null,
-    h('div', { className: 'wf-addbar' }, add('Add access point', 'ap'), add('Add client network', 'sta'),
-      h('span', { className: 'muted small' }, 'A client network makes this router join another network, as a repeater or an uplink does.')));
+    h('div', { className: 'wf-addbar' }, add('Add access point', 'ap'), add('Add client network', 'sta'), add('Add mesh point', 'mesh'),
+      h('span', { className: 'muted small' }, 'A client network makes this router join another network, as a repeater or an uplink does; a mesh point joins the 802.11s mesh of the other nodes.')));
 }
 
 //#endregion

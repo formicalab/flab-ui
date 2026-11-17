@@ -4,15 +4,21 @@
 
 ### Pages
 
-- **Two hardware pages: Ethernet ports and Wi-Fi radios.** They read and change the hardware, and everything about it is configured there, not in drawers.
-  **Ethernet ports** (`#network`) is the Ports table of the old Ethernet page (link, negotiation, hardware, traffic graph, errors, bridge, VLAN devices, cable
-  test, the editable VLAN tables) with a collapsible **Settings** section under every port: the port's device settings (MTU, MAC address, link speed, flow control and
-  the rest) open under its row, and a port without a device section can get one. **Wi-Fi radios** (`#radios`) has a card per radio with its live figures,
-  channel utilization, configuration, the channel picker and the radio settings, moved from the Wi-Fi page; the radio settings now cover every `wifi-device` option of the
-  OpenWrt wireless documentation (the channels of automatic selection, the basic and supported rates, the HT capabilities, the antennas, the HT coexistence flag,
-  the narrow channel width and extra hostapd options, besides the ones that were there). The **Wi-Fi** page keeps the wireless networks (SSIDs); the radios and the
-  networks share one draft and one Save.
-- **Devices and Interfaces** has the tabs **Board** and **Connected devices**. A click on a port or a radio card opens the hardware page instead of a drawer, and the
+- **Two hardware pages: Ethernet ports and Wi-Fi radios.** They read and change the hardware and what runs on it, and everything about it is configured there, not in drawers.
+  **Ethernet ports** (`#network`) is the Ports table of the old Ethernet page (link with its negotiation, hardware, traffic graph, errors, bridge and VLAN devices, cable
+  test, the editable VLAN tables) with a collapsible **Port settings** section under every port: the port's device settings (MTU, MAC address, link speed, flow control and
+  the rest) open under its row, and a port without a device section can get one. **Wi-Fi radios** (`#radios`) has a card per radio with its live figures, channel
+  utilization, its **radio settings** (which start with the channel picker) and its **wireless networks**; the radio settings cover every `wifi-device` option of the OpenWrt wireless
+  documentation (the channels of automatic selection, the basic and supported rates, the HT capabilities, the antennas, the HT coexistence flag, the narrow channel width and extra
+  hostapd options). The networks on a radio are the access points, the client networks and the **802.11s mesh points**: each is a block with what it is doing now (clients,
+  BSSID and traffic; for a mesh point the peers, paths and the mesh parameters in force, the old Mesh page) above its settings, and the buttons **Add access point**,
+  **Add client network** and **Add mesh point** create them. A mesh point has the options the wireless configuration can hold (Mesh ID, networks, SAE, password, multicast rate),
+  its mesh parameters are shown read only because only `iw` or mesh11sd can set them, and the checks warn that spanning tree does not see a mesh (the OpenWrt 802.11s page).
+  **The Wi-Fi and Mesh pages are gone**: `#wifi` and `#mesh` open the Wi-Fi radios page, and the chips of the Devices and Interfaces board link to it. The radios and
+  their networks share one draft and one Save. The channel picker is part of the Radio group of the radio settings (under the mode), and an access point whose WPS push button is enabled has a **WPS** button on its summary line that opens the button for two minutes after a confirmation (the new `flab.radio wps` method; sign in again to get the permission). The two hardware pages are built alike: summary tiles with totals only, the live state of each device, and one settings fold per
+  device that is the only place a configured value is shown and edited (the same fold control). A radio card no longer has a Configuration block or a Clients figure (the
+  configured channel, width and power are in the key figures, the clients in each network), the Ethernet table has one Link column that includes the negotiation and one Bridge and VLANs
+  column, and the Switch and Link changes tiles are gone because the switch line and the rows say the same.- **Devices and Interfaces** has the tabs **Board** and **Connected devices**. A click on a port or a radio card opens the hardware page instead of a drawer, and the
   Device menu no longer offers port settings. The ports' hardware is shown in one line on a port card; a radio is a container card of its Wi-Fi and mesh interfaces.
   Interface cards no longer show an uptime (the interface drawer still does). The lanes have wider gaps. A page's refresh period may now be a function.
 - **A Connected devices tab** lists the connected Wi-Fi clients per network, moved from the Wi-Fi page (with a filter and a radio selector in the command bar of the tab).

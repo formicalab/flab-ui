@@ -1,4 +1,4 @@
-// The geometry of Wi-Fi channels (pure: no DOM, no router), used by the Wi-Fi page and its unit test. A radio is an entry
+// The geometry of Wi-Fi channels (pure: no DOM, no router), used by the Wi-Fi radios page and its unit test. A radio is an entry
 // of the flab.radio status reply: its name is the `wifi-device` section of /etc/config/wireless, `config.channel` and
 // `config.htmode` are what is configured, and `channels` lists what the regulatory domain allows
 // ({ channel, freq, disabled, dfs, max_power }).

@@ -15,7 +15,7 @@
 .rd-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: 1.2rem 1.25rem .5rem; }
 .rd-head .name { font-size: 1.2rem; font-weight: 600; }
 .rd-head svg { color: var(--fl-brand); }
-.rd-hw { margin-left: auto; font-size: .8rem; }
+.rd-hw { margin-left: auto; font-size: .85rem; display: inline-flex; align-items: center; gap: .4rem; }
 .rd-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .75rem; padding: .5rem 1.25rem 1rem; }
 .rd-stat { padding: .65rem .8rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
 .rd-stat .label { font-size: .75rem; color: var(--fl-muted); text-transform: uppercase; letter-spacing: .05em; }
@@ -30,7 +30,8 @@
 .rd-find .info { color: var(--fl-info-fg); }
 
 /* ── Configuration, utilization, channels: two detail columns, airtime meter and the channel strip ── */
-.rd-cols { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr); gap: 1.75rem; padding: 1.1rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
+.rd-cols { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, 2.2fr); gap: 1.75rem; padding: 1.1rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
+.rd-cols-1 { grid-template-columns: minmax(0, 1fr); }
 .rd-card h3 { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--fl-muted); margin: 0 0 .6rem; }
 /* ── Channel picker (editing): tiles you can hover to preview the block a channel would occupy, and click ──
    .cur running · .span running block · .cfg configured (when it differs from running) · .sel your choice ·
@@ -78,29 +79,35 @@
 .rd-pick-key .off { background: var(--fl-surface-hover); opacity: .5; }
 @media (prefers-reduced-motion: reduce) { .rd-pick .chn, .rd-auto { transition: none; } }
 
-/* ── Interfaces: the SSIDs/stations of the radio and their feature chips ── */
+/* ── The wireless networks of a radio card, and what each is doing now (the live part above its settings) ── */
 .rd-ifaces { padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--fl-stroke); }
-.rd-feat { display: flex; flex-wrap: wrap; gap: .25rem; max-width: 24rem; }
+.rd-facts { display: flex; flex-wrap: wrap; gap: .3rem 1.6rem; font-size: .85rem; }
+.rd-fact svg { vertical-align: -1px; }
+.rd-reg { margin-top: .5rem; }
+/* The live part of a mesh point: the STP note, the peers, and the folded paths and parameters */
+.mesh-live { display: grid; gap: .9rem; }
+.mesh-note { display: flex; align-items: center; gap: .55rem; padding: .55rem .8rem; border-radius: 10px; background: var(--fl-info-bg); color: var(--fl-info-fg); }
+.mesh-note svg { flex: none; }
+.mesh-table td { vertical-align: top; }
+.mesh-table .meter { margin-top: .25rem; min-width: 5rem; }
+.mesh-fold > summary { font-size: .85rem; font-weight: 600; color: var(--fl-muted); padding: .2rem 0; }
+.mesh-fold[open] > summary { margin-bottom: .5rem; }
 
-/* ── Editing: the radio's settings and the wireless networks (SSIDs). A block folds down to its summary; the controls
-   themselves are the shared ones of forms.css (set-fields, set-field, set-check). ── */
-.wf-block { margin: 0; border-top: 1px solid var(--fl-stroke); }
-.wf-block > summary, .wf-iface > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .8rem 1.25rem; cursor: pointer; }
-.wf-block > summary:hover, .wf-iface > summary:hover { background: var(--fl-surface-hover); }
-/* The radio settings keep the native arrow of a details block, like the other folds: a block summary, not a flex row. */
-.wf-block > summary { display: block; }
-.wf-block > summary > * { margin-left: .6rem; }
-.wf-block-body { display: flex; flex-direction: column; gap: .8rem; padding: .3rem 1.25rem 1.1rem; }
+/* ── Editing: the wireless networks (SSIDs) of a radio and the groups of the radio's Settings fold (the fold itself, .wf-block, is in forms.css, shared with
+   the Ethernet ports page). The controls themselves are the shared ones of forms.css (set-fields, set-field, set-check). ── */
+.wf-iface > summary { padding: .8rem 1.25rem; }
+.wf-iface > summary .wps-btn { padding: .05rem .55rem; font-size: .75rem; }
+.wf-iface > summary .wps-btn svg { margin-right: .3rem; }
+.wf-iface > summary:hover { background: var(--fl-surface-hover); }
 .wf-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
-.wf-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
+.wf-group > summary { padding: .5rem .8rem; font-weight: 600; }
 .wf-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
 .wf-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
 .wf-group-body p { margin: 0; }
-.wf-group .set-fields > * { padding: .5rem 0; }
+.wf-group .set-fields > *, .wf-basic > * { padding: .5rem 0; }
 
 /* The wireless networks of a radio: one block each, a new one outlined, one going to be removed dimmed. */
-.wf-nets-editor { display: flex; flex-direction: column; gap: .8rem; margin-top: 1.4rem; }
-.wf-nets-editor > h3 { margin: 0; }
+.wf-nets-editor { display: flex; flex-direction: column; gap: .8rem; }
 .wf-iface { border: 1px solid var(--fl-stroke); border-radius: 8px; }
 .wf-iface[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
 .wf-new { border-color: var(--fl-info-fg); }
@@ -112,7 +119,7 @@
 .wf-nets.is-invalid { border-color: var(--fl-bad-fg); background: var(--fl-bad-bg); }
 .wf-net { display: flex; align-items: center; gap: .45rem; margin: 0; padding-left: 0; }
 .wf-net .form-check-input { float: none; margin: 0; }
-.wf-block summary svg, .wf-iface summary svg { color: var(--fl-brand); }
+.wf-iface summary svg { color: var(--fl-brand); }
 
 /* Narrow screens: single-column detail columns */
 @media (max-width: 991.98px) { .rd-cols { grid-template-columns: 1fr; } .rd-hw { margin-left: 0; } }

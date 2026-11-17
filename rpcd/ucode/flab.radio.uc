@@ -3,6 +3,7 @@
 // rpcd ucode plugin reporting Wi-Fi radios, their configuration and their virtual interfaces as JSON:
 //   ubus call flab.radio status    live state of every radio and SSID
 //   ubus call flab.radio config    the wireless configuration without secrets, for editing it
+//   ubus call flab.radio wps '{"ifname":"phy0-ap0","action":"start"}'   open (or "cancel") the WPS push button of an access point (on request only)
 //
 // Everything is discovered at run time: radios from UCI wireless, their phy from the kernel, interfaces
 // from netifd, so a new radio, SSID or channel shows up on the next poll.
@@ -223,6 +224,26 @@ function hardware(ifname) {
 	return out;
 }
 
+// Where a phy sits and which driver runs it, from sysfs: the kernel driver and the bus (platform, pci, usb), the device-tree compatible string of a SoC radio,
+// the PCI id (vendor:device) of a card and the USB id of a stick. Keys are only set when the device reports them. This works for a radio that is down too.
+function phy_device(phy) {
+	let out = {};
+	let base = `/sys/class/ieee80211/${phy}/device`;
+	for (let line in split(sysfs(base + '/uevent') ?? '', '\n')) {
+		let m = match(line, /^([A-Z0-9_]+)=(.*)$/);
+		if (!m)
+			continue;
+		if (m[1] == 'DRIVER') out.driver = m[2];
+		else if (m[1] == 'PCI_ID') out.pci_id = lc(m[2]);
+		else if (m[1] == 'PRODUCT') out.usb_id = m[2];
+		else if (m[1] == 'OF_COMPATIBLE_0') out.compatible = m[2];
+	}
+	let bus = match(trim(run(`readlink ${base}/subsystem 2>/dev/null`) ?? ''), /\/([a-z0-9_-]+)$/);
+	if (bus)
+		out.bus = bus[1];
+	return out;
+}
+
 // Regulatory domain from `iw reg get`: { country, dfs } (dfs is the DFS region such as "DFS-ETSI"), or null.
 function regdomain() {
 	let m = match(run('iw reg get 2>/dev/null'), /country ([A-Z0-9]+): (DFS-[A-Z]+|[A-Za-z-]+)/);
@@ -340,6 +361,12 @@ function collect() {
 			radio.survey = survey(live_if);
 			radio.hardware = hardware(live_if);
 		}
+		// The device the phy sits on (driver, bus, ids) is known whether the radio is up or not.
+		let hw = radio.hardware ?? {};
+		if (phy && safe_ifname(phy))
+			for (let k, v in phy_device(phy))
+				hw[k] = v;
+		radio.hardware = hw;
 		push(radios, radio);
 	}
 
@@ -454,7 +481,43 @@ function config() {
 }
 //#endregion
 
-// rpcd registration: ubus object flab.radio with the methods `status` and `config` (no arguments).
+//#region WPS push button
+
+// The reply of `wps`: starts or cancels the WPS push button of the access point on `ifname` through hostapd's ubus object
+// (`wps_start`, `wps_cancel`). While it is on (hostapd keeps it for two minutes) a device in range whose WPS button is pressed joins the
+// network without the password, so it is only called on request. The interface must be an access point of the wireless config that
+// has `wps_pushbutton` set; anything else is refused before hostapd is asked.
+//   { ok, ifname, action } or { ok: false, ifname, action, error }
+function wps(request) {
+	let ifname = request?.args?.ifname;
+	let action = request?.args?.action ?? 'start';
+	let name = type(ifname) == 'string' && safe_ifname(ifname) ? ifname : null;
+	let fail = (error) => ({ ok: false, ifname: name, action, error });
+	if (name == null)
+		return fail('The interface name is not valid.');
+	if (action != 'start' && action != 'cancel')
+		return fail('The action must be start or cancel.');
+	let conn = connect();
+	let all = uci_all('wireless');
+	let wl = ubus_call(conn, 'network.wireless', 'status') ?? {};
+	let section = null;
+	for (let radio, st in wl)
+		for (let i in st.interfaces ?? [])
+			if (i.ifname == name)
+				section = all[i.section];
+	if (!section)
+		return fail('That is not a running wireless interface.');
+	if ((section.mode ?? 'ap') != 'ap' || !flag(section, 'wps_pushbutton'))
+		return fail('The WPS push button is not enabled on that access point.');
+	ubus_call(conn, 'hostapd.' + name, action == 'start' ? 'wps_start' : 'wps_cancel');
+	let error = conn.error();
+	if (error != null)
+		return fail(`hostapd refused: ${error}. The WPS push button needs the full wpad and a WPA2-Personal network.`);
+	return { ok: true, ifname: name, action };
+}
+//#endregion
+
+// rpcd registration: ubus object flab.radio with the methods `status` and `config` (no arguments) and `wps` (ifname, action), which only runs on request.
 return deferred({
 	'flab.radio': {
 		status: {
@@ -465,6 +528,12 @@ return deferred({
 		config: {
 			call: function(request) {
 				return config();
+			},
+		},
+		wps: {
+			args: { ifname: '', action: '' },
+			call: function(request) {
+				return wps(request);
 			},
 		},
 	},

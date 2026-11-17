@@ -4,7 +4,7 @@ The network as a **board**: how it is built, from the cable up, on one screen, a
 for editing, `config`), netifd's interface dump, `flab.radio` and `flab.mesh` (both optional: without them the page shows the wired layers, and a bridge shows no mesh peers).
 OpenWrt builds a network in layers, and the board has one lane for each, left to right:
 1. **Ports and radios** (physical): the front-panel Ethernet ports (the Ethernet icon, green with a link, speed, LAN or WAN position, a mark when the port has device settings, and its hardware, one line each: PHY, switch port or SoC MAC, optical module), and the radios, each a container card (the Wi-Fi icon, green when it is up, band, PHY, state and hardware) that holds its Wi-Fi and mesh
-   interfaces as chips (SSID or mesh ID, mode; a chip links to the Wi-Fi or Mesh page; hovering a chip or the radio highlights the radio and the chains of its interfaces). A click on a port opens the Ethernet ports page and a click on a radio the Wi-Fi radios page (no drawer). A configured wireless interface that is not running has no name
+   interfaces as chips (SSID or mesh ID, mode; a chip links to the Wi-Fi radios page, where the interface is configured; hovering a chip or the radio highlights the radio and the chains of its interfaces). A click on a port opens the Ethernet ports page and a click on a radio the Wi-Fi radios page (no drawer). A configured wireless interface that is not running has no name
    yet, so it joins the interface named in its `network` option, shown as down. The DSA conduit and the pseudo ports of a swconfig switch are shown only when something is attached
    to them. A radio without an interface says so inside its card.
 2. **Devices**: bridges (port count, STP, VLAN filtering) and VLAN devices (`eth1.1036`, VLAN ID and base device), then other `device` sections and devices an interface names that
@@ -112,7 +112,7 @@ listed (a taken name, a bad or clashing address, a gateway outside the subnet, a
 disabled while there is an error). The documentation limits a device name to 14 characters including prefixes (`pppoe-`, `br-`, the `.VLAN` suffix); suggestions respect
 it and a name beyond it is a warning (the model itself enforces the kernel's 15). **Finish** adds the bridge or VLAN device and the interface to the draft through the
 model functions the panels use; nothing is saved, and the board opens the new interface's panel. The last page lists what the flow does not do, with links: no firewall zone (Firewall page), no DHCP server or
-router advertisements (DHCP page), no Wi-Fi network (Wi-Fi page), no static routes (Routing page). While a wizard is open the page does not poll (`wizardOpen()` in the page's
+router advertisements (DHCP page), no Wi-Fi network (Wi-Fi radios page), no static routes (Routing page). While a wizard is open the page does not poll (`wizardOpen()` in the page's
 `isPaused`), because the wizard adds to the draft it was opened on; the page's context offers `current()` so the wizard always writes to the latest one.
 
 The controls of one option, the name box, the ports picker, the list of options without a control and the state badge are shared by the panels and the wizard (`controls.js`);

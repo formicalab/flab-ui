@@ -197,7 +197,7 @@ function deviceUses(ctx, name, kind) {
     u.interfaces.length ? ['Interfaces', lines(u.interfaces)] : null,
     vlans.length ? ['VLAN devices', lines(vlans)] : null,
     u.bridge && !(port && port.bridge === u.bridge) ? ['Port of', mono(u.bridge)] : null,
-    u.wifi.length ? ['Wi-Fi interfaces', h('span', { className: 'np-wrap' }, u.wifi.map(n => h('div', {}, mono(n))), pageLink('#wifi', 'Wi-Fi page'))] : null,
+    u.wifi.length ? ['Wi-Fi interfaces', h('span', { className: 'np-wrap' }, u.wifi.map(n => h('div', {}, mono(n))), pageLink('#radios', 'Wi-Fi radios page'))] : null,
   ];
   const shownAbove = port && (port.bridge || (port.vlans ?? []).length);
   return { node: usedSection(null, rows, kind === 'port' ? (shownAbove ? 'No interface runs on this port itself.' : 'No interface, VLAN device or bridge uses this port.') : 'Nothing uses this device yet.'), names: [...u.interfaces, ...u.vlans] };
@@ -347,7 +347,7 @@ function pendingValues(ctx, name, onAdd) {
   });
 }
 
-// The settings of the port `name` for the Ethernet ports page, built where the table puts them (under the port's row): the device settings of the port (MTU,
+// The settings of the port `name` for the Ethernet ports page, built where the table puts them (under the port's row, in its Settings fold): the device settings of the port (MTU,
 // MAC address, link speed, flow control and the rest, Advanced folded). A port without a device section shows the same form with the defaults, and the first
 // change gives it a section (it is optional: without one the port works with its defaults); a section can be reset to the defaults with the button below.
 // It edits the one shared draft of editor.js through `ctx`.
@@ -371,7 +371,7 @@ export function portSettings(ctx, name) {
   const control = f => controlFor(ctx, deviceField(ctx, { name }, f), `dev:${d ? d.id : name}:${idOf(f)}`, v, false);
   const text = d ? 'These change how the network device itself behaves. The device section is optional: without one the port works with its defaults.'
     : 'The port works with its defaults, which is normal. Change a value to give it settings of its own (MTU, MAC address, link speed, flow control): the first change adds a device section for it.';
-  const sec = section(null, d?.isNew ? 'Settings (not saved yet)' : 'Settings', text,
+  const sec = section(null, d ? (d.isNew ? 'Device section (not saved yet)' : 'Device section') : 'Defaults', text,
     settings.essential.length ? h('div', { className: 'set-fields np-fields' }, settings.essential.map(control)) : null,
     advancedBlock(`port:${name}`, settings.groups, control, v, d ? extraOptions(d.raw, d.secrets, known, 'device section') : null));
   return panelBody(sec, foot);

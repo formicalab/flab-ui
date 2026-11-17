@@ -11,7 +11,7 @@ fallback, but key generation still requires `crypto.getRandomValues`.
 ## Boot and routing (`js/core/app.js`)
 
 - `main.js` calls `initTheme()` then `start()`.
-- Routing is hash based (`#overview`, `#wifi`, ...). The first entry in `pages/index.js` is the default.
+- Routing is hash based (`#overview`, `#radios`, ...). The first entry in `pages/index.js` is the default.
 - On every route change the shell rebuilds: navigation pane, command bar (page title, the page's
   persistent controls, "Updated hh:mm:ss" stamp) and a `<main>` results area.
 - `page.load()` fetches data, `page.view(data, rerender)` returns nodes. A `setInterval` repeats

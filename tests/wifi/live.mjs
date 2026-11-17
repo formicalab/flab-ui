@@ -151,7 +151,7 @@ await ctx.route('**/ubus', async route => {
   const reply = body ? answer(body) : null;
   return reply ? route.fulfill({ contentType: 'application/json', body: JSON.stringify(reply) }) : route.continue();
 });
-// Opens the Wi-Fi page with a session in sessionStorage, the way a real sign-in leaves the tab.
+// Opens the Wi-Fi radios page with a session in sessionStorage, the way a real sign-in leaves the tab. The channel pickers are in the radio settings, which are opened (the page remembers it).
 const open = async acls => {
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(String(e)));
@@ -162,6 +162,8 @@ const open = async acls => {
   }, [sid, acls ?? rootAcls]);
   await p.goto(`${baseUrl}#radios`);
   await p.waitForSelector('.rd-card, .login-form', { timeout: 20000 });
+  await p.evaluate(() => document.querySelectorAll('details.wf-block').forEach(d => { d.open = true; }));
+  await p.waitForTimeout(200);
   return p;
 };
 let page = await open();
@@ -286,7 +288,7 @@ check(mock.cfg.radio0.channel === '11' && mock.cfg.radio1.channel === '36' && mo
 await page.waitForTimeout(600);
 check(await has(tile('radio1', 36), 'cur') && await bar().locator('.set-outcome.ok').count() === 1 && await saveBtn().isHidden() && await page.locator('button:has-text("Discard edits")').isHidden(), 'the page shows the new running channel and keeps the outcome, without Save and Discard buttons');
 check(!/null|undefined/.test(await bar().innerText()) && /No unsaved changes/.test(await page.locator('.set-bar-summary').innerText()), 'the banner says nothing is unsaved, with no stray "null"');
-check(/configured 36/.test(await card('radio1').locator('.rd-cols').innerText()), 'the configuration block says configured 36');
+check(/configured 36/.test(await card('radio1').locator('.rd-hero').innerText()), 'the key figures say configured 36');
 await shot('saved');
 
 console.log('\n== a change the router does not keep ==');

@@ -1,5 +1,5 @@
-// The Ethernet ports page (route #network): the physical ports as hardware, to read and to change: a table with a row per port (link, hardware, negotiation,
-// traffic graph, errors, bridge, VLAN devices, cable test), the port's own device settings under its row (MTU, MAC address, link speed, flow control and the
+// The Ethernet ports page (route #network): the physical ports as hardware, to read and to change: a table with a row per port (link with its negotiation,
+// hardware, traffic graph, errors, bridge and VLAN devices, cable test), the port's own Settings under its row (MTU, MAC address, link speed, flow control and the
 // rest of the `device` section of /etc/config/network), and the VLAN tables of the bridges and switches, which can be edited. The bridges and the layers built
 // on the ports are on the Devices and Interfaces board. Data comes from the flab.network plugin; everything is rediscovered on every poll and counters are
 // turned into rates in the browser (core/rates.js), so ports that appear, change or disappear are reflected without a reload. Two editors stage changes to
@@ -11,7 +11,7 @@ import { pauseControl, refreshControl } from '../../core/controls.js';
 import { portsPanel, settingsFormOpen } from './ports.js';
 import { hooks } from './cable.js';
 import { vlan } from './vlanpage.js';
-import { traffic, portFindings, errorsOf, dropsOf, newFlaps } from './util.js';
+import { traffic, portFindings, errorsOf, dropsOf } from './util.js';
 import { editor, editContext, editNotes, loadNetworkEdit } from '../interfaces/editor.js';
 
 // The paused flag lives at module level so it survives the redraw on every poll.
@@ -20,8 +20,9 @@ const state = { paused: false };
 // The shell's reload function, handed over by controls().
 const shell = { reload: () => {} };
 
-// KPI tiles. Throughput sums the external ports only: a conduit (SoC MAC feeding a switch) carries the
-// same frames as the switch ports and would be counted twice.
+// KPI tiles, the totals no single row shows: ports linked, live throughput and errors and drops. Throughput sums the external ports only: a conduit (SoC MAC
+// feeding a switch) carries the same frames as the switch ports and would be counted twice. The switch is described above the table and link changes in
+// each port's Link column and in the findings.
 function summary(net) {
   const external = net.ports.filter(p => p.role !== 'conduit');
   const up = external.filter(p => p.carrier).length;
@@ -29,15 +30,11 @@ function summary(net) {
   for (const p of external) { const t = traffic(p.name); rx += t.rxNow ?? 0; tx += t.txNow ?? 0; }
   const errors = net.ports.reduce((n, p) => n + errorsOf(p), 0);
   const drops = net.ports.reduce((n, p) => n + dropsOf(p), 0);
-  const flaps = net.ports.reduce((n, p) => n + newFlaps(p), 0);
-  const sw = net.switches?.[0];
 
   return tiles(
     tile('Ports linked', `${up} / ${external.length}`, `${external.filter(p => p.role === 'switch').length} switch · ${external.filter(p => p.role === 'nic').length} adapter`, up ? 'text-success' : 'text-danger'),
     tile('Live throughput', `↓ ${fmtLine(rx)}`, `↑ ${fmtLine(tx)} · external ports`),
-    tile('Switch', sw ? sw.label ?? 'switch' : 'none', sw ? `${sw.ports.length} user ports · CPU port${sw.cpu_ports.length === 1 ? '' : 's'} ${sw.cpu_ports.map(c => c.port).join(', ') || '–'}` : 'ports connect straight to the SoC'),
-    tile('Errors & drops', fmtNum(errors), `${fmtNum(drops)} drops`, errors ? 'text-warning' : 'text-success'),
-    tile('Link changes', flaps, 'since this page was opened', flaps ? 'text-warning' : ''));
+    tile('Errors & drops', fmtNum(errors), `${fmtNum(drops)} drops`, errors ? 'text-warning' : 'text-success'));
 }
 
 // Page object registered in pages/index.js (contract documented there).

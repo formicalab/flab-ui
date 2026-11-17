@@ -1,5 +1,5 @@
 // The Connected devices view of Devices and Interfaces: the Wi-Fi clients connected now, one table per wireless network (SSID), moved here from the
-// Wi-Fi page. The columns show MAC, addresses, hostname, signal, standard, bandwidth, bitrate, security, AKM/cipher/PMF details and the 0-100 score; the
+// old Wi-Fi page. The columns show MAC, addresses, hostname, signal, standard, bandwidth, bitrate, security, AKM/cipher/PMF details and the 0-100 score; the
 // filter and the radio selector are in the command bar. Data comes from the flab.wifi plugin. Only Wi-Fi clients are listed for now; the view is the
 // place for the other connected devices (wired clients, DHCP leases) later.
 // This module is not a page of its own: pages/interfaces/index.js hosts it (its load, view, command-bar nodes and pause rule).

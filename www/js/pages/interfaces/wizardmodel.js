@@ -16,7 +16,7 @@ export const WHERE = [
 export function notDone(proto) {
   const firewall = { text: 'No firewall zone. Until the network is in a zone it has no rules: the router treats it with its default policy.', href: '#firewall', link: 'Firewall page' };
   const dhcp = { text: 'No DHCP server and no router advertisements. Clients of this network will not get an address until one is set up.', href: '#dhcp', link: 'DHCP page' };
-  const wifi = { text: 'No Wi-Fi network. A Wi-Fi network joins this one by naming it in its "network" option.', href: '#wifi', link: 'Wi-Fi page' };
+  const wifi = { text: 'No Wi-Fi network. A Wi-Fi network joins this one by naming it in its "network" option.', href: '#radios', link: 'Wi-Fi radios page' };
   const routes = { text: 'No static routes or policy rules. Anything that must reach this network through another router needs a route.', href: '#routing', link: 'Routing page' };
   return proto === 'static' ? [firewall, dhcp, wifi, routes] : [firewall, routes];
 }

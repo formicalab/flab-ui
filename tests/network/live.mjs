@@ -102,7 +102,7 @@ await page.addInitScript(([id, granted]) => {
 }, [sid, acls]);
 await page.goto(baseUrl);
 await page.waitForSelector('.tile');
-check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Ethernet ports', 'Wi-Fi radios', 'Wi-Fi', 'Mesh', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: the two hardware pages (Ethernet ports, Wi-Fi radios), Wi-Fi, Mesh, VPNs, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces, Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
+check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Ethernet ports', 'Wi-Fi radios', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: the two hardware pages (Ethernet ports, Wi-Fi radios, which holds the networks and mesh points), VPNs, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces, Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
 //#region Ethernet ports page
 await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');
@@ -300,7 +300,7 @@ mock.network = scenario('base', 'network');
 tick = (plugin, d) => { if (plugin === 'network') for (const p of d.ports) { p.stats.rx_bytes += 5_000_000; p.stats.tx_bytes += 1_000_000; } };
 await refresh(); await refresh(); await refresh();
 check(/^↓ [1-9]/.test(await tile(1)) && !/0 bit/.test((await tile(1)).split('\n')[0]), 'throughput tile shows a measured rate', await tile(1));
-check((await page.locator('.port-table tr:has(.port-ic.up) td.num:nth-child(5)').allInnerTexts()).some(t => /Mbit\/s/.test(t)), 'port rows show live rates', (await page.locator('.port-table tr:has(.port-ic.up) td.num:nth-child(5)').allInnerTexts()).join(' | '));
+check((await page.locator('.port-table tr:has(.port-ic.up) td.num:nth-child(4)').allInnerTexts()).some(t => /Mbit\/s/.test(t)), 'port rows show live rates', (await page.locator('.port-table tr:has(.port-ic.up) td.num:nth-child(4)').allInnerTexts()).join(' | '));
 //#endregion
 
 //#region Bridges on the Devices and Interfaces board
@@ -372,7 +372,7 @@ check(await page.locator('.port-table').count() === 0 && await page.locator('#bl
 await ifCard('lan').hover();
 check(/on br-lan/.test(await ifCard('lan').innerText()) && await related('ports').count() >= 3 && await related('devices').count() >= 1, 'lan sits on br-lan, which groups ports and Wi-Fi: hovering it highlights them');
 check(/radio\d/.test(await text('.nb-lane-ports .nb-radio')) && await page.locator('.nb-lane-ports .nb-radio .nb-chip').count() >= 1, 'Wi-Fi interfaces are grouped in the card of the radio they are on');
-check(await page.locator('.nb-lane-ports a.nb-chip[href="#mesh"]').count() >= 1 && await page.locator('.nb-lane-ports a.nb-chip[href="#wifi"]').count() >= 1, 'the mesh interface and the Wi-Fi interfaces are chips that link to the Mesh and Wi-Fi pages');
+check(await page.locator('.nb-lane-ports a.nb-chip[href="#radios"]').count() >= 2, 'the mesh interface and the Wi-Fi interfaces are chips that link to the Wi-Fi radios page, where they are configured');
 check(/Radios/.test(await text('.tile')) && /Wireless interfaces/.test(await text('.tile')), 'radio and wireless interface tiles');
 check(/pppoe-wan/.test(await ifCard('wan').innerText()) && /on eth1\.1036/.test(await ifCard('wan').innerText()) && /VLAN 1036 on eth1/.test(await text('.nb-lane-devices')), 'wan is PPPoE over the VLAN on eth1');
 check(/on the PPPoE session of wan/.test(await ifCard('wan6').innerText()) && /shared/.test(await ifCard('wan6').innerText()), 'wan6 is shown riding on the PPPoE session of wan');
@@ -400,40 +400,40 @@ await stage('radios back to the live router', 'radio', null);
 check(!/not attached to any network interface/.test(await text('.net-health')), 'the finding is gone again');
 //#endregion
 
-//#region Mesh page
-await page.click('a[href="#mesh"]');
-await page.waitForSelector('.mesh-card');
-console.log('\n== mesh: live router (pass-through) ==');
+//#region Mesh points on the Wi-Fi radios page
+await page.click('a[href="#radios"]');
+await page.waitForSelector('.rd-card');
+console.log('\n== mesh points on the Wi-Fi radios page: live router (pass-through) ==');
 mock.mesh = null; mock.network = null;
 await refresh();
-check(await page.locator('.mesh-card').count() >= 1 && await page.locator('.mesh-card .mesh-table').count() >= 2, 'mesh card with peers and paths tables from the live router');
-check(/Peers established/.test(await text('.tile')), 'mesh summary tiles');
+const meshBlock = page.locator('details.wf-iface:has(.mesh-live)');
+check(await meshBlock.count() >= 1 && await meshBlock.first().locator('.mesh-table').count() >= 2, 'the mesh point of a radio holds its peers and paths tables, from the live router');
+check(/Mesh peers/.test(await text('.tile')), 'a mesh peers summary tile');
 
 await stage('a second peer, one not established', 'mesh', 'm-twopeers');
-check(await page.locator('.mesh-card .mesh-table').first().locator('tbody tr').count() === 2, 'two peer rows');
-check(await tile(1) === '1 / 2', 'peers-established tile counts 1 of 2', await tile(1));
-check(/not established/.test(await text('.net-health')), 'health banner names the peer that is not established', await text('.net-health'));
-check(await page.locator('.mesh-card .mesh-table').nth(1).locator('tbody tr').count() >= 2, 'mesh paths listed, including multi-hop and unresolved ones');
+check(await meshBlock.first().locator('.mesh-table').first().locator('tbody tr').count() === 2, 'two peer rows');
+check(await tile(2) === '1 / 2', 'mesh peers tile counts 1 of 2', await tile(2));
+check(/not established/.test(await text('.rd-find')), 'the findings of the radio name the peer that is not established', await text('.rd-find'));
+check(await meshBlock.first().locator('.mesh-table').nth(1).locator('tbody tr').count() >= 2, 'mesh paths listed, including multi-hop and unresolved ones');
 
 await stage('a weak, lossy link', 'mesh', 'm-weak');
-check(/Weak link/.test(await text('.net-health')) && /failed/.test(await text('.net-health')), 'weak signal and transmission failures reported', await text('.net-health'));
+check(/weak link/.test(await text('.rd-find')) && /failed/.test(await text('.rd-find')), 'weak signal and transmission failures reported', await text('.rd-find'));
 
 await stage('forwarding switched off', 'mesh', 'm-fwdoff');
-check(/forwarding is off/.test(await text('.net-health')) && await tile(4) === 'Off', 'forwarding off is called out', await text('.net-health'));
+check(/forwarding is off/.test(await text('.rd-find')) && /Forwarding\s+off/.test(await text('.mesh-live')), 'forwarding off is called out and listed with the parameters in force', await text('.rd-find'));
 
 await stage('no peers', 'mesh', 'm-nopeer');
-check(/no mesh peer/.test(await text('.net-health')), 'no peers is reported');
+check(/no mesh peer/.test(await text('.rd-find')), 'no peers is reported');
 
 await stage('mesh interface not running', 'mesh', 'm-down');
-check(await page.locator('.mesh-card.is-down').count() === 1 && /not running/.test(await text('.net-health')), 'a mesh interface that is down is shown as such');
+check(/not running/.test(await text('.rd-find')) && /not running, so there are no peers/.test(await text('details.wf-iface')), 'a mesh point that is down is shown as such');
 
 await stage('no mesh configured', 'mesh', 'm-nomesh');
-check(await page.locator('.mesh-card').count() === 0 && /No 802\.11s mesh interface/.test(await text('main')), 'empty state when no mesh interface exists');
+check(await page.locator('.mesh-live').count() === 0 && !/Mesh peers/.test(await text('.tile')), 'without a mesh status there is no mesh live part and no mesh tile');
 
 await stage('back to normal', 'mesh', 'base');
-check(await page.locator('.mesh-card').count() === 1, 'the mesh interface is back');
+check(await meshBlock.count() >= 1, 'the mesh point is back');
 //#endregion
-
 //#region WireGuard page
 await page.click('a[href="#wireguard"]');
 await page.waitForSelector('.wg-card');
@@ -590,30 +590,26 @@ check(await page.locator('.log-table').count() === 0 && /The log is empty/.test(
 await stage('back to the live router', 'logs', null);
 //#endregion
 
-//#region Wi-Fi page
-await page.click('a[href="#wifi"]');
+//#region Wireless networks on the Wi-Fi radios page
+await page.click('a[href="#radios"]');
 await page.waitForSelector('.rd-card');
 
-console.log('\n== live router (pass-through) ==');
+console.log('\n== wireless networks: live router (pass-through) ==');
 mock.radio = null;
 await refresh();
 check(await page.locator('.rd-card').count() >= 1, 'radio cards drawn from the live router');
-check(await page.locator('.rd-card table tbody tr').count() >= 1, 'interfaces listed');
-check(!/formicalabmesh|\bmesh\b/.test(await text('.rd-card table')) && await page.locator('.rd-card a[href="#mesh"]').count() >= 1, 'the mesh interface is not in the Wi-Fi tables, only linked to the Mesh page');
-check(!/\bmesh\b/.test(await text('main .card-header')), 'no mesh client group on the Wi-Fi page');
-check(await page.locator('details.legend').count() === 0 && await page.locator('.fixed-grid').count() === 0, 'the client tables and their legend are no longer on the Wi-Fi page: they are on the Connected devices tab');
+check(await page.locator('.rd-card details.wf-iface').count() >= 1, 'each radio card lists its wireless networks');
+check(await page.locator('.rd-card a[href="#mesh"], .rd-card a[href="#wifi"]').count() === 0, 'no link to the Wi-Fi or Mesh pages: the networks and the mesh points are on the card');
+check(await page.locator('details.legend').count() === 0 && await page.locator('.fixed-grid').count() === 0, 'the client tables and their legend are not here: they are on the Connected devices tab');
 
 await stage('base radios', 'radio', 'base');
-const baseRows = await page.locator('.rd-card').first().locator('tbody tr').count();
+const baseNets = await page.locator('.rd-card').first().locator('details.wf-iface').count();
 await stage('new SSID', 'radio', 'r-newssid');
-check(await page.locator('.rd-card').first().locator('tbody tr').count() === baseRows + 1, 'new SSID row appears', String(baseRows));
-check(await page.locator('.rd-find').count() === 0 && await page.locator('.chn').count() === 0, 'the radio cards of the Wi-Fi page hold the networks only: the findings and the channel strip are on the Wi-Fi radios page');
+check(await page.locator('.rd-card').first().locator('details.wf-iface').count() === baseNets + 1, 'a new SSID gets its own block', String(baseNets));
 //#endregion
-
 //#region Wi-Fi radios page
-await page.click('a[href="#radios"]');
 await page.waitForSelector('.rd-hero');
-check((await page.locator('.cmdbar h1').innerText()).trim() === 'Wi-Fi radios' && await page.locator('.rd-card table').count() === 0 && await page.locator('.rd-card .rd-hero').count() >= 1, 'the Wi-Fi radios page has a card per radio with its live figures and no table of networks');
+check((await page.locator('.cmdbar h1').innerText()).trim() === 'Wi-Fi radios' && await page.locator('.rd-card .rd-hero').count() >= 1 && await page.locator('.rd-card .rd-pick, .rd-card .rd-chan').count() >= 1, 'the Wi-Fi radios page has a card per radio with its live figures and its channels');
 check(/guest is an open network/.test(await text('.rd-find')), 'open network warned about', await text('.rd-find'));
 
 await stage('a radio goes down', 'radio', 'r-down');
