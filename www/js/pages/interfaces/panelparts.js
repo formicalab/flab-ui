@@ -1,7 +1,7 @@
 // DOM building blocks the side panels (panels.js) and the wizard (wizard.js) share: a numbered section, the list of devices to pick from, the
 // protocol cards and the "used by" list. They only build nodes from the items panelmodel.js computes; styles are at the end of css/netedit.css (`np-`).
 import { h } from '../../core/dom.js';
-import { badge, muted } from '../../core/ui.js';
+import { badge } from '../../core/ui.js';
 import { PROTO_CARDS } from './panelmodel.js';
 
 // A section of a panel: an optional number, a title, a plain-words lead and the body.
@@ -56,6 +56,3 @@ export const infoList = rows => h('dl', { className: 'kv np-info' }, rows.filter
 
 // A link to another page of the UI.
 export const pageLink = (href, text) => h('a', { href, className: 'np-link' }, text);
-
-// A muted line for an empty list.
-export const none = text => muted(text);

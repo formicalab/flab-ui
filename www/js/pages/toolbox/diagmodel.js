@@ -1,7 +1,8 @@
-// The Diagnostics tab's model: what the output of ping, traceroute and DNS tools means, and what a request may
-// contain. Pure functions with no DOM and no network, so they are unit-tested directly (tests/routing/diag.test.mjs).
+// The Toolbox's model: what the output of the tools means, and what a request may contain. Pure functions with no
+// DOM and no network, so they are unit-tested directly (tests/toolbox/model.test.mjs and tools.test.mjs).
 // The plugin (rpcd/ucode/flab.diag.uc) only streams the tools' text; everything shown beyond the raw text is
 // derived here, which keeps the parsing next to the tests that pin the formats of busybox ping and traceroute.
+// The limits and allow-lists of the request are the plugin's, repeated so the form can refuse early; the plugin checks again.
 
 //#region Requests
 
@@ -546,12 +547,17 @@ export function parseTls(text, ctx = {}, now = Date.now()) {
   return out;
 }
 
+// s_client's wording of a refused connection and of a name that does not resolve (shared by the certificate check's error and
+// the connectivity check's last step).
+const REFUSED_RE = /errno=111|Connection refused/;
+const UNRESOLVED_RE = /Name or service not known|getaddrinfo|Temporary failure in name resolution|bad address/i;
+
 // Why no certificate came back, in words: the refusal, the timeout, the unknown name or a server that hung up.
 function connectionError(output, ctx) {
   const target = ctx.target ?? 'the server';
-  if (/errno=111|Connection refused/.test(output)) return `${target} refused the connection. Nothing is listening on that port.`;
+  if (REFUSED_RE.test(output)) return `${target} refused the connection. Nothing is listening on that port.`;
   if (/errno=110|errno=113|timed out|Operation timed out/i.test(output)) return `${target} did not answer in time.`;
-  if (/Name or service not known|getaddrinfo|Temporary failure in name resolution|bad address/i.test(output)) return `The name ${target} could not be resolved.`;
+  if (UNRESOLVED_RE.test(output)) return `The name ${target} could not be resolved.`;
   if (/errno=104|no peer certificate/.test(output)) return `${target} closed the connection during the handshake without sending a certificate. A server that picks its certificate by name often does this when it does not know the name asked for.`;
   return `No certificate was received from ${target}.`;
 }
@@ -629,9 +635,9 @@ function pingOf(block) {
 // handshake). s_client prints `CONNECTED(` once the TCP connection is made.
 export function portOutcome(block) {
   const o = block.output;
-  if (/errno=111|Connection refused/.test(o)) return 'refused';
+  if (REFUSED_RE.test(o)) return 'refused';
   if (/errno=110|errno=113|Operation timed out/i.test(o) || (block.exit === 124 && !/^CONNECTED\(/m.test(o))) return 'timeout';
-  if (/Name or service not known|getaddrinfo|Temporary failure in name resolution|bad address/i.test(o)) return 'name';
+  if (UNRESOLVED_RE.test(o)) return 'name';
   if (/^CONNECTED\(/m.test(o) && !/^Certificate chain|-----BEGIN CERTIFICATE-----/m.test(o)) {
     if (/wrong version number|packet length too long|unknown protocol|record layer failure|http request/i.test(o)) return 'plain';
     if (block.exit === 124 && !/alert/i.test(o)) return 'plain';

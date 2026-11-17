@@ -3,7 +3,7 @@
 // pool's options are in collapsible groups (services, DHCPv4, DHCPv6, router advertisements, ...) so the page
 // stays readable.
 import { h } from '../../core/dom.js';
-import { chevron, foldable } from '../../core/fold.js';
+import { chevron, disclosure, foldable } from '../../core/fold.js';
 import { icon } from '../../core/icons.js';
 import { badge, button, card, muted } from '../../core/ui.js';
 import { fieldRow, legend } from '../../core/forms.js';
@@ -68,15 +68,17 @@ export function poolCard(ctx, pool) {
   const groups = POOL_GROUPS.map(g => {
     const id = `${pool.section}:${g.id}`;
     const fields = POOL_FIELDS.filter(f => f.group === g.id).map(f => controlFor(ctx, f, `pool:${pool.section}:${f.key}`, ctx.draft.pools[pool.section], off));
-    return h('details', { className: 'dhcp-group', open: opened.get(id) ?? Boolean(g.open), ontoggle: e => opened.set(id, e.target.open) },
-      h('summary', {}, g.title),
-      h('div', { className: 'dhcp-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, fields)));
+    return disclosure({
+      cls: 'dhcp-group fl-disclosure-bar', summary: g.title, open: opened.get(id) ?? Boolean(g.open), onToggle: open => opened.set(id, open),
+      body: h('div', { className: 'dhcp-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, fields)),
+    });
   });
   const actions = off
-    ? h('div', { className: 'dhcp-pool-actions' }, muted(`Pool ${pool.iface} is removed when you save.`), button('Undo', 'arrow-clockwise', () => { restorePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); }))
+    ? h('div', { className: 'dhcp-pool-actions' }, muted(`Pool ${pool.iface} is removed when you save.`), button('Undo', 'arrow-counterclockwise', () => { restorePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); }))
     : h('div', { className: 'dhcp-pool-actions' },
       muted(pool.isNew ? 'Not saved yet.' : `The dhcp section "${pool.section}".`),
-      h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !ctx.canEdit, title: `Stop serving ${pool.iface} and delete this pool`, onclick: () => { removePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); } }, icon('trash'), pool.isNew ? 'Discard pool' : 'Remove pool'));
+      button(pool.isNew ? 'Discard pool' : 'Remove pool', 'trash', () => { removePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); }, 'btn-fl',
+        { disabled: !ctx.canEdit, title: `Stop serving ${pool.iface} and delete this pool` }));
   const state = pool.isNew ? badge('new', 'info', 'not saved yet') : off ? badge('to be removed', 'danger') : null;
   const el = card(
     [chevron(), icon('signpost-split'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, state, h('span', { className: 'sub' }, describe(ctx, pool))],
@@ -85,16 +87,13 @@ export function poolCard(ctx, pool) {
   return foldCard(el, pool.section);
 }
 
-// Makes the card of a pool start unfolded (a pool that was just added: its options are what the user wants to see).
-const unfold = section => unfolded.add(section);
-
-// The row below the pools for adding one: the interfaces that have none, and Add pool.
+// The row below the pools for adding one: the interfaces that have none, and Add pool. A pool that was just added starts unfolded,
+// because its options are what the user wants to see next.
 export function addPoolBar(ctx) {
   const free = freeInterfaces(ctx.data, ctx.draft);
   if (!free.length) return h('p', { className: 'muted small dhcp-addpool' }, 'Every interface already has a pool.');
   const pick = h('select', { className: 'form-select form-select-sm', title: 'The interface to serve', disabled: !ctx.canEdit }, free.map(n => h('option', { value: n }, n)));
-  const add = button('Add pool', 'plus-lg', () => { unfold(addPool(ctx.data, ctx.draft, pick.value)); ctx.touched(); ctx.redraw(); });
-  add.disabled = !ctx.canEdit;
+  const add = button('Add pool', 'plus-lg', () => { unfolded.add(addPool(ctx.data, ctx.draft, pick.value)); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !ctx.canEdit });
   return h('div', { className: 'dhcp-addpool' }, pick, add, h('span', { className: 'muted small' }, 'Starts as a server for DHCPv4, DHCPv6 and router advertisements; the options are then edited like the other pools.'));
 }
 

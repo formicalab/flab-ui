@@ -112,8 +112,8 @@ function peerActions(ctx, item, pe, p) {
   if (!pe.editable) return h('td', {});
   const key = `peer:${item.id}:${pe.id}`;
   const label = p.name ?? (shortKey(p.public_key) || 'this peer');
-  if (pe.removed) return h('td', { className: 'wg-actions' }, button('Undo', 'arrow-clockwise', () => { restorePeer(ctx.draft, item.id, pe.id); ctx.touched(); ctx.redraw(); }));
-  const edit = button(opened.has(key) ? 'Close' : 'Edit', 'pencil', () => { if (opened.has(key)) opened.delete(key); else opened.add(key); ctx.redraw(); });
+  if (pe.removed) return h('td', { className: 'wg-actions' }, button('Undo', 'arrow-counterclockwise', () => { restorePeer(ctx.draft, item.id, pe.id); ctx.touched(); ctx.redraw(); }));
+  const edit = button(opened.has(key) ? 'Close' : 'Edit', 'pencil', () => { if (opened.has(key)) opened.delete(key); else opened.add(key); ctx.redraw(); }, 'btn-fl', { disabled: !ctx.canEdit });
   const remove = button('Remove', 'trash', async () => {
     const you = pe.p ? adminSentence(adminLinks(ctx.data), item.name, pe.p) : null;
     if (you && !(await confirmDanger({ title: `Remove peer ${label}?`, paragraphs: [you, 'Removing this peer ends that connection once you save. If this page cannot reach the router afterwards, the router puts the old settings back by itself within 30 seconds.'], confirmLabel: 'Remove peer' }))) return;
@@ -121,8 +121,7 @@ function peerActions(ctx, item, pe, p) {
     opened.delete(key);
     ctx.touched();
     ctx.redraw();
-  });
-  edit.disabled = remove.disabled = !ctx.canEdit;
+  }, 'btn-fl', { disabled: !ctx.canEdit });
   return h('td', { className: 'wg-actions' }, edit, remove);
 }
 
@@ -163,9 +162,11 @@ function peersTable(ctx, item) {
 function toolbar(ctx, item, onDialog) {
   const key = `if:${item.id}`;
   if (item.removed) return h('div', { className: 'wg-toolbar' }, muted(`${item.name} and its peers are removed when you save.`), h('span', { className: 'wg-spacer' }),
-    button('Undo', 'arrow-clockwise', () => { restoreInterface(ctx.draft, item.id); ctx.touched(); ctx.redraw(); }));
-  const device = button('Add a device', 'plus-lg', () => { onDialog(true); openDeviceDialog(ctx, item, () => onDialog(false)); }, 'btn-brand');
-  const peer = button('Add peer', 'plus-lg', () => { opened.add(`peer:${item.id}:${addPeer(ctx.draft, item.id)}`); ctx.touched(); ctx.redraw(); });
+    button('Undo', 'arrow-counterclockwise', () => { restoreInterface(ctx.draft, item.id); ctx.touched(); ctx.redraw(); }));
+  const canEdit = ctx.canEdit;
+  const device = button('Add a device', 'plus-lg', () => { onDialog(true); openDeviceDialog(ctx, item, () => onDialog(false)); }, 'btn-brand',
+    item.isNew ? { disabled: true, title: 'Save the interface first: the device needs the interface\'s public key.' } : { disabled: !canEdit });
+  const peer = button('Add peer', 'plus-lg', () => { opened.add(`peer:${item.id}:${addPeer(ctx.draft, item.id)}`); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !canEdit });
   const remove = button(item.isNew ? 'Discard interface' : 'Remove interface', 'trash', async () => {
     const you = item.data ? adminSentence(adminLinks(ctx.data), item.name) : null;
     if (you && !(await confirmDanger({ title: `Remove ${item.name}?`, paragraphs: [you, `Removing ${item.name} and its peers ends that connection once you save. If this page cannot reach the router afterwards, the router puts the old settings back by itself within 30 seconds.`], confirmLabel: 'Remove interface' }))) return;
@@ -173,9 +174,7 @@ function toolbar(ctx, item, onDialog) {
     opened.delete(key);
     ctx.touched();
     ctx.redraw();
-  });
-  device.disabled = peer.disabled = remove.disabled = !ctx.canEdit;
-  if (item.isNew) { device.disabled = true; device.title = 'Save the interface first: the device needs the interface\'s public key.'; }
+  }, 'btn-fl', { disabled: !canEdit });
   return h('div', { className: 'wg-toolbar' }, device, peer, h('span', { className: 'wg-spacer' }), remove);
 }
 

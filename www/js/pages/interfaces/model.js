@@ -13,7 +13,7 @@ import { differs, errorsOf, flag, normalize, show, valueOf } from '../../core/fi
 import { parseAddress } from '../../core/ip.js';
 import { VERIFY, parseCidr, overlaps, subnetOf, subnetText, contains } from './checks.js';
 import {
-  CONFIG, DEVICE_FIELDS, DEVICE_TYPES, EDITABLE_PROTOS, GLOBALS_FIELDS, IFACE_FIELDS, OTHER_PROTOS, PROTOS, deviceFields, deviceType, editableDevice, idOf, ifaceField, ifaceFields,
+  CONFIG, DEVICE_TYPES, EDITABLE_PROTOS, GLOBALS_FIELDS, IFACE_FIELDS, OTHER_PROTOS, PROTOS, deviceFields, deviceType, editableDevice, idOf, ifaceField, ifaceFields,
 } from './schema.js';
 
 export { CONFIG };
@@ -27,7 +27,7 @@ export const SETTLE_MS = 4000;
 const RESERVED = new Set(['loopback', 'globals']);
 
 // The pseudo field of a bridge's ports: a list of device names.
-export const PORTS_FIELD = { key: 'ports', type: 'list', label: 'Ports' };
+const PORTS_FIELD = { key: 'ports', type: 'list', label: 'Ports' };
 
 //#region Reading
 
@@ -116,9 +116,6 @@ export function deviceList(data, draft) {
     ...draft.devAdded.map(a => ({ id: a.id, name: a.name, type: a.type, isNew: true, removed: false, raw: {}, secrets: {}, editable: true })),
   ];
 }
-
-// The protocol an interface has in the form (what the draft says now).
-export const protoOf = (draft, id) => draft.ifaces[id].proto;
 
 // Changes the protocol of an interface in the draft. A value that follows the protocol's default (auto, force_link) while the router has
 // no option for it follows the new protocol; an `ipv6` choice the new protocol does not offer goes back to the default.
@@ -801,27 +798,4 @@ export function downAfter(data, draft, ifsAfter) {
 // A protocol's label.
 export const protoLabel = id => PROTOS.find(p => p.id === id)?.label ?? OTHER_PROTOS[id] ?? (id || 'no protocol');
 
-// The one-line description of an interface in its header, from what the form holds now.
-export function describeInterface(s, draft, ifs) {
-  const v = draft.ifaces[s.id];
-  const proto = s.editable ? v.proto : (s.raw.proto ?? '');
-  const live = (ifs ?? []).find(i => i.interface === s.name);
-  const addrs = proto === 'static' && s.editable ? [...v.ipaddr, ...v.ip6addr].map(a => a.trim()).filter(Boolean) : [...(live?.['ipv4-address'] ?? []), ...(live?.['ipv6-address'] ?? [])].map(a => `${a.address}/${a.mask}`);
-  const device = s.editable ? v.device.trim() : String(s.raw.device ?? '');
-  return [protoLabel(proto), device ? `on ${device}` : null, addrs.slice(0, 2).join(', ') || null].filter(Boolean).join(' · ');
-}
-
-// The one-line description of a device in its header.
-export function describeDevice(d, draft) {
-  const v = draft.devices[d.id];
-  if (d.type === 'bridge') {
-    const ports = v.ports.map(p => p.trim()).filter(Boolean);
-    return ports.length ? `ports ${ports.join(', ')}` : 'no ports';
-  }
-  if (d.type === '8021q' || d.type === '8021ad') return `VLAN ${v.vid || '?'} on ${v.ifname || '?'}`;
-  return d.type === 'plain' ? 'device settings' : `${d.type} device`;
-}
-
 //#endregion
-
-export { DEVICE_FIELDS, IFACE_FIELDS };

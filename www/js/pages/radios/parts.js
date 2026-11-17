@@ -14,7 +14,7 @@ export const tracker = createTracker();
 // Band code from the radio plugin -> label.
 const BAND = { '2g': '2.4 GHz', '5g': '5 GHz', '6g': '6 GHz', '60g': '60 GHz' };
 // Band label of a radio, derived from the live frequency (MHz) when the band code is unknown.
-export const bandOf = r => BAND[r.band] ?? (r.live?.freq ? `${(r.live.freq / 1000).toFixed(1)} GHz` : '–');
+const bandOf = r => BAND[r.band] ?? (r.live?.freq ? `${(r.live.freq / 1000).toFixed(1)} GHz` : '–');
 
 // The frequency is part of the key: airtime counters restart when the radio changes channel.
 const airKey = r => `air:${r.name}:${r.survey?.freq}`;
@@ -74,7 +74,7 @@ export function findings(r, reg) {
 
 // The wireless chip of a radio as a name, from what iwinfo reports ("embedded [MediaTek MT7986]" is the chip of the SoC) or, failing that, the device-tree
 // compatible string of the radio; null when nothing is known.
-export function chipName(r) {
+function chipName(r) {
   const hw = r.hardware ?? {};
   const named = /^embedded \[(.*)\]$/.exec(hw.hardware ?? '')?.[1] ?? hw.hardware;
   return named ?? (hw.compatible ? hw.compatible.replace(',', ' ') : null);

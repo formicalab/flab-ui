@@ -6,7 +6,7 @@ import { parseAddress } from '../../core/ip.js';
 import { ICMP_TYPES } from './schema.js';
 
 // The value without a leading "!" (fw4 reads it as "everything except").
-export const unnegate = v => v.replace(/^\s*!\s*/, '');
+const unnegate = v => v.replace(/^\s*!\s*/, '');
 
 // The digits of a whole number as a number, or null.
 const whole = s => (/^\d+$/.test(s) ? Number(s) : null);

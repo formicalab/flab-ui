@@ -1,15 +1,24 @@
 'use strict';
 
+// Runs every method of a plugin in a forked worker (uloop task), so a slow command never blocks rpcd's event loop.
+// A plugin ends with `return deferred({ 'flab.<name>': { <method>: { args, call(request) { ... } } } });`. The handler
+// gets { args } and returns the reply object; throwing is turned into { error: ... }. See docs/backend.md.
 import { task, timer } from 'uloop';
 import { STATUS_NO_DATA, STATUS_TIMEOUT, STATUS_NO_MEMORY, STATUS_UNKNOWN_ERROR } from 'ubus';
 import { begin_budget } from 'flab.exec';
 
-// Stay below rpcd's default 30-second request timeout, including cleanup.
+// Seconds; stay below rpcd's default 30-second request timeout, including cleanup. The commands of one request share
+// DEADLINE - 2 seconds (flab.exec begin_budget()), so the worker can still answer when they ran out.
 const DEADLINE = 24;
+// Bytes of JSON a reply may have.
 const MAX_REPLY = 1048576;
 // One bounded pool per plugin module, shared by its requests; excess calls fail instead of queueing.
 const MAX_WORKERS = 4;
+// Methods that change something on the router (start or stop a service, wake a host, run a test): at most one per object at a
+// time, a second one is refused while the first runs.
+const MUTATING = [ 'control', 'start', 'stop', 'wake', 'cable_test', 'wps' ];
 
+// Wraps the `call` of every method in `objects` ({ object: { method: { args, call } } }) and returns `objects`.
 export function deferred(objects) {
 	let active = 0, mutations = {};
 	for (let object, methods in objects)
@@ -17,7 +26,7 @@ export function deferred(objects) {
 			let handler = method.call;
 			// ucode reuses for-in bindings: capture method classification and object identity before closing over them.
 			let object_name = object;
-			let mutating = index([ 'control', 'start', 'stop', 'wake', 'cable_test', 'wps' ], name) >= 0;
+			let mutating = index(MUTATING, name) >= 0;
 			method.call = function(request) {
 				// Fixture/direct-call harnesses intentionally keep their synchronous API.
 				if (type(request?.defer) != 'function')

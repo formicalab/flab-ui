@@ -6,6 +6,7 @@ import { icon } from '../../core/icons.js';
 import { badge, kv, meter, section, muted, mono } from '../../core/ui.js';
 import { createTracker, latest } from '../../core/rates.js';
 import { fmtBytes, fmtLine, fmtNum, fmtSpan } from '../../core/format.js';
+import { disclosure } from '../../core/fold.js';
 import { STP_ROLE } from '../network/util.js';
 
 // Module-level so the rate history survives the redraw on every poll; a peer series is keyed by the
@@ -61,7 +62,8 @@ export function findings(n) {
     if (p.plink !== 'ESTAB') out.push({ level: 'warn', text: `${name}: peer ${p.mac} is in link state ${p.plink} (not established).` });
     const s = p.signal_avg ?? p.signal;
     if (p.plink === 'ESTAB' && s != null && s <= -75) out.push({ level: 'warn', text: `${name}: weak link to ${p.mac}, ${s} dBm.` });
-    if (failRatio(p) != null && failRatio(p) > 10) out.push({ level: 'warn', text: `${name}: ${failRatio(p).toFixed(0)} % of the transmissions to ${p.mac} failed.` });
+    const fail = failRatio(p);
+    if (fail != null && fail > 10) out.push({ level: 'warn', text: `${name}: ${fail.toFixed(0)} % of the transmissions to ${p.mac} failed.` });
   }
   if (n.params?.mesh_fwding === '0') out.push({ level: 'info', text: `${name}: forwarding is off, so this node does not relay frames for other mesh nodes.` });
   const unresolved = (n.paths ?? []).filter(p => !p.flags.includes('resolved')).length;
@@ -154,12 +156,12 @@ const PARAM_LABELS = {
   mesh_hwmp_rann_interval: ['RANN interval', v => v],
   mesh_gate_announcements: ['Gate announcements', v => (v === '1' ? 'on' : 'off')],
   mesh_nolearn: ['No address learning', v => (v === '1' ? 'yes' : 'no')],
-  mesh_plink_timeout: ['Peer link timeout', v => (parseInt(v) === 0 ? 'never' : v)],
+  mesh_plink_timeout: ['Peer link timeout', v => (parseInt(v, 10) === 0 ? 'never' : v)],
   mesh_power_mode: ['Power mode', v => v],
 };
 
 // A folded block of the live part: `title` is its summary.
-const fold = (title, body) => h('details', { className: 'mesh-fold' }, h('summary', {}, title), body);
+const fold = (title, body) => disclosure({ cls: 'mesh-fold', summary: title, body });
 
 // The mesh parameters in force as key/value rows, with where they can be set: the wireless configuration cannot hold them, because the interface
 // must be up before the kernel accepts them (the OpenWrt 802.11s page).

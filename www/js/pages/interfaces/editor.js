@@ -6,7 +6,7 @@
 // The config is read through the flab.network plugin (`config`), which leaves out the secrets (the PPPoE password): the browser never
 // receives one and the password field is write-only. A network change gets a longer rollback countdown than the default (the network
 // reloads, and the admin may have to reconnect), set per call, not globally.
-import { h } from '../../core/dom.js';
+import { h, sleep } from '../../core/dom.js';
 import { AuthError, can, optional, ubus } from '../../core/ubus.js';
 import { button, muted } from '../../core/ui.js';
 import { note } from '../../core/forms.js';
@@ -18,11 +18,10 @@ import { APPLY_SECONDS, CONFIG, SETTLE_MS, changesOf, checkApplied, downAfter, d
 
 // How often the router is asked after a save before the check gives up, and the pause between asks: the network may still be reloading, so a
 // failed ask is not yet a failed save.
-export const RETRIES = 6;
-export const RETRY_MS = 2000;
+const RETRIES = 6;
+const RETRY_MS = 2000;
 
 // Waits `ms` milliseconds.
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // Reads what the router holds after a save: the config (through the plugin) and netifd's interfaces. An ask that fails, or a network that is
 // not up yet, is repeated for a while; the last answer is the one that counts.

@@ -1,4 +1,4 @@
-/* Ethernet page styling (port table with its jack icons and graphs, error breakdown). Shared pieces (tiles, cards,
+/* Ethernet ports page styling (port table with its jack icons and graphs, error breakdown, cable test and the VLAN matrix). Shared pieces (tiles, cards,
    tables, badges, health banner) live in base.css. Loaded on demand by core/app.js when the page is first opened. */
 
 /* ── Ports card: a line per switch above the table ── */
@@ -23,7 +23,6 @@
 
 /* ── Error breakdown: expandable row under a port with counters, driver statistics and log excerpt ── */
 .diag-btn, .cable-btn { margin-top: .35rem; padding: .1rem .5rem; font-size: .75rem; }
-.diag-btn svg, .cable-btn svg { margin-right: .3rem; }
 /* The row under a port that holds its Settings fold (the fold's own look is .wf-block in forms.css). */
 .port-table tr.port-set-row > td { padding: 0; border-top: 0; background: color-mix(in srgb, var(--fl-surface-hover) 45%, transparent); white-space: normal; }
 .port-set-row .wf-block { border-top: 0; }
@@ -39,11 +38,10 @@
 .diag-table td:nth-child(2) { white-space: nowrap; font-weight: 600; }
 .diag-log { margin: 0; padding: .6rem .8rem; max-height: 12rem; overflow: auto; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface); white-space: pre-wrap; }
 
-
 /* The VLAN matrix: one row per VLAN, one column per port; the cells are centered. */
 .vlan-table th, .vlan-table td { text-align: center; }
 .vlan-table th:first-child, .vlan-table td:first-child { text-align: left; }
-.cable-panel .diag-head { display: flex; align-items: center; gap: .5rem; }
+.cable-panel .diag-head { gap: .5rem; }
 .cable-panel .diag-head .btn { margin-left: auto; }
 
 /* The VLAN editor: the same matrix with a drop-down in every cell, a switch row above it and an "add a VLAN" box under it. */

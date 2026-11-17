@@ -1,4 +1,4 @@
-/* Routing page styling (Routes and Static routes tabs). The BGP tab uses css/bgp.css. Loaded on demand by core/app.js. */
+/* Routing page styling (the Routes view, with its static-route editor). The BGP tab uses css/bgp.css. Loaded on demand by core/app.js. */
 
 /* ── Next hop lookup ── */
 .rt-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: .75rem 1rem; align-items: end; }
@@ -21,7 +21,7 @@
 .rt-text { color: var(--fl-muted); }
 .rt-route { margin: 0; padding: .35rem .6rem; border-radius: 6px; background: var(--fl-surface-hover); font-family: var(--fl-mono); font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rt-table { display: inline-flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
-.rt-raw summary { cursor: pointer; color: var(--fl-muted); font-size: .8rem; }
+.rt-raw > summary { color: var(--fl-muted); font-size: .8rem; }
 .rt-raw pre { margin: .5rem 0 0; padding: .5rem .75rem; border-radius: 6px; background: var(--fl-surface-hover); font-size: .8rem; white-space: pre-wrap; }
 .rt-dev { display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .rt-try { display: inline-flex; gap: .5rem; flex-wrap: wrap; }
@@ -39,7 +39,7 @@
 /* The static-route paragraph under the numbered steps of "How the kernel picks a route". */
 .rt-how .rt-how-static { margin: .75rem 0 0; }
 
-/* ── Static routes tab ── */
+/* ── Static routes ── */
 .rt-static-section, .rt-static { display: grid; gap: 1rem; min-width: 0; }
 .rt-static-table td, .rt-static-table th { padding: .3rem .4rem; white-space: nowrap; }
 .rt-static-table .rt-s-target { min-width: 8.5rem; }

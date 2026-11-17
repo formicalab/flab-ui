@@ -12,10 +12,10 @@ import { CONFIG, ENCRYPTIONS, IFACE_FIELDS, RADIO_FIELDS, encryptionInfo, encryp
 export { CONFIG };
 
 // The modes of wifi-iface the page edits; a section of another mode (adhoc, monitor) is left alone.
-export const EDITABLE_MODES = ['ap', 'sta', 'mesh'];
+const EDITABLE_MODES = ['ap', 'sta', 'mesh'];
 
 // The key of the option that names a wireless network: the SSID, or the Mesh ID of a mesh point.
-export const nameKey = mode => (mode === 'mesh' ? 'mesh_id' : 'ssid');
+const nameKey = mode => (mode === 'mesh' ? 'mesh_id' : 'ssid');
 
 //#region Reading
 
@@ -96,7 +96,7 @@ export function ifaceList(w, draft) {
 export const ifaceTitle = (i, values) => (i.isNew ? values[nameKey(i.mode)].trim() || `New ${i.mode === 'mesh' ? 'mesh point' : 'network'}` : i.values[nameKey(i.mode)] || i.name);
 
 // The words for a network of this mode in the review list and in warnings.
-export const modeWords = mode => (mode === 'sta' ? 'client network' : mode === 'mesh' ? 'mesh point' : 'network');
+const modeWords = mode => (mode === 'sta' ? 'client network' : mode === 'mesh' ? 'mesh point' : 'network');
 
 // Adds a wireless network on radio `device` to the draft and returns its id. An access point starts protected (WPA3/WPA2 mixed
 // when hostapd can do SAE, else WPA2) and attached to lan; a client network starts as WPA2 on wwan, when the router has them; a

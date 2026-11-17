@@ -73,8 +73,9 @@ export function showLogin(onSuccess, message) {
     try {
       await login(user.value, pass.value);
       onSuccess();
-    } catch {
-      showLogin(onSuccess, 'Sign-in failed. Check the user name and password.');
+    } catch (e) {
+      // A refused login is a ubus "permission denied"; anything else (router unreachable, no session storage) is reported as it is.
+      showLogin(onSuccess, e.denied || !e.message ? 'Sign-in failed. Check the user name and password.' : e.message);
     }
   };
 

@@ -5,10 +5,8 @@
 .ddns-form { display: flex; flex-direction: column; gap: 1.25rem; }
 .ddns-form .set-fields { align-items: stretch; row-gap: 0; column-gap: 2rem; }
 .ddns-form .set-fields > * { padding: .7rem 0; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 55%, transparent); }
-.ddns-groups { display: flex; flex-direction: column; gap: .8rem; }
+.ddns-groups { display: flex; flex-direction: column; gap: .6rem; }
 .ddns-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
-.ddns-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
-.ddns-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
 .ddns-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
 .ddns-group-body p { margin: 0; }
 

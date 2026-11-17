@@ -19,6 +19,10 @@
 {"tool":"ping","host":"1.1.1.1","source":"-f"}
 {"tool":"ping","host":"1.1.1.1","source":"br-lan;touch /tmp/flab-diag-canary"}
 {"tool":"ping","host":"1.1.1.1","source":"a/b"}
+{"tool":"ping","host":"1.1.1.1","source":"lo\ntouch /tmp/flab-diag-canary"}
+{"tool":"traceroute","host":"1.1.1.1","source":"lo\ntouch /tmp/flab-diag-canary"}
+{"tool":"mtr","host":"1.1.1.1","source":"lo\ntouch /tmp/flab-diag-canary"}
+{"tool":"capture","iface":"lo\ntouch /tmp/flab-diag-canary"}
 {"tool":"traceroute","host":"1.1.1.1","hops":0}
 {"tool":"traceroute","host":"1.1.1.1","hops":31}
 {"tool":"traceroute","host":"1.1.1.1","probes":4}

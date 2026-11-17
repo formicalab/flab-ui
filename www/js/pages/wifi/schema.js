@@ -84,10 +84,10 @@ export function keyError(v) {
 }
 
 // The error for an htmode of a radio whose hardware did not report its modes, or null.
-export const htmodeError = v => (/^(NOHT|NONE|HT20|HT40[+-]?|(VHT|HE)(20|40|80|160)|EHT(20|40|80|160|320))$/.test(v) ? null : 'must be a mode such as HT20, VHT80, HE160 or NOHT');
+const htmodeError = v => (/^(NOHT|NONE|HT20|HT40[+-]?|(VHT|HE)(20|40|80|160)|EHT(20|40|80|160|320))$/.test(v) ? null : 'must be a mode such as HT20, VHT80, HE160 or NOHT');
 
 // The error for a country code, or null: two letters or digits (an ISO 3166 code, or 00 for the world domain).
-export const countryError = v => (/^[A-Z0-9]{2}$/.test(v) ? null : 'must be a two-letter country code such as DE or IT');
+const countryError = v => (/^[A-Z0-9]{2}$/.test(v) ? null : 'must be a two-letter country code such as DE or IT');
 
 //#endregion
 

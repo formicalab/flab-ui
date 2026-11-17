@@ -31,8 +31,8 @@
 // on a slow router cannot hold up rpcd.
 
 'use strict';
-import { deferred } from 'flab.worker';
 
+import { deferred } from 'flab.worker';
 import { connect } from 'ubus';
 import { realpath, lsdir, stat, open } from 'fs';
 import { run, fixture, sysfs, sysfs_raw, ubus_call, uci_all, normalize_mac, as_list } from 'flab.util';
@@ -119,7 +119,8 @@ function compress6(g) {
 	return join(':', slice(text, 0, best)) + '::' + join(':', slice(text, best + best_len));
 }
 
-// Memo of compressed IPv6 spellings, so a host that appears in thousands of entries is converted once.
+// Memo of compressed IPv6 spellings, so a host that appears in thousands of entries is converted once. It lives as long as
+// the process: in rpcd each request runs in a forked worker, so it is dropped with the request.
 let memo6 = {};
 
 // The canonical form of an address: IPv6 is compressed (conntrack prints eight zero-padded groups), IPv4 and
@@ -813,7 +814,16 @@ function usage(args) {
 		cmd += ` -t ${listed}`;
 	}
 	let text = trim(run(cmd + ' 2>/dev/null') ?? '');
-	let data = substr(text, 0, 1) == '{' ? json(text) : null;
+	let data = null;
+	if (substr(text, 0, 1) == '{') {
+		// json() throws on malformed text (nlbw output cut short, for instance); that is the same "no data" answer.
+		try {
+			data = json(text);
+		}
+		catch (e) {
+			data = null;
+		}
+	}
 	if (type(data?.columns) != 'array' || type(data?.data) != 'array')
 		return { ok: false, error: 'nlbw returned no data for that period.' };
 

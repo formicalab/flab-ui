@@ -6,7 +6,7 @@ import { icon } from './icons.js';
 import { ubus, hasSession, logout, clearSession, AuthError } from './ubus.js';
 import { showLogin } from './login.js';
 import { ensureCurrent } from './freshness.js';
-import { card } from './ui.js';
+import { button, card } from './ui.js';
 import { pages, aliases } from '../pages/index.js';
 
 // Module-level state: the refresh interval of the open page, a function that refreshes the open page (for the
@@ -83,7 +83,7 @@ async function route() {
     if (!current()) return;
     results.replaceChildren(card(null, h('div', { className: 'card-body text-danger', role: 'alert' },
       `Unable to load ${entry.label}. Check your connection, then retry or reload the browser. `,
-      h('button', { type: 'button', className: 'btn btn-sm btn-outline-secondary', onclick: route }, 'Retry'),
+      button('Retry', null, route, 'btn-outline-secondary'),
       h('div', { className: 'small' }, e.message))));
     return;
   }

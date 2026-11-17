@@ -1,7 +1,7 @@
-/* DNS page styling (tiles, findings and the cards). Loaded on demand by core/app.js. */
+/* DNS page styling (tiles, findings and the cards). Loaded on demand by core/app.js. The folds (cards and areas) use the shared
+   styles of css/forms.css. */
 
 /* ── Shared ── */
-.dns-legend { padding: .75rem 1rem; color: var(--fl-muted); font-size: .8rem; border-bottom: 1px solid var(--fl-stroke); }
 .dns-pad { padding: .85rem 1rem; }
 .dns-top { border-top: 1px solid var(--fl-stroke); }
 .dns-hint { font-size: .8rem; margin-top: .15rem; }
@@ -13,7 +13,7 @@
 .dns-servers { display: flex; flex-wrap: wrap; gap: .35rem .9rem; }
 .dns-server { display: inline-flex; align-items: center; gap: .4rem; }
 
-/* ── Forwarding ── */
+/* ── Zones ── */
 .dns-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-bottom: .75rem; }
 .dns-toolbar .search { flex: 1 1 14rem; max-width: 24rem; }
 .dns-table td { vertical-align: top; }
@@ -34,18 +34,9 @@
 .dns-labels dd { margin: 0; }
 .dns-row-removed > td:not(.dns-src) { opacity: .55; }
 .dns-row-removed .dns-zone-name, .dns-row-removed .dns-domain { text-decoration: line-through; }
-/* The Forwarding card folds down to its header: the whole header is the toggle, with the same triangle as the areas below. */
-.dns-fold > summary { display: flex; align-items: center; gap: .5rem; cursor: pointer; list-style: none; }
-.dns-fold > summary::-webkit-details-marker { display: none; }
-.dns-fold > summary:hover { background: var(--fl-surface-hover); }
-.dns-fold > summary:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
-.dns-fold:not([open]) > summary { border-bottom: 0; }
-.dns-fold[open] > summary .dns-chevron { transform: rotate(90deg); }
-.dns-fwd-bar p { margin: 0; }
-.dns-src { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; white-space: normal; }
-td.dns-src { display: table-cell; white-space: nowrap; }
+/* The "Defined in" cell: the origin badge and the row buttons on one line. */
+td.dns-src { white-space: nowrap; }
 td.dns-src > * { margin-right: .35rem; }
-.dns-src-file { display: inline-flex; align-items: center; gap: .35rem; color: var(--fl-muted); font-size: .8rem; }
 .dns-act-btn { padding: .1rem .4rem; }
 
 /* ── Activity ── */
@@ -63,26 +54,16 @@ td.dns-src > * { margin-right: .35rem; }
 .dns-bar .meter { flex: 1; min-width: 4rem; }
 .dns-bar span { min-width: 2.6rem; text-align: right; font-size: .8rem; color: var(--fl-muted); }
 
-/* ── Configuration areas: collapsible blocks, General and Security and privacy first ── */
+/* ── Configuration areas: collapsible group bars (disclosure in core/fold.js), General and Security and privacy first ── */
 .dns-areas { display: flex; flex-direction: column; gap: .6rem; padding: .9rem 1rem 1rem; border-top: 1px solid var(--fl-stroke); }
 .dns-area { border: 1px solid var(--fl-stroke); border-radius: 6px; }
-.dns-area > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .9rem; cursor: pointer; padding: .55rem .8rem; list-style: none; }
-.dns-area > summary::-webkit-details-marker { display: none; }
-.dns-area > summary:hover { background: var(--fl-surface-hover); }
-.dns-area > summary:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
-/* The same triangle as the folding cards of the DHCP page: right when folded, down when open. */
-.dns-chevron { align-self: center; flex: none; width: 0; height: 0; border-left: .6rem solid currentColor; border-top: .36rem solid transparent; border-bottom: .36rem solid transparent; transition: transform .15s; }
-.dns-area[open] > summary .dns-chevron { transform: rotate(90deg); }
-.dns-area[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
-.dns-area-title { font-weight: 600; }
+.dns-area > summary { column-gap: .9rem; row-gap: .15rem; }
 .dns-area-count, .dns-area-sum { font-size: .8rem; }
 .dns-area-body { padding: .7rem .9rem 1rem; display: flex; flex-direction: column; gap: .9rem; }
 .dns-area-legend { margin: 0; }
 .dns-sec-title { margin: 0 0 .5rem; font-size: .75rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-muted); }
 /* The exceptions the srv file lists: folded, then a wrapped list that scrolls when it is long. */
-.dns-priv > summary { display: flex; align-items: center; gap: .6rem; cursor: pointer; list-style: none; padding: .2rem 0; }
-.dns-priv > summary::-webkit-details-marker { display: none; }
-.dns-priv[open] > summary .dns-chevron { transform: rotate(90deg); }
+.dns-priv > summary { padding: .2rem 0; }
 .dns-priv-list { display: flex; flex-wrap: wrap; gap: .25rem 1.2rem; max-height: 16rem; overflow: auto; padding: .5rem 0 .2rem; }
 /* A very light line under every option, and the cells stretch to the height of their row, so the lines run unbroken across it. */
 .dns-area .set-fields { align-items: stretch; row-gap: 0; column-gap: 2rem; }

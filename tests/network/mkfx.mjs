@@ -151,7 +151,7 @@ const CABLE_CASES = [
   { id: 'lan1', args: { port: 'lan1' } }, { id: 'lan2', args: { port: 'lan2' } }, { id: 'lan3', args: { port: 'lan3' } },
   { id: 'lan4', args: { port: 'lan4' } }, { id: 'lan5', args: { port: 'lan5' } }, { id: 'lan4-again', args: { port: 'lan4' } },
   { id: 'conduit', args: { port: 'eth0' } }, { id: 'bridge', args: { port: 'br-lan' } }, { id: 'unknown', args: { port: 'nosuch' } },
-  { id: 'injection', args: { port: 'lan1; reboot' } }, { id: 'number', args: { port: 5 } }, { id: 'none', args: {} },
+  { id: 'injection', args: { port: 'lan1; reboot' } }, { id: 'newline', args: { port: 'lan1\nid' } }, { id: 'number', args: { port: 5 } }, { id: 'none', args: {} },
 ];
 
 const scenarios = {
@@ -487,6 +487,17 @@ const scenarios = {
     return fx;
   },
   'l-empty': fx => { fx.raw[sysLog] = ''; fx.raw[kernLog] = ''; return fx; },
+  // The system log of 500 lines is longer than the output cap of one command: the plugin asks again for 60% of the complete lines
+  // that fit and reports that number as the limit. The kernel log is cut too and is read again through `tail`.
+  'l-big': fx => {
+    const lines = fx.raw[sysLog].split('\n').filter(Boolean);
+    const fewer = Math.max(1, Math.floor((lines.length - 1) * 0.6));
+    fx.raw['logread_l_500.result.json'] = JSON.stringify({ code: 0, truncated: true });
+    fx.raw[`logread_l_${fewer}.txt`] = lines.slice(-fewer).join('\n') + '\n';
+    fx.raw['dmesg_r.result.json'] = JSON.stringify({ code: 0, truncated: true });
+    fx.raw['dmesg_r_2_dev_null_tail_n_500.txt'] = fx.raw[kernLog].split('\n').filter(Boolean).slice(-500).join('\n') + '\n';
+    return fx;
+  },
 };
 //#endregion
 

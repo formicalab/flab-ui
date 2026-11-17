@@ -22,7 +22,7 @@ function radioCard(r, reg, edit, ctx) {
   return h('div', { className: `card rd-card ${r.up ? 'is-up' : 'is-down'}` },
     header(r),
     hero(r),
-    list.length ? h('ul', { className: 'rd-find' }, list.map(f => h('li', { className: f.level }, icon(f.level === 'bad' ? 'shield-exclamation' : f.level === 'warn' ? 'exclamation-triangle' : 'info-circle'), f.text))) : null,
+    list.length ? h('ul', { className: 'rd-find' }, list.map(f => h('li', { className: f.level }, icon(f.level === 'bad' ? 'x-circle' : f.level === 'warn' ? 'exclamation-triangle' : 'info-circle'), f.text))) : null,
     h('div', { className: `rd-cols${editing ? ' rd-cols-1' : ''}` }, h('div', {}, airtimeBlock(r)), editing ? null : channels),
     editing ? radioSettings(r.name, edit, channels) : null,
     networksSection(r, edit, ctx));
@@ -30,7 +30,7 @@ function radioCard(r, reg, edit, ctx) {
 
 // The radios of the flab.radio status `hw` with their interfaces split into the access points and client networks (`interfaces`, which the key figures
 // count) and the mesh points (`mesh`).
-export const withMesh = hw => (hw?.radios ?? []).map(r => ({ ...r, interfaces: r.interfaces.filter(i => i.mode !== 'mesh'), mesh: r.interfaces.filter(i => i.mode === 'mesh') }));
+const withMesh = hw => (hw?.radios ?? []).map(r => ({ ...r, interfaces: r.interfaces.filter(i => i.mode !== 'mesh'), mesh: r.interfaces.filter(i => i.mode === 'mesh') }));
 
 // The cards of every radio of the flab.radio status `hw`; an empty list when the plugin is not available. `mesh` is the flab.mesh status (or null) and `net`
 // the flab.network status (or null), for the live part of the mesh points. `edit` is passed on to every card.

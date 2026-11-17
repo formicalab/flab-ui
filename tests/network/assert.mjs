@@ -204,8 +204,8 @@ check(cab.lan2.ok && pairsOf(cab.lan2) === 'A:OK,B:OK,C:Open Circuit,D:Open Circ
 check(cab.lan3.ok && pairsOf(cab.lan3) === 'A:OK,B:Short within Pair,C:OK,D:OK' && cab.lan3.pairs[1].length_m === 12.5 && cab.lan3.pairs[0].length_m === null, 'a fault is reported with its distance', JSON.stringify(cab.lan3));
 check(!cab.lan4.ok && cab.lan4.supported === false && /does not support cable testing/.test(cab.lan4.error) && !cab.lan4.pairs && cab['lan4-again'].supported === false && cab['lan4-again'].error === cab.lan4.error, 'a PHY that cannot test says so, and is remembered');
 check(!cab.lan5.ok && cab.lan5.supported === null && /did not complete: something odd happened/.test(cab.lan5.error), 'output that is not a result is an error that quotes it');
-const refused = [['conduit', /internal link/, 'eth0'], ['bridge', /not a physical/, 'br-lan'], ['unknown', /not a physical/, 'nosuch'], ['injection', /not valid/, null], ['number', /not valid/, null], ['none', /not valid/, null]];
-check(refused.every(([id, re, name]) => cab[id].ok === false && re.test(cab[id].error) && cab[id].port === name && !cab[id].pairs), 'the SoC link, a bridge, an unknown name, a name with shell characters and missing or wrongly typed arguments are refused before any command (each has a fixture that would read intact), and an invalid name is not echoed', JSON.stringify(refused.map(([id]) => cab[id])));
+const refused = [['conduit', /internal link/, 'eth0'], ['bridge', /not a physical/, 'br-lan'], ['unknown', /not a physical/, 'nosuch'], ['injection', /not valid/, null], ['newline', /not valid/, null], ['number', /not valid/, null], ['none', /not valid/, null]];
+check(refused.every(([id, re, name]) => cab[id].ok === false && re.test(cab[id].error) && cab[id].port === name && !cab[id].pairs), 'the SoC link, a bridge, an unknown name, a name with shell characters or a line break and missing or wrongly typed arguments are refused before any command (each has a fixture that would read intact), and an invalid name is not echoed', JSON.stringify(refused.map(([id]) => cab[id])));
 
 console.log('== radio: base (real captured state) ==');
 const rb = rad('base');
@@ -385,6 +385,9 @@ check(kraw.t === null && kraw.severity === null && /without a prefix/.test(kraw.
 check(lo.kernel.at(-3).level === 3 && lo.kernel.at(-3).severity === 'err', 'kernel priority <3> is err');
 const le = lgs('l-empty');
 check(le.system.length === 0 && le.kernel.length === 0, 'empty logs give empty lists');
+const big = lgs('l-big'), fewer = Math.max(1, Math.floor((lb.system.length - 1) * 0.6));
+check(big.limit === fewer && big.system.length === fewer && big.system.at(-1).message === lb.system.at(-1).message, 'a system log over the output cap is asked for again with fewer lines, newest kept, and the limit says how many', JSON.stringify([big.limit, big.system.length, fewer]));
+check(big.kernel.length === lb.kernel.length, 'a kernel log over the output cap is read again through tail', JSON.stringify([big.kernel.length, lb.kernel.length]));
 
 if (failed) { console.log(`\n${failed} check(s) FAILED`); process.exit(1); }
 console.log('\nall Network / Wi-Fi radio backend checks passed');

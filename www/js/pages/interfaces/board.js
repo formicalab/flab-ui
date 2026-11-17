@@ -8,9 +8,11 @@
 // again whenever the board or a lane changes size. Every card wraps its text: nothing may overlap its neighbours at any width.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge } from '../../core/ui.js';
+import { badge, button } from '../../core/ui.js';
+import { disclosure } from '../../core/fold.js';
 import { fmtSpeed } from '../network/util.js';
 import { related } from './boardmodel.js';
+import { poolText } from './panelmodel.js';
 
 // Which "details" blocks of the interface cards are open, kept across the redraw of every poll.
 const openDetails = new Set();
@@ -29,9 +31,6 @@ const bandText = band => BAND[band] ?? band ?? '';
 
 // What a firewall policy means in words.
 const POLICY = { ACCEPT: 'accepted', REJECT: 'rejected', DROP: 'dropped' };
-
-// The DHCP address range as ".128–.247", or null when the server has none.
-const poolText = d => (d.start != null && d.limit ? `.${d.start}–.${d.start + d.limit - 1}` : null);
 
 //#region Cards
 
@@ -108,8 +107,11 @@ function addressLines(item) {
   const inline = dnsText && dnsText.length <= 40;
   const more = [dnsText && !inline ? ['DNS', dnsText] : null, ...item.routes.map(r => ['route', r]), ...item.prefixes.map(p => ['prefix', p])].filter(Boolean);
   const line = (label, v) => h('div', { className: 'muted small nb-sub' }, `${label} `, h('span', { className: 'mono' }, breakable(v)));
-  const details = more.length ? h('details', { className: 'nb-details', open: openDetails.has(item.id), ontoggle: e => { if (e.target.open) openDetails.add(item.id); else openDetails.delete(item.id); } },
-    h('summary', { className: 'small muted' }, `details (${more.length})`), more.map(([k, v]) => line(k, v))) : null;
+  const details = more.length ? disclosure({
+    cls: 'nb-details', summaryCls: 'small muted', summary: `details (${more.length})`, open: openDetails.has(item.id),
+    onToggle: open => { if (open) openDetails.add(item.id); else openDetails.delete(item.id); },
+    body: more.map(([k, v]) => line(k, v)),
+  }) : null;
   return [
     all.length ? h('div', { className: 'nb-addrs' }, all.map(a => h('div', { className: 'mono small' }, breakable(a)))) : null,
     item.gateway ? line('gateway', item.gateway) : null,
@@ -157,24 +159,24 @@ function zoneCard(item) {
 // elsewhere and on Escape.
 function menuButton(label, iconName, entries, disabled) {
   const list = h('div', { className: 'nb-menu', role: 'menu', hidden: true });
-  const button = h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled, ariaHasPopup: 'menu' }, icon(iconName), label, icon('chevron-down', 12));
+  const toggle = h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled, ariaHasPopup: 'menu' }, icon(iconName), label, icon('chevron-down', 12));
   // Closes the list and removes the document listeners.
   const close = () => { list.hidden = true; document.removeEventListener('click', outside, true); document.removeEventListener('keydown', onKey, true); };
   // A click outside the menu closes it; once the board has been redrawn, the stale listener removes itself.
   const outside = e => { if (!wrap.isConnected) close(); else if (!wrap.contains(e.target)) close(); };
   // Escape closes the menu and keeps the drawer open.
-  const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); close(); button.focus(); } };
+  const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); close(); toggle.focus(); } };
   for (const e of entries) {
     list.append(h('button', { type: 'button', className: 'nb-menu-item', role: 'menuitem', onclick: () => { close(); e.onclick(); } },
       h('strong', {}, e.label), h('span', { className: 'muted small' }, e.hint)));
   }
-  button.addEventListener('click', () => {
+  toggle.addEventListener('click', () => {
     if (!list.hidden) return close();
     list.hidden = false;
     document.addEventListener('click', outside, true);
     document.addEventListener('keydown', onKey, true);
   });
-  const wrap = h('div', { className: 'nb-menu-wrap' }, button, list);
+  const wrap = h('div', { className: 'nb-menu-wrap' }, toggle, list);
   return wrap;
 }
 
@@ -241,7 +243,7 @@ export function boardView({ board, selected = null, onOpen, actions = null }) {
     h('div', { className: 'nb-cards' }, board.lanes.devices.length ? board.lanes.devices.map(d => card(d, 'device', deviceCard(d))) : none('No bridge or VLAN devices: an interface can sit on a port directly.')));
 
   // Lane 3: interfaces.
-  const netAction = actions ? h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !actions.canEdit, onclick: () => actions.addNetwork() }, icon('plus-lg'), 'Network') : null;
+  const netAction = actions ? button('Network', 'plus-lg', () => actions.addNetwork(), 'btn-fl', { disabled: !actions.canEdit }) : null;
   const laneInterfaces = h('section', { className: 'nb-lane nb-lane-interfaces' },
     laneHead('Interfaces', 'IP configuration: a protocol and addresses on one device', netAction),
     h('div', { className: 'nb-cards' }, board.lanes.interfaces.length ? board.lanes.interfaces.map(i => card(i, 'interface', interfaceCard(i))) : none('No interfaces.')));

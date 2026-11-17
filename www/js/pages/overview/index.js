@@ -3,15 +3,12 @@
 // System data comes from the standard system board/info calls. CPU counters come from the flab.system
 // plugin and temperatures from flab.sensors; both are optional here so that a missing plugin or ACL only
 // hides its own section.
-import { h } from '../../core/dom.js';
+import { h, sleep } from '../../core/dom.js';
 import { ubus, optional } from '../../core/ubus.js';
 import { card, tile, tiles, table } from '../../core/ui.js';
 import { fmtBytes, fmtDur } from '../../core/format.js';
 import { temperatureCard, sensorLabel, sensorLevel, hottest, fmtTemp, readable } from './temperatures.js';
 import { cpuCard, record, hasDelta, current, level, levelText } from './cpu.js';
-
-// Text color classes for the good/fair/weak levels.
-const TEXT = { good: 'text-success', fair: 'text-warning', weak: 'text-danger' };
 
 export default {
   id: 'overview',
@@ -31,7 +28,7 @@ export default {
       // Utilization needs two samples; on the first visit take the second one a moment later so the
       // numbers appear immediately instead of after one refresh period.
       if (!hasDelta()) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await sleep(1000);
         const again = await optional(ubus('flab.system', 'cpu'));
         if (again) { record(again); cpu = again; }
       }
@@ -58,8 +55,8 @@ export default {
         usage ? tile('CPU usage', `${usage.busy.toFixed(0)}%`, `${cpuData.cores} cores · ${usage.irq.toFixed(0)}% interrupts`, levelText[level(usage.busy)]) : null,
         tile('Load (1 / 5 / 15 min)', info.load.map(l => (l / 65536).toFixed(2)).join(' · ')),
         tile('Memory', `${pct}%`, `${fmtBytes(used)} of ${fmtBytes(mem.total)}`),
-        cpu ? tile('CPU temperature', fmtTemp(cpu.temp), `critical at ${cpu.crit ?? '–'} °C`, TEXT[sensorLevel(cpu)]) : null,
-        hot ? tile('Hottest sensor', fmtTemp(hot.temp), sensorLabel(hot).title, TEXT[sensorLevel(hot)]) : null),
+        cpu ? tile('CPU temperature', fmtTemp(cpu.temp), `critical at ${cpu.crit ?? '–'} °C`, levelText[sensorLevel(cpu)]) : null,
+        hot ? tile('Hottest sensor', fmtTemp(hot.temp), sensorLabel(hot).title, levelText[sensorLevel(hot)]) : null),
       cpuData ? cpuCard(cpuData) : null,
       sensors ? temperatureCard(sensors) : null,
       h('div', { className: 'row g-3' },

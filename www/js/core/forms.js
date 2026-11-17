@@ -1,6 +1,6 @@
-// DOM building blocks shared by the pages that edit a config (System settings, DHCP): the control for one field
-// of a schema table, a legend, a note line and the sticky review banner. Styles are in css/forms.css, which those
-// pages load with their own. The values and rules are in core/fields.js; nothing here knows what is being edited.
+// DOM building blocks shared by the pages that edit a config: the control for one field of a schema table, a legend,
+// a note line and the sticky review banner. Styles are in css/forms.css, which those pages load with their own.
+// The values and rules are in core/fields.js; nothing here knows what is being edited.
 import { h } from './dom.js';
 import { icon } from './icons.js';
 import { button, mono, muted } from './ui.js';
@@ -8,9 +8,11 @@ import { button, mono, muted } from './ui.js';
 // The explanation at the top of a card.
 export const legend = paragraphs => h('div', { className: 'muted small set-legend' }, paragraphs.map(p => h('p', {}, p)));
 
+// The icon of each note kind (the shared icon vocabulary of docs/frontend.md).
+const NOTE_ICONS = { bad: 'x-circle', warn: 'exclamation-triangle', ok: 'check-circle', info: 'info-circle' };
+
 // A note line: kind is bad | warn | ok | info.
-export const note = (kind, text, ...extra) => h('div', { className: `set-note ${kind}` },
-  icon(kind === 'ok' ? 'check-circle' : kind === 'bad' || kind === 'warn' ? 'exclamation-triangle' : kind === 'info' ? 'info-circle' : 'hourglass-split'), text, ...extra);
+export const note = (kind, text, ...extra) => h('div', { className: `set-note ${kind}` }, icon(NOTE_ICONS[kind] ?? 'info-circle'), text, ...extra);
 
 // The id of the list input to focus after the next redraw (set when a row was just added).
 let focusId = null;
@@ -20,8 +22,7 @@ function listRow(f, io, list, index) {
   const input = h('input', { className: 'form-control form-control-sm', placeholder: f.placeholder ?? '', value: list[index], disabled: io.disabled,
     spellcheck: false, autocomplete: 'off', oninput: e => { list[index] = e.target.value; io.touched(); } });
   io.register(input, index);
-  const remove = h('button', { type: 'button', className: 'btn btn-sm btn-fl', title: 'Remove', disabled: io.disabled,
-    onclick: () => { list.splice(index, 1); io.redraw(); } }, icon('x-lg'));
+  const remove = button('', 'x-lg', () => { list.splice(index, 1); io.redraw(); }, 'btn-fl', { title: 'Remove', ariaLabel: 'Remove', disabled: io.disabled });
   return { input, node: h('div', { className: 'set-row' }, input, remove) };
 }
 
@@ -49,8 +50,7 @@ export function fieldRow(f, io) {
   if (f.type === 'list') {
     const list = io.get();
     const rows = list.map((_, i) => listRow(f, io, list, i));
-    const add = button(f.addLabel ?? 'Add', 'plus-lg', () => { list.push(''); focusId = io.id; io.redraw(); });
-    add.disabled = io.disabled;
+    const add = button(f.addLabel ?? 'Add', 'plus-lg', () => { list.push(''); focusId = io.id; io.redraw(); }, 'btn-fl', { disabled: io.disabled });
     input = h('div', {}, h('div', { className: 'set-list' }, rows.length ? rows.map(r => r.node) : muted('None.')), add);
     if (focusId === io.id) {
       focusId = null;
@@ -79,8 +79,8 @@ export function fieldRow(f, io) {
     const secretInput = h('input', { className: 'form-control form-control-sm', type: 'password', placeholder: f.placeholder ?? '', value: io.get(), disabled: io.disabled,
       spellcheck: false, autocomplete: 'new-password', oninput: e => change(e.target.value) });
     io.register(secretInput);
-    const reveal = h('button', { type: 'button', className: 'btn btn-sm btn-fl', title: 'Show or hide what you typed', 'aria-label': 'Show or hide what you typed',
-      onclick: () => { const show = secretInput.type === 'password'; secretInput.type = show ? 'text' : 'password'; reveal.replaceChildren(icon(show ? 'eye-slash' : 'eye')); } }, icon('eye'));
+    const reveal = button('', 'eye', () => { const show = secretInput.type === 'password'; secretInput.type = show ? 'text' : 'password'; reveal.replaceChildren(icon(show ? 'eye-slash' : 'eye')); },
+      'btn-fl', { title: 'Show or hide what you typed', ariaLabel: 'Show or hide what you typed' });
     input = h('div', { className: 'set-row' }, secretInput, reveal);
   } else {
     // An `int` field with `number: true` is a number input (spin buttons, the range from min and max); without it the
@@ -105,10 +105,10 @@ export function fieldRow(f, io) {
 export function reviewBanner({ onSave, onDiscard, seconds = 30 }) {
   let open = false;
   const summaryNode = h('span', { className: 'set-bar-summary' });
-  const detailsToggle = h('button', { type: 'button', className: 'btn btn-sm btn-fl' });
-  const discard = h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: onDiscard }, icon('arrow-clockwise'), 'Discard edits');
-  const saveButton = h('button', { type: 'button', className: 'btn btn-sm btn-brand', onclick: onSave }, icon('check2'), 'Save and apply');
-  const dismiss = h('button', { type: 'button', className: 'btn btn-sm btn-fl', title: 'Dismiss' }, icon('x-lg'));
+  const detailsToggle = button('', null, () => { open = !open; banner.render(last); });
+  const discard = button('Discard edits', 'arrow-counterclockwise', onDiscard);
+  const saveButton = button('Save and apply', 'check2', onSave, 'btn-brand');
+  const dismiss = button('', 'x-lg', () => last.dismiss(), 'btn-fl', { title: 'Dismiss', ariaLabel: 'Dismiss' });
   const outcome = h('div', { className: 'set-bar-outcome' });
   const notes = h('div', { className: 'set-notes' });
   const list = h('ul', { className: 'set-changes' });
@@ -149,7 +149,5 @@ export function reviewBanner({ onSave, onDiscard, seconds = 30 }) {
       discard.disabled = view.busy || !view.dirty;
     },
   };
-  detailsToggle.onclick = () => { open = !open; banner.render(last); };
-  dismiss.onclick = () => last.dismiss();
   return banner;
 }

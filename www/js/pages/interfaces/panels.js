@@ -16,10 +16,12 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, button, kv, mono, muted } from '../../core/ui.js';
+import { disclosure } from '../../core/fold.js';
 import { note } from '../../core/forms.js';
 import { fmtDur } from '../../core/format.js';
 import { DEVICE_FIELDS, DEVICE_TYPES, GLOBALS_FIELDS, GLOBALS_READONLY, IFACE_FIELDS, idOf } from './schema.js';
 import { addDevice, deviceList, deviceValues, ifaceList, protoLabel, removeDevice, removeInterface, restoreDevice, restoreInterface, setProto } from './model.js';
+import { bridgeLive } from './bridgelive.js';
 import { controlFor, deviceField, extraOptions, interfaceField, nameControl, portsPicker, stateBadge } from './controls.js';
 import {
   DEVICE_NAME_MAX, OWNER_PAGES, SETTINGS_LEAD, deviceItems, deviceSettings, droppedBy, effectiveDevice, interfaceNameMax, interfaceSettings, isSet, otherProtoText,
@@ -45,12 +47,14 @@ const panelBody = (...sections) => h('div', { className: 'ne-form np-panel' }, .
 function advancedBlock(key, groups, controlOf, values, extra) {
   if (!groups.length && !extra) return null;
   const set = groups.flatMap(g => g.fields).filter(f => isSet(f, values[idOf(f)])).length;
-  return h('details', { className: 'np-adv', open: advOpen.get(key) ?? false, ontoggle: e => advOpen.set(key, e.target.open) },
-    h('summary', {}, 'Advanced', set ? badge(`${set} set`, 'info', 'Advanced options that hold a value') : null),
-    h('div', { className: 'np-adv-body' },
+  return disclosure({
+    cls: 'fl-disclosure-bar np-adv', open: advOpen.get(key) ?? false, onToggle: open => advOpen.set(key, open),
+    summary: ['Advanced', set ? badge(`${set} set`, 'info', 'Advanced options that hold a value') : null],
+    body: h('div', { className: 'np-adv-body' },
       groups.map(({ group, fields }) => h('div', { className: 'np-adv-group' }, h('h4', {}, group.title), h('p', { className: 'muted small' }, group.legend),
         h('div', { className: 'set-fields' }, fields.map(controlOf)))),
-      extra ?? null));
+      extra ?? null),
+  });
 }
 
 // The "Used by" rows of a panel as a section, or a muted line when nothing uses the item.
@@ -58,12 +62,15 @@ const usedSection = (num, rows, empty) => section(num, 'Used by', null, rows.fil
 
 // A footer button that removes (or discards) the item; `warn` is a sentence shown above it when other things depend on the item.
 function removeFooter(ctx, label, tip, onRemove, warn) {
-  const b = h('button', { type: 'button', className: 'btn btn-sm btn-fl np-remove', disabled: !ctx.canEdit, title: tip, onclick: onRemove }, icon('trash'), label);
+  const b = button(label, 'trash', onRemove, 'btn-fl np-remove', { disabled: !ctx.canEdit, title: tip });
   return [warn ? h('div', { className: 'np-foot-note small' }, warn) : null, b].filter(Boolean);
 }
 
 // The notice and Undo button of an item the form removes.
-const removedBody = (what, undo) => panelBody(note('warn', `${what} is removed when you save.`), h('div', {}, button('Undo', 'arrow-clockwise', undo)));
+const removedBody = (what, undo) => panelBody(note('warn', `${what} is removed when you save.`), h('div', {}, button('Undo', 'arrow-counterclockwise', undo)));
+
+// The options of a section as read-only rows for kv().
+const rawRows = raw => Object.entries(raw).map(([k, v]) => [mono(k), mono(Array.isArray(v) ? v.join(', ') : String(v))]);
 
 // A list of values, one per line, that wraps.
 const lines = list => h('span', { className: 'np-wrap' }, list.map(t => h('div', {}, mono(t))));
@@ -106,7 +113,7 @@ function interfaceUses(data, draft, s) {
 function readOnlyInterface(ctx, s) {
   const proto = s.raw.proto ?? '';
   const owner = OWNER_PAGES[proto];
-  const rows = [...Object.entries(s.raw).map(([k, v]) => [mono(k), mono(Array.isArray(v) ? v.join(', ') : String(v))]), ...Object.keys(s.secrets ?? {}).map(k => [mono(k), muted('hidden (a secret)')])];
+  const rows = [...rawRows(s.raw), ...Object.keys(s.secrets ?? {}).map(k => [mono(k), muted('hidden (a secret)')])];
   const live = ctx.live.ifs.find(i => i.interface === s.name);
   const uses = interfaceUses(ctx.base, ctx.draft, s);
   return {
@@ -203,13 +210,11 @@ function deviceUses(ctx, name, kind) {
   return { node: usedSection(null, rows, kind === 'port' ? (shownAbove ? 'No interface runs on this port itself.' : 'No interface, VLAN device or bridge uses this port.') : 'Nothing uses this device yet.'), names: [...u.interfaces, ...u.vlans] };
 }
 
-// The live information of a bridge from the page's bridge module (bridgelive.js), put into `box` when the module exists: members with link, spanning-tree
-// role, learned MACs and throughput. Without the module there is no live section.
+// The live information of a bridge (bridgelive.js) put into `box`: members with link, spanning-tree role, learned MACs and throughput. A bridge the
+// router does not run has none, and `box` stays empty.
 function addBridgeLive(ctx, name, box) {
-  import('./bridgelive.js').then(m => {
-    const node = m.bridgeLive?.(ctx.live.net, ctx.live.mesh, name);
-    if (node) box.replaceChildren(section(null, 'Live', 'What the bridge is doing now.', node));
-  }).catch(() => {});
+  const node = bridgeLive(ctx.live.net, ctx.live.mesh, name);
+  if (node) box.replaceChildren(section(null, 'Live', 'What the bridge is doing now.', node));
 }
 
 // The panel of a device section: a bridge, a VLAN device, or the settings of an existing port. A device of another type is shown read only.
@@ -224,7 +229,7 @@ function sectionPanel(ctx, d) {
   if (!d.editable) {
     return { title: d.name, subtitle: `Device · ${d.type}`, footer: [],
       body: panelBody(section(null, `A ${d.type} device`, 'This page does not edit this type of device: its options are shown as they are in the file.',
-        kv(Object.entries(d.raw).map(([k, val]) => [mono(k), mono(Array.isArray(val) ? val.join(', ') : String(val))])))) };
+        kv(rawRows(d.raw)))) };
   }
   const known = new Set([...DEVICE_FIELDS.map(f => f.key), 'name', 'type', 'ports']);
   const entry = ctx.draft.devAdded.find(a => a.id === d.id);
@@ -296,8 +301,7 @@ function livePanel(ctx, name) {
     ctx.draft.devAdded.find(a => a.id === id).name = name;
     ctx.touched();
     ctx.redraw();
-  });
-  add.disabled = !ctx.canEdit;
+  }, 'btn-fl', { disabled: !ctx.canEdit });
   const liveBox = h('div', { className: 'np-live' });
   if (bridge) addBridgeLive(ctx, name, liveBox);
   return {
@@ -354,7 +358,7 @@ function pendingValues(ctx, name, onAdd) {
 export function portSettings(ctx, name) {
   const d = deviceList(ctx.base, ctx.draft).find(x => x.type === 'plain' && x.name.trim() === name);
   if (d?.removed) return removedBody(`The device section for ${name}`, () => { restoreDevice(ctx.draft, d.id); ctx.touched(); ctx.redraw(); });
-  if (d && !d.editable) return panelBody(section(null, 'Settings', 'This page does not edit this device section: its options are shown as they are in the file.', kv(Object.entries(d.raw).map(([k, val]) => [mono(k), mono(Array.isArray(val) ? val.join(', ') : String(val))]))));
+  if (d && !d.editable) return panelBody(section(null, 'Settings', 'This page does not edit this device section: its options are shown as they are in the file.', kv(rawRows(d.raw))));
   const foot = h('div', { className: 'np-foot' });
   // The reset button of the section `id`, with a note on what it does and on what still runs on the device.
   const fill = (id, isNew) => {

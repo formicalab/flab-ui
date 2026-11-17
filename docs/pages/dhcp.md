@@ -21,7 +21,7 @@ advertised prefixes, the leases and last the reservations.
   and so on, and the **server DUID** (`dhcp_default_duid`), which odhcpd reads from the `globals` section of
   `/etc/config/network` (the only part of that config the page reads, because the rest holds secrets; the ACL
   fragment grants the `network` config for it). Like the pools it is folded to its header (main switch and log level) until opened.
-- **Pools** (`config dhcp`, one card per interface, folded to its header until opened, groups collapsible): Services (DHCPv4, DHCPv6, RA, NDP),
+- **Pools** (`config dhcp`, one card per interface, folded to its header until opened, groups collapsible: the folds are the shared ones of `core/fold.js`, the same as on the DNS and Dynamic DNS pages): Services (DHCPv4, DHCPv6, RA, NDP),
   DHCPv4 pool and options, DHCPv6, Router advertisements, Neighbor discovery proxy and Other (including the
   encrypted DNS servers `dnr`, the network device `ifname` and its alias `networkid`): every option odhcpd reads,
   taken from its option tables (`src/config.c`) and its README, and nothing it no longer reads. The header shows the subnet and the

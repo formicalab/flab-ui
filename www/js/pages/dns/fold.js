@@ -1,10 +1,8 @@
-// A card that folds down to its header, used by the Forwarding and Activity cards of the DNS page. The card is closed until
-// its header is clicked; whether it is open is kept in `state.folds[key]`, so the choice survives the redraws of the poll.
-import { h } from '../../core/dom.js';
+// The Zones and Activity cards fold down to their header with the shared card fold (core/fold.js). Both start folded;
+// `state.folds[key]` is true once the user opened one, so the choice survives the redraws of the poll.
+import { chevron, foldable } from '../../core/fold.js';
+import { card } from '../../core/ui.js';
 
-// `head` are the nodes after the chevron in the header, `body` the node shown when open.
-export function foldCard(state, key, head, body) {
-  return h('div', { className: 'card' },
-    h('details', { className: 'dns-fold', open: state.folds[key] === true, ontoggle: ev => { state.folds[key] = ev.target.open; } },
-      h('summary', { className: 'card-header' }, h('span', { className: 'dns-chevron' }), ...head), body));
-}
+// `head` are the header nodes after the chevron, `body` the node shown when the card is open.
+export const foldCard = (state, key, head, body) =>
+  foldable(card([chevron(), ...head], body), state.folds[key] !== true, folded => { state.folds[key] = !folded; });

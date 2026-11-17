@@ -18,8 +18,8 @@
 
 export const CONFIG = 'firewall';
 
-// The three verdicts a zone policy, the defaults and a rule target can have.
-export const POLICIES = ['ACCEPT', 'REJECT', 'DROP'];
+// The three verdicts of a zone policy and of the global defaults.
+const POLICIES = ['ACCEPT', 'REJECT', 'DROP'];
 const POLICY_LABELS = { ACCEPT: 'ACCEPT: let it through', REJECT: 'REJECT: refuse and tell the sender', DROP: 'DROP: discard silently' };
 
 // The names an ICMP type may have in fw4 (either family), besides numbers such as 3 or 3/1 (type/code).
@@ -48,7 +48,7 @@ export const PROTOCOLS = ['tcp', 'udp', 'icmp', 'icmpv6', 'esp', 'ah', 'gre', 's
 export const WEEKDAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
 
 // The targets the page offers for a traffic rule.
-export const RULE_TARGETS = ['ACCEPT', 'REJECT', 'DROP', 'MARK', 'NOTRACK'];
+const RULE_TARGETS = ['ACCEPT', 'REJECT', 'DROP', 'MARK', 'NOTRACK'];
 
 //#region Zones
 

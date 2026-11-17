@@ -13,7 +13,7 @@ const WINDOW_MS = 120000;
 const open = new Map();
 
 // Whether the access point `i` (an interface of the flab.radio status) has a push button to offer: a running access point with the option set, to a login that may use it.
-export const hasWps = i => i?.mode === 'ap' && i.up && i.ifname && i.features?.wps && can('flab.radio', 'wps');
+const hasWps = i => i?.mode === 'ap' && i.up && i.ifname && i.features?.wps && can('flab.radio', 'wps');
 
 // Asks the plugin to start or cancel the button of `i`, and keeps what came back for the block. `redraw` repaints the page.
 async function send(i, action, redraw) {
@@ -57,8 +57,8 @@ export function wpsControls(i, redraw) {
   if (!hasWps(i)) return [];
   const left = remaining(i.ifname);
   const error = open.get(i.ifname)?.error;
-  const b = button(left ? 'Cancel WPS' : 'WPS', 'key', () => (left ? send(i, 'cancel', redraw) : confirm(i, redraw)), 'btn-fl wps-btn');
-  b.title = left ? 'Close the WPS push button' : 'Open the WPS push button for two minutes so a device can join by pressing its WPS button';
+  const b = button(left ? 'Cancel WPS' : 'WPS', 'key', () => (left ? send(i, 'cancel', redraw) : confirm(i, redraw)), 'btn-fl wps-btn',
+    { title: left ? 'Close the WPS push button' : 'Open the WPS push button for two minutes so a device can join by pressing its WPS button' });
   b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
   return [b, left ? badge(`WPS open ${left}`, 'info', 'A device that presses its WPS button now joins without the password') : null, error ? badge('WPS refused', 'danger', error) : null].filter(Boolean);
 }

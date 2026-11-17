@@ -100,6 +100,10 @@ chroot ${jail} /sbin/rpcd -s /run/bus -t 30 >rpcd.log 2>&1 & echo $! >rpcd.pid
   assert.equal(native.silent_after_cap.truncated, true);
   assert.ok(native.silent_after_cap_seconds < 3, 'a producer which becomes silent at the cap is terminated, not merely timed out');
   assert.equal(native.aggregate, true);
+  assert.deepEqual(native.validators, {
+    ifname: true, ifname_newline: false, ifname_cr: false, ifname_empty: false, ifname_number: false,
+    line: true, line_newline: false, line_cr: false, line_null: false,
+  }, 'a value with a line break must fail the helper validators, whose ^...$ patterns only see the first line');
   assert.equal(native.job.size, native.job.max);
   assert.equal(native.job.limited, true);
   assert.notEqual(native.job.code, '');

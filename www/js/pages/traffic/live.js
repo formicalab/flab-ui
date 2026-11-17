@@ -5,7 +5,8 @@
 // history is kept per interface. Interfaces are whatever the router reports; nothing is named here.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card, healthBanner, meter, muted, sparkline, tile, tiles } from '../../core/ui.js';
+import { badge, button, card, healthBanner, meter, muted, sparkline, tile, tiles } from '../../core/ui.js';
+import { legend } from '../../core/forms.js';
 import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
 import { fmtSpeed, traffic } from '../network/util.js';
 import { busiestRow, deviceRows, fmtPct, isLeaf, kindLabel, liveFindings, liveTotals, orderRows, tableLoad, utilization, wanLinks } from './model.js';
@@ -76,16 +77,15 @@ function interfaceTable(rows, wanSet, state, rerender) {
   });
   return card([icon('speedometer2'), 'Interfaces', h('span', { className: 'sub' }, `${rows.length} devices · refreshed every few seconds`)],
     h('div', {},
-      h('div', { className: 'tr-legend' },
-        'Rates are measured in this browser from the interface counters between polls: ',
+      legend([['Rates are measured in this browser from the interface counters between polls: ',
         h('span', { className: 'tr-rx' }, '↓ download'), ' and ', h('span', { className: 'tr-tx' }, '↑ upload'), ' as the router sees them on that port. ',
-        'Dimmed rows (bridges, VLANs, the CPU port) repeat the traffic of the ports under them and are not added to the totals. The chart covers the last minutes the page was open.'),
+        'Dimmed rows (bridges, VLANs, the CPU port) repeat the traffic of the ports under them and are not added to the totals. The chart covers the last minutes the page was open.']]),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover tr-live' },
         h('thead', {}, h('tr', {}, ['Interface', 'Link', 'Download', 'Upload', 'History', 'Link load', 'Since boot'].map(c => h('th', {}, c)))),
         h('tbody', {}, body.length ? body : h('tr', {}, h('td', { colSpan: 7, className: 'muted' }, 'The router reports no network devices'))))),
       rows.length > shown.length ? h('div', { className: 'tr-more' },
         h('span', { className: 'muted' }, `Showing the first ${shown.length} of ${rows.length} devices.`),
-        h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: () => { state.liveAll = true; rerender(); } }, `Show all ${rows.length}`)) : null));
+        button(`Show all ${rows.length}`, null, () => { state.liveAll = true; rerender(); })) : null));
 }
 
 // The nodes of the Live tab for one poll: `wired` is { net, ifs } from loadWired(), `status` the flab.traffic status

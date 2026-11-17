@@ -17,9 +17,9 @@ import { FIELDS } from './settings-schema.js';
 export const CONFIG = 'nlbwmon';
 const TYPE = 'nlbwmon';
 // The most seconds nlbwmon accepts for an interval (it multiplies by 1000 into a 32-bit number): 24 days, 20 hours.
-export const MAX_SECONDS = 2147483;
+const MAX_SECONDS = 2147483;
 // The smallest netlink buffer nlbwmon accepts, in bytes.
-export const MIN_BUFFER = 32768;
+const MIN_BUFFER = 32768;
 // What one database entry roughly costs in RAM, in bytes.
 const ENTRY_BYTES = 100;
 const SECONDS = { w: 604800, d: 86400, h: 3600, m: 60, s: 1 };
@@ -35,7 +35,7 @@ const plural = (n, unit, many = `${unit}s`) => `${fmtN(n)} ${n === 1 ? unit : ma
 
 // The state of the nlbwmon daemon from procd's `service list nlbwmon` reply (or, without it, from the plugin's status).
 // { known, running, pid, command } where `command` is the daemon's command line (the flags the init script built).
-export function daemonOf(svc, status) {
+function daemonOf(svc, status) {
   if (svc) {
     const instances = Object.values(svc.nlbwmon?.instances ?? {});
     const up = instances.find(i => i.running);
@@ -126,7 +126,7 @@ export function fmtAgo(then, now) {
   return `${plural(Math.floor(s / 86400), 'day')} ago`;
 }
 
-// A size in bytes in the units people use ("12.3 KiB").
+// A size in bytes for a sentence ("606 bytes", "12.3 KiB"): core fmtBytes with the unit spelled out below 1 KiB.
 function fmtSize(n) {
   if (n == null) return 'unknown size';
   const u = ['bytes', 'KiB', 'MiB', 'GiB', 'TiB'];
@@ -182,7 +182,7 @@ export function validSubnet(s) {
 //#region Accounting periods
 
 // A date "YYYY-MM-DD" as a day number (days since 1970-01-01), or null when it is not a real date.
-export function dayOf(s) {
+function dayOf(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s ?? '');
   if (!m) return null;
   const t = Date.UTC(+m[1], +m[2] - 1, +m[3]);
@@ -191,7 +191,7 @@ export function dayOf(s) {
 }
 
 // The date "YYYY-MM-DD" of a day number.
-export const dateOf = day => new Date(day * 86400000).toISOString().slice(0, 10);
+const dateOf = day => new Date(day * 86400000).toISOString().slice(0, 10);
 
 // The number of days in month `m` (1 to 12) of year `y`.
 const monthLen = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -218,7 +218,7 @@ function monthStart(y, m, n) {
 }
 
 // The period of interval `iv` that holds day `day`: { start, end } as day numbers, `end` being the first day of the next period.
-export function periodBounds(iv, day) {
+function periodBounds(iv, day) {
   if (iv.kind === 'days') {
     const start = day < iv.base ? iv.base : iv.base + Math.floor((day - iv.base) / iv.n) * iv.n;
     return { start, end: start + iv.n };
@@ -239,7 +239,7 @@ export function periodBounds(iv, day) {
 }
 
 // The start (a day number) of the period that began `back` periods before the one that holds `day`.
-export function startBack(iv, day, back) {
+function startBack(iv, day, back) {
   let start = periodBounds(iv, day).start;
   for (let i = 0; i < back && i < 5000; i++) start = periodBounds(iv, start - 1).start;
   return start;

@@ -131,7 +131,8 @@ again. The form remembers its values while the page is open; Run is disabled for
   download`, base64) and saves it as `capture-<interface>-<date>-<time>.pcap` for Wireshark; it is offered to every finished
   capture, and disabled with the reason for a session opened before the plugin offered the permission (sign out and in again).
   A capture sees everyone's traffic, including what is not encrypted, so the form warns about it. Only one capture runs at a
-  time; the file lives in memory (tmpfs), is removed when a newer capture starts and ten minutes after the job ends.- **iperf3 server:** starts `iperf3 -s` on the router for a chosen time (1, 2, 5, 15 or 30 minutes; 2 is the default) so a
+  time; the file lives in memory (tmpfs), is removed when a newer capture starts and ten minutes after the job ends.
+- **iperf3 server:** starts `iperf3 -s` on the router for a chosen time (1, 2, 5, 15 or 30 minutes; 2 is the default) so a
   computer on the LAN can measure the path to the router. The server prints one JSON event per line (`--json-stream`,
   flushed as produced) and stops by itself when the time is up (the job's `timeout` ends it, code 124); Stop ends it
   earlier (iperf3 then exits with 0, so the page records the Stop itself). The port is 5201 unless changed (1024 to
@@ -183,9 +184,11 @@ The browser independently caps retained text at 256 KiB, so an older or incompat
 The capture script writes tcpdump's pcap into a FIFO; `tee` keeps it in `cap.pcap` and passes it to a second tcpdump that
 prints one line per packet, of which `awk` forwards the first 1000 (cut at 180 characters) and counts the rest, so the output
 stays under its cap while the file is complete; everything ends when the writer ends, and the TERM of a Stop is passed on to it.
-The job's file size limit is raised for it (`ulimit -f`, 35 MB, which holds 20,000 packets of 1514 bytes). tcpdump's `-Z root`
-note is dropped from the summary.Everything that reaches the shell is
-validated: the tool, the record type and the STARTTLS protocol come from allow-lists, the host, the server name and the DNS
+The job's file size limit is raised for it (`ulimit -f`, 35 MB, which holds 20,000 packets of 1514 bytes). tcpdump runs as root
+(`-Z root`) and its `dropped privs` note is left out of the summary.
+
+Everything that reaches the shell is
+validated: a value must be a single line (a pattern with `^…$` would match only the first line of a string that contains a line break, so the checks compare the match with the whole string), the tool, the record type and the STARTTLS protocol come from allow-lists, the host, the server name and the DNS
 servers are made of letters, digits and `. : _ -` and do not start with `-` (they could be taken for an option), the port is
 clamped to 1 to 65535 (1024 to 65535 for the iperf3 server), the MTR method comes from an allow-list (a port needs UDP or TCP, a packet size
 does not go with TCP), a `compare` request takes one to six servers that are each such a name (or `router`), the source is such

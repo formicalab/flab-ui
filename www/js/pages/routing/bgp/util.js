@@ -30,7 +30,7 @@ function syncColors(data) {
   }
 }
 
-// CSS class (pc-N), colored dot and display title for a peer; the title falls back to the protocol name.
+// CSS class (pc-N) of a peer's color; stable while the peer exists (see syncColors).
 export const peerClass = (data, name) => { syncColors(data); return `pc-${slots.get(name) ?? 0}`; };
 // Small colored dot that matches the peer's color everywhere it is listed.
 export const peerDot = (data, name) => h('span', { className: `peer-dot ${peerClass(data, name)}` });

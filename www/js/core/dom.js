@@ -9,5 +9,8 @@ export const h = (tag, attrs = {}, ...kids) => {
   return el;
 };
 
+// Resolves after `ms` milliseconds: the pause between polls of a page that waits for the router to settle.
+export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 // Looks an element up by id (the #app mount point).
 export const byId = id => document.getElementById(id);

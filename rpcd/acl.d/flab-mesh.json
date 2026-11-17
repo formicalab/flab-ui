@@ -1,6 +1,6 @@
 {
   "flab": {
-    "description": "flab-ui Mesh page (802.11s mesh interfaces, peers and paths)",
+    "description": "flab-ui Wi-Fi radios page (802.11s mesh interfaces, peers and paths)",
     "read": {
       "ubus": {
         "flab.mesh": ["status"]

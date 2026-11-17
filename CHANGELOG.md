@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Interface
+
+- **One look for every fold.** Native folds (setting groups, "show more", legends, raw output) are built by `disclosure()` in `core/fold.js` with one arrow, the same as a folded card; the per-page summary and arrow styles are gone. The DNS cards use the shared fold code too.
+- Buttons are built by `button()` (now takes `title`, `disabled` and `ariaLabel`); the icon vocabulary (remove, add, save, revert, error, warning and so on) is applied on every page and documented in `docs/frontend.md`. The Toolbox error and finding banners share one helper.
+- Fixes: a failed sign-in for a reason other than the credentials says why; the DDNS Log and Refresh buttons return to the sign-in screen when the session expired; the Routing lookup fold keeps its state across refreshes; the Ethernet ports cable-test button disappears for a port that cannot run it; the Overview temperature labels no longer assume one board.
+
+### Backend
+
+- **Security:** ucode regular expressions with `^...$` match the first line of a string that holds a newline, so a value such as `"1.1.1.1\nid"` passed validation and reached a shell command in `flab.routing lookup`, and an interface name could do the same through `safe_ifname()`. Both now refuse line breaks (`one_line()` in `flab.util`), as do the other plugins that take an interface name; regression cases are in the routing, toolbox, services, DDNS, network and execution suites.
+- **Smaller:** `flab.traffic usage` answers "no data" for malformed `nlbw` output; `flab.firewall` reports a timeout or an oversized reply as such; `flab.diag status` probes each command once; the network plugin reads its UCI configuration once per request; `flab.logs` no longer fails when the log is larger than the output cap of one command, it reads fewer lines and says how many.
+
+### Code and documentation
+
+- Removed unused code, styles and exports, the duplicated `reveal`, `sleep` and legend helpers and the `pages/services.js` re-export; added file headers and contract comments; updated the docs to match.
+
 ## 0.1.7 - 2026-11-17
 
 ### Pages

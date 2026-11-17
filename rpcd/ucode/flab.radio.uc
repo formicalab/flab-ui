@@ -28,7 +28,13 @@
 import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
-import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label, iw_channel_info } from 'flab.util';
+import { run, ubus_call, uci_all, sysfs, safe_ifname as lib_safe_ifname, num, security_label, iw_channel_info } from 'flab.util';
+
+// A name that reaches a command line or a path: an interface or phy name. The library check is anchored with ^...$, which ucode matches against
+// the first line of a string, so "wlan0\nid" would pass it; a name with a line break is refused first.
+function safe_ifname(name) {
+	return type(name) == 'string' && index(name, '\n') < 0 && index(name, '\r') < 0 && lib_safe_ifname(name);
+}
 
 // Options of a wireless section that hold a secret: never returned. The WPA passphrase and WEP keys, the SAE password,
 // the RADIUS, accounting and DAE secrets, EAP identity and passwords, the WPS PIN and the 802.11r key-holder lists.

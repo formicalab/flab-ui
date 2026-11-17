@@ -51,7 +51,6 @@
 .nb-proto { margin-top: .35rem; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; }
 .nb-pdev { padding: 0 .4rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface-hover); }
 .nb-details { margin-top: .2rem; }
-.nb-details > summary { cursor: pointer; }
 .nb-nets { margin-top: .35rem; display: grid; gap: .3rem; }
 .nb-net { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .4rem; }
 .nb-new { border-style: dashed; border-color: var(--fl-info-fg); }
@@ -65,7 +64,6 @@
 
 /* A radio is a container of the interfaces on it. */
 .nb-radio-ifs { margin-top: .5rem; display: flex; flex-direction: column; gap: .35rem; }
-.rp-ifs { display: grid; gap: .6rem; }
 .nb-radio .nb-chip { background: var(--fl-surface-hover); box-shadow: none; }
 .nb-radio .nb-chip:hover { background: color-mix(in srgb, var(--fl-brand) 10%, var(--fl-surface-hover)); }
 

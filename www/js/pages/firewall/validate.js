@@ -7,7 +7,7 @@
 //    the form has not touched is only a warning, so that unrelated edits can still be saved; a problem that the edit introduces (a rule
 //    left pointing at a zone that was just removed) is always an error.
 //  - A warning is something that works but is probably not what was meant (ports on a protocol that has none, a forward that opens every port).
-import { CHECKS, subnetFamily, unnegate } from './check.js';
+import { CHECKS, subnetFamily } from './check.js';
 import { DEFAULT_FIELDS, REDIRECT_FIELDS, RULE_FIELDS, ZONE_FIELDS } from './schema.js';
 import { KINDS, changedFields, draftFrom, fieldFor, formValues, isShown, itemChanged, live, networkNames, policyOf, zoneName } from './edit.js';
 
@@ -62,8 +62,8 @@ function tableProblems(fields, values, ctx) {
 
 //#region References to zones
 
-// The names of the zones of the draft (the ones not marked for removal), with whether each is enabled.
-export function zoneMap(draft) {
+// The zone items of the draft (the ones not marked for removal) by name.
+function zoneMap(draft) {
   return new Map(live(draft.zones).filter(z => zoneName(z)).map(z => [zoneName(z), z]));
 }
 
@@ -271,6 +271,9 @@ export function lockoutWarnings(data, draft, ctx = {}) {
 
 //#region The whole draft
 
+// The checks of each kind of item, (item, draft, data, ctx) => problems.
+const KIND_PROBLEMS = { zones: zoneProblems, forwardings: forwardingProblems, rules: ruleProblems, redirects: redirectProblems };
+
 // The problems of one item turned into banner entries: an error of an item that the form has not touched (and that was not caused by this
 // edit) is only a warning.
 function collect(errors, warnings, key, item, found, draft, data) {
@@ -288,9 +291,8 @@ function collect(errors, warnings, key, item, found, draft, data) {
 export function problems(data, draft, ctx = {}) {
   const errors = [], warnings = [];
   const c = { networks: networkNames(data) };
-  const checks = { zones: zoneProblems, forwardings: forwardingProblems, rules: ruleProblems, redirects: redirectProblems };
   for (const key of Object.keys(KINDS)) {
-    for (const item of live(draft[key])) collect(errors, warnings, key, item, checks[key](item, draft, data, c), draft, data);
+    for (const item of live(draft[key])) collect(errors, warnings, key, item, KIND_PROBLEMS[key](item, draft, data, c), draft, data);
   }
   const found = defaultsProblems(draft.defaults, c);
   const changed = changedFields(DEFAULT_FIELDS, formValues(DEFAULT_FIELDS, data.defaults.values), draft.defaults).length > 0;
@@ -319,8 +321,7 @@ export function itemProblems(key, id, values, draft, data) {
   const item = { id: id ?? 'new:form', isNew: id == null, removed: false, values };
   const list = id == null ? [...draft[key], item] : draft[key].map(i => (i.id === id ? item : i));
   const trial = { ...draft, [key]: list };
-  const checks = { zones: zoneProblems, forwardings: forwardingProblems, rules: ruleProblems, redirects: redirectProblems };
-  return checks[key](item, trial, data, c).filter(p => !p.moved);
+  return KIND_PROBLEMS[key](item, trial, data, c).filter(p => !p.moved);
 }
 
 //#endregion

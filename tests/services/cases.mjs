@@ -7,9 +7,6 @@ export const JUNK = ['bad name', 'x;reboot', '.hidden', 'a$(id)', '-h'];
 // The fake /etc/rc.d: S<NN><name> starts at boot, K<NN><name> is the stop link.
 export const RC = ['K10wpad', 'K50dropbear', 'K90umount', 'S10boot', 'S12rpcd', 'S19dnsmasq', 'S19dropbear', 'S19firewall', 'S20network', 'S35odhcpd', 'S50cron', 'S50uhttpd', 'S95done'];
 
-// The scripts whose stop and restart run in the background.
-export const DETACHED = ['rpcd', 'uhttpd', 'network'];
-
 // The command lines the plugin builds; fixtures are named after them (see rpcd/lib/flab/util.uc).
 export const LIST_CMD = 'for f in /etc/init.d/*; do [ -f "$f" ] && [ -x "$f" ] && echo "${f##*/}"; done 2>/dev/null';
 export const RC_CMD = 'ls -1 /etc/rc.d 2>/dev/null';
@@ -58,6 +55,7 @@ export const REFUSED = [
   ['a$(id)', 'stop', /name is not valid/], ['-h', 'start', /name is not valid/], ['.hidden', 'start', /name is not valid/], ['', 'start', /name is not valid/],
   ['x'.repeat(65), 'start', /name is not valid/], ['dropbear\nreboot', 'start', /name is not valid/], ['dropbear', 'reload', /action must be/], ['dropbear', 'restart; reboot', /action must be/],
   ['dropbear', '', /action must be/], ['dropbear', 'RESTART', /action must be/], ['dropbear', 'toggle', /action must be/], ['dropbear', 'ENABLE', /action must be/], ['dropbear', 'enable; reboot', /action must be/], ['dropbear', 'disable ', /action must be/],
+  ['dropbear\n', 'start', /name is not valid/], ['dropbear', 'restart\nreboot', /action must be/],
   ['boot', 'enable', /boot sequence/], ['umount', 'disable', /boot sequence/], ['nosuch', 'enable', /no such service/], ['dropbear; reboot', 'disable', /name is not valid/],
 ];
 

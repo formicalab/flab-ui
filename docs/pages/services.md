@@ -23,7 +23,7 @@ anything, so the init scripts do the work, as they do for `/etc/init.d/<name> re
   scripts (`boot`, `done`, `umount`) have none. While a call runs every button is disabled and the row says
   "Restarting…"; afterwards the outcome is shown above the tiles (green when the script exited 0, red with the
   script's own output when it failed, until dismissed) and the list is refreshed. A login that may not call
-  `flab.services control` (`can()`) sees no buttons and a note; without the plugin the page is the read-only procd list.
+  `flab.services control` (`can()`) sees no buttons and a note (the shared `note()` of `core/forms.js`); without the plugin the page is the read-only procd list.
 - **Confirmation** (`model.js`, `riskOf`): stopping or restarting `rpcd`, `uhttpd`, `network`, `dropbear`,
   `firewall`, `wpad`, `dnsmasq`, `odhcpd` or `log`, and disabling any of them at boot, first shows what will happen, in
   plain words, with Confirm and Cancel; nothing is sent before Confirm. The notes that can lock the user out are red
@@ -33,7 +33,8 @@ anything, so the init scripts do the work, as they do for `/etc/init.d/<name> re
   never ask.
 - **Session loss**: `rpcd` keeps the sessions in memory, so after it restarts the next request is refused and the
   shell returns to the sign-in screen with "Session expired"; the outcome note says beforehand that the session ends.
-- **Backend** (`flab.services`): `control` accepts a name that is, as a whole, a plain file name (letter or digit
+- **Backend** (`flab.services`): `control` accepts a name that is, as a whole and on a single line (`one_line()` in `flab.util`:
+  `^...$` patterns match the first line of a multi-line string), a plain file name (letter or digit
   first, then letters, digits, `_`, `.` and `-`, at most 64 characters) **and** is in the list of executable files
   of `/etc/init.d`, an action that is exactly `start`, `stop`, `restart`, `enable` or `disable`, and refuses the boot-sequence scripts.
   Only that validated name and action reach the shell command line; nothing else is interpolated. A refused call

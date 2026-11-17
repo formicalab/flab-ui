@@ -33,6 +33,7 @@ const DDNS = {
   off: sec('service', 'off', 4, { enabled: '0', service_name: 'old.example', lookup_host: 'off.example.com' }),
   big: sec('service', 'big', 5, { enabled: '0', service_name: 'old.example', lookup_host: 'big.example.com' }),
   evil: sec('service', 'evil', 6, { enabled: '0', ip_source: 'interface', ip_interface: '-r', lookup_host: 'evil.example.com' }),
+  evilnl: sec('service', 'evilnl', 7, { enabled: '0', ip_source: 'interface', ip_interface: 'eth1\nid', lookup_host: 'evilnl.example.com' }),
 };
 
 // The network config: logical interfaces (loopback is left out by the plugin) and a section of another type with a secret.
@@ -129,6 +130,7 @@ function scenario(name, { code, output, config }) {
   put(CMD.boot, 'K10ddns\nS19dnsmasq\nS95ddns\n');
   put(CMD.ca, '/etc/ssl/certs/ca-certificates.crt\n');
   put(CMD.dashDevice, '2: -r    inet 198.51.100.77/24 scope global\n');
+  put(CMD.newlineDevice, '2: eth1    inet 198.51.100.78/24 scope global\n');
   put(CMD.eth1v6, '3: eth1    inet6 2001:db8::5/64 scope global \\       valid_lft forever preferred_lft forever\n');
   put(OUTPUT_CMD, output);
   // A result for the command line of every call in CASES (valid or not), so a refused call that was run anyway would be

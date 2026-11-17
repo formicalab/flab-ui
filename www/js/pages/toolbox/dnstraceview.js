@@ -5,18 +5,14 @@
 // the steps so far and a pulsing marker for the one being asked.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
+import { disclosure } from '../../core/fold.js';
 import { badge, mono, muted } from '../../core/ui.js';
 import { fmtMs } from './diagmodel.js';
 import { parseDnsTrace, stepVerdict, zoneLabel } from './dnstracemodel.js';
-
-// A date (milliseconds) as "2026-12-25", or a dash.
-const day = ms => (ms == null ? '–' : new Date(ms).toISOString().slice(0, 10));
+import { day, working } from './parts.js';
 
 // The visual kind of a step (its color): referral, answer, alias, negative, failure or running.
 const KIND_CLASS = { referral: 'ref', answer: 'ans', cname: 'alias', nxdomain: 'neg', nodata: 'neg', refused: 'bad', servfail: 'bad', timeout: 'bad', error: 'bad', running: 'run' };
-
-// A small label.
-const chip = (text, title = '') => h('span', { className: 'chip', title }, text);
 
 // The records of an answer as a small table: type, time to live and data.
 function recordsTable(records) {
@@ -30,7 +26,7 @@ function nameServers(list) {
   // The chip of one name server, marked when its address came from a glue record in the referral.
   const chipOf = ns => h('span', { className: `chip rt-ns${ns.glue.length ? ' glued' : ''}`, title: ns.glue.length ? `${ns.name} (address in the referral: ${ns.glue.join(', ')})` : `${ns.name} (no address in the referral)` }, ns.name.replace(/\.$/, ''), ns.glue.length ? h('span', { className: 'rt-tick' }, '✓') : null);
   const head = list.slice(0, 6), rest = list.slice(6);
-  return h('div', { className: 'rt-nslist' }, head.map(chipOf), rest.length ? h('details', { className: 'rt-nsmore' }, h('summary', {}, `+${rest.length} more`), rest.map(chipOf)) : null);
+  return h('div', { className: 'rt-nslist' }, head.map(chipOf), rest.length ? disclosure({ cls: 'rt-nsmore', summary: `+${rest.length} more`, body: rest.map(chipOf) }) : null);
 }
 
 // What a referral says about DNSSEC: a signed delegation (a DS record for the zone below), or an unsigned one.
@@ -51,7 +47,7 @@ function answerSecurity(step) {
 
 // The body of one step's card, by what the server answered.
 function stepBody(step) {
-  if (step.kind === 'running') return h('div', { className: 'rt-running' }, h('span', { className: 'spinner-border spinner-border-sm' }), 'Waiting for the answer…');
+  if (step.kind === 'running') return working('Waiting for the answer…');
   if (step.kind === 'referral') {
     return h('div', {},
       h('div', { className: 'rt-line' }, `Does not know the answer, but ${step.nameServers.length} name server${step.nameServers.length === 1 ? '' : 's'} for `, h('strong', {}, zoneLabel(step.delegatedTo)), ' do:'),
@@ -100,7 +96,7 @@ function resolverCard(r, trace) {
   const cached = r.ttl != null && answered?.answer?.length ? Math.max(0, Math.min(...answered.answer.map(x => x.ttl)) - r.ttl) : null;
   return h('div', { className: 'rt-resolver' },
     h('h3', {}, icon('router'), 'What the router\'s own resolver says'),
-    r.running ? h('div', { className: 'rt-running' }, h('span', { className: 'spinner-border spinner-border-sm' }), 'Asking…') : h('div', {},
+    r.running ? working('Asking…') : h('div', {},
       h('div', { className: 'rt-hop-head' },
         badge(r.rcode === 'NOERROR' ? (r.records.length ? 'Answers' : 'No data') : r.rcode ?? 'No reply', r.rcode === 'NOERROR' ? 'success' : 'danger'),
         r.rttMs == null ? null : h('span', { className: 'rt-rtt' }, fmtMs(r.rttMs)),
@@ -140,6 +136,6 @@ export function dnsTraceBody(job) {
   }
   return h('div', { className: 'rt-trace-dns' },
     summary(trace, job), timingBar(steps, trace.networkMs),
-    h('div', { className: 'rt-ladder' }, ladder.length ? ladder : h('div', { className: 'rt-running' }, h('span', { className: 'spinner-border spinner-border-sm' }), 'Asking a root server…')),
+    h('div', { className: 'rt-ladder' }, ladder.length ? ladder : working('Asking a root server…')),
     trace.resolver ? resolverCard(trace.resolver, trace) : null);
 }

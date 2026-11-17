@@ -5,6 +5,7 @@ import { h } from '../../core/dom.js';
 import { badge, kv, mono, muted } from '../../core/ui.js';
 import { fmtDur } from '../../core/format.js';
 import { bridgeLive } from './bridgelive.js';
+import { poolText } from './panelmodel.js';
 
 // What a firewall policy means in words.
 const POLICY = { ACCEPT: 'accepted', REJECT: 'rejected, with an error reply', DROP: 'dropped silently' };
@@ -21,7 +22,7 @@ export function zonePanel(item) {
   const nets = item.networks.map(n => {
     const d = item.services[n];
     const parts = d ? [
-      d.v4 && d.v4 !== 'disabled' ? `DHCPv4 ${d.v4}${d.start != null && d.limit ? ` (.${d.start}–.${d.start + d.limit - 1}${d.leasetime ? `, lease ${d.leasetime}` : ''})` : ''}` : null,
+      d.v4 && d.v4 !== 'disabled' ? `DHCPv4 ${d.v4}${poolText(d) ? ` (${poolText(d)}${d.leasetime ? `, lease ${d.leasetime}` : ''})` : ''}` : null,
       d.v6 && d.v6 !== 'disabled' ? `DHCPv6 ${d.v6}` : null,
       d.ra && d.ra !== 'disabled' ? `router advertisements ${d.ra}` : null,
     ].filter(Boolean) : [];

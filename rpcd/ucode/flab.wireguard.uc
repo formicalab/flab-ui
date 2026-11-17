@@ -11,17 +11,18 @@
 //   - UCI network: interface settings (addresses, listen port, MTU) and the configured peers (name,
 //     allowed IPs, endpoint, keepalive)
 //   - `wg show <if> <field>`: live state. Only the single-field forms are used (public-key, listen-port,
-//     fwmark, peers, endpoints, allowed-ips, latest-handshakes, transfer, persistent-keepalive), which
+//     peers, endpoints, allowed-ips, latest-handshakes, transfer, persistent-keepalive), which
 //     never print the private or pre-shared key
 //   - UCI firewall: the zone an interface belongs to
-//   - sysfs: interface MTU and counters
+//   - sysfs: interface MTU and counters, and /lib/netifd/proto/wireguard.sh (whether netifd has the protocol handler)
+//   - TCP connections to the router's web interface and SSH port (/proc/net/tcp, /proc/net/tcp6; the ports come from UCI
+//     uhttpd and dropbear): the page uses their remote addresses to warn before a change cuts the tunnel the
+//     administrator is working through
 //
 // Private and pre-shared keys are never read into the output. Public keys are not secret and identify peers.
 // The page that edits the configuration reads it through this plugin: every option of an interface and of a peer
 // section is returned except the secret ones (private_key, preshared_key and anything else named like a secret),
 // which are reported only as "set" flags, so the browser never needs `uci get` on /etc/config/network.
-//   - TCP connections to the router's web interface and SSH port (/proc/net/tcp, /proc/net/tcp6): the page uses their
-//     remote addresses to warn before a change cuts the tunnel the administrator is working through
 //
 // rpcd runs plugins in-process, so this must not call ubus objects served by rpcd itself.
 
@@ -67,9 +68,9 @@ function table(ifname, field) {
 	return out;
 }
 
-// Name of the first firewall zone that lists `ifname` among its networks, or null.
-function firewall_zone(ifname) {
-	for (let n, s in uci_all('firewall'))
+// Name of the first firewall zone of the firewall config `fw` (see uci_all()) that lists `ifname` among its networks, or null.
+function firewall_zone(fw, ifname) {
+	for (let n, s in fw)
 		if (s['.type'] == 'zone' && index(as_list(s.network), ifname) >= 0)
 			return s.name;
 	return null;
@@ -125,9 +126,9 @@ function peer_view(key, conf, live, now) {
 }
 
 // JSON view of one interface: UCI settings overlaid with live kernel values when the interface is
-// `running`, followed by its peers. `all` is the UCI network config. `values` and `secrets` are the interface
-// section's options as in peer_view().
-function interface_view(all, ifname, running, now) {
+// `running`, followed by its peers. `all` is the UCI network config and `fw` the UCI firewall config. `values` and `secrets` are the
+// interface section's options as in peer_view().
+function interface_view(all, fw, ifname, running, now) {
 	let conf = all[ifname];
 	let opts = section_options(conf);
 	let view = {
@@ -135,7 +136,7 @@ function interface_view(all, ifname, running, now) {
 		configured: conf != null,
 		enabled: conf == null || conf.disabled != '1',
 		up: running,
-		zone: firewall_zone(ifname),
+		zone: firewall_zone(fw, ifname),
 		listen_port: num(conf?.listen_port),
 		mtu: num(conf?.mtu),
 		fwmark: conf?.fwmark,
@@ -248,6 +249,8 @@ function admin_sessions() {
 // netifd has the wireguard protocol handler, `sessions` the administration connections (see admin_sessions()).
 function collect() {
 	let all = uci_all('network');
+	// Loaded once for every interface's zone.
+	let fw = uci_all('firewall');
 	let now = fixture_time();
 
 	let names = [], configured = {};
@@ -274,7 +277,7 @@ function collect() {
 		proto_installed: sysfs_raw('/lib/netifd/proto/wireguard.sh') != null,
 		names: sort(taken),
 		sessions: admin_sessions(),
-		interfaces: map(filter(names, safe_ifname), (n) => interface_view(all, n, running[n] == true, now)),
+		interfaces: map(filter(names, safe_ifname), (n) => interface_view(all, fw, n, running[n] == true, now)),
 	};
 }
 
@@ -282,7 +285,7 @@ function collect() {
 return deferred({
 	'flab.wireguard': {
 		status: {
-			call: function(request) {
+			call: function() {
 				return collect();
 			},
 		},

@@ -1,6 +1,7 @@
 // Daemon status and scoring-model cards shown below the connection cards.
 
 import { h } from '../../core/dom.js';
+import { disclosure } from '../../core/fold.js';
 import { icon } from '../../core/icons.js';
 import { badge, card, chip, kv, meter } from '../../core/ui.js';
 
@@ -30,7 +31,7 @@ const SCORE_MODEL = [
 // configured (they should be up), a plain note when none are (the init script then does not start charon).
 export function daemonCard(daemon) {
   if (!daemon.running) {
-    return card([icon('shield-exclamation'), 'strongSwan daemon'], daemon.configured === false
+    return card([icon('cpu'), 'strongSwan daemon'], daemon.configured === false
       ? h('div', { className: 'card-body muted' }, 'strongSwan is not running because no connection is configured (/etc/config/swanctl is empty).')
       : h('div', { className: 'card-body text-danger' }, 'charon is not running or its VICI socket is unreachable.'));
   }
@@ -54,8 +55,13 @@ export function daemonCard(daemon) {
 
 // Collapsible explanation of how the security score and grade are computed (static text, SCORE_MODEL).
 export function scoringCard() {
-  return h('details', { className: 'legend card card-body' }, h('summary', {}, 'How the security score is calculated (100 points)'),
-    h('div', { className: 'mt-2' }, SCORE_MODEL.map(([name, max, text]) => h('div', { className: 'score-model' },
-      h('b', {}, `${name} · ${max}`), h('span', { className: 'muted' }, text)))),
-    h('div', { className: 'mt-2 muted' }, 'Grades: A+ ≥ 95, A ≥ 85, B ≥ 70, C ≥ 50, otherwise D. The negotiated algorithms are rated; weaker algorithms that the configuration also offers are listed as warnings.'));
+  return disclosure({
+    cls: 'legend card card-body',
+    summary: 'How the security score is calculated (100 points)',
+    body: [
+      h('div', { className: 'mt-2' }, SCORE_MODEL.map(([name, max, text]) => h('div', { className: 'score-model' },
+        h('b', {}, `${name} · ${max}`), h('span', { className: 'muted' }, text)))),
+      h('div', { className: 'mt-2 muted' }, 'Grades: A+ ≥ 95, A ≥ 85, B ≥ 70, C ≥ 50, otherwise D. The negotiated algorithms are rated; weaker algorithms that the configuration also offers are listed as warnings.'),
+    ],
+  });
 }

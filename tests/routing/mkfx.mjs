@@ -88,6 +88,10 @@ const LOOKUPS = {
   injection: { args: { dst: '1.1.1.1; reboot' } },
   badsrc: { args: { dst: '1.1.1.1', src: 'x y' } },
   badiif: { args: { dst: '1.1.1.1', iif: 'br-lan;ls' } },
+  // A second line would start another shell command; the regular expressions alone accept the first line of such a text.
+  newlinedst: { args: { dst: '1.1.1.1\nid' } },
+  newlinesrc: { args: { dst: '1.1.1.1', src: '192.168.1.50\nid' } },
+  newlineiif: { args: { dst: '1.1.1.1', iif: 'br-lan\nid' } },
 };
 
 // The fixture files of the rich scenario.

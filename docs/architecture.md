@@ -29,7 +29,7 @@ rpcd ---- built-in objects:  session, system, network.interface, service, uci (c
                 |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.diag, flab.traffic, flab.dns, flab.sensors, flab.system, flab.logs, flab.services
                 |  import
                 v
-        shared ucode modules: flab.util, flab.vici
+        shared ucode modules: flab.util, flab.vici, flab.exec, flab.jobs, flab.worker
                 |
                 v
    swanctl --raw (VICI) · birdc · nft · wg · ip xfrm/route · hostapd_cli · iw · logread · dmesg · netifd · uci · sysfs
@@ -65,9 +65,9 @@ flab-ui/
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
     css/
-      base.css               Fluent tokens, app shell, shared component styles, sign-in screen
+      base.css               Fluent tokens, app shell, shared component styles (including the folds of core/fold.js), sign-in screen
       <page>.css             Page-specific styles, loaded on first visit
-      forms.css              Shared form, review-banner, dialog and folding-card styles (System settings, DHCP, DNS, Dynamic DNS and the other editing pages)
+      forms.css              Shared form, review-banner and dialog styles (the editing pages)
       netedit.css            Styles of the network editor's panels and wizard (Devices and Interfaces)
       board.css              The network board: lanes, cards, connectors, highlighting, the live bridge information
       drawer.css             The side panel of core/drawer.js
@@ -81,18 +81,20 @@ flab-ui/
         fields.js            Pure form-field model: option readers, value checks (IP, MAC, duration, ...), fieldError()
         forms.js             Form building blocks: legend, note, fieldRow() (a field with `secret` is a write-only password box; an enum's `blank` is the text of its empty choice), the sticky review banner (its countdown text follows the page's rollback seconds)
         editpage.js          createEditor(): the draft, banner, save/discard and notes every editing page shares; optional `timeoutS`, `settleMs` and `confirmSave` (a question before a risky change is applied)
-        fold.js              Cards that fold down to their header: foldable(), chevron(), reveal() (opens what hides an error) (DHCP pools, Dynamic DNS)
+        fold.js              Folding: disclosure() (the native <details> fold with the shared arrow), foldable() and chevron() (cards that fold down to their header: DHCP pools, Dynamic DNS services, the DNS zones and activity cards), reveal() (opens what hides an error)
         login.js             Sign-in screen (inline SVG and CSS only)
-        dom.js               h() element builder (XSS-safe), byId()
-        ui.js                Components: card, tile(s), table, badge, chip, kv, lifebar, meter, sparkline,
-                             healthBanner, muted, mono, GRADE_KIND
-        controls.js          Command-bar controls: search, select, pause, toggle, refresh
-        format.js            Bytes, line rates, durations, numbers
-        clipboard.js         copyText() and copyButton(): copy text with a button that confirms (Toolbox, certificates)
+        dom.js               h() element builder (XSS-safe), byId(), sleep(ms)
+        download.js          saveFile(name, data, type): the browser's own download of generated text or bytes
+        ui.js                Components: card, tile(s), table, badge, chip, kv, section, button, lifebar, meter, sparkline,
+                             emptyState, healthBanner, muted, mono, GRADE_KIND
+        controls.js          Command-bar controls: search, select, tabs, pause, toggle, refresh
+        format.js            Bytes, line rates, durations, numbers, ipNum()
+        clipboard.js         copyButton(): copy text with a button that confirms (Toolbox, certificates)
         modal.js             openDialog(): a Bootstrap-style modal (.modal, .modal-dialog, .modal-content, .modal-header with .btn-close, .modal-body, .modal-footer) on a native <dialog>; used by the DNS zone form, the cable test and the New network wizard
         drawer.js            openDrawer(): a side panel on the right edge (Bootstrap's offcanvas markup, not modal: the page stays visible and usable beside it; sticky header and footer, a scrolling body, Escape, a close button, closes when the route changes); used by Devices and Interfaces
         ip.js                parseAddress(): IPv4 and IPv6 addresses as BigInt values (Routing and BGP)
         rates.js             Rate tracker: turns cumulative counters into rates/ratios between polls
+        freshness.js         Browser-cache refresh after an upgrade (ensureCurrent(), see Frontend)
         icons.js             Inlined Bootstrap Icons path data, icon(name)
         theme.js             Follows the OS light/dark preference
       pages/
@@ -100,12 +102,13 @@ flab-ui/
         overview/            index.js, cpu.js, temperatures.js
         network/             The Ethernet ports page: index.js (page: tiles, findings, ports table with the settings of a port under its row, VLAN cards), shared.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), vlanpage.js (the VLAN editor's wiring), vlanedit.js (the editable VLAN cards), vlanmodel.js (pure: the VLAN sections, tables, draft, validation, UCI operations, check after a save), util.js
         connected/           The Connected devices view of Devices and Interfaces (hosted by interfaces/index.js): index.js (the Wi-Fi client tables, moved out of the old Wi-Fi page)
-        radios/              The Wi-Fi radios page: index.js (page: tiles, the editor wiring, the flab.radio, flab.mesh and flab.network loads), card.js (the radio cards: live figures, findings, picker, networks, radio settings), networks.js (the wireless networks of a card: live part and editor of each access point, client network and mesh point), mesh.js (the live part of a mesh point: peers, paths, parameters, findings, rate recorder), parts.js (the rate tracker, findings, state, key figures, utilization, channel strip)
+        radios/              The Wi-Fi radios page: index.js (page: tiles, the editor wiring, the flab.radio, flab.mesh and flab.network loads), card.js (the radio cards: live figures, findings, picker, networks, radio settings), networks.js (the wireless networks of a card: live part and editor of each access point, client network and mesh point), mesh.js (the live part of a mesh point: peers, paths, parameters, findings, rate recorder), parts.js (the rate tracker, findings, state, key figures, utilization, channel strip), wps.js (the WPS push button of an access point)
         wifi/                The editing of the wireless configuration, used by the radios page: editor.js (the editor), editors.js (the radio settings and the network forms), schema.js (the option tables), model.js (pure: draft, validation, UCI operations,
-                             check after a save), channels.js (pure model of the channel change), picker.js (the channel picker)        ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
+                             check after a save), channels.js (pure model of the channel change), picker.js (the channel picker)
+        ipsec/               index.js, connection.js, daemon.js, names.js, rates.js
         wireguard/           index.js (page, tiles, the editor), iface.js (interface card, peers table, findings), edit.js (interface form, peer editor, key controls, confirmation), device.js (the add-a-device dialog), schema.js (option tables), model.js (pure: draft, validation, UCI plan, check after a save), addr.js (pure: address math), keys.js (pure: key checks, X25519)
-        firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js; the editor: schema.js (option tables), check.js (value checks), edit.js (reading and the draft), validate.js, plan.js (review list, UCI operations, check after a save), view.js (the draft laid over the live state), describe.js (plain words), itemdialog.js, controls.js, defaults.js (global settings), parts.js
-        dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, pools.js (daemon and pool cards), boot6.js (network boot card)
+        firewall/            index.js, model.js (pure zone matrix), matrix.js, zones.js, rules.js, util.js; the editor: schema.js (option tables), check.js (value checks), edit.js (reading and the draft), validate.js, plan.js (review list, UCI operations, check after a save), view.js (the draft laid over the live state), describe.js (plain words), itemdialog.js, controls.js, defaults.js (global settings), parts.js (row buttons, badge, enable switch, group fold)
+        dhcp/                DHCP: index.js, schema.js (the options), model.js (pure), leases.js, reservations.js, rows.js (the row parts the reservations and boot tables share), pools.js (daemon and pool cards), boot6.js (network boot card)
         dns/                 DNS: index.js (page, state, the editing wiring), schema.js (the options and their areas, ZONE_FIELDS and ZONE_TYPES), edit.js (pure: draft, changes, problems, the UCI plan, the check after a save), zones.js (pure: the zone blocks of Unbound and the server entries of dnsmasq as a draft: items, changes, validation, plan, checks), model.js (pure: tiles, findings, activity, option areas), zonescard.js (the Zones card), zoneform.js (the dialog that adds or edits a zone), fold.js (the card that folds down to its header, used by Zones and Activity), cards.js (Configuration, Activity)
         ddns/                Dynamic DNS: index.js (page, tiles, the editing wiring), schema.js (the options and their groups), model.js (pure: reading the plugin's status, the draft, validation, the UCI plan, the check after a save, verdicts, intervals, log parsing), cards.js (service cards with status, actions and log; the global card)
         interfaces/          Devices and Interfaces (the network board): index.js (page, state, the drawer wiring), boardmodel.js (pure: lanes, items, edges, highlighting, findings, counts), board.js (the lanes, cards and connectors), livepanel.js (the read-only panels of a zone and of an item the page cannot edit), bridgelive.js (the live information of a bridge), panels.js (the editing panels), panelmodel.js (pure: protocol cards, essential options, device chooser, suggestions), panelparts.js and controls.js (parts the panels and the wizard share), wizard.js and wizardmodel.js (the New network wizard; the model is pure), editor.js (the draft, banner, confirmation), schema.js (option tables), model.js (pure: draft, validation, UCI plan, check after a save), checks.js (value checks)
@@ -113,7 +116,7 @@ flab-ui/
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards), static.js (static-route tables and
                              editor wiring), static-model.js (pure: the route and route6 sections, draft, validation, risks, UCI operations, check after a save)
           bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js
-        toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, dispatch of the result views; Wake-on-LAN),
+        toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, dispatch of the result views; Wake-on-LAN), parts.js (view parts the views share), output.js (the retained-text limit),
                              diagviews.js (ping, traceroute, DNS, check, comparison and certificate views), diagmodel.js (pure: request
                              checks, output parsing, the check's verdict), iperfmodel.js / iperfview.js (the iperf3 server),
                              dnstracemodel.js / dnstraceview.js (the DNS trace), pathmodel.js / pathview.js (mtr, AS data and the route strip), capturemodel.js / captureview.js (the packet capture),
@@ -121,14 +124,13 @@ flab-ui/
         traffic/             Traffic: index.js (page, tabs, state, polling), model.js (pure: interfaces and totals, WAN, findings, entries, NAT,
                              merging hosts by MAC, protocol rows), live.js, connections.js, usage.js, settings.js (the Settings tab: cards and saving),
                              settings-schema.js (the nlbwmon option table), settings-model.js (pure: draft, validation, effects, UCI plan, check after a save)
-        services.js          Re-exports services/index.js (keeps the registry's import path)
         services/            Services: index.js (page), model.js (pure: rows, actions, confirmations, outcomes)
         logs/                index.js, entries.js (pure helpers)
         settings/            System settings: index.js, schema.js (the options), model.js (pure: validation, change plan), zones.js (generated)
   rpcd/
     ucode/flab.<name>.uc     rpcd plugins  -> /usr/share/rpcd/ucode/
     acl.d/flab-<name>.json   ACL fragments -> /usr/share/rpcd/acl.d/
-    lib/flab/*.uc            Shared ucode modules -> /usr/share/ucode/flab/ (import 'flab.util')
+    lib/flab/*.uc            Shared ucode modules -> /usr/share/ucode/flab/ (import 'flab.util', 'flab.exec', ...)
 ```
 
 ## Security model

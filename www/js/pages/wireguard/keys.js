@@ -39,7 +39,7 @@ const toBig = bytes => bytes.reduceRight((n, b) => (n << 8n) | BigInt(b), 0n);
 const toBytes = n => Uint8Array.from({ length: 32 }, (_, i) => Number((n >> BigInt(8 * i)) & 0xffn));
 
 // Makes a private key what `wg genkey` makes: the low three bits and the top bit cleared, the second-highest bit set.
-export function clamp(bytes) {
+function clamp(bytes) {
   const k = Uint8Array.from(bytes);
   k[0] &= 248;
   k[31] &= 127;

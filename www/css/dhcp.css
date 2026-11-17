@@ -60,8 +60,6 @@
 .dhcp-form .set-fields > * { padding: .7rem 0; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 55%, transparent); }
 .dhcp-groups { display: flex; flex-direction: column; gap: .6rem; }
 .dhcp-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
-.dhcp-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
-.dhcp-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
 .dhcp-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
 .dhcp-group-body p { margin: 0; }
 

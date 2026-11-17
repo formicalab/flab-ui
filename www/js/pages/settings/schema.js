@@ -10,7 +10,7 @@
 //   group     the card it is shown in (see GROUPS)
 //   col       for a group with columns: the column it is shown in
 //   type      string | text (multi-line) | bool | int | enum | list
-//   check     how a string or list item is validated (see CHECKS in model.js): label | host | ip | path | seed | ifname
+//   check     how a string or list item is validated (see CHECKS in core/fields.js): label | host | ip | path | seed | ifname
 //   default   what OpenWrt uses when the option is absent: shown in the empty control as "default: ...", and the
 //             value of a switch
 //   placeholder  for a field with no single default: a description ("kernel default") or an example ("e.g. lan")

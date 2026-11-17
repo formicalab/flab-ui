@@ -49,9 +49,8 @@
 .warnings .warn { color: var(--fl-warn-fg); }
 .warnings .bad { color: var(--fl-bad-fg); }
 
-/* ── Daemon card and the score-model legend; the card-header icon tint repeats the base.css rule ── */
+/* ── Daemon card and the score-model legend ── */
 .vpn-daemon { display: grid; grid-template-columns: minmax(300px, 1fr) 2fr; gap: 1.75rem; }
-.card-header svg { color: var(--fl-brand); }
 .score-model { display: grid; grid-template-columns: 15rem 1fr; gap: .3rem 1rem; padding: .3rem 0; }
 
 /* Marching-dashes animation of the flow link line */

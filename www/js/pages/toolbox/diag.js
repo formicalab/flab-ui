@@ -1,18 +1,19 @@
-// The Toolbox tools: a connectivity check, ping, traceroute, DNS lookups (one server, or several to compare) and a
-// certificate check run on the
-// router, with their output streaming in as it is produced and shown as statistics,
-// a hop table, the answers, a certificate chain or a checklist (the views of the last three are in diagviews.js).
+// The Toolbox tools: a connectivity check, ping, traceroute, MTR, DNS lookups (one server, or several to compare), a DNS
+// trace, a certificate check, a packet capture, an iperf3 server and Wake-on-LAN. Each runs on the router with its output
+// streaming in as it is produced, shown as statistics, a hop table, the answers, a certificate chain or a checklist (the
+// views of the richer tools are in diagviews.js and the files next to it).
 //
 // The plugin (rpcd/ucode/flab.diag.uc) runs each tool as a detached job; this module starts it, then polls `read`
 // every half second until the job ends (the page's own poll is not involved, and it is not needed: a job is a few
-// seconds long). The form and the job live in the page's state (`state.diag`), so they survive redraws and leaving
-// the page; the result is painted into one element that the view creates on every redraw, so a redraw in the middle
-// of a job simply continues with the new element.
+// seconds long, or, for the iperf3 server and a capture, ends by itself at the limit). The form and the job live in the
+// page's state (`state.diag`), so they survive redraws and leaving the page; the result is painted into one element that
+// the view creates on every redraw, so a redraw in the middle of a job simply continues with the new element.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { AuthError, can, ubus } from '../../core/ubus.js';
+import { can, ubus } from '../../core/ubus.js';
+import { disclosure } from '../../core/fold.js';
 import { badge, button, card, mono, muted } from '../../core/ui.js';
-import { CAPTURE, DNS_TYPES, IPERF_MINUTES, MAX_SERVERS, PUBLIC_RESOLVERS, STARTTLS, WEAK_NSLOOKUP, blankForm, endOf, fmtMs, isAddress, isMac, normMac, parseBlocks, parseDns, parsePing, parseTraceroute, pingVerdict, requestOf, scriptProblem } from './diagmodel.js';
+import { CAPTURE, DNS_TYPES, IPERF_MINUTES, MAX_SERVERS, PUBLIC_RESOLVERS, STARTTLS, WEAK_NSLOOKUP, blankForm, endOf, fmtMs, hostOf, isAddress, isMac, normMac, parseBlocks, parseDns, parsePing, parseTraceroute, pingVerdict, requestOf, scriptProblem } from './diagmodel.js';
 import { checkBody, compareBody, stat, tlsBody, wolBody } from './diagviews.js';
 import { pingChart } from './charts.js';
 import { captureBody } from './captureview.js';
@@ -21,17 +22,18 @@ import { dnsTraceBody } from './dnstraceview.js';
 import { asnLine, asPathView, mtrBody } from './pathview.js';
 import { parseAsn } from './pathmodel.js';
 import { retainOutput } from './output.js';
+import { banner, failure, timeBar, working } from './parts.js';
 
 // How often a running job is read, in milliseconds.
 const READ_EVERY = 500;
 // How long the tool list and interface names are reused before they are read again, in milliseconds.
 const STATUS_TTL = 60000;
 
-// The tools offered, with their labels and titles.
+// The tools offered, with their labels: [id, label]. The label is also the heading of the tool's result.
 const TOOLS = [['check', 'Connectivity check'], ['ping', 'Ping'], ['traceroute', 'Traceroute'], ['mtr', 'MTR'], ['dns', 'DNS lookup'], ['trace', 'DNS trace'], ['tls', 'TLS certificate'], ['capture', 'Packet capture'], ['iperf', 'iperf3 server'], ['wol', 'Wake-on-LAN']];
 
 // The heading of a result for each job (a DNS lookup of two or more servers runs as the plugin's `compare` tool).
-const TITLES = { ping: 'Ping', traceroute: 'Traceroute', mtr: 'MTR', dns: 'DNS lookup', trace: 'DNS trace', check: 'Connectivity check', compare: 'DNS lookup', tls: 'TLS certificate', capture: 'Packet capture', iperf: 'iperf3 server', wol: 'Wake-on-LAN' };
+const TITLES = { ...Object.fromEntries(TOOLS), compare: 'DNS lookup' };
 
 // Whether the router has what `tool` needs (`status` is the plugin's answer).
 const available = (status, tool) => {
@@ -45,8 +47,8 @@ const WOL_OTHER = '__other';
 let cached = null;
 let cachedAt = 0;
 
-// The state of this tab: the form, the error under it, the current job and its timer and result element, and whether the
-// result's "Raw output" is open.
+// The state of this tab: the form, the error under it, the current job and its timer and result element, whether a button
+// elsewhere asked for a run (`autorun`), the plugin's last `status`, and whether the result's "Raw output" is open.
 export const newDiag = () => ({ form: blankForm(), formError: null, job: null, timer: null, resultEl: null, autorun: false, status: null, rawOpen: false, defaulted: false });
 
 // Reads what the router can run (the tools, the DNS tool it would use, its interfaces), reusing the last answer for a
@@ -67,7 +69,7 @@ const elapsed = job => Math.max(0, Math.round(((job.t1 ?? Date.now()) - job.t0) 
 // Starts a job from the form. A refused request (the plugin checks everything again) becomes the job's error.
 async function start(state) {
   const d = state.diag;
-  if (d.form.tool === 'wol' && !d.form.wolOther && d.status?.hosts?.length && !d.status.hosts.some(x => x.mac === normMac(d.form.host))) {
+  if (d.form.tool === 'wol' && !d.form.wolOther && d.status?.hosts?.length && !hostOf(d.status.hosts, d.form.host)) {
     d.formError = 'Choose a host from the list, or pick "Another MAC address…" and enter one.';
     return state.rerender();
   }
@@ -101,7 +103,7 @@ async function start(state) {
       job.exit = r.ok ? 0 : 1;
       if (!r.ok) job.error = r.error;
     } catch (e) {
-      job.error = e instanceof AuthError ? 'The session has expired. Sign in again.' : e.message;
+      job.error = failure(e);
     }
     job.running = false; job.t1 = Date.now();
     return state.rerender();
@@ -111,7 +113,7 @@ async function start(state) {
     if (!r.ok) { job.running = false; job.error = r.error; job.t1 = Date.now(); }
     else { job.id = r.id; job.command = r.command; job.limit = r.limit; }
   } catch (e) {
-    job.running = false; job.error = e instanceof AuthError ? 'The session has expired. Sign in again.' : e.message; job.t1 = Date.now();
+    job.running = false; job.error = failure(e); job.t1 = Date.now();
   }
   if (job.running) track(state); else state.rerender();
 }
@@ -157,7 +159,7 @@ export function track(state) {
         }
       }
     } catch (e) {
-      job.running = false; job.error = e instanceof AuthError ? 'The session has expired. Sign in again.' : e.message;
+      job.running = false; job.error = failure(e);
     }
     if (!job.running) job.t1 = Date.now();
     if (job.running) { paint(state); d.timer = setTimeout(tick, READ_EVERY); }
@@ -183,7 +185,7 @@ function segment(options, value, onpick, disabled) {
   }, label)));
 }
 
-// One labeled input or select of the form. `build(el)` is given the element so a caller can add attributes.
+// One labeled input or select of the form (`control` is the element; `title` is the hint shown on hover).
 function field(label, title, control, className = '') {
   return h('label', { className: `rt-field ${className}`, title }, h('span', {}, label), control);
 }
@@ -219,9 +221,7 @@ function sourceInput(state, status, disabled) {
 // The Run button (`label` reads "Start server" for the iperf3 server); it is disabled for a login that may not start
 // diagnostics.
 function runButton(state, allowed, label = 'Run') {
-  const btn = button(label, 'play-fill', () => start(state), 'btn-brand');
-  btn.disabled = !allowed;
-  return btn;
+  return button(label, 'play-fill', () => start(state), 'btn-brand', { disabled: !allowed });
 }
 
 // The server choices of the DNS lookup: the router's own resolver, the ones it asks upstream, three public ones, and a
@@ -262,7 +262,7 @@ function wolPicker(state, status, disabled) {
   group('Reservations', hosts.filter(x => x.reserved)),
   group('Seen on the network', hosts.filter(x => !x.reserved)),
   h('option', { value: WOL_OTHER }, 'Another MAC address…'));
-  select.value = f.wolOther ? WOL_OTHER : (hosts.some(x => x.mac === normMac(f.host)) ? normMac(f.host) : '');
+  select.value = f.wolOther ? WOL_OTHER : (hostOf(hosts, f.host) ? normMac(f.host) : '');
   return [select, f.wolOther ? input : null];
 }
 
@@ -342,16 +342,16 @@ function formCard(state, status) {
         ...options,
         h('div', { className: 'rt-actions' },
           running ? button(serving ? 'Stop server' : capturing ? 'Stop capture' : 'Stop', 'x-lg', () => stop(state)) : runButton(state, allowed, serving ? 'Start server' : capturing ? 'Start capture' : 'Run'),
-          d.job && !running ? button('Clear', 'x-lg', () => { d.job = null; d.formError = null; state.rerender(); }) : null)),
+          d.job && !running ? button('Clear', 'trash', () => { d.job = null; d.formError = null; state.rerender(); }) : null)),
       f.tool === 'dns' ? serverPicker(state, status, running) : null,
-      d.formError ? h('div', { className: 'rt-error' }, icon('exclamation-triangle'), d.formError) : null,
-      !allowed ? h('div', { className: 'rt-error' }, icon('exclamation-triangle'), 'This login is not allowed to run diagnostics.') : null,
+      d.formError ? banner(d.formError) : null,
+      !allowed ? banner('This login is not allowed to run diagnostics.') : null,
       weak ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `This router only has busybox nslookup, which cannot show ${f.type} records in full. Installing bind-dig, knot-dig or ldns-drill gives complete answers.`) : null,
       ['dns', 'check'].includes(f.tool) && status.dns_tool && status.dns_tool !== 'nslookup' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Using ${status.dns_tool}.`) : null,
       f.tool === 'check' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Walks down the stack: default route, next hop, internet, DNS (through the router and a public resolver), IPv6 and a connection to the host (a secure one on port 443; with another port, a plain TCP connection unless the service speaks TLS). About 15 seconds.') : null,
       f.tool === 'trace' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Asks a root server, then the servers it points to, down to the one that answers: the way a resolver finds a name. It shows who answered, how long each step took and the DNSSEC records on the way, and ends with what the router\'s own resolver says.') : null,
       f.tool === 'traceroute' && status.tools?.mtr ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'MTR sends the same probes for several rounds and shows the loss and delay of every hop, which tells a router that merely limits its replies from a real fault.',
-        h('button', { type: 'button', className: 'btn btn-sm btn-link', disabled: running, onclick: () => { f.tool = 'mtr'; d.formError = null; state.rerender(); } }, 'Use MTR')) : null,
+        button('Use MTR', null, () => { f.tool = 'mtr'; d.formError = null; state.rerender(); }, 'btn-link', { disabled: running })) : null,
       f.tool === 'mtr' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Probes every hop once a second for the chosen number of rounds and keeps its loss and delay up to date, like ping and traceroute in one. Loss that does not reach the last hop is a router limiting its own replies, not a fault. It follows one path per run, so it does not show the alternatives of a load-balanced hop; Traceroute does.') : null,
       serving ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Starts an iperf3 server on the router that stops by itself. From a computer in the network run the command shown once it listens; the test measures the path to the router (and the router\'s CPU), not to the internet.') : null,
       capturing ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Records the packets that cross the chosen interface with tcpdump and lists them as they arrive. It sees everyone\'s traffic, including what is not encrypted, so keep the filter narrow and the capture short. The capture stops by itself at the time or the packet count, is kept in the router\'s memory (the newest only, for ten minutes after it ends) and can be downloaded as a .pcap file for Wireshark. Traffic between two devices on the same switch port does not pass the router and is not seen; the page\'s own connection to the router is, when you capture its address.') : null,
@@ -364,7 +364,7 @@ function formCard(state, status) {
 
 // The status at the top of a result: a spinner while it runs, otherwise how it ended and how long it took.
 function statusBadge(job) {
-  if (job.running) return h('span', { className: 'rt-running' }, h('span', { className: 'spinner-border spinner-border-sm' }), `Running · ${elapsed(job)} s`);
+  if (job.running) return working(`Running · ${elapsed(job)} s`);
   const end = endOf(job, job.limit);
   return h('span', {}, badge(end.text, { ok: 'success', stopped: 'info', limit: 'warning', failed: 'danger' }[end.kind]), ` ${elapsed(job)} s`);
 }
@@ -372,7 +372,7 @@ function statusBadge(job) {
 // The ping result: the figures, the latency chart and a verdict.
 function pingBody(job) {
   const p = parsePing(job.text);
-  if (p.error && !p.replies.length) return h('div', { className: 'rt-error' }, icon('x-circle'), `ping failed: ${p.error}`);
+  if (p.error && !p.replies.length) return banner(`ping failed: ${p.error}`);
   const verdict = pingVerdict(p);
   const kind = { ok: 'ok', lossy: 'warn', down: 'bad' }[verdict] ?? '';
   return h('div', { className: 'rt-pingbody' },
@@ -383,15 +383,15 @@ function pingBody(job) {
       stat('Fastest', fmtMs(p.stats?.min)), stat('Average', fmtMs(p.stats?.avg)), stat('Slowest', fmtMs(p.stats?.max)),
       stat('Jitter', fmtMs(p.stats?.jitter))),
     pingChart(p, !job.running),
-    !job.running && verdict === 'down' ? h('div', { className: 'rt-error' }, icon('x-circle'), `No reply from ${p.target?.ip ?? job.host}. It may be down, unreachable, or it may not answer pings.`) : null,
-    !job.running && verdict === 'lossy' ? h('div', { className: 'rt-error warn' }, icon('exclamation-triangle'), `${p.lossPct}% of the pings were lost.`) : null);
+    !job.running && verdict === 'down' ? banner(`No reply from ${p.target?.ip ?? job.host}. It may be down, unreachable, or it may not answer pings.`) : null,
+    !job.running && verdict === 'lossy' ? banner(`${p.lossPct}% of the pings were lost.`, 'warn') : null);
 }
 
 // The traceroute result: one row per hop with the routers that answered, the network each belongs to (when the AS lookup
 // was asked for) and the round-trip times, and below the table the networks the path crosses.
 function traceBody(job) {
   const t = parseTraceroute(job.text);
-  if (t.error && !t.hops.length) return h('div', { className: 'rt-error' }, icon('x-circle'), `traceroute failed: ${t.error}`);
+  if (t.error && !t.hops.length) return banner(`traceroute failed: ${t.error}`);
   const asn = job.asn ? parseAsn(job.text) : null;
   const max = Math.max(1, ...t.hops.map(x => x.avg ?? 0));
   const rows = t.hops.map(hop => h('tr', { className: hop.addrs.includes(t.target?.ip) ? 'rt-hit' : '' },
@@ -399,14 +399,14 @@ function traceBody(job) {
     h('td', {}, hop.silent ? muted('no reply') : h('div', { className: 'rt-hops' }, hop.routers.map(r => h('div', { className: 'rt-router' },
       r.name ? [h('span', { className: 'rt-rname', title: r.name }, r.name), h('span', { className: 'rt-raddr mono' }, r.addr)] : mono(r.addr), asn ? asnLine(asn, r.addr) : null)))),
     h('td', {}, h('span', { className: 'chips' }, hop.probes.map(p => p ? h('span', { className: 'chip' }, fmtMs(p.rtt)) : h('span', { className: 'chip muted' }, '*')))),
-    h('td', { className: 'num' }, hop.avg == null ? muted('–') : h('span', { className: 'rt-avg' }, fmtMs(hop.avg), h('span', { className: 'rt-bar' }, h('i', { style: `width:${Math.max(3, hop.avg / max * 100).toFixed(0)}%` })))),
+    h('td', { className: 'num' }, hop.avg == null ? muted('–') : timeBar(fmtMs(hop.avg), hop.avg, max)),
     h('td', {}, hop.addrs.includes(t.target?.ip) ? badge('destination', 'success') : null)));
   return h('div', {},
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-trace' },
       h('thead', {}, h('tr', {}, ['Hop', 'Router', 'Round trips', 'Average', ''].map((c, i) => h('th', { className: i === 0 || i === 3 ? 'num' : '' }, c)))),
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 5, className: 'muted' }, job.running ? 'Waiting for the first hop…' : 'No hops'))))),
     asn ? asPathView(t.hops, asn) : null,
-    !job.running && t.hops.length && !t.reached ? h('div', { className: 'rt-error warn' }, icon('exclamation-triangle'), `The destination did not answer within ${t.maxHops ?? t.hops.length} hops. Routers that do not send replies show as "no reply"; the trace may still have passed through them.`) : null);
+    !job.running && t.hops.length && !t.reached ? banner(`The destination did not answer within ${t.maxHops ?? t.hops.length} hops. Routers that do not send replies show as "no reply"; the trace may still have passed through them.`, 'warn') : null);
 }
 
 // The DNS result: how the lookup went, then what the tool said.
@@ -427,16 +427,16 @@ function resultNodes(d) {
     iperf: j => iperfBody(j, d.status), wol: j => wolBody(j, d.status, ip => d.openPing(ip)),
   };
   const problem = scriptProblem(job);
-  const body = job.error && !job.text ? h('div', { className: 'rt-error' }, icon('x-circle'), job.error)
+  const body = job.error && !job.text ? banner(job.error)
     : problem && !parseBlocks(job.text).length ? null : bodies[job.tool](job);
   const subject = job.tool === 'iperf' ? '' : job.tool === 'capture' ? ` · ${job.cap.iface}${job.cap.filter ? ` · ${job.cap.filter}` : ''}` : ` · ${job.tool === 'tls' || job.tool === 'check' ? job.target : job.host}`;
   return [card([icon('activity'), `${TITLES[job.tool]}${subject}`, job.command ? h('span', { className: 'sub mono' }, job.command) : null, h('span', { className: 'rt-state' }, statusBadge(job))],
     h('div', { className: 'card-body' },
-      problem ? h('div', { className: 'rt-error' }, icon('x-circle'), problem) : null,
+      problem ? banner(problem) : null,
       body,
-      job.error && job.text ? h('div', { className: 'rt-error' }, icon('x-circle'), job.error) : null,
+      job.error && job.text ? banner(job.error) : null,
       // The open state of "Raw output" is kept in the page state, because the result is rebuilt every time output arrives.
-      job.tool !== 'dns' && job.tool !== 'capture' && job.text ? h('details', { className: 'rt-raw', open: d.rawOpen, ontoggle: e => { d.rawOpen = e.target.open; } }, h('summary', {}, 'Raw output'), h('pre', {}, job.text)) : null))];
+      job.tool !== 'dns' && job.tool !== 'capture' && job.text ? disclosure({ cls: 'rt-raw', summary: 'Raw output', body: h('pre', {}, job.text), open: d.rawOpen, onToggle: open => { d.rawOpen = open; } }) : null))];
 }
 
 //#endregion
@@ -456,7 +456,7 @@ export function diagView(data, state) {
   // The Wake-on-LAN result offers a ping of the host it woke: fill the form in and run it.
   d.openPing = ip => { Object.assign(d.form, { tool: 'ping', host: ip }); d.job = null; d.formError = null; d.autorun = true; state.rerender(); };
   if (d.job?.running) track(state);
-  // A "ping / trace this address" button on the lookup answer opens the tab with the job ready to start.
+  // A "ping / trace this address" button on the lookup answer opens the Toolbox with the job ready to start.
   if (d.autorun) { d.autorun = false; queueMicrotask(() => start(state)); }
   return [formCard(state, data.status), result];
 }

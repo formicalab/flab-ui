@@ -4,9 +4,9 @@
 // place for the other connected devices (wired clients, DHCP leases) later.
 // This module is not a page of its own: pages/interfaces/index.js hosts it (its load, view, command-bar nodes and pause rule).
 import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
 import { ubus, optional } from '../../core/ubus.js';
-import { badge, card, tile, tiles, muted, GRADE_KIND } from '../../core/ui.js';
+import { badge, card, emptyState, tile, tiles, muted, GRADE_KIND } from '../../core/ui.js';
+import { disclosure } from '../../core/fold.js';
 import { searchControl, selectControl } from '../../core/controls.js';
 import { fmtRate, ipNum } from '../../core/format.js';
 import { SECURITY_KIND } from '../radios/parts.js';
@@ -129,9 +129,9 @@ export const connected = {
   // Client counts and averages cover all radios, regardless of the radio selector.
   view(data, rerender) {
     const all = data.clients?.radios;
-    if (!all) return [card([icon('laptop'), h('span', {}, 'Connected devices')], h('div', { className: 'card-body muted' }, 'The Wi-Fi plugin (flab.wifi) is not available on this router, so connected clients are not listed.'))];
+    if (!all) return [emptyState('The Wi-Fi plugin (flab.wifi) is not available on this router, so connected clients are not listed.')];
 
-    // Mesh interfaces and their peers have their own page (Mesh).
+    // Mesh interfaces and their peers are on the Wi-Fi radios page.
     const ifsOf = r => r.interfaces.filter(i => i.mode !== 'mesh');
     const radios = all.filter(r => state.radio === 'all' || r.name === state.radio);
     const clientsAll = all.flatMap(r => ifsOf(r).flatMap(i => i.clients));
@@ -156,15 +156,15 @@ export const connected = {
         groups.push(card(
           [h('span', {}, i.ssid || 'Hidden'), badge(i.mode), badge(i.security, SECURITY_KIND(i.security)),
             h('span', { className: 'sub' }, `${i.ifname ?? 'N/A'} · ${r.name} ${r.band ?? ''} · ch ${r.channel}`),
-            h('span', { className: 'ms-auto fl-badge info' }, `${clients.length} client${clients.length === 1 ? '' : 's'}`)],
+            h('span', { className: 'ms-auto' }, badge(`${clients.length} client${clients.length === 1 ? '' : 's'}`, 'info'))],
           clientTable(clients, rerender)));
       }
     }
-    if (!groups.length) groups.push(card(null, h('div', { className: 'card-body muted' }, 'No matching clients')));
+    if (!groups.length) groups.push(emptyState('No matching clients'));
 
-    const legend = h('details', { className: 'legend card card-body' }, h('summary', {}, 'Legend'),
-      h('div', { className: 'row mt-2' }, LEGEND.map(([title, items]) => h('div', { className: 'col-md-4' },
-        h('div', { className: 'fw-semibold' }, title), h('ul', {}, items.map(t => h('li', {}, t)))))));
+    const legend = disclosure({ cls: 'legend card card-body', summary: 'Legend',
+      body: h('div', { className: 'row mt-2' }, LEGEND.map(([title, items]) => h('div', { className: 'col-md-4' },
+        h('div', { className: 'fw-semibold' }, title), h('ul', {}, items.map(t => h('li', {}, t)))))) });
 
     return [summary, legend, ...groups];
   },

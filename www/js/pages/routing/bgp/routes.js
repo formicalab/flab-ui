@@ -3,7 +3,7 @@
 import { h } from '../../../core/dom.js';
 import { icon } from '../../../core/icons.js';
 import { badge, card, muted } from '../../../core/ui.js';
-import { peerDot, peerClass, asPath, communityText, prefixKey, cmpPrefix, firstAddress } from './util.js';
+import { peerDot, peerClass, asPath, communityText, prefixKey, firstAddress } from './util.js';
 
 // Best + installed -> Best (and ECMP when several next hops are installed); installed only -> ECMP; else Backup.
 function status(r) {
@@ -67,15 +67,16 @@ function filterPaths(paths, state) {
 }
 
 // Copy of `paths` ordered by the selected column (state.sort.dir is 1 or -1); an unknown key falls back to
-// the first column.
+// the first column. Sort keys and prefix keys are computed once per path, not on every comparison.
 function sorted(paths, state, cols) {
   const col = cols.find(c => c.key === state.sort.key) ?? cols[0];
-  return [...paths].sort((a, b) => {
-    const x = col.sort(a), y = col.sort(b);
-    const primary = (x < y ? -1 : x > y ? 1 : 0) * state.sort.dir;
-    // Ties keep each prefix together with its best path first.
-    return primary || cmpPrefix(a.prefix, b.prefix) || (b.best - a.best) || a.peer.localeCompare(b.peer);
-  });
+  return paths.map(r => ({ r, x: col.sort(r), p: prefixKey(r.prefix) }))
+    .sort((a, b) => {
+      const primary = (a.x < b.x ? -1 : a.x > b.x ? 1 : 0) * state.sort.dir;
+      // Ties keep each prefix together with its best path first.
+      return primary || (a.p < b.p ? -1 : a.p > b.p ? 1 : 0) || (b.r.best - a.r.best) || a.r.peer.localeCompare(b.r.peer);
+    })
+    .map(e => e.r);
 }
 
 // The learned-routes card. Clicking a header sets the sort in the page's `state` (clicking the active

@@ -6,6 +6,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { ubus } from '../../core/ubus.js';
+import { saveFile } from '../../core/download.js';
 import { badge, button, card, emptyState, muted, tile, tiles } from '../../core/ui.js';
 import { searchControl, selectControl, pauseControl, refreshControl } from '../../core/controls.js';
 import { fmtNum, fmtSpan } from '../../core/format.js';
@@ -43,10 +44,7 @@ function jumpToNewest() {
 
 // Saves the entries matching the current filter as a text file (nothing is uploaded anywhere).
 function download() {
-  const text = toText(filterEntries(loaded, state));
-  const link = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'text/plain' })), download: `${state.source}-log.txt` });
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  saveFile(`${state.source}-log.txt`, toText(filterEntries(loaded, state)));
 }
 
 // The four summary tiles: entries shown, errors, warnings, and how recent the newest entry is.

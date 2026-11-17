@@ -1,12 +1,27 @@
 'use strict';
 
+// Runs the shell commands of the rpcd plugins with bounds on time and output. Imported by flab.util (which the plugins use) and by
+// flab.worker. Commands are only run inside a deferred worker (or a test harness), never in rpcd's own event loop.
+//
+// A command string is passed to `sh -c`, so callers must build it from constants and values they validated (flab.util
+// safe_ifname(), integers, fixed lists); there is no argument array and no quoting of the caller's own pieces.
+//
+// command_result(cmd, { timeout?, max_output? }) returns { ok, code, output, truncated, timed_out }:
+//   timeout     seconds, at most MAX_COMMAND_SECONDS; the command is killed after it (and `timed_out` is set)
+//   max_output  bytes of combined stdout and stderr to keep, at most MAX_COMMAND_OUTPUT; more sets `truncated`
+//   ok          the command exited with status 0 within both limits
+//   code        the exit status of the command, or a negative signal number when it was killed
+// begin_budget(seconds) starts the per-request budget (the worker calls it): all commands of one request together may run
+// for that long and return MAX_REQUEST_OUTPUT bytes.
 import { popen, readfile, writefile } from 'fs';
 
 const MAX_COMMAND_OUTPUT = 262144;
 const MAX_REQUEST_OUTPUT = 1048576;
 const MAX_COMMAND_SECONDS = 20;
+// The budget of the request being served, or null outside a worker: { end (seconds on the monotonic clock), left (bytes) }.
 let budget = null;
 
+// Seconds on the monotonic clock.
 function now() {
 	let t = clock(true);
 	return t[0] + t[1] / 1000000000;
@@ -16,10 +31,12 @@ export function begin_budget(seconds) {
 	budget = { end: now() + seconds, left: MAX_REQUEST_OUTPUT };
 };
 
-function stem(cmd) {
+// The file-name stem of a command for fixtures (see flab.util): non-alphanumerics become "_", a trailing "2>/dev/null" is dropped.
+export function stem(cmd) {
 	return replace(replace(cmd, / 2>\/dev\/null$/, ''), /[^A-Za-z0-9]+/g, '_');
 }
 
+// A string as one single-quoted shell word.
 function quote(s) {
 	return "'" + replace(s, "'", "'\\''") + "'";
 }

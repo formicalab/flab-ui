@@ -61,8 +61,8 @@ const drawerIcon = item => icon(item?.kind === 'zone' ? 'shield-check' : item?.k
 function panelFor(id) {
   const { board, ctx, data } = cur;
   if (id === 'globals') {
-    const p = ctx && panels.globalsPanel ? panels.globalsPanel(ctx) : { title: 'Network-wide settings', subtitle: 'Not available', body: h('div', { className: 'nb-panel' }, muted('This router does not offer the global network options to this login.')), footer: [] };
-    return { ...p, form: Boolean(ctx && panels.globalsPanel), icon: icon('gear', 20) };
+    const p = ctx ? panels.globalsPanel(ctx) : { title: 'Network-wide settings', subtitle: 'Not available', body: h('div', { className: 'nb-panel' }, muted('This router does not offer the global network options to this login.')), footer: [] };
+    return { ...p, form: Boolean(ctx), icon: icon('gear', 20) };
   }
   const item = board.items.get(id);
   // Wi-Fi interfaces, ports and radios have no drawer: their cards link to the page that edits them.

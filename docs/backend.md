@@ -28,7 +28,7 @@ return {
 | `flab.sensors.uc` | `flab.sensors` | `status` | sysfs `/sys/class/thermal`, `/sys/class/hwmon` |
 | `flab.system.uc` | `flab.system` | `cpu`; `build` (no arguments; its ACL is in the base fragment, since the shell calls it after every sign-in) | procfs `/proc/stat`, `/proc/loadavg`, `/proc/uptime`; for `build` the ucode functions `lsdir` and `stat` over `/www/flab` (see [Browser cache](frontend.md#browser-cache)) |
 | `flab.ddns.uc` | `flab.ddns` | `status` (no arguments); `log` (`section`); `control` (`section`, `action` = `check` or `force`) | uci `ddns` and `network`, procd `service list` (the updater instances), ubus `network.interface dump`, the run files in `ddns_rundir` (`<service>.ip`, `.update`, `.nextcheck`, `.err`) and the logs in `ddns_logdir`, `/proc/uptime`, `/usr/share/ddns/{default,custom}/*.json` (the providers), `/usr/lib/ddns` (provider scripts), `/sys/class/net`, `ip addr`, `/etc/rc.d`; `control` runs `/etc/init.d/ddns stop` and `start` for one enabled service after strict validation (see [Dynamic DNS](pages/ddns.md#dynamic-dns-route-ddns)); passwords and tokens are never returned |
-| `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted |
+| `flab.logs.uc` | `flab.logs` | `read` (`lines`, `source`) | `logread -l N` (logd ring buffer), `dmesg -r`, `/proc/uptime`; entries are parsed and secret-looking values redacted. Output over the 256 KiB command cap is not an error: the system log is asked for again with about 60% of the lines that fit (the `limit` of the reply says how many), and a larger kernel buffer is read again through `tail -n N` |
 | `flab.services.uc` | `flab.services` | `list`; `control` (`name`, `action`) | `/etc/init.d` (executable files) and `/etc/rc.d` (`S<NN><name>` = starts at boot), `netstat -lntup` and `/proc/sys/net/ipv4/ip_local_port_range` (the listening sockets) for `list`; `control` runs `/etc/init.d/<name> start\|stop\|restart\|enable\|disable` after strict validation (see [Services](pages/services.md#services-route-services)); its ACL fragment grants `list` under `read` and `control` under `write` |
 
 The System settings and DHCP pages need no plugin of their own. Pages that edit a configuration through rpcd's own `uci` object need an ACL fragment that grants the `uci` methods on
@@ -59,10 +59,11 @@ with `uci get` filtered by section type (`bridge-vlan`, `device`, `switch`, `swi
 that. rpcd cannot restrict `uci get` to section types, and root holds every fragment, so a root login can still call `uci get network` (through
 `flab-dhcp.json`, `flab-vlan.json` or `flab-routing.json`); the pages never do.
 
-Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
+Shared modules (`rpcd/lib/flab/`, imported as `flab.util`, `flab.vici`, `flab.exec`, `flab.jobs` and `flab.worker`):
 
-- **`flab.util`**: `run(cmd)`, `ubus_call(conn, object, method, args)`, `uci_all(config)`, `sysfs(path)`,
-  `fixture(name)`, `safe_ifname()`, `normalize_mac()`, `num()`, `as_list()` (a UCI option as a list),
+- **`flab.util`**: `run(cmd)`, `command_result(cmd, options)`, `ubus_call(conn, object, method, args)`, `uci_all(config)`,
+  `sysfs(path)` / `sysfs_raw(path)`, `fixture(name)`, `fixture_time()`, `record_file()`, `one_line()` and `safe_ifname()` (validators; see
+  Shell safety below), `normalize_mac()`, `num()`, `as_list()` (a UCI option as a list),
   `iw_channel_info()` (channel, width and TX power from `iw dev <if> info`) and `security_label()`
   (human label of a wireless `encryption` value). They are also the test seam: with `FLAB_FIXTURES=<dir>`
   set (rpcd never does) `run()` returns `<dir>/<command>.txt` instead of executing the command (file name =
@@ -72,6 +73,12 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
   hook. With `FLAB_RECORD=<dir>` set the same helpers save what they read under those names (keys,
   passwords and WireGuard keys blanked), so a fixture set is captured by running the plugin once;
   `tests/network/run.ps1` does exactly that.
+- **`flab.exec`**: `command_result()` (what `flab.util` wraps) runs one command through `sh -c` under `timeout`, with a time
+  limit (20 s at most), an output cap (256 KiB) and the per-request budget the worker starts with `begin_budget()`. It
+  returns `{ ok, code, output, truncated, timed_out }`.
+- **`flab.jobs`**: `launch_job()` builds the shell script that runs a long command (a capture, an iperf3 server) in the
+  background with bounded output, for the Toolbox.
+- **`flab.worker`**: `deferred()` wraps every method of a plugin so it runs in a worker task (see Backend rules).
 - **`flab.vici`**: parses `swanctl --list-sas|--list-conns|--stats --raw` output into nested objects.
   The raw format is `name {key=value list=[a b] section {...}}`; values may contain spaces
   (`class=pre-shared key`), so a value ends where the next `key=` or `key {` begins. `events()` returns
@@ -92,7 +99,11 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
 - **Never call a ubus object served by rpcd itself** from a plugin (any `flab.*`, `session`, `file`, ...).
   rpcd runs plugins in-process, so the call blocks its own event loop. Calling `netifd`, `hostapd.*`,
   `dhcp`, `network.*` objects is fine.
-- **Shell safety.** Anything interpolated into a command line must be validated (`safe_ifname`).
+- **Shell safety.** Anything interpolated into a command line, a path or a UCI name must be validated first, and an
+  unvalidated value must never be quoted into a shell string instead. `safe_ifname()` validates interface names.
+  A `^...$` pattern in ucode matches the first line of a string that contains a line break, so `1.1.1.1\nid` passes
+  `/^[0-9.]+$/` and the second line would run in the shell: test `one_line(value)` (a string without `\n` or `\r`,
+  `flab.util`) before the pattern, as `safe_ifname()` does.
 - **Speed.** Collect once per call and cache in local variables. The UI polls every 3 to 10 s; the logs
   plugin returns at most 2000 lines per source (500 by default) so a poll stays small.
 - **Blocking and errors.** All production plugin handlers run in deferred `uloop.task` workers, leaving rpcd free to
@@ -101,7 +112,7 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util` and `flab.vici`):
   (this is not a global four-worker limit). Mutation calls are serialized per object. `command_result()` preserves
   exit status, timeout and truncation; routing/firewall queries and controls use it where success matters. `run()` is
   a compatibility reader for optional probes, not a way to prove a command succeeded.
-- **Worker state.** A worker is a fork snapshot, not a persistent service. Module-local mesh, provider, hardware/EEE
+- **Worker state.** A worker is a fork snapshot, not a persistent service. Module-local provider, hardware/EEE
   and cable-support caches are request-scoped in production and are not merged back into rpcd. This trades more
   repeated discovery work for isolation and responsiveness; test memory and polling cost on smaller devices.
 - **Diagnostic storage.** Output-file and retained browser text are each capped at 256 KiB, independently of the

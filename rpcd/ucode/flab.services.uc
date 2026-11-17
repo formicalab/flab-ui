@@ -31,7 +31,7 @@
 'use strict';
 import { deferred } from 'flab.worker';
 
-import { run, command_result } from 'flab.util';
+import { run, command_result, one_line } from 'flab.util';
 
 // Actions `control` accepts. enable and disable only add or remove the start-at-boot links (the script's own `enable` and
 // `disable`); they never start or stop the running service.
@@ -51,11 +51,10 @@ const MAX_OUTPUT = 4096;
 // and no shell metacharacters.
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 
-// Whether `name` is a string that is, as a whole, a plain file name (`^` and `$` also match at line breaks, so
-// the match must cover the entire string).
+// Whether `name` is a plain file name. one_line() comes first: `^` and `$` also match at line breaks, so a pattern alone would
+// accept "dropbear\nreboot" through its first line.
 function valid_name(name) {
-	let m = type(name) == 'string' ? match(name, NAME) : null;
-	return m != null && m[0] == name;
+	return one_line(name) && match(name, NAME) != null;
 }
 
 // The names of the executable files in /etc/init.d, sorted; names that are not plain file names are dropped.

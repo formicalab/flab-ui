@@ -7,8 +7,9 @@
 // the draft of the page and are saved with the review banner (see edit.js and zones.js).
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, muted, section } from '../../core/ui.js';
+import { badge, button, muted, section } from '../../core/ui.js';
 import { fmtNum } from '../../core/format.js';
+import { legend } from '../../core/forms.js';
 import { foldCard } from './fold.js';
 import { clearTextHint, defaultForwarders, engineName, FLAG_HINTS, flagWords, isPublicIp, serverAddress, subject, wanNote, wanResolvers } from './model.js';
 import { canEditForwarders, forwarderCounts, forwarderItems, matchItem, removeForwarder, restoreForwarder, saveForwarder, typeLabel } from './zones.js';
@@ -73,7 +74,7 @@ function editBar(data, engine, items, edit) {
   const text = engine === 'dnsmasq'
     ? `Each entry of the server list of dnsmasq in /etc/config/dhcp is a zone: ${fmtNum(forwarders)} here, for ${fmtNum(domains)} domain${domains === 1 ? '' : 's'}. They are listed in the order of the list; the entry with the longest matching domain answers a query. Edit, remove or add one; the review bar at the top saves the changes.`
     : `A zone is a block of /etc/config/unbound with the servers and settings for a list of domains: ${fmtNum(forwarders)} here, for ${fmtNum(domains)} domain${domains === 1 ? '' : 's'}. They are listed in the order of the configuration; the zone with the longest matching domain answers a query, whatever its position. Edit, remove or add one; the review bar at the top saves the changes.${file ? ` ${fmtNum(file)} more only exist in /etc/unbound/unbound_ext.conf, which is read last, and stay read only here.` : ''}`;
-  return h('div', { className: 'dns-legend dns-fwd-bar' }, h('p', {}, text), items.length ? labelsLegend(engine) : null);
+  return h('div', { className: 'muted small set-legend dns-fwd-bar' }, h('p', {}, text), items.length ? labelsLegend(engine) : null);
 }
 
 // The buttons and badges of the "Defined in" cell of one row.
@@ -84,10 +85,10 @@ function sourceNodes(item, engine, edit, act) {
   const where = engine === 'dnsmasq' ? 'A server entry of the dnsmasq section in /etc/config/dhcp.' : `The zone section ${item.name} of /etc/config/unbound.`;
   const can = edit.canEdit && canEditForwarders(edit.getBase());
   // A small icon button for one row action.
-  const button = (name, label, onclick, disabled) => h('button', { type: 'button', className: 'btn btn-sm btn-fl dns-act-btn', disabled, title: label, ariaLabel: label, onclick }, icon(name));
-  if (item.pending === 'removed') return [badge('UCI', 'info', where), button('arrow-counterclockwise', 'Keep this zone (undo the removal)', () => act.restore(item.key), !can)];
+  const act1 = (name, label, onclick, disabled) => button('', name, onclick, 'btn-fl dns-act-btn', { title: label, ariaLabel: label, disabled });
+  if (item.pending === 'removed') return [badge('UCI', 'info', where), act1('arrow-counterclockwise', 'Keep this zone (undo the removal)', () => act.restore(item.key), !can)];
   const why = item.locked ? ' This zone cannot be changed here: its lists are too long to read completely, or its type is unknown.' : '';
-  return [badge('UCI', 'info', where + why), button('pencil', 'Edit', () => act.edit(item.key), !can || item.locked), button('trash', 'Remove', () => act.remove(item.key), !can || item.locked)];
+  return [badge('UCI', 'info', where + why), act1('pencil', 'Edit', () => act.edit(item.key), !can || item.locked), act1('x-lg', 'Remove', () => act.remove(item.key), !can || item.locked)];
 }
 
 // The first column: the name of the block (Unbound) or the text of the entry (dnsmasq), what kind of zone it is, and its state.
@@ -109,8 +110,8 @@ function domainsCell(item, state, draw) {
   // One domain as a chip.
   const chip = z => h('span', { className: 'dns-domain mono' }, z === '.' ? [z, ' ', h('span', { className: 'muted' }, '(every other name)')] : z);
   const more = item.zones.length > DOMAIN_LIMIT
-    ? h('button', { type: 'button', className: 'btn btn-sm btn-fl dns-toggle', ariaExpanded: String(open), onclick: () => { if (open) state.expanded.delete(item.key); else state.expanded.add(item.key); draw(); } },
-      icon(open ? 'chevron-up' : 'chevron-down'), open ? 'Show fewer' : `${fmtNum(item.zones.length - DOMAIN_LIMIT)} more`)
+    ? button(open ? 'Show fewer' : `${fmtNum(item.zones.length - DOMAIN_LIMIT)} more`, open ? 'chevron-up' : 'chevron-down',
+      () => { if (open) state.expanded.delete(item.key); else state.expanded.add(item.key); draw(); }, 'btn-fl dns-toggle', { ariaExpanded: String(open) })
     : null;
   return h('td', {}, h('div', { className: 'dns-domains' }, shown.map(chip), more), item.zones.length > 1 ? h('div', { className: 'dns-count muted small' }, `${fmtNum(item.zones.length)} domains`) : null);
 }
@@ -139,12 +140,12 @@ function zoneList(data, state, engine, edit, act, add) {
   // Redraws the table rows for the current filter.
   const draw = () => holder.replaceChildren(zoneRows(items, state, engine, edit, act, draw));
   const input = h('input', {
-    className: 'form-control form-control-sm dns-input', type: 'search', placeholder: 'Filter zones, domains or servers…', value: state.fq,
+    className: 'form-control form-control-sm', type: 'search', placeholder: 'Filter zones, domains or servers…', value: state.fq,
     oninput: e => { state.fq = e.target.value; draw(); },
   });
   draw();
   const can = edit.canEdit && canEditForwarders(edit.getBase());
-  const addButton = h('button', { type: 'button', className: 'btn btn-sm btn-fl dns-add', disabled: !can, title: can ? 'Add a zone' : 'Zones cannot be changed with this login', onclick: add }, icon('plus-lg'), 'Add zone');
+  const addButton = button('Add zone', 'plus-lg', add, 'btn-fl', { disabled: !can, title: can ? 'Add a zone' : 'Zones cannot be changed with this login' });
   return h('div', { className: 'dns-pad' },
     h('div', { className: 'dns-toolbar dns-field' }, items.length ? h('div', { className: 'search' }, icon('search'), input) : null, addButton),
     note ? h('p', { className: 'muted small' }, note) : null, items.length ? holder : muted('No zones.'));
@@ -175,7 +176,7 @@ export function zonesCard(data, state, edit) {
   const body = [
     editBar(data, engine, items, edit),
     data.engine === 'unbound' && data.engines?.unbound?.control === false
-      ? h('div', { className: 'dns-legend' }, 'unbound-control is not available, so the running forwarders come from Unbound\'s generated configuration and may not be what the running process uses.') : null,
+      ? legend(['unbound-control is not available, so the running forwarders come from Unbound\'s generated configuration and may not be what the running process uses.']) : null,
     h('div', { className: 'dns-pad' }, wanBlock(data)),
     h('div', { className: 'dns-top' }, zoneList(data, state, engine, edit, act, () => dialogFor(null))),
   ];

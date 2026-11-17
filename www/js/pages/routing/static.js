@@ -8,7 +8,7 @@
 // the sections back, verify installation on running interfaces, confirm. This does not prove end-to-end connectivity. The page redraws on
 // every poll, so polling is suspended while there is something to lose: unsaved edits, a focused control or a save in progress (the
 // Routing page's isPaused asks `staticEditor.paused`). A change to a default route is confirmed first.
-import { h } from '../../core/dom.js';
+import { h, sleep } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, optional, ubus } from '../../core/ubus.js';
 import { badge, button, card, mono, tile } from '../../core/ui.js';
@@ -16,6 +16,7 @@ import { legend, note } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
 import { openDialog } from '../../core/modal.js';
 import { APPLY_TIMEOUT_S, uci } from '../../core/uci.js';
+import { tag } from './tables.js';
 import { CONFIG, FAMILIES, FIELDS, ROUTE_TYPES, changesOf, checkApplied, checkInstalled, counts, draftFrom, interfaceChoices, isDirty, kernelState, newRow, plan, problems, reachedBy, readStatic, risksOf } from './static-model.js';
 
 // Asks before a change to a default route: lists what it does to the router's way out and resolves to whether the admin wants to go on.
@@ -54,7 +55,7 @@ async function readSections() {
       return data;
     } catch (e) {
       if (e instanceof AuthError || attempt === 5) throw e;
-      await new Promise(resolve => setTimeout(resolve, 750));
+      await sleep(750);
     }
   }
 }
@@ -141,10 +142,9 @@ function stateBadge(ctx, row) {
 function reachCell(ctx, row) {
   if (row.removed) return [];
   const { table, rules } = reachedBy(row, ctx.data);
-  const chip = (text, title) => h('span', { className: 'chip', title }, text);
   if (!rules) return [mono(table)];
   if (!rules.length) return [mono(table), ' ', badge('no rule', 'warning', 'No policy rule looks up this table, so the route is never used')];
-  return [mono(table), ' ', ...rules.map(p => chip(`rule ${p}`, 'A policy rule that consults this table'))];
+  return [mono(table), ' ', ...rules.map(p => tag(`rule ${p}`, 'A policy rule that consults this table'))];
 }
 
 // One row of a table: a cell per option, the state, and Remove (or Undo for a row that is marked for removal).
@@ -159,12 +159,12 @@ function routeRow(ctx, row, choices) {
     return h('td', { className: f.bool ? 'rt-s-check' : '' }, control);
   });
   const action = row.removed
-    ? button('Undo', 'arrow-clockwise', () => { row.removed = false; ctx.redraw(); })
-    : h('button', { type: 'button', className: 'btn btn-sm btn-fl', title: 'Remove this route', disabled: !ctx.canEdit, onclick: () => {
+    ? button('Undo', 'arrow-counterclockwise', () => { row.removed = false; ctx.redraw(); })
+    : button('', 'x-lg', () => {
       if (row.section == null) ctx.draft.rows.splice(ctx.draft.rows.indexOf(row), 1);
       else row.removed = true;
       ctx.redraw();
-    } }, icon('x-lg'));
+    }, 'btn-fl', { title: 'Remove this route', ariaLabel: 'Remove this route', disabled: !ctx.canEdit });
   const state = h('td', {}, stateBadge(ctx, row));
   ctx.states.set(row, state);
   const reach = h('td', { className: 'rt-s-reach' }, ...reachCell(ctx, row));
@@ -204,7 +204,7 @@ export function staticTiles(data) {
   return [tile('Static routes', String(c.total), sub, c.missing ? 'text-warning' : '')];
 }
 
-// The nodes of the Static routes tab for one poll. `data` is what loadStatic returned.
+// The nodes of the static routes for one poll. `data` is what loadStatic returned.
 export function staticView(data, rerender) {
   if (!data.available) {
     return [note('bad', 'The routes in /etc/config/network cannot be read: this login may not read the network configuration, or the router did not answer.')];

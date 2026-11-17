@@ -9,11 +9,9 @@
 // Draft shape (what the form edits):
 //   { values: { <option>: string | boolean | string[] }, zone: { name, rule } }
 //   An empty string or list means "not set". `zone.name` '' means "custom rule".
-import { differs, errorsOf, flag, hasBlankRows, normalize, sectionsOf, show, valueOf, validServer } from '../../core/fields.js';
+import { differs, errorsOf, flag, hasBlankRows, normalize, sectionsOf, show, valueOf } from '../../core/fields.js';
 import { FIELDS } from './schema.js';
 import { ZONES } from './zones.js';
-
-export { validServer };
 
 // The config both sections live in, and the name given to the `timeserver` section when the router has none.
 export const CONFIG = 'system';

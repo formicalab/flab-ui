@@ -151,7 +151,7 @@
 .rt-nslist { display: flex; flex-wrap: wrap; gap: .3rem; }
 .rt-ns { font-family: var(--fl-mono); font-size: .75rem; }
 .rt-tick { margin-left: .3rem; color: var(--fl-ok-fg); }
-.rt-nsmore summary { cursor: pointer; color: var(--fl-brand); font-size: .75rem; }
+.rt-nsmore > summary { color: var(--fl-brand); font-size: .75rem; }
 .rt-nsmore[open] { display: contents; }
 .rt-sec { display: flex; align-items: flex-start; gap: .5rem; font-size: .875rem; }
 .rt-sec svg { flex: none; margin-top: .2rem; }

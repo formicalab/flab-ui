@@ -4,7 +4,7 @@
 // core/forms.js, so they look and behave like the other editing pages.
 import { h } from '../../core/dom.js';
 import { copyButton } from '../../core/clipboard.js';
-import { icon } from '../../core/icons.js';
+import { disclosure } from '../../core/fold.js';
 import { openDialog } from '../../core/modal.js';
 import { button } from '../../core/ui.js';
 import { fieldRow } from '../../core/forms.js';
@@ -52,7 +52,7 @@ function derivedKey(values) {
 function keyControl(ctx, f, id, values, stored, label, make) {
   const field = { ...f, placeholder: stored ? 'stored; leave empty to keep it' : 'not set' };
   const message = h('div', { className: 'wg-key-message small muted' });
-  const generate = h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !ctx.canEdit, onclick: async () => {
+  const generate = button(label, 'key', async () => {
     try {
       values[f.key] = await make();
       ctx.touched();
@@ -60,7 +60,7 @@ function keyControl(ctx, f, id, values, stored, label, make) {
     } catch (e) {
       message.textContent = e.message;
     }
-  } }, icon('key'), label);
+  }, 'btn-fl', { disabled: !ctx.canEdit });
   keySupport().then(support => {
     if (support) return;
     generate.disabled = true;
@@ -103,13 +103,15 @@ export function interfaceForm(ctx, item) {
   const fields = IFACE_FIELDS.filter(f => !f.secret).map(f => control(ctx, f, `${key}:${f.key}`, d.values));
   const privateKey = IFACE_FIELDS.find(f => f.secret);
   if (item.isNew) opened.add(key);
-  return h('details', { className: 'wg-panel', open: opened.has(key), ontoggle: e => { if (e.target.open) opened.add(key); else opened.delete(key); } },
-    h('summary', {}, 'Interface settings'),
-    h('div', { className: 'wg-panel-body' },
+  return disclosure({
+    cls: 'fl-disclosure-bar wg-panel', summary: 'Interface settings', open: opened.has(key),
+    onToggle: open => { if (open) opened.add(key); else opened.delete(key); },
+    body: h('div', { className: 'wg-panel-body' },
       item.isNew ? nameControl(ctx, item) : null,
       keyControl(ctx, privateKey, `${key}:private_key`, d.values, stored, stored ? 'Replace with a new key' : 'Generate a key', async () => (await generateKeyPair()).privateKey),
       h('div', { className: 'set-fields' }, fields),
-      item.data ? otherOptions(item.data.values, IFACE_FIELDS, ['proto']) : null));
+      item.data ? otherOptions(item.data.values, IFACE_FIELDS, ['proto']) : null),
+  });
 }
 
 //#endregion
@@ -143,7 +145,7 @@ export function confirmDanger({ title, paragraphs, confirmLabel }) {
       title,
       body: h('div', {}, paragraphs.map(p => h('p', {}, p))),
       footer: [
-        button('Cancel', null, () => dialog.close()),
+        button('Cancel', 'x-lg', () => dialog.close()),
         button(confirmLabel, 'trash', () => { answer = true; dialog.close(); }, 'btn-danger'),
       ],
       onClose: () => resolve(answer),

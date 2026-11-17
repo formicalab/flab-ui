@@ -2,7 +2,8 @@
 // holds by protocol, state and host, and the entries themselves with the translated address when NAT changed it.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card, healthBanner, muted, tile, tiles } from '../../core/ui.js';
+import { badge, button, card, healthBanner, muted, tile, tiles } from '../../core/ui.js';
+import { legend } from '../../core/forms.js';
 import { fmtBytes, fmtNum } from '../../core/format.js';
 import {
   connectionFindings, endpoint, fmtPct, fmtSize, fmtTimeout, hostName, natSummary, protoLabel, protocolSummary, stateBadges,
@@ -91,16 +92,16 @@ function entriesCard(data, state, rerender) {
   const sorted = { bytes: 'most traffic first', packets: 'most packets first', timeout: 'longest remaining life first' }[data.request.sort];
   return card([icon('list-ul'), 'Connections', h('span', { className: 'sub' }, `${fmtNum(data.entries.length)} shown of ${fmtNum(data.matched)} matching · ${sorted}`)],
     h('div', {},
-      h('div', { className: 'tr-legend' },
+      legend([[
         'One row per tracked connection. ', h('strong', {}, 'Original'), ' is what the sender used (↑ is the direction of the first packet, ↓ the replies); ',
         h('strong', {}, 'Translated'), ' appears when the router rewrote an address or port: SNAT is the masquerade of the LAN behind the WAN address, DNAT a port forward from outside. ',
-        h('strong', {}, 'UNREPLIED'), ' marks connections that never got an answer. The remaining life is the kernel timeout; a flow in the flow table is offloaded and has none.'),
+        h('strong', {}, 'UNREPLIED'), ' marks connections that never got an answer. The remaining life is the kernel timeout; a flow in the flow table is offloaded and has none.']]),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover tr-conns' },
         h('thead', {}, h('tr', {}, ['Protocol', 'Original', 'Translated (NAT)', 'State', 'Time left', data.acct === false ? 'Size (counters off)' : 'Size'].map(c => h('th', {}, c)))),
         h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 6, className: 'muted' }, state.q || state.proto !== 'all' || state.scope !== 'all' ? 'No connection matches the filter' : 'The table is empty'))))),
       data.entries.length > shown.length ? h('div', { className: 'tr-more' },
         h('span', { className: 'muted' }, `Showing the first ${shown.length} of ${data.entries.length} entries.`),
-        h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: () => { state.all = true; rerender(); } }, `Show all ${data.entries.length}`)) : null,
+        button(`Show all ${data.entries.length}`, null, () => { state.all = true; rerender(); })) : null,
       data.matched > data.entries.length ? h('div', { className: 'tr-more' },
         h('span', { className: 'muted' }, `The router returned ${fmtNum(data.entries.length)} of the ${fmtNum(data.matched)} matching entries; raise the row limit or narrow the filter to see others.`)) : null));
 }

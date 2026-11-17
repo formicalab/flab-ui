@@ -3,13 +3,14 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { chevron, foldable } from '../../core/fold.js';
-import { badge, card, mono, muted } from '../../core/ui.js';
+import { badge, button, card, mono, muted } from '../../core/ui.js';
+import { legend } from '../../core/forms.js';
 import { fmtSpan } from '../../core/format.js';
 import { deviceText } from './lookup.js';
 import { DROPS, destination, filterRoutes, routeKey, ruleOrigin, sortRoutes, tableLabel, tablesOf } from './model.js';
 
 // A small neutral tag (the `chip` style the BGP tables use for communities).
-const tag = (text, title = '') => h('span', { className: 'chip', title }, text);
+export const tag = (text, title = '') => h('span', { className: 'chip', title }, text);
 
 // Rows of the route list shown before "Show all": a router with a large routing table would otherwise draw thousands.
 const ROW_LIMIT = 400;
@@ -106,7 +107,7 @@ export function rulesCard(data) {
     h('td', {}, origin(r))));
   return card([icon('signpost-split'), 'Policy rules', h('span', { className: 'sub' }, 'Checked in this order; the first rule that matches decides which table is consulted')],
     h('div', {},
-      h('div', { className: 'set-legend muted small' }, 'Static routes are not listed here: they are routes inside the tables named in the Then column, edited in the static routes below.'),
+      legend(['Static routes are not listed here: they are routes inside the tables named in the Then column, edited in the static routes below.']),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-rules' },
         h('thead', {}, h('tr', {}, ['Priority', 'Family', 'Matches', 'Then', 'Added by'].map((c, i) => h('th', { className: i === 0 ? 'num' : '' }, c)))),
         h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 5, className: 'muted' }, 'No policy rules')))))));
@@ -185,14 +186,14 @@ export function routesCard(data, state, rerender, names, hitKey) {
   const scope = state.table === 'all' ? 'all tables' : `table ${tableLabel(state.table, data.table_ids)}`;
   return card([icon('signpost-split'), 'Routes', h('span', { className: 'sub' }, `${filtered.length} of ${data.routes.length} routes · ${scope}`)],
     h('div', {},
-      h('div', { className: 'set-legend muted small' }, 'Installed routes of every origin, plus configured static routes. Entries labeled disabled, not installed or state unknown are configuration only, not active forwarding entries. The table and family filters also apply to static routes.'),
+      legend(['Installed routes of every origin, plus configured static routes. Entries labeled disabled, not installed or state unknown are configuration only, not active forwarding entries. The table and family filters also apply to static routes.']),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover fixed-grid rt-routes', style: 'min-width:1100px' },
         h('colgroup', {}, COLS.map(c => h('col', { style: `width:${(c.w / total * 100).toFixed(2)}%` }))),
         h('thead', {}, h('tr', {}, head)),
         h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: COLS.length, className: 'muted' }, 'No routes match the filter'))))),
       filtered.length > shown.length ? h('div', { className: 'rt-more' },
         h('span', { className: 'muted' }, `Showing the first ${shown.length} of ${filtered.length} routes.`),
-        h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: () => { state.all = true; rerender(); } }, `Show all ${filtered.length}`)) : null));
+        button(`Show all ${filtered.length}`, null, () => { state.all = true; rerender(); })) : null));
 }
 
 //#endregion

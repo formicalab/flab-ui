@@ -250,12 +250,13 @@ check(Math.abs((await cardOf('Activity').boundingBox()).width - (await cardOf('Z
   const state = cardOf('Configuration').locator('.card-header .fl-badge');
   check(await state.count() === 1 && (await text(state)) === 'Unbound running' && /\bsuccess\b/.test(await state.getAttribute('class')) && /answers on port 53/.test(await state.getAttribute('title')) && /\/etc\/config\/unbound/.test(await text(cardOf('Configuration').locator('.card-header .sub'))), 'the header of the Configuration card says in green that Unbound is running (like the daemon card of the DHCP page), with the file and the sockets beside it', await text(cardOf('Configuration').locator('.card-header')));
 }
-check(await cardOf('Activity').locator('details.dns-fold').evaluate(d => !d.open) && !(await cardOf('Activity').locator('table').first().isVisible()) && (await cardOf('Activity').locator('.dns-chevron').evaluate(c => getComputedStyle(c).transform)) === 'none' && /since the resolver started/.test(await text(cardOf('Activity').locator('.card-header'))), 'the Activity card is folded when the page opens: only its header shows (with the age of the counters), the chevron pointing right');
-await cardOf('Activity').locator('summary').click();
+const folded = card => card.evaluate(c => c.classList.contains('fl-folded'));
+check(await folded(cardOf('Activity')) && !(await cardOf('Activity').locator('table').first().isVisible()) && (await cardOf('Activity').locator('.fl-chevron').evaluate(c => getComputedStyle(c).transform)) === 'none' && /since the resolver started/.test(await text(cardOf('Activity').locator('.card-header'))), 'the Activity card is folded when the page opens: only its header shows (with the age of the counters), the chevron pointing right');
+await cardOf('Activity').locator('.card-header').click();
 await page.waitForTimeout(400);
-check(await cardOf('Activity').locator('table').first().isVisible() && (await cardOf('Activity').locator('.dns-chevron').evaluate(c => getComputedStyle(c).transform)) !== 'none', 'clicking its header opens it, and the chevron points down');
+check(await cardOf('Activity').locator('table').first().isVisible() && (await cardOf('Activity').locator('.fl-chevron').evaluate(c => getComputedStyle(c).transform)) !== 'none', 'clicking its header opens it, and the chevron points down');
 await refresh();
-check(await cardOf('Activity').locator('details.dns-fold').evaluate(d => d.open), 'it stays open when the page redraws');
+check(!(await folded(cardOf('Activity'))), 'it stays open when the page redraws');
 const actTables = await cardOf('Activity').locator('table').evaluateAll(t => t.map(x => Math.round(x.getBoundingClientRect().x)));
 check(actTables.length === 2 && actTables[1] > actTables[0] + 300, 'the counters and the answer codes sit side by side', actTables.join());
 check(Math.abs((await cardOf('Configuration').boundingBox()).width - (await cardOf('Zones').boundingBox()).width) < 2 && (await cardOf('Configuration').boundingBox()).y < (await cardOf('Zones').boundingBox()).y, 'the configuration card is on top and as wide as Zones');
@@ -273,12 +274,12 @@ check((await cardOf('Configuration').locator('.dns-listen .dns-area-legend').bou
 console.log('\n== Zones ==');
 const zc = cardOf('Zones');
 check(/Unbound · 92 zones · 93 domains/.test(await text(zc.locator('.card-header'))), 'the header counts the zones (blocks) and their domains', await text(zc.locator('.card-header')));
-check(await zc.locator('details.dns-fold').evaluate(d => !d.open) && !(await zoneRows().first().isVisible()) && (await zc.locator('.dns-chevron').evaluate(c => getComputedStyle(c).transform)) === 'none', 'the card is folded when the page opens: only its header shows, with the chevron pointing right');
-await zc.locator('summary.card-header').click();
+check(await folded(zc) && !(await zoneRows().first().isVisible()) && (await zc.locator('.fl-chevron').evaluate(c => getComputedStyle(c).transform)) === 'none', 'the card is folded when the page opens: only its header shows, with the chevron pointing right');
+await zc.locator('.card-header').click();
 await page.waitForTimeout(400);
-check(await zc.locator('details.dns-fold').evaluate(d => d.open) && (await zc.locator('.dns-chevron').evaluate(c => getComputedStyle(c).transform)) !== 'none' && await zoneRows().first().isVisible(), 'clicking the header opens it, and the chevron points down');
+check(!(await folded(zc)) && (await zc.locator('.fl-chevron').evaluate(c => getComputedStyle(c).transform)) !== 'none' && await zoneRows().first().isVisible(), 'clicking the header opens it, and the chevron points down');
 await refresh();
-check(await zc.locator('details.dns-fold').evaluate(d => d.open), 'it stays open when the page redraws');
+check(!(await folded(zc)), 'it stays open when the page redraws');
 check(same(await zc.locator('thead th').allInnerTexts(), ['#', 'Zone', 'Domains', 'Servers', 'Flags', 'Defined in']), 'the table has a column for the position, the zone, its domains, servers, flags and where it is defined');
 let rows = await zoneTexts();
 check((await zoneRows().count()) === 92 && rows.slice(0, 4).map(r => r.split(' ')[0]).join() === 'auth_icann,fwd_cloudflare,fwd_google,fwd_vodafone', 'one row per zone, in the order of the configuration: the 4 blocks of /etc/config/unbound, then the 88 zones of the extension file', String(await zoneRows().count()));
@@ -315,7 +316,7 @@ check((await zoneRows().count()) === 1 && /^\d+ auth_icann/.test(await text(zone
 await filterBox().fill('zzz');
 check(/No zone matches the filter/.test(await text(zc)) && await zoneRows().count() === 0, 'a filter that matches nothing says so');
 await filterBox().fill('');
-check((await zc.locator('.dns-legend').first().boundingBox()).y < (await zc.locator('.dns-table').boundingBox()).y, 'the legend sits above the table');
+check((await zc.locator('.set-legend').first().boundingBox()).y < (await zc.locator('.dns-table').boundingBox()).y, 'the legend sits above the table');
 const bar = await text(zc.locator('.dns-fwd-bar'));
 check(/A zone is a block of \/etc\/config\/unbound with the servers and settings for a list of domains: 4 here, for 5 domains\./.test(bar) && /listed in the order of the configuration; the zone with the longest matching domain answers a query/.test(bar) && /88 more only exist in \/etc\/unbound\/unbound_ext\.conf, which is read last, and stay read only here/.test(bar) && await zc.locator('.dns-toolbar button:has-text("Add zone")').isEnabled(), 'the card explains what a zone is, counts them, says in which order they are listed and which one answers, and has an enabled Add zone button', bar);
 const fileRows = zoneRows().filter({ hasText: 'unbound_ext.conf' });
@@ -339,7 +340,7 @@ const actRows = await texts(act.locator('tbody tr'));
 check(/since the resolver started 3d 4h ago/.test(await text(act.locator('.card-header'))), 'the age of the counters is in the header');
 check(actRows.some(r => r.startsWith('Answered from the cache') && r.includes(num(T.hits)) && r.includes('65%')) && actRows.some(r => r.startsWith('Rate limited') && r.includes('12')) && actRows.some(r => r.startsWith('DNSSEC bogus answers') && r.includes('3')), 'counters with their shares', actRows.join(' | '));
 check(actRows.some(r => r.startsWith('NOERROR') && r.includes(num(44100))) && actRows.some(r => r.startsWith('SERVFAIL') && r.includes('910')) && actRows.some(r => r.startsWith('NXDOMAIN')), 'extended statistics: the answer codes', actRows.join(' | '));
-check((await act.locator('.dns-legend').boundingBox()).y < (await act.locator('table').first().boundingBox()).y, 'the legend sits above the counters');
+check((await act.locator('.set-legend').boundingBox()).y < (await act.locator('table').first().boundingBox()).y, 'the legend sits above the counters');
 // The Configuration card.
 const conf = () => cardOf('Configuration');
 const areaTitles = await texts(conf().locator('.dns-area-title'));
@@ -355,11 +356,14 @@ check(j(await areaOpen()) === '[true,true,false,false]', 'an area the user opene
 await conf().locator('.dns-area').nth(1).locator('summary').first().click();
 check(j(await areaOpen()) === '[true,false,false,false]', 'and folds again');
 await page.evaluate(() => document.querySelectorAll('.dns-area').forEach(d => { d.open = true; }));
-const chev = await conf().locator('.dns-area > summary .dns-chevron').evaluateAll(c => c.map(x => ({ w: x.getBoundingClientRect().width, t: getComputedStyle(x).transform })));
-check(chev.length === 4 && chev.every(c => c.w > 0 && c.t !== 'none'), 'every area header has the chevron that marks it as collapsible, pointing down when open', JSON.stringify(chev));
+// The arrow of a group bar is the ::before of its summary (core/fold.js, .fl-disclosure).
+const arrow = summary => summary.evaluate(s => { const b = getComputedStyle(s, '::before'); return { w: parseFloat(b.borderLeftWidth), t: b.transform }; });
+const chev = [];
+for (const s of await conf().locator('.dns-area > summary').all()) chev.push(await arrow(s));
+check(chev.length === 4 && chev.every(c => c.w > 0 && c.t !== 'none'), 'every area header has the arrow that marks it as collapsible, pointing down when open', JSON.stringify(chev));
 await conf().locator('.dns-area').nth(3).locator('summary').click();
 await page.waitForTimeout(400);
-check((await conf().locator('.dns-area').nth(3).locator('summary .dns-chevron').evaluate(x => getComputedStyle(x).transform)) === 'none', 'and right when folded');
+check((await arrow(conf().locator('.dns-area').nth(3).locator('summary'))).t === 'none', 'and right when folded');
 await conf().locator('.dns-area').nth(3).locator('summary').click();
 const confText = await text(conf());
 check(/These are the settings of Unbound in \/etc\/config\/unbound/.test(confText) && /DNSSEC validation/.test(confText) && /Rate limit \(queries per second\)/.test(confText), 'the configuration says what it is and how a change is applied, with plain labels', confText.slice(0, 300));
@@ -658,7 +662,7 @@ await page.reload();
 await page.waitForSelector('.tile');
 await openAll();
 check(await conf().locator('input:not([disabled]), select:not([disabled])').count() === 0 && /this login cannot change them/.test(await text(conf())) && /not allowed to change the configuration/.test(await text(page.locator('main'))), 'a login that may not write sees the settings read only, and is told why', await text(page.locator('main')).then(t => t.slice(0, 200)));
-await zc.locator('summary.card-header').click();
+await zc.locator('.card-header').click();
 check(await zc.locator('button.dns-act-btn:not([disabled])').count() === 0 && await zc.locator('button.dns-act-btn').count() > 0 && await zc.locator('.dns-toolbar button:has-text("Add zone")').isDisabled(), 'and so are the Edit, Remove and Add zone buttons of the Zones card');
 await page.evaluate(() => sessionStorage.removeItem('flab-test-acls'));
 await page.reload();
@@ -716,7 +720,7 @@ const headerText = () => text(cardOf('Zones').locator('.card-header'));
 // The button with the given aria-label in the row of the zone `name`.
 const rowButton = (name, label) => zoneRow(name).locator(`button[aria-label="${label}"]`);
 await show(zonesReply());
-if (!await zc.locator('details.dns-fold').evaluate(d => d.open)) await zc.locator('summary.card-header').click();
+if (!await zc.locator('details.dns-fold').evaluate(d => d.open)) await zc.locator('.card-header').click();
 await page.waitForTimeout(400);
 check(/Unbound · 7 zones · 93 domains/.test(await headerText()) && (await zoneRows().count()) === 7 && (await zoneTexts()).map(r => r.split(' ')[0]).join() === 'auth_icann,fwd_cloudflare,fwd_google,fwd_vodafone,fwd_azure,fwd_lab,fwd_flumini', 'the router as it is configured: 7 zones for 93 domains (the 86 Azure domains are one block), in the order of the configuration', await headerText());
 const azRow = zoneRow('fwd_azure');

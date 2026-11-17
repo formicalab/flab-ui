@@ -3,10 +3,10 @@
 // Edit and Remove (Undo after a removal), a button adds a zone, and a row shows when it was changed and not saved yet.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, button, card, muted } from '../../core/ui.js';
+import { badge, card, muted } from '../../core/ui.js';
 import { fmtBytes, fmtNum } from '../../core/format.js';
 import { packetsPerSec, fmtPps } from './util.js';
-import { iconButton, pendingBadge } from './parts.js';
+import { addButton, iconButton, pendingBadge } from './parts.js';
 
 // A zone's policy as a badge: accept is green, reject/drop are neutral (refusing by default is normal).
 const policyBadge = (p, title = '') => badge(String(p).toLowerCase(), p === 'ACCEPT' ? 'success' : 'info', title);
@@ -24,7 +24,7 @@ function blockedLine(z, dir, text) {
 // The Edit / Remove (or Undo) buttons of a zone row.
 function actionsCell(z, ctx) {
   if (z.removed) return h('td', { className: 'fw-actions' }, iconButton('arrow-counterclockwise', 'Keep this zone (undo the removal)', () => ctx.restore('zones', z.id)));
-  return h('td', { className: 'fw-actions' }, iconButton('pencil', `Edit zone ${z.name}`, () => ctx.edit('zones', z.id)), iconButton('trash', `Remove zone ${z.name}`, () => ctx.remove('zones', z.id)));
+  return h('td', { className: 'fw-actions' }, iconButton('pencil', `Edit zone ${z.name}`, () => ctx.edit('zones', z.id)), iconButton('x-lg', `Remove zone ${z.name}`, () => ctx.remove('zones', z.id)));
 }
 
 // One table row per zone: interfaces, kernel devices, the three default policies, forwarding targets and
@@ -59,9 +59,7 @@ export function zonesCard(fw, ctx = null) {
     ...(ctx ? [['']] : []),
   ];
   const rows = fw.rows?.zones ?? fw.zones;
-  const add = ctx ? button('Add zone', 'plus-lg', () => ctx.edit('zones', null)) : null;
-  if (add) add.disabled = !ctx.canEdit;
-  return card([icon('shield-check'), h('span', {}, 'Zones'), h('span', { className: 'sub' }, `${fw.zones.length} zones · policies are defaults, specific rules are exceptions`), add ? h('span', { className: 'fw-card-actions' }, add) : null],
+  return card([icon('shield-check'), h('span', {}, 'Zones'), h('span', { className: 'sub' }, `${fw.zones.length} zones · policies are defaults, specific rules are exceptions`), ctx ? addButton('Add zone', () => ctx.edit('zones', null), ctx.canEdit) : null],
     h('div', {},
       h('div', { className: 'muted small fw-legend fw-zones-legend' },
         h('p', {}, h('b', {}, 'accept'), ' lets everything through by default. ', h('b', {}, 'reject'), ' and ', h('b', {}, 'drop'), ' refuse everything by default except what a specific rule or forwarding allows (reject answers the sender with an error, drop silently discards); replies to connections that were allowed are always let back in.'),

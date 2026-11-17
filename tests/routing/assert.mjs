@@ -96,6 +96,7 @@ check(l.get.table === 'voip' && l.match.table === 'voip' && l.match.prefix === '
 l = L('mismatch');
 check(l.ok && l.get.ok === false && /inet prefix is expected/.test(l.get.error), 'mixed address families: the tool\'s message is returned', j(l.get));
 check(L('injection').ok === false && /Enter an IPv4 or IPv6 address/.test(L('injection').error) && L('badsrc').ok === false && /source/.test(L('badsrc').error) && L('badiif').ok === false && /interface name/.test(L('badiif').error), 'shell metacharacters in the destination, source or interface are refused before any command runs');
+check(L('newlinedst').ok === false && /Enter an IPv4 or IPv6 address/.test(L('newlinedst').error) && L('newlinesrc').ok === false && /source/.test(L('newlinesrc').error) && L('newlineiif').ok === false && /interface name/.test(L('newlineiif').error), 'a newline in the destination, source or interface is refused too (it would start a second shell command)');
 //#endregion
 
 //#region Without ip, and the real router

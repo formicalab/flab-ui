@@ -67,7 +67,7 @@ function canonical(f, text) {
 
 // The form value of one field from the raw options of a section: a boolean, a list, or a string ('' = not set). An absent option is the
 // value the firewall uses (the field's default, or its `fallback`).
-export function formValue(f, raw) {
+function formValue(f, raw) {
   let v = raw[f.key];
   if (v == null && f.alias) v = raw[f.alias];
   if (v == null) return f.fallback != null ? f.fallback : valueOf(f, undefined);
@@ -239,7 +239,7 @@ function valueDiffers(f, a, b) {
 export const changedFields = (fields, from, to) => fields.filter(f => valueDiffers(f, from[f.key], to[f.key]));
 
 // The item as the router has it (for comparing), or undefined for a new item.
-export function baseItem(data, key, id) {
+function baseItem(data, key, id) {
   const s = data[key].find(x => x.section === id);
   return s ? { values: formValues(KINDS[key].fields, s.values) } : undefined;
 }

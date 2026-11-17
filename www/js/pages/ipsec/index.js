@@ -4,7 +4,7 @@
 // poll goes through record() before the data is rendered. `compact` hides the per-connection details.
 import { h } from '../../core/dom.js';
 import { ubus } from '../../core/ubus.js';
-import { tile, tiles, emptyState } from '../../core/ui.js';
+import { tile, tiles, emptyState, GRADE_KIND } from '../../core/ui.js';
 import { searchControl, selectControl, pauseControl, refreshControl, toggleControl } from '../../core/controls.js';
 import { fmtBps, fmtBytes, fmtSpan } from '../../core/format.js';
 import { record, series, latest } from './rates.js';
@@ -14,9 +14,6 @@ import { daemonCard, scoringCard } from './daemon.js';
 // View state that must survive the redraw on every poll: filter text, state filter (all/up/down),
 // compact mode and the paused flag.
 const state = { q: '', filter: 'all', compact: false, paused: false };
-
-// Text color class per security grade for the "weakest grade" tile.
-const TEXT_CLASS = { 'A+': 'text-success', A: 'text-success', B: 'text-info', C: 'text-warning', D: 'text-danger' };
 
 // Summary tiles over all connections. Live throughput sums the latest browser-side rates of every child SA;
 // total traffic sums each xfrm interface once (several SAs can share one interface) and so counts since the
@@ -49,10 +46,10 @@ function summary(data) {
 
   return tiles(
     tile('Tunnels established', `${up} / ${conns.length}`, up === conns.length ? 'all connections up' : `${conns.length - up} down`, up === conns.length ? 'text-success' : 'text-danger'),
-    tile('Weakest security grade', worst ? `${worst.rating.grade} (${worst.rating.score})` : '–', worst ? worst.name : '', worst ? TEXT_CLASS[worst.rating.grade] : ''),
+    tile('Weakest security grade', worst ? `${worst.rating.grade} (${worst.rating.score})` : '–', worst ? worst.name : '', worst ? `text-${GRADE_KIND[worst.rating.grade]}` : ''),
     tile('Live throughput', anyRate ? `↓ ${fmtBps(rx)}` : '–', anyRate ? `↑ ${fmtBps(tx)} · all tunnels` : 'measuring…'),
     tile('Total traffic', `↓ ${fmtBytes(totalRx)}`, `↑ ${fmtBytes(totalTx)} · since interface up`),
-    tile('Next rekey', nextRekey ? fmtSpan(nextRekey.s) : '–', nextRekey ? nextRekey.what : '', ''),
+    tile('Next rekey', nextRekey ? fmtSpan(nextRekey.s) : '–', nextRekey ? nextRekey.what : ''),
     tile('Replay failures', failures, failures ? 'investigate' : 'anti-replay healthy', failures ? 'text-danger' : 'text-success'));
 }
 

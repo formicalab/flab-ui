@@ -38,9 +38,9 @@ Example: an `ntp` page.
    automatically (see [Package script](package.md#package-script)).
 
 Reuse before writing new code: if two pages need the same widget, move it to `core/ui.js`; if the same
-parsing is needed by two plugins, move it to `rpcd/lib/flab/`. Comment non-obvious contracts, units and safety constraints, put
-legends at the top of the card they explain, and keep pure logic (models, filters) in a DOM-free module with a
-unit test.
+parsing is needed by two plugins, move it to `rpcd/lib/flab/`. Comment non-obvious contracts, units and safety constraints,
+follow the [UI conventions](frontend.md#ui-conventions) (buttons, icons, folds, notes, legends) and keep pure logic (models,
+filters) in a DOM-free module with a unit test.
 
 ## Implementation notes
 
@@ -89,10 +89,11 @@ unit test.
   these docs and the README use American English (color, center, gray, synchronize).
 - PowerShell follows `Set-StrictMode -Version Latest`, `$ErrorActionPreference = 'Stop'`, comment-based help
   on functions and scripts, and `#region` blocks.
-- ucode uses tabs, JavaScript and CSS use two spaces.
+- ucode uses tabs, JavaScript and CSS use two spaces. Validate every request argument (type, range, charset; reject line
+  breaks with `one_line()` before a `^...$` pattern) before it reaches a command, a path or a UCI name.
 - Shell and ucode files check out with LF line endings, including on Windows.
 - Everything shown is discovered from the router at run time; nothing is hard-coded to one board.
-- Legends sit at the top of the card or section they explain.
+- Shared UI looks (buttons, icons, folds, notes, legends) follow [Frontend: UI conventions](frontend.md#ui-conventions).
 - Code in `rpcd/` and `www/` is deployed as is; there is no build step to keep in sync.
 - Tests must not change the router's configuration. Use fixture or mock transports for write paths and document
   separately any deliberate real-router validation; never present a mock save as a real network change.

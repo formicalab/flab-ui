@@ -5,6 +5,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge } from '../../core/ui.js';
+import { day } from './parts.js';
 
 const DAY = 86400000;
 
@@ -20,9 +21,6 @@ function dateState(c, now) {
   const left = (c.notAfter - now) / DAY;
   return left <= 14 ? 'warn' : left <= 60 ? 'soon' : 'ok';
 }
-
-// A date as "2026-12-25".
-const day = ms => (ms == null ? '–' : new Date(ms).toISOString().slice(0, 10));
 
 // The words under a certificate's name: how long it is still valid, or since when it has not been.
 function validity(c, now) {

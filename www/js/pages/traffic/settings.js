@@ -107,6 +107,7 @@ async function ask(ctx, kind, path) {
     info = { ...(r[kind === 'dir' ? 'dir' : 'protocols'] ?? info), generated: r.generated };
   } catch (e) {
     if (e instanceof AuthError) { location.reload(); return; }
+    // Any other failure leaves the path unknown (`info.ok` is false), which the model ignores.
   }
   pending.delete(id);
   ctx.base.probes[kind][path] = info;

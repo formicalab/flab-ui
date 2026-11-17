@@ -2,11 +2,13 @@
 // they arrive, and the download of the capture file. The meaning of the output comes from capturemodel.js; the view is
 // repainted every time new output arrives, so the table fills in while the capture runs.
 import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
 import { AuthError, can, ubus } from '../../core/ubus.js';
+import { fmtBytes } from '../../core/format.js';
+import { saveFile } from '../../core/download.js';
 import { badge, button, mono, muted } from '../../core/ui.js';
 import { stat } from './diagviews.js';
 import { captureNotes, parseCapture } from './capturemodel.js';
+import { banner, findingList } from './parts.js';
 
 // The packets drawn in the table (the plugin sends at most this many lines anyway).
 const MAX_ROWS = 500;
@@ -21,13 +23,11 @@ const endpoint = (addr, port) => (addr == null ? muted('–') : [mono(addr), por
 // A time in seconds since the first packet, as "0.000123".
 const seconds = v => v.toFixed(6);
 
-// A number of bytes as "1.2 KB".
-const bytes = n => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+const pad = n => String(n).padStart(2, '0');
 
 // The name of the capture file offered for download: the interface and the start time.
 const fileName = job => {
   const t = new Date(job.t0);
-  const pad = n => String(n).padStart(2, '0');
   return `capture-${job.cap?.iface ?? 'any'}-${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}-${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.pcap`;
 };
 
@@ -47,12 +47,7 @@ async function download(job, btn) {
       btn.textContent = `Downloading… ${r.size ? Math.min(100, Math.round(from / r.size * 100)) : 100}%`;
       if (r.done || !r.length) break;
     }
-    const url = URL.createObjectURL(new Blob(parts, { type: 'application/vnd.tcpdump.pcap' }));
-    const link = h('a', { href: url, download: fileName(job) });
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    saveFile(fileName(job), parts, 'application/vnd.tcpdump.pcap');
     btn.textContent = 'Downloaded';
   } catch (e) {
     btn.textContent = e instanceof AuthError ? 'Session expired' : `Failed: ${e.message}`;
@@ -63,19 +58,15 @@ async function download(job, btn) {
 // The download button: always shown on a finished capture, disabled (with the reason) for a session that does not hold the
 // permission, which a session opened before the plugin offered `download` does not.
 function downloadButton(job) {
-  const btn = button('Download .pcap', 'download', e => download(job, e.currentTarget), 'btn-brand');
-  if (!can('flab.diag', 'download')) {
-    btn.disabled = true;
-    btn.title = 'This login does not hold the download permission. Sign out and in again.';
-  }
-  return btn;
+  const props = can('flab.diag', 'download') ? {} : { disabled: true, title: 'This login does not hold the download permission. Sign out and in again.' };
+  return button('Download .pcap', 'download', e => download(job, e.currentTarget), 'btn-brand', props);
 }
 
 // The capture result. `job.cap` is the request ({ iface, seconds, packets, snaplen, filter }).
 export function captureBody(job) {
   const c = parseCapture(job.text);
   const notes = captureNotes(c, job.cap);
-  if (c.error && !c.packets.length && !job.running) return h('div', { className: 'rt-error' }, icon('x-circle'), `The capture failed: ${c.error}.`);
+  if (c.error && !c.packets.length && !job.running) return banner(`The capture failed: ${c.error}.`);
   const seen = c.packets.length + c.more;
   const rows = c.packets.slice(0, MAX_ROWS).map(p => h('tr', { className: /^Flags \[R/.test(p.info) ? 'rt-rst' : '' },
     h('td', { className: 'num mono' }, seconds(p.rel)),
@@ -92,9 +83,9 @@ export function captureBody(job) {
       c.tcp ? stat('New connections (SYN)', String(c.syn)) : null,
       c.tcp ? stat('Resets (RST)', String(c.rst), c.rst > 0 && c.rst / c.tcp >= 0.1 ? 'warn' : '') : null,
       c.packets.length > 1 ? stat('Span', `${c.span.toFixed(c.span < 10 ? 2 : 1)} s`) : null),
-    notes.length ? h('div', { className: 'rt-findings' }, notes.map(n => h('div', { className: `rt-finding ${n.level}` }, icon({ ok: 'check-circle', warn: 'exclamation-triangle', bad: 'x-circle' }[n.level]), n.text))) : null,
+    findingList(notes),
     c.protocols.length ? h('div', { className: 'rt-cap-protos' }, h('span', { className: 'muted' }, `Protocols in the first ${c.packets.length}:`), c.protocols.map(([name, n]) => h('span', { className: 'rt-cap-proto' }, badge(name, TONE[name] ?? ''), ` ${n}`))) : null,
-    c.conversations.length ? h('div', { className: 'rt-cap-talkers' }, h('div', { className: 'muted' }, 'Busiest conversations'), c.conversations.map(t => h('div', { className: 'rt-cap-talker' }, mono(t.a), h('span', { className: 'muted' }, ' ↔ '), mono(t.b), h('span', { className: 'muted' }, ` · ${t.packets} packet${t.packets === 1 ? '' : 's'}${t.bytes ? ` · ${bytes(t.bytes)}` : ''}`)))) : null,
+    c.conversations.length ? h('div', { className: 'rt-cap-talkers' }, h('div', { className: 'muted' }, 'Busiest conversations'), c.conversations.map(t => h('div', { className: 'rt-cap-talker' }, mono(t.a), h('span', { className: 'muted' }, ' ↔ '), mono(t.b), h('span', { className: 'muted' }, ` · ${t.packets} packet${t.packets === 1 ? '' : 's'}${t.bytes ? ` · ${fmtBytes(t.bytes)}` : ''}`)))) : null,
     !job.running && c.captured > 0 && job.id ? h('div', { className: 'rt-actions rt-mtr-actions' }, downloadButton(job), muted(can('flab.diag', 'download') ? 'Open it in Wireshark. The router keeps it for ten minutes, and only the newest capture.' : 'This session was opened before the download permission existed: sign out and in again to enable it.')) : null,
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-trace rt-captable' },
       h('thead', {}, h('tr', {}, ['Time (s)', 'Protocol', 'Source', 'Destination', 'Length', 'Info'].map((t, i) => h('th', { className: i === 0 || i === 4 ? 'num' : '' }, t)))),

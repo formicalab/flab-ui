@@ -14,6 +14,8 @@ export const hooks = { rerender: () => {}, reload: () => {} };
 
 // The test of each port: name to { phase: 'running' | 'done', result }. Kept here so it survives the redraw of every poll.
 const tests = new Map();
+// Ports whose PHY driver answered that it cannot run the test: the button disappears for them until the page is reloaded.
+const unsupported = new Set();
 
 // How each code of a pair is shown: [badge kind, what it means].
 const CODES = {
@@ -26,7 +28,7 @@ const CODES = {
 
 // Whether port `p` can be tested: a physical twisted-pair port (not the internal link to a switch, a swconfig port or an optical
 // cage), not known to lack support, and a login that may run it.
-export const canTest = p => can('flab.network', 'cable_test') && p.cable_test !== false && p.role !== 'conduit' && p.type !== 'swconfig' && p.sfp == null && p.hardware != null;
+const canTest = p => can('flab.network', 'cable_test') && p.cable_test !== false && !unsupported.has(p.name) && p.role !== 'conduit' && p.type !== 'swconfig' && p.sfp == null && p.hardware != null;
 
 // Starts the test of port `p` and keeps its result for the panel.
 async function run(p) {
@@ -39,6 +41,8 @@ async function run(p) {
     if (e instanceof AuthError) { tests.delete(p.name); return hooks.reload(); }
     result = { ok: false, error: e.message };
   }
+  // The plugin cannot remember an unsupported port between calls (each runs in a fresh worker), so the page does.
+  if (result?.supported === false) unsupported.add(p.name);
   tests.set(p.name, { phase: 'done', result });
   hooks.rerender();
 }
@@ -65,10 +69,7 @@ function confirm(p) {
 export function cableButton(p) {
   if (!canTest(p)) return null;
   const busy = tests.get(p.name)?.phase === 'running';
-  const b = button(busy ? 'Testing…' : 'Cable test', 'tools', () => confirm(p), 'btn-fl cable-btn');
-  b.disabled = busy;
-  b.title = 'Test the cable with the PHY (the link drops for a few seconds)';
-  return b;
+  return button(busy ? 'Testing…' : 'Cable test', 'tools', () => confirm(p), 'btn-fl cable-btn', { disabled: busy, title: 'Test the cable with the PHY (the link drops for a few seconds)' });
 }
 
 // What the pairs say, in words.

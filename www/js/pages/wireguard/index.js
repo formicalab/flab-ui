@@ -7,7 +7,7 @@
 // countdown, read the config back through the plugin and check that what must run runs, confirm. The controls and the review banner are
 // shared with the other editing pages (core/forms.js, core/editpage.js). The page redraws on every poll, so polling is suspended while
 // there is something to lose: unsaved edits, a focused control, an open dialog or a save.
-import { h } from '../../core/dom.js';
+import { h, sleep } from '../../core/dom.js';
 import { tile, tiles, emptyState, healthBanner, button } from '../../core/ui.js';
 import { optional, ubus } from '../../core/ubus.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
@@ -38,7 +38,7 @@ const editor = createEditor({
   readAfter: async () => {
     let after = await readStatus();
     for (let n = 1; n < SETTLE_TRIES && notRunning(editor.state.base, editor.state.draft, after).length; n++) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await sleep(1000);
       after = await readStatus();
     }
     return after;
@@ -73,8 +73,7 @@ function addBar(ctx) {
       ctx.touched();
       ctx.redraw();
     } catch { /* the form says that a key must be pasted */ }
-  }, 'btn-brand');
-  add.disabled = !ctx.canEdit;
+  }, 'btn-brand', { disabled: !ctx.canEdit });
   return h('div', { className: 'wg-addbar' }, add,
     h('span', { className: 'muted small' }, 'A new interface gets a key made in this browser. Add its address and port, then peers, and save; put the interface in a firewall zone on the Firewall page afterwards.'));
 }

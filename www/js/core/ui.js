@@ -39,9 +39,10 @@ export const table = (cols, rows) => h('div', { className: 'grid-wrap' }, h('tab
     ? rows.map(r => h('tr', {}, r.map(c => h('td', {}, c))))
     : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'Nothing to show')))));
 
-// Small button with an optional leading icon; `cls` picks the Bootstrap/brand variant.
-export const button = (label, iconName, onclick, cls = 'btn-fl') =>
-  h('button', { type: 'button', className: `btn btn-sm ${cls}`, onclick }, iconName ? icon(iconName) : null, label);
+// Small button with an optional leading icon. `cls` picks the variant (btn-fl, btn-brand, ...) and may add page classes; `props` sets
+// other element properties (title, disabled, ariaLabel). An icon-only button (empty `label`) needs a title or ariaLabel.
+export const button = (label, iconName, onclick, cls = 'btn-fl', props = {}) =>
+  h('button', { type: 'button', ...props, className: `btn btn-sm ${cls}`, onclick }, iconName ? icon(iconName) : null, label || null);
 
 // Label/value list. rows: [label, node|string] pairs; null rows are skipped.
 export const kv = rows => h('dl', { className: 'kv' },
@@ -94,5 +95,5 @@ export function healthBanner(list, okText) {
   if (!list.length) return h('div', { className: 'net-health ok' }, icon('check-circle'), okText);
   const worst = list.some(f => f.level === 'bad') ? 'bad' : list.some(f => f.level === 'warn') ? 'warn' : 'info';
   return h('div', { className: `net-health ${worst}` },
-    h('ul', {}, list.map(f => h('li', { className: f.level }, icon(f.level === 'bad' ? 'shield-exclamation' : f.level === 'warn' ? 'exclamation-triangle' : 'info-circle'), f.text))));
+    h('ul', {}, list.map(f => h('li', { className: f.level }, icon(f.level === 'bad' ? 'x-circle' : f.level === 'warn' ? 'exclamation-triangle' : 'info-circle'), f.text))));
 }

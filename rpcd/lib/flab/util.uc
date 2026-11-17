@@ -5,10 +5,10 @@
 
 import { readfile, writefile } from 'fs';
 import { cursor } from 'uci';
-import { command_result as execute } from 'flab.exec';
+import { command_result as execute, stem } from 'flab.exec';
 
 // Test seam: with FLAB_FIXTURES=<dir> set (never the case inside rpcd) run() returns saved command
-// output instead of executing anything. The file is named after the command with every run of
+// output instead of executing anything. The file is named after the command (flab.exec stem()): every run of
 // non-alphanumerics turned into "_" and a trailing "2>/dev/null" dropped, e.g.
 // "swanctl --list-sas --raw 2>/dev/null" -> swanctl_list_sas_raw.txt
 // The helpers below follow the same idea for ubus calls (<object>_<method>.json), UCI
@@ -16,10 +16,12 @@ import { command_result as execute } from 'flab.exec';
 // With FLAB_RECORD=<dir> set (also never inside rpcd) every real call additionally saves its result under
 // the same names, so a fixture set is captured by simply running the plugin once on the router. Keys and
 // passwords found in recorded ubus/UCI data are blanked before they are written.
-// Fixture directory (replay mode) and record directory (capture mode); both unset in production.
+//
+// Safety: command strings run through `sh -c` (see flab.exec), so only put validated values in them; interface names must
+// pass safe_ifname() first.
 const FIXTURES = getenv('FLAB_FIXTURES');
 const RECORD = getenv('FLAB_RECORD');
-// Turns a command or "object method" string into the file-name stem used by fixtures.
+// Turns an "object method" string into the file-name stem used by ubus fixtures.
 const slug = (s) => replace(s, /[^A-Za-z0-9]+/g, '_');
 
 // Saves data as <FLAB_RECORD>/<name>; does nothing unless recording.
@@ -57,7 +59,7 @@ export function fixture_time() {
 export function run(cmd) {
 	// Replay mode: the command is never executed, only looked up by name.
 	if (FIXTURES)
-		return fixture(slug(replace(cmd, / 2>\/dev\/null$/, '')) + '.txt');
+		return fixture(stem(cmd) + '.txt');
 
 	let result = execute(cmd);
 	if (result.truncated || result.timed_out)
@@ -65,6 +67,8 @@ export function run(cmd) {
 	return result.output;
 };
 
+// Runs a command and returns { ok, code, output, truncated, timed_out } (flab.exec command_result(), with `timeout` and
+// `max_output` options). Unlike run(), a failure is reported, not turned into an exception.
 export function command_result(cmd, options) {
 	return execute(cmd, options);
 };
@@ -127,9 +131,16 @@ export function sysfs(path) {
 	return s == null ? null : trim(s);
 };
 
+// True when `s` is a string without a line break. ucode's `^...$` patterns match the first line of a multi-line string, so
+// "1.1.1.1\nid" passes /^[0-9.]+$/: test one_line() before any pattern check on a value that reaches a shell string, a command
+// argument or a path.
+export function one_line(s) {
+	return type(s) == 'string' && index(s, '\n') < 0 && index(s, '\r') < 0;
+};
+
 // Interface names reach shell command lines, so restrict them to a safe alphabet.
 export function safe_ifname(name) {
-	return name && match(name, /^[A-Za-z0-9_.:-]+$/) != null;
+	return one_line(name) && length(name) > 0 && match(name, /^[A-Za-z0-9_.:-]+$/) != null;
 };
 
 // Return a lowercase colon-separated MAC from any common spelling, or null.

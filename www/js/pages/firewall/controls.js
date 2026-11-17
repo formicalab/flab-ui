@@ -2,7 +2,7 @@
 // interfaces, the zones, the protocols) and the days of the week of a schedule. Each returns the same kind of node as core/forms.js
 // fieldRow() (a `.set-field` with its label and hint) and works on the draft value in place, so the dialog can use them next to the others.
 import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
+import { button } from '../../core/ui.js';
 import { WEEKDAYS } from './schema.js';
 
 // A set of check boxes over `items` ([{ value, label?, note? }]) for a list value `io.get()` that is edited in place: checking a box adds
@@ -37,7 +37,7 @@ export function checkField(f, io, items, { free = false } = {}) {
       io.redraw();
     };
     input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
-    more = h('div', { className: 'set-row fw-more' }, input, h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: io.disabled, onclick: add }, icon('plus-lg'), 'Add'));
+    more = h('div', { className: 'set-row fw-more' }, input, button('Add', 'plus-lg', add, 'btn-fl', { disabled: io.disabled }));
   }
   return h('div', { className: 'set-field full' }, h('label', { className: 'form-label' }, f.label), group, more, f.hint ? h('div', { className: 'muted small set-hint' }, f.hint) : null);
 }

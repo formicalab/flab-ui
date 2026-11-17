@@ -8,6 +8,7 @@ import { badge, button, card, mono, muted } from '../../core/ui.js';
 import { legend } from '../../core/forms.js';
 import { HOST_FIELDS } from './schema.js';
 import { hostNorm, macOf, newHost } from './model.js';
+import { inputCells, rowAction, rowClass } from './rows.js';
 
 // The key of the row whose name input is focused after the next redraw (set when a row was just added).
 let focusKey = null;
@@ -22,33 +23,19 @@ function leaseOf(data, row) {
 // One row of the table: an input per option, the lease it holds right now, and Remove (or Undo for a row that is
 // marked for removal).
 function reservationRow(ctx, row) {
-  const disabled = !ctx.canEdit || row.removed;
-  const cells = HOST_FIELDS.map(f => {
-    const input = h('input', { className: 'form-control form-control-sm mono', placeholder: f.placeholder ?? '', value: row.values[f.key], disabled,
-      spellcheck: false, autocomplete: 'off', title: f.label, oninput: e => { row.values[f.key] = e.target.value; ctx.touched(); } });
-    ctx.inputs[`host:${row.key}:${f.key}`] = input;
-    return h('td', {}, input);
-  });
   const lease = row.section == null ? null : leaseOf(ctx.data, row);
   const state = row.removed ? badge('to be removed', 'danger')
     : row.section == null ? badge('new', 'info', 'not saved yet')
     : lease ? h('span', { title: `${lease.iface}, expires in ${lease.valid == null ? 'an unknown time' : fmtSpan(Math.max(0, lease.valid))}` }, badge('leased', 'success'), ' ', mono(lease.address))
     : muted('no lease now');
-  const action = row.removed
-    ? button('Undo', 'arrow-clockwise', () => { row.removed = false; ctx.redraw(); })
-    : h('button', { type: 'button', className: 'btn btn-sm btn-fl', title: 'Remove this reservation', disabled: !ctx.canEdit, onclick: () => {
-      if (row.section == null) ctx.draft.hosts.splice(ctx.draft.hosts.indexOf(row), 1);
-      else row.removed = true;
-      ctx.redraw();
-    } }, icon('x-lg'));
-  return h('tr', { id: `dhcp-host-${row.key}`, className: row.removed ? 'dhcp-removed' : row.section == null ? 'dhcp-new' : '' }, ...cells, h('td', {}, state), h('td', {}, action));
+  return h('tr', { id: `dhcp-host-${row.key}`, className: rowClass(row) },
+    ...inputCells(ctx, HOST_FIELDS, 'host', row), h('td', {}, state), h('td', {}, rowAction(ctx, row, ctx.draft.hosts, 'Remove this reservation')));
 }
 
 // The whole card.
 export function reservationsCard(ctx) {
   const rows = ctx.draft.hosts.map(row => reservationRow(ctx, row));
-  const add = button('Add reservation', 'plus-lg', () => { focusKey = newHost(ctx.draft).key; ctx.redraw(); });
-  add.disabled = !ctx.canEdit;
+  const add = button('Add reservation', 'plus-lg', () => { focusKey = newHost(ctx.draft).key; ctx.redraw(); }, 'btn-fl', { disabled: !ctx.canEdit });
   if (focusKey) {
     const key = focusKey;
     focusKey = null;

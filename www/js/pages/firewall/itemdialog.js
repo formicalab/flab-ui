@@ -4,14 +4,15 @@
 // type for. What a field's value does to the others (a control that shows only for some values) is applied without redrawing, so typing is
 // never interrupted.
 import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
 import { openDialog } from '../../core/modal.js';
+import { button } from '../../core/ui.js';
 import { fieldRow, note } from '../../core/forms.js';
 import { REDIRECT_GROUPS, RULE_GROUPS, ZONE_GROUPS, PROTOCOLS } from './schema.js';
 import { KINDS, fieldFor, findItem, forwardLinks, isShown, live, newValues, zoneName } from './edit.js';
 import { redirectWords, ruleWords } from './describe.js';
 import { itemProblems } from './validate.js';
 import { checkField, weekdaysField } from './controls.js';
+import { fieldGroup } from './parts.js';
 
 // The groups of each kind's dialog.
 const GROUPS = { zones: ZONE_GROUPS, rules: RULE_GROUPS, redirects: REDIRECT_GROUPS };
@@ -44,8 +45,8 @@ export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
 
   const errorsBox = h('div', { className: 'set-notes' });
   const words = h('div', { className: 'fw-words' });
-  const save = h('button', { type: 'button', className: 'btn btn-sm btn-brand', onclick: () => { onSave(values, links); dialog.close(); } }, icon('check2'), isNew ? 'Add to the changes' : 'Update the changes');
-  const cancel = h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: () => dialog.close() }, 'Cancel');
+  const save = button(isNew ? 'Add to the changes' : 'Update the changes', 'check2', () => { onSave(values, links); dialog.close(); }, 'btn-brand');
+  const cancel = button('Cancel', 'x-lg', () => dialog.close());
   // The wrappers of the controls (field key to element) and of the groups, to show and hide them as the values change.
   let wrappers = {};
   let groupBoxes = [];
@@ -144,8 +145,7 @@ export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
       if (!list.length) continue;
       const gid = `${key}:${g.id}`;
       const nodes = list.map(f => { const n = control(f); wrappers[f.key] = n; return n; });
-      const el = h('details', { className: 'fw-group', open: opened.get(gid) ?? Boolean(g.open), ontoggle: e => opened.set(gid, e.target.open) },
-        h('summary', {}, g.title), h('div', { className: 'fw-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, nodes)));
+      const el = fieldGroup(opened, gid, g, nodes);
       groupBoxes.push({ el, fields: list });
       parts.push(el);
       if (key === 'zones' && g.id === 'members') parts.push(forwardingGroup());
@@ -159,14 +159,13 @@ export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
     const self = values.name.trim();
     const items = zoneNames().filter(n => n !== self).map(value => ({ value }));
     const direction = (list, label, hint) => checkField({ label, hint }, { get: () => list, disabled: false, touched, register: () => {}, redraw: () => {} }, items);
-    const gid = 'zones:forwardings';
-    return h('details', { className: 'fw-group', open: opened.get(gid) ?? true, ontoggle: e => opened.set(gid, e.target.open) },
-      h('summary', {}, 'Traffic to and from other zones'),
-      h('div', { className: 'fw-group-body' },
-        h('p', { className: 'muted small' }, 'A forwarding lets one zone send new connections to another, in one direction only (replies are always let back in). To let two zones talk both ways, tick both boxes. Traffic between interfaces of this same zone is the Forward policy above.'),
-        h('div', { className: 'set-fields' },
-          direction(links.to, 'May forward to', 'Hosts in this zone may start connections to these zones.'),
-          direction(links.from, 'May receive from', 'Hosts in these zones may start connections to this zone.'))));
+    return fieldGroup(opened, 'zones:forwardings', {
+      title: 'Traffic to and from other zones', open: true,
+      legend: 'A forwarding lets one zone send new connections to another, in one direction only (replies are always let back in). To let two zones talk both ways, tick both boxes. Traffic between interfaces of this same zone is the Forward policy above.',
+    }, [
+      direction(links.to, 'May forward to', 'Hosts in this zone may start connections to these zones.'),
+      direction(links.from, 'May receive from', 'Hosts in these zones may start connections to this zone.'),
+    ]);
   }
 
   // Draws the body again (a control that changes the shape of the form was used), then checks it.

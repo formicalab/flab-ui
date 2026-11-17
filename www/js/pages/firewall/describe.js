@@ -11,7 +11,7 @@ export function andList(words) {
 }
 
 // The protocols of a rule in words; an empty list means TCP and UDP (the firewall's default).
-export function protoWords(protos) {
+function protoWords(protos) {
   if (!protos.length) return 'TCP and UDP';
   if (protos.some(p => ['all', 'any', '*'].includes(p.toLowerCase()))) return 'every protocol';
   return andList(protos.map(p => ({ icmpv6: 'ICMPv6', 'ipv6-icmp': 'ICMPv6' })[p.toLowerCase()] ?? p.toUpperCase()));

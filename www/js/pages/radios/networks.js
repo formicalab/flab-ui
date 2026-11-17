@@ -7,6 +7,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, mono } from '../../core/ui.js';
 import { latest } from '../../core/rates.js';
+import { disclosure } from '../../core/fold.js';
 import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
 import { networksEditor, MODE_BADGE } from '../wifi/editors.js';
 import { tracker } from './parts.js';
@@ -58,9 +59,9 @@ function readOnlyBlock(i, ctx, redraw) {
   const mesh = i.mode === 'mesh';
   const live = liveOf(i, ctx, redraw);
   const state = !i.enabled ? badge('disabled') : i.up ? badge('running', 'success') : badge('not running', 'danger');
-  return h('details', { className: 'wf-iface' },
-    h('summary', {}, icon(mesh ? 'diagram-2' : 'wifi'), h('strong', {}, i.ssid ?? ctx.mesh.get(i.section)?.mesh_id ?? i.section), badge(MODE_BADGE[i.mode] ?? i.mode), badge(i.security ?? 'unknown'), state, ...live.badges),
-    h('div', { className: 'wf-iface-body' }, live.body));
+  return disclosure({ cls: 'wf-iface',
+    summary: [icon(mesh ? 'diagram-2' : 'wifi'), h('strong', {}, i.ssid ?? ctx.mesh.get(i.section)?.mesh_id ?? i.section), badge(MODE_BADGE[i.mode] ?? i.mode), badge(i.security ?? 'unknown'), state, ...live.badges],
+    body: h('div', { className: 'wf-iface-body' }, live.body) });
 }
 
 // The section of radio `r`: its wireless networks with their settings (`edit`, see wifi/editors.js) or, without the configuration, read only. Mesh points are

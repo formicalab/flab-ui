@@ -19,7 +19,7 @@ Reads `flab.routing status` (and `network.interface dump` for the logical interf
   multicast or anycast address, dropped by a blackhole, unreachable or prohibit route (the kernel only reports these
   as an error code, so the page names the covering route itself), no route, or only a source-specific route ("fill
   in From"). An ECMP route lists all its next hops and says the kernel picked one per flow. The raw `ip` output is
-  one click away. The lookup is part of the poll: once a query is set every refresh asks the kernel again, so the
+  one click away (a fold that stays as you left it across refreshes). The lookup is part of the poll: once a query is set every refresh asks the kernel again, so the
   answer follows route changes (a failover shows up by itself), and the matched route is highlighted in the list.
   Polling pauses while a form field has focus; the form's text lives in the page state.
 - **Policy rules:** the section starts with a card, "How the kernel picks a route" (folded at first; click its header to
@@ -67,7 +67,8 @@ their table, type, prefix (normalized to `address/length`, `default` becomes the
 protocol, scope, metric, preferred source, expiry, MTU, flags and next hops (the `nexthop` lines of a multipath
 route, `via inet6`, `mtu lock`); rules keep their selectors in order and the action (lookup, goto or a drop type).
 At most 4000 routes per family are returned (`truncated`). `lookup` accepts only an IPv4 or IPv6 address, an optional
-source address and an interface name, and refuses anything else before a command is built, so nothing but those
+source address and an interface name, and refuses anything else (a newline included: the regular expressions match line
+by line, so they alone would pass the first line of a longer text) before a command is built, so nothing but those
 three strings can reach the shell. The plugin is read-only: the static-route editor writes through rpcd's `uci` object, not
 through the plugin, and the ACL fragment `rpcd/acl.d/flab-routing.json` grants `status` and `lookup` plus `uci` on `network`.
 
@@ -124,7 +125,7 @@ Status of BIRD 3 (`flab.bgp`). Sections, top to bottom:
   statistics.
 - **Learned routes:** every BGP path grouped by prefix. Status is Best, ECMP (installed in the kernel as an
   equal-cost next hop) or Backup. Columns: peer, next hop, interface, AS path chips (prepending collapses to
-  `65520 x2`), origin, local pref, MED and communities (the last two only appear when some path has them),
+  `65520 ×2`), origin, local pref, MED and communities (the last two only appear when some path has them),
   since. Filter, peer selector, "Best paths only", sortable columns.
 - **Announced routes:** prefix x peer matrix plus export-filter results per peer (considered, blocked by
   filter, rejected, announced). **Local & connected routes**, **BIRD protocols**, **daemon** and **memory**

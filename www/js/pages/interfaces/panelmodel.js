@@ -45,13 +45,13 @@ export const ESSENTIAL_DEVICE = {
 };
 
 // Splits `fields` into the essential ones (in the order of `essential`, ids) and the advanced rest (in the table's order); `skip` ids are left out of both.
-export function splitFields(fields, essential, skip = []) {
+function splitFields(fields, essential, skip = []) {
   const usable = fields.filter(f => !skip.includes(idOf(f)));
   return { essential: essential.map(id => usable.find(f => idOf(f) === id)).filter(Boolean), advanced: usable.filter(f => !essential.includes(idOf(f))) };
 }
 
 // The advanced fields as groups of the card (`groups` is IFACE_GROUPS or DEVICE_GROUPS): [{ group, fields }] without the empty ones.
-export const groupFields = (fields, groups) => groups.map(group => ({ group, fields: fields.filter(f => f.group === group.id) })).filter(g => g.fields.length);
+const groupFields = (fields, groups) => groups.map(group => ({ group, fields: fields.filter(f => f.group === group.id) })).filter(g => g.fields.length);
 
 // The fields of an interface panel for its protocol and form values: { essential, advanced, groups } (advanced grouped as IFACE_GROUPS).
 export function interfaceSettings(proto, values) {
@@ -97,7 +97,7 @@ const speedText = mbit => (mbit >= 1000 ? `${mbit / 1000} Gbit/s` : `${mbit} Mbi
 const nameList = names => (names.length > 4 ? `${names.slice(0, 4).join(', ')} +${names.length - 4} more` : names.join(', '));
 
 // The interfaces (names) of the form that run on the device `value` ("br-lan" or "@wan"), other than the interface `exceptId`.
-export const interfacesOn = (data, draft, value, exceptId = null) => ifaceList(data, draft)
+const interfacesOn = (data, draft, value, exceptId = null) => ifaceList(data, draft)
   .filter(s => !s.removed && s.editable && s.id !== exceptId && draft.ifaces[s.id]?.device.trim() === value).map(s => s.name.trim() || 'a new interface');
 
 // The items of the device chooser for an interface (`ifaceId`, or null for a network about to be created): every device an interface may sit on and
@@ -150,10 +150,15 @@ export function deviceItems(data, draft, ifaceId = null) {
 // The sentence for a firewall zone's policy.
 export const zoneText = z => `input ${String(z.input ?? '?').toLowerCase()}, output ${String(z.output ?? '?').toLowerCase()}, forward ${String(z.forward ?? '?').toLowerCase()}${z.masq ? ', NAT' : ''}`;
 
+// The DHCP address range of a server record (flab.network `dhcp`: `start` is the offset of the first address, `limit` the count) as ".128–.247", or null
+// when the server has none.
+export const poolText = d => (d.start != null && d.limit ? `.${d.start}–.${d.start + d.limit - 1}` : null);
+
 // The service lines of an interface's DHCP data (flab.network `dhcp`): "DHCPv4 pool .100–.249 · 12h", "DHCPv6 server", "RA server"; empty when it serves nothing.
-export function serviceLines(d) {
+function serviceLines(d) {
   if (!d) return [];
-  const pool = d.start != null && d.limit ? `pool .${d.start}–.${d.start + d.limit - 1}` : null;
+  const range = poolText(d);
+  const pool = range ? `pool ${range}` : null;
   return [
     d.v4 && d.v4 !== 'disabled' ? `DHCPv4 ${pool ?? d.v4}${d.leasetime ? ` · ${d.leasetime}` : ''}` : null,
     d.v6 && d.v6 !== 'disabled' ? `DHCPv6 ${d.v6}` : null,
@@ -236,7 +241,7 @@ export function suggestSubnet(data, draft) {
 }
 
 // The names taken by a section of the config or the form: the ones a new interface must not use.
-export function takenNames(data, draft) {
+function takenNames(data, draft) {
   return new Set(['loopback', 'globals', ...(data.cfg?.interfaces ?? []).map(s => s.section), ...(data.cfg?.devices ?? []).filter(s => !s.anonymous).map(s => s.section),
     ...(draft.ifaceAdded ?? []).map(a => a.name.trim())]);
 }

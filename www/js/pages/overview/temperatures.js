@@ -14,9 +14,9 @@ const HOT = 90;
 export function sensorLabel(s) {
   const name = s.name ?? '';
   let m = name.match(/^mt79\d+_phy(\d+)$/);
-  if (m) return { title: `Wi-Fi radio phy${m[1]}`, sub: 'MediaTek MT7915 radio' };
+  if (m) return { title: `Wi-Fi radio phy${m[1]}`, sub: `MediaTek ${name.split('_')[0].toUpperCase()} radio` };
   if (/^ath\d+k_hwmon$/.test(name)) return { title: 'Wi-Fi radio (Qualcomm)', sub: [s.driver, s.id?.split('/')[0]].filter(Boolean).join(' · ') };
-  if (/^cpu[-_]thermal$/.test(name)) return { title: 'CPU (SoC)', sub: 'Cortex-A53 cluster thermal zone' };
+  if (/^cpu[-_]thermal$/.test(name)) return { title: 'CPU (SoC)', sub: 'SoC thermal zone' };
   m = name.match(/^mdio_bus:(\w+)$/);
   if (m) return { title: `Ethernet PHY ${m[1]}`, sub: s.driver ? s.driver.replace(/\s*PHY$/, '') : 'MDIO PHY' };
   return { title: s.label || name || s.id, sub: s.driver ?? s.kind };
@@ -35,7 +35,7 @@ export function sensorLevel(s) {
 }
 
 // Word for a temperature level.
-export const levelText = lvl => ({ good: 'Normal', fair: 'Warm', weak: 'Hot' }[lvl]);
+const levelText = lvl => ({ good: 'Normal', fair: 'Warm', weak: 'Hot' }[lvl]);
 // Badge kind for a temperature level (good/fair/weak).
 const levelBadge = lvl => ({ good: 'success', fair: 'warning', weak: 'danger' }[lvl]);
 // The sensor with the highest temperature, or null when none reports one.

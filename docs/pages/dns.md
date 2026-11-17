@@ -25,9 +25,9 @@ pauses while a text box has the focus. Top to bottom:
   **Clear text for Unbound**: `unbound-control list_forwards` does not say whether a forwarder uses TLS (the `+` flags are
   `i`, not DNSSEC-validated, and possibly others), so the plugin reads the `forward-tls-upstream` setting of each `forward-zone`
   clause of Unbound's generated configuration; a zone that is not found there is "unknown" and never accused.
-- **Configuration** (full width, on top): every option the page knows, in collapsible areas with the same chevron as the folding
-  cards of the DHCP page (right when folded, down when open; every area starts folded, and one the user opens stays open across
-  the redraws). The header has a badge that says whether the engine runs, in green "Unbound running" (or "dnsmasq running", whichever
+- **Configuration** (full width, on top): every option the page knows, in collapsible areas that look and behave like the groups of the
+  DHCP and Dynamic DNS pages (the shared `disclosure()` of `core/fold.js`: an arrow before the title, right when folded, down when
+  open; every area starts folded, and one the user opens stays open across the redraws). The header has a badge that says whether the engine runs, in green "Unbound running" (or "dnsmasq running", whichever
   the page describes) and in red "… not running", like the daemon card of the DHCP page, then the config file and how many
   addresses and ports it listens on.
   **General** comes first: the service and its monitoring first (enabled, remote control, statistics, log verbosity; for dnsmasq query
@@ -69,9 +69,10 @@ pauses while a text box has the focus. Top to bottom:
   section of `/etc/config/dhcp` (`flab.dns` reports it as `config_section`): a boolean as `1` or `0`, an emptied option is deleted.
   The model for all of this is `dns/edit.js` (pure and unit-tested); `core/editpage.js` takes the config name as a function
   because it depends on the engine (a page that writes sections of two configs, like the DHCP page, gives a list and a `readAfter`). A login without the `uci` write methods sees the settings read only, with a note. Changes
-  already staged in the session are reported and can be discarded first. Without a resolver the card is only *Listening on*.
-- **Zones**: a card that is folded when the page opens (click its header; the chevron points right when folded and down when
-  open, and the choice survives the redraws). It shows what UCI holds, as UCI holds it: a zone is one **block**, not one domain.
+  already staged in the session are reported and can be discarded first.
+- **Zones**: a card that is folded when the page opens (click its header; it folds like the cards of the DHCP and Dynamic DNS
+  pages, `foldable()` in `core/fold.js`: the arrow points right when folded and down when open, and the choice survives the
+  redraws). It shows what UCI holds, as UCI holds it: a zone is one **block**, not one domain.
   For Unbound a zone is a `config zone` section of `/etc/config/unbound`, as described in the OpenWrt Unbound README
   (`net/unbound/files/README.md`, "config zone"): a `zone_type` (`forward_zone`, `stub_zone` or `auth_zone`), a list of domains
   (`zone_name`), a list of servers and the settings of that type. One section can serve any number of domains with the same

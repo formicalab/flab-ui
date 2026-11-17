@@ -10,7 +10,7 @@ import { pauseControl, refreshControl } from '../../core/controls.js';
 import { note } from '../../core/forms.js';
 import { tile, tiles } from '../../core/ui.js';
 import { editor } from '../wifi/editor.js';
-import { revealControl } from '../wifi/editors.js';
+import { reveal } from '../../core/fold.js';
 import { readWifi } from '../wifi/model.js';
 import { airtime, recordRadios } from './parts.js';
 import { recordMesh } from './mesh.js';
@@ -34,6 +34,7 @@ function summary(radios, mesh) {
     nodes.length ? tile('Mesh peers', `${estab.length} / ${peers.length}`, signals.length ? `weakest link ${Math.min(...signals)} dBm` : 'no established link', estab.length ? 'text-success' : 'text-warning') : null,
     tile('Busiest channel', busiest ? `${Math.round(busiest.busy)} %` : '–', busiest ? `${busiest.r.name} · channel ${busiest.r.live?.channel ?? '?'}` : 'measuring…', busiest?.busy >= 70 ? 'text-warning' : ''));
 }
+
 // Page object registered in pages/index.js (contract documented there).
 export default {
   id: 'radios',
@@ -65,7 +66,7 @@ export default {
     if (!data.hw?.radios?.length) return [note('info', 'The Wi-Fi plugin (flab.radio) is not available on this router, or it reports no radio.')];
     const canEdit = editor.begin(data.wifi, rerender) && data.wifi.editable;
     const edit = { canEdit, wifi: data.wifi, draft: editor.state.draft, inputs: {}, sync: () => {}, touched: () => {}, redraw: () => editor.redraw() };
-    edit.sync = () => editor.markErrors(edit.inputs, canEdit, revealControl);
+    edit.sync = () => editor.markErrors(edit.inputs, canEdit, reveal);
     edit.touched = editor.touched(edit);
 
     // The cards register their controls in `edit.inputs`, so they are built before the errors are marked.

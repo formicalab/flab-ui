@@ -159,7 +159,7 @@ check(r.names.mac['aa:bb:cc:00:00:10'] === 'laptop' && r.names.mac['aa:bb:cc:00:
 check(r.rows[0].mac === 'aa:bb:cc:00:00:11' && r.rows.at(-1).mac === '00:00:00:00:00:00', 'the heaviest host comes first');
 r = out('big-usage');
 check(r.rows.length === 3000 && r.total_rows === 3500 && r.truncated === true, 'at most 3000 usage rows are returned and the reply says rows were left out', j([r.rows.length, r.total_rows]));
-for (const [name, re] of [['rich-usage-unlisted', /not one nlbwmon keeps/], ['rich-usage-nodata', /no data/], ['nonlbw-usage', /not installed/], ['stopped-usage', /not running/]]) {
+for (const [name, re] of [['rich-usage-unlisted', /not one nlbwmon keeps/], ['rich-usage-nodata', /no data/], ['rich-usage-badjson', /no data/], ['nonlbw-usage', /not installed/], ['stopped-usage', /not running/]]) {
   const x = out(name);
   check(x.ok === false && re.test(x.error) && x.rows === undefined, `${name}: ${x.error}`, j(x));
 }

@@ -101,7 +101,7 @@ function inside(cidr, address) {
 
 // A route section's options as the table edits them: the prefix (target and netmask joined), the strings of the other options,
 // and the two checkboxes.
-export function rowValues(raw, family) {
+function rowValues(raw, family) {
   const text = k => (raw[k] == null ? '' : String(raw[k]).trim());
   let target = text('target');
   if (family === 4 && target && !target.includes('/') && raw.netmask != null) {
@@ -396,20 +396,35 @@ export function reachedBy(row, data) {
   return { table: name, rules: [...new Set(rules)] };
 }
 
+// The comparable keys (cidrKey) of a kernel route's prefix and source prefix, computed once per route object: the page compares
+// every configured route with every kernel route on each redraw and on each keystroke, and a poll brings new objects.
+const kernelKeys = new WeakMap();
+function keysOf(r) {
+  let keys = kernelKeys.get(r);
+  if (!keys) {
+    const prefix = parseCidr(r.prefix, r.family);
+    const source = parseCidr(r.from || (r.family === 6 ? '::/0' : '0.0.0.0/0'), r.family);
+    keys = { prefix: prefix && cidrKey(prefix), source: source && cidrKey(source) };
+    kernelKeys.set(r, keys);
+  }
+  return keys;
+}
+
 // A configured route's full identity, not just another route to the same destination.
 export function matchesKernel(row, r, data) {
+  if (r.family !== row.family) return false;
   const { v, iface, table, metric } = effectiveRoute(row, data);
   const raw = data.routes.find(s => s.section === row.section)?.values;
   const protocols = { unspec: '0', kernel: '2', boot: '3', static: '4', ra: '9', dhcp: '16', bird: '192' };
   const protocol = p => protocols[p] ?? String(p ?? '');
   if (protocol(r.proto) !== protocol(raw?.proto || 'static')) return false;
   const target = parseCidr(v.target, row.family);
-  const prefix = parseCidr(r.prefix, row.family);
-  if (!target || !prefix || r.family !== row.family || cidrKey(prefix) !== cidrKey(target)) return false;
+  if (!target) return false;
   if (r.type !== (v.type || 'unicast') || tableKey(r.table, data.tableIds) !== table || Number(r.metric ?? (row.family === 6 ? 1024 : 0)) !== metric) return false;
+  const actual = keysOf(r);
+  if (actual.prefix == null || actual.prefix !== cidrKey(target)) return false;
   const source = parseCidr(v.source || (row.family === 6 ? '::/0' : '0.0.0.0/0'), row.family);
-  const actualSource = parseCidr(r.from || (row.family === 6 ? '::/0' : '0.0.0.0/0'), row.family);
-  if (!source || !actualSource || cidrKey(source) !== cidrKey(actualSource)) return false;
+  if (!source || actual.source == null || cidrKey(source) !== actual.source) return false;
   if (NO_GATEWAY.includes(v.type)) return true;
   if (v.interface && !iface?.device) return false;
   const gateway = v.gateway ? parseAddress(v.gateway) : null;
@@ -417,6 +432,8 @@ export function matchesKernel(row, r, data) {
     && (gateway ? parseAddress(n.via)?.value === gateway.value : !n.via));
 }
 
+// What the kernel says about a saved route: 'disabled' (switched off in the config), 'missing' (enabled but not installed),
+// 'active' (installed), or null when that cannot be told (a new or removed row, no kernel data, an invalid target).
 export function kernelState(row, data) {
   if (row.section == null || row.removed) return null;
   const { v, iface } = effectiveRoute(row, data);

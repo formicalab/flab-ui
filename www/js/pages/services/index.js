@@ -8,6 +8,7 @@ import { icon } from '../../core/icons.js';
 import { AuthError, can, optional, ubus } from '../../core/ubus.js';
 import { badge, button, card, mono, muted, tile, tiles } from '../../core/ui.js';
 import { refreshControl, searchControl } from '../../core/controls.js';
+import { note } from '../../core/forms.js';
 import { fmtNum } from '../../core/format.js';
 import { LABELS, PROGRESS, actionsFor, buildRows, describeOutcome, filterRows, readProcd, riskOf, summarize } from './model.js';
 
@@ -20,6 +21,11 @@ const shell = { rerender: () => {}, reload: () => {} };
 
 // Milliseconds a background (detached) call needs before the list can show its effect.
 const DETACHED_REFRESH_MS = 4000;
+// The pending refresh after a detached call, cancelled when the page is opened again so that a stale one does not fire on another page.
+let detachedRefresh = null;
+
+// The icon of each action's button.
+const ACTION_ICONS = { start: 'play-fill', stop: 'x-lg', restart: 'arrow-clockwise', enable: 'toggle-on', disable: 'toggle-off' };
 
 // What each state means, shown above the table.
 const STATE_HELP = 'running: procd reports every instance running. idle: procd knows the service but nothing runs. '
@@ -53,7 +59,7 @@ async function perform(name, action) {
   state.outcome = describeOutcome(name, action, reply, error);
   state.busy = null;
   shell.rerender();
-  if (reply?.detached) setTimeout(() => shell.reload(), DETACHED_REFRESH_MS);
+  if (reply?.detached) detachedRefresh = setTimeout(() => shell.reload(), DETACHED_REFRESH_MS);
   else await shell.reload();
 }
 
@@ -80,8 +86,8 @@ function confirmNote() {
       h('strong', {}, risk.title),
       h('p', {}, risk.text)),
     h('div', { className: 'svc-note-actions' },
-      Object.assign(button(`${LABELS[p.action]} ${p.name}`, null, () => perform(p.name, p.action), risk.level === 'danger' ? 'btn-danger' : 'btn-brand'), { id: 'svc-confirm-yes', disabled: Boolean(state.busy) }),
-      Object.assign(button('Cancel', null, () => { state.pending = null; shell.rerender(); }), { id: 'svc-confirm-no' })));
+      button(`${LABELS[p.action]} ${p.name}`, 'check2', () => perform(p.name, p.action), risk.level === 'danger' ? 'btn-danger' : 'btn-brand', { id: 'svc-confirm-yes', disabled: Boolean(state.busy) }),
+      button('Cancel', 'x-lg', () => { state.pending = null; shell.rerender(); }, 'btn-fl', { id: 'svc-confirm-no' })));
 }
 
 // The outcome of the last call: green when it worked, red with the script's own output when it failed.
@@ -94,7 +100,7 @@ function outcomeNote() {
       h('span', {}, o.text),
       o.output ? h('pre', { className: 'svc-output' }, o.output) : null),
     h('div', { className: 'svc-note-actions' },
-      Object.assign(button('Dismiss', null, () => { state.outcome = null; shell.rerender(); }), { id: 'svc-outcome-dismiss' })));
+      button('Dismiss', 'x-lg', () => { state.outcome = null; shell.rerender(); }, 'btn-fl', { id: 'svc-outcome-dismiss' })));
 }
 
 // The State cell: a badge, with the meaning of "no instance" in its tooltip.
@@ -114,14 +120,12 @@ function bootCell(row) {
 }
 
 // The Actions cell: the buttons, or the reason there are none. All buttons are disabled while a call runs.
-function actionCell(row, writable) {
-  if (!writable) return null;
+function actionCell(row) {
   if (!row.installed) return muted('no init script');
   if (row.protected) return muted('boot sequence');
-  const icons = { start: 'play-fill', stop: 'x-circle', restart: 'arrow-clockwise', enable: 'toggle-on', disable: 'toggle-off' };
   const titles = { enable: `Start ${row.name} at boot`, disable: `Do not start ${row.name} at boot` };
   return h('div', { className: 'svc-actions' }, actionsFor(row).map(a =>
-    Object.assign(button(LABELS[a.action], icons[a.action], () => request(row.name, a.action)), {
+    button(LABELS[a.action], ACTION_ICONS[a.action], () => request(row.name, a.action), 'btn-fl', {
       id: `svc-${row.name}-${a.action}`,
       disabled: a.disabled || Boolean(state.busy),
       title: titles[a.action] ?? `${LABELS[a.action]} ${row.name}`,
@@ -145,7 +149,7 @@ function row(r, writable) {
     h('td', {}, bootCell(r)),
     h('td', {}, r.pids.length ? r.pids.join(', ') : muted('–')),
     h('td', {}, portsCell(r)),
-    writable ? h('td', {}, actionCell(r, writable)) : null);
+    writable ? h('td', {}, actionCell(r)) : null);
 }
 
 // The services table, with the explanation of the states at the top.
@@ -166,11 +170,12 @@ export default {
   label: 'Services',
   icon: 'hdd-stack',
   interval: 5000,
-  css: 'css/services.css',
+  css: ['css/forms.css', 'css/services.css'],
   load,
 
   // The filter box and Refresh stay in the command bar across redraws.
   controls({ rerender, reload }) {
+    clearTimeout(detachedRefresh);
     shell.rerender = rerender;
     shell.reload = reload;
     return { nodes: [searchControl(state, 'q', rerender, 'Filter services…'), refreshControl(reload)] };
@@ -183,11 +188,9 @@ export default {
     const rows = buildRows(data.list, data.procd);
     const sum = summarize(rows);
     const writable = data.list != null && can('flab.services', 'control');
-    // Info banner with a message.
-    const note = text => h('div', { className: 'svc-note info' }, icon('info-circle'), h('div', { className: 'svc-note-body' }, text));
     return [
-      data.list == null ? note('The services plugin is not installed on the router, so services can only be listed.') : null,
-      data.list != null && !writable ? note('This login is not allowed to start or stop services, so the buttons are hidden.') : null,
+      data.list == null ? note('info', 'The services plugin is not installed on the router, so services can only be listed.') : null,
+      data.list != null && !writable ? note('info', 'This login is not allowed to start or stop services, so the buttons are hidden.') : null,
       confirmNote(),
       outcomeNote(),
       tiles(

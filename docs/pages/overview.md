@@ -15,3 +15,5 @@ the first, so numbers appear immediately; the history restarts if the router upt
 Temperatures come from `flab.sensors`: thermal zones plus hwmon sensors (deduplicated, since the CPU appears
 as both). Health: Normal below 75 C, Warm from 75 C, Hot from 90 C or at a sensor's own throttle/critical
 limit. Also shows CPU trip points, throttling state and cooling devices (passive only when no fan is reported).
+Sensor names are friendly for the drivers seen so far (MediaTek and Qualcomm radios, the SoC thermal zone, MDIO PHYs); others
+show their own label or name.

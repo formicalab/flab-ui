@@ -153,7 +153,7 @@ or exec grant. Live throughput is not here: it is the counters `flab.network` al
   `mac,ip`, `layer7`, `ip,layer7`, `mac,layer7` (nlbwmon's own columns follow: `family` for `fam`, `proto`, `port` and `layer7` for
   `layer7`). The reply has `columns`, `rows` (objects, largest total first, at most 3000, with `total_rows` and `truncated`), `totals`
   over every row, `names` by MAC and by IP and `window` (`start`, `end` (the first day of the next period), `today`, `ongoing`, `days`).
-  Without nlbw, with nlbwmon stopped, for an unlisted period or when `nlbw` prints no data
+  Without nlbw, with nlbwmon stopped, for an unlisted period or when `nlbw` prints no data (or text that is not valid JSON)
   the reply is `{ ok: false, error }`.
 - `nlbwmon_paths` (`dir`, `protocols`, each optional): describes the paths nlbwmon's settings name. `dir`: `path`, `resolved` (links
   followed, for a directory that does not exist yet the nearest existing parent plus the rest), `exists`, `is_dir`, `blocked` (not a

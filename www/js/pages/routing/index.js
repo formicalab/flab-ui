@@ -9,7 +9,6 @@
 //
 // The view state lives here so it survives the redraw on every poll: the open tab, the filters and sorts of the
 // tabs, the lookup form and the lookup that is currently shown (once a query is set, every poll repeats it).
-import { h } from '../../core/dom.js';
 import { AuthError, ubus, optional } from '../../core/ubus.js';
 import { tile, tiles, healthBanner } from '../../core/ui.js';
 import { searchControl, selectControl, pauseControl, refreshControl, toggleControl, tabsControl } from '../../core/controls.js';
@@ -31,6 +30,8 @@ const state = {
   // Whether the "How the kernel picks a route" card is folded (kept across the redraws of the poll); folded at first, since
   // it is a reference rather than something to read on every visit.
   howFolded: true,
+  // Whether the "What the kernel said" fold of the lookup answer is open (kept across the redraws of the poll).
+  rawOpen: false,
   // Set by the command-bar controls: redraw from the cached data, poll again (used by the lookup form).
   rerender: () => {}, reload: () => {},
 };

@@ -116,7 +116,7 @@ const ORDERED = ['rules', 'redirects'];
 // have without any `uci order` call (survivors as they are, then the new ones in the order they are added). Only the order of the rules
 // and of the port forwards matters to the firewall (it reads the sections of a type in file order, the types in any order): the survivors
 // of such a kind take the slots they had, in the order of the draft, and a new one goes right after the item before it in the draft.
-export function orderPlan(data, draft) {
+function orderPlan(data, draft) {
   const gone = new Set(KIND_KEYS.flatMap(key => draft[key].filter(i => i.removed).map(i => i.id)));
   const newDefaults = !data.defaults.section && changedFields(DEFAULT_FIELDS, formValues(DEFAULT_FIELDS, {}), draft.defaults).length > 0;
   const natural = [

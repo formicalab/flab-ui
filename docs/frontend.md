@@ -15,7 +15,8 @@ fallback, but key generation still requires `crypto.getRandomValues`.
 - On every route change the shell rebuilds: navigation pane, command bar (page title, the page's
   persistent controls, "Updated hh:mm:ss" stamp) and a `<main>` results area.
 - `page.load()` fetches data, `page.view(data, rerender)` returns nodes. A `setInterval` repeats
-  `load()` every `page.interval` ms unless `page.isPaused()` is true. A poll is also skipped while the previous
+  `load()` every `page.interval` ms (a page that gives `interval` as a function gets a chained `setTimeout` instead,
+  re-reading the period before each poll) unless `page.isPaused()` is true. A poll is also skipped while the previous
   one is still running and while the browser tab is in the background (the tab refreshes when it is shown again).
   Only the newest request counts: a late reply that was overtaken, or one for a page that was left, is dropped. A
   poll's reply is also dropped when the page became paused while it was on its way (the user clicked into a form or
@@ -62,7 +63,7 @@ Every page is a plain object, default-exported from its module (full text in `js
 | `isPaused()` | no | Return true to suspend auto-refresh |
 | `css` | no | Stylesheet (or array of stylesheets) loaded on first visit |
 
-`aliases` (exported next to `pages`) maps a route that was a page once to the page that replaced it (`bridges` → `interfaces`); `core/app.js` replaces the hash, so a bookmark keeps working.
+`aliases` (exported next to `pages`) maps a route that was a page once to the page that replaced it (`bridges` → `interfaces`); `core/app.js` replaces the hash, so a bookmark keeps working. An entry of `pages` may also have `activate(module)`, which the shell calls after the page module is imported (Toolbox uses it for `openTool`).
 
 **State that must survive refreshes** (filter text, sort order, selected radio, paused flag, scroll
 position) lives in a module-level `state` object in the page, never in the DOM. The controls are created
@@ -76,11 +77,19 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
 - **`ui.js`** components: `card`, `tile`/`tiles` (KPI row), `table`, `badge` (soft pill: `success`,
   `warning`, `danger`, `info`), `chip`, `kv` (label/value list), `section`, `lifebar`, `meter`,
   `sparkline`, `emptyState`, `button`, `healthBanner` (findings list or all-clear), `muted` and `mono`
-  (inline text), `GRADE_KIND` (badge kind of the A+ to D security grades).
-- **`controls.js`**: `searchControl`, `selectControl`, `pauseControl`, `toggleControl`, `refreshControl`
+  (inline text), `GRADE_KIND` (badge kind of the A+ to D security grades). See
+  [UI conventions](#ui-conventions) for `button` and the other shared looks.
+- **`fold.js`**: `disclosure()`, `foldable()` with `chevron()`, and `reveal()`; see [UI conventions](#ui-conventions).
+- **`controls.js`**: `searchControl`, `selectControl`, `tabsControl`, `pauseControl`, `toggleControl`, `refreshControl`
   bind to a page's `state` object.
 - **`format.js`**: `fmtBytes`, `fmtBps`, `fmtLine` (bytes per second as Mbit/s), `fmtDur`, `fmtSpan`,
-  `fmtNum`, `fmtRate`.
+  `fmtNum`, `fmtRate`, `ipNum`. `ip.js` (`parseAddress()`, IPv4 and IPv6 as BigInt) is for comparing addresses.
+- **`forms.js`, `fields.js`, `ops.js`, `editpage.js`**: what the editing pages share (field rows, option
+  checks, the review banner, the draft/save/discard logic); see
+  [Configuration changes](architecture.md#configuration-changes).
+- **`modal.js`, `drawer.js`**: `openDialog()` (a native `<dialog>` in Bootstrap's modal markup) and `openDrawer()` (a
+  side panel that leaves the page usable beside it, closed by Escape or a route change); each header lists the options.
+  `clipboard.js` has `copyText()` and `copyButton()`.
 - **`rates.js`**: `createTracker()` turns the cumulative counters the router reports into per-second rates
   and ratios from successive polls. A series restarts after a gap (polling paused, background tab), a counter
   that goes backwards counts as zero, and `keep()` drops series whose key disappeared. Every page that shows
@@ -117,8 +126,48 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   spell the font stack out again.
 - Shared pieces (status `.dot`, health banner, table helpers) live in `base.css` because page CSS is
   loaded lazily.
-- **Legends and "how to read" notes sit at the top of the card or section they explain**, so the key is read
-  before the data. Keep that when adding a page.
+
+## UI conventions
+
+This is the one place that says how shared UI looks and behaves; the other docs and the page docs refer to it.
+
+- **Buttons.** Build them with `button(label, iconName, onclick, cls = 'btn-fl', props = {})` from `core/ui.js`, not by hand.
+  `cls` picks the variant (`btn-fl` neutral, `btn-brand` the primary action) and may add page classes; `props` sets other
+  element properties (`title`, `disabled`, `ariaLabel`). An icon-only button (empty label) needs a `title` and an `ariaLabel`.
+  Labels and headers are sentence case, American English.
+- **Icon vocabulary.** A concept uses the same icon on every page (names are the `PATHS` keys of `core/icons.js`):
+
+  | Concept | Icon |
+  |---|---|
+  | Remove or discard an item (with a text label) | `trash` |
+  | Small icon-only remove-row button (with a title) | `x-lg` |
+  | Add | `plus-lg` |
+  | Save, confirm | `check2` |
+  | Discard edits, revert | `arrow-counterclockwise` |
+  | Refresh, reload | `arrow-clockwise` |
+  | Edit | `pencil` |
+  | Error (`note('bad')`, `healthBanner` level `bad`) | `x-circle` |
+  | Warning | `exclamation-triangle` |
+  | Security risk (a weak cipher, a risky service action) | `shield-exclamation` |
+  | Info, notice | `info-circle` |
+  | Success | `check-circle` |
+  | Settings fold | `gear` |
+  | Download, upload | `download`, `upload` |
+
+  The navigation icons are in `pages/index.js`. A new icon is pasted into `PATHS` (see [Development](development.md)).
+- **Folds.** A native `<details>` is always built with `disclosure({ cls, summary, summaryCls, body, open, onToggle })` from
+  `core/fold.js`, never with `h('details')`: it draws one arrow before the summary content (right when closed, down when
+  open) and styles the summary (`.fl-disclosure` in `css/base.css`, so any page can use it). `cls: 'fl-disclosure-bar ...'` makes the summary a
+  padded group header (the groups of a settings card); a plain disclosure is an inline "show more". The page keeps what is
+  open in its state and passes it back as `open`, with `onToggle(open)` to record the change. A card that folds down to its
+  header uses `foldable(card, folded, onChange)` with `chevron()` in the header: the header is the toggle (mouse, Enter or
+  Space) and a click on a control inside it does not toggle. `reveal(el)` opens every closed group and unfolds the card around a
+  control, so a control with an error is never hidden. Pages add only container layout (borders, margins, body padding), never
+  their own marker, arrow or cursor rules.
+- **Notes and banners.** `note(kind, text)` from `core/forms.js` (kinds `bad`, `warn`, `ok`, `info`) for a line about a form or
+  an action, `healthBanner(findings, okText)` for what needs attention on a page, `emptyState(text)` when a page has nothing to
+  list, and `badge` kinds `success`, `warning`, `danger` and `info` for status pills.
+- **Legends** and "how to read" notes sit at the top of the card or section they explain, so the key is read before the data.
 
 ## Page-specific frontend notes
 

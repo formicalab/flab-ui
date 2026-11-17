@@ -11,6 +11,7 @@
 import { prefixKey } from './bgp/util.js';
 import { parseAddress } from '../../core/ip.js';
 
+// Re-exported because the model tests reach the address parser through this module.
 export { parseAddress };
 
 //#region Addresses
@@ -183,18 +184,16 @@ const SORT_KEYS = {
   table: r => r.table,
 };
 
-// A copy of the routes ordered by the column in `sort` ({ key, dir: 1 | -1 }); ties keep the main table first and
-// then the destination order, so a table's routes stay readable.
+// Sorts `routes` by the column in `sort` ({ key, dir: 1 | -1 }) into a new array; ties keep the main table first and
+// then the destination order, so a table's routes stay readable. The keys are computed once per route (a prefix key parses an
+// address), not on every comparison.
 export function sortRoutes(routes, sort) {
   const key = SORT_KEYS[sort.key] ?? SORT_KEYS.prefix;
   // Tie-break rank of a table: main first, local last, others between.
   const rank = t => (t === 'main' ? 0 : t === 'local' ? 2 : 1);
-  return [...routes].sort((a, b) => {
-    const x = key(a), y = key(b);
-    const primary = (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
-    const px = prefixKey(a.prefix), py = prefixKey(b.prefix);
-    return primary || rank(a.table) - rank(b.table) || (px < py ? -1 : px > py ? 1 : 0) || (a.metric ?? 0) - (b.metric ?? 0);
-  });
+  return routes.map(r => ({ r, x: key(r), p: prefixKey(r.prefix), rank: rank(r.table), metric: r.metric ?? 0 }))
+    .sort((a, b) => ((a.x < b.x ? -1 : a.x > b.x ? 1 : 0) * sort.dir) || a.rank - b.rank || (a.p < b.p ? -1 : a.p > b.p ? 1 : 0) || a.metric - b.metric)
+    .map(e => e.r);
 }
 
 //#endregion

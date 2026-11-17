@@ -26,7 +26,7 @@ import { deferred } from 'flab.worker';
 import { connect } from 'ubus';
 import { command_result, ubus_call, uci_all, sysfs, num, as_list } from 'flab.util';
 
-// Accumulator helper for reduce-style loops: adds the packet and byte counts of nft counter `c` to `acc`.
+// Adds the packet and byte counts of the nft counter `c` to the accumulator `acc` ({ packets, bytes }).
 const sum_counter = (acc, c) => {
 	acc.packets += c.packets ?? 0;
 	acc.bytes += c.bytes ?? 0;
@@ -238,6 +238,15 @@ function unzoned(nets, all_zone_networks) {
 
 //#endregion
 
+// Why a command_result() failed, as the end of a sentence.
+function describe_failure(result) {
+	if (result.timed_out)
+		return 'timed out';
+	if (result.truncated)
+		return 'returned more output than allowed';
+	return `failed (exit ${result.code ?? 'unknown'})`;
+}
+
 // Builds the flab.firewall status reply from the UCI firewall config (in configuration order) joined with
 // the loaded nftables state.
 function collect() {
@@ -290,7 +299,7 @@ function collect() {
 
 	return {
 		generated: time(),
-		...(kernel.ok ? {} : { ok: false, error: `The firewall state query failed (exit ${kernel.code ?? 'unknown'}).` }),
+		...(kernel.ok ? {} : { ok: false, error: `The firewall state query ${describe_failure(kernel)}.` }),
 		engine: kernel.ok ? (nft ? 'nftables' : 'none') : 'unknown',
 		running: kernel.ok ? nft != null : null,
 		defaults, zones, rules, redirects, includes, ipsets,
@@ -312,7 +321,7 @@ function collect() {
 return deferred({
 	'flab.firewall': {
 		status: {
-			call: function(request) {
+			call: function() {
 				return collect();
 			},
 		},

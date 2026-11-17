@@ -8,6 +8,7 @@
 // focus (the page pauses polling then), and its text lives in the page's state.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
+import { disclosure } from '../../core/fold.js';
 import { badge, button, card, kv, mono, muted } from '../../core/ui.js';
 import { openTool } from '../index.js';
 import { DROPS, interpret, isAddress, routeText, rulesFor, tableLabel } from './model.js';
@@ -64,7 +65,7 @@ function form(state, devices) {
     field('src', 'From (optional)', 'source address', 'The source address of the packet; policy rules can depend on it'),
     h('label', { className: 'rt-field', title: 'The interface the packet arrives on, to simulate forwarded traffic' }, h('span', {}, 'Arrives on (optional)'), iif),
     h('div', { className: 'rt-actions' }, button('Look up', 'search', () => submit(state), 'btn-brand'), state.query ? button('Clear', 'x-lg', () => clear(state)) : null),
-    state.formError ? h('div', { className: 'rt-error' }, icon('exclamation-triangle'), state.formError) : null);
+    state.formError ? h('div', { className: 'rt-error' }, icon('x-circle'), state.formError) : null);
 }
 
 // The answer: a headline with what happens to the packet, then the details.
@@ -105,15 +106,16 @@ function answer(data, state, names) {
     rows.push(['Try it', h('span', { className: 'rt-try' },
       button('Ping', 'activity', () => openTool('ping', res.dst)), button('Traceroute', 'diagram-3', () => openTool('traceroute', res.dst)))]);
   }
-  const q = data.lookup;
-  if (q.src || q.iif) rows.push(['Looked up as', h('span', {}, `a packet${q.src ? ` from ${q.src}` : ''}${q.iif ? ` arriving on ${q.iif}` : ''}`)]);
+  if (res.src || res.iif) rows.push(['Looked up as', h('span', {}, `a packet${res.src ? ` from ${res.src}` : ''}${res.iif ? ` arriving on ${res.iif}` : ''}`)]);
 
   return h('div', { className: `rt-result ${verdictClass}` },
     h('div', { className: 'rt-headline' }, icon(icons), h('strong', {}, headline), h('span', { className: 'rt-for' }, `for ${res.dst ?? ''}`)),
     h('div', { className: 'rt-text' }, v.text),
     rows.length ? kv(rows) : null,
-    res.raw ? h('details', { className: 'rt-raw' }, h('summary', {}, 'What the kernel said'),
-      h('pre', {}, `ip route get:\n${res.raw.get}\n\nmatching route (fibmatch):\n${res.raw.match}`)) : null);
+    res.raw ? disclosure({
+      cls: 'rt-raw', summary: 'What the kernel said', open: state.rawOpen, onToggle: open => { state.rawOpen = open; },
+      body: h('pre', {}, `ip route get:\n${res.raw.get}\n\nmatching route (fibmatch):\n${res.raw.match}`),
+    }) : null);
 }
 
 // The card. `devices` are the interfaces offered as the arrival interface, `names` maps devices to interfaces.

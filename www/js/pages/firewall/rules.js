@@ -3,10 +3,10 @@
 // Remove (Undo after a removal), a button adds an item, and every row says in plain words what it does.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, button, card, muted } from '../../core/ui.js';
+import { badge, card, muted } from '../../core/ui.js';
 import { fmtBytes, fmtNum } from '../../core/format.js';
 import { describeMatch, packetsPerSec, fmtPps, ruleKey } from './util.js';
-import { enableSwitch, iconButton, pendingBadge } from './parts.js';
+import { addButton, enableSwitch, iconButton, pendingBadge } from './parts.js';
 
 // Badge color per rule target: accepts are green, reject/drop amber, anything else (DNAT, MASQUERADE...) neutral.
 const ACTION = { ACCEPT: 'success', REJECT: 'warning', DROP: 'warning' };
@@ -45,14 +45,14 @@ function actionsCell(kind, r, rows, ctx) {
     iconButton('arrow-up', 'Move up (evaluated earlier)', () => ctx.move(kind, r.id, -1), at <= 0 || !ctx.canEdit),
     iconButton('arrow-down', 'Move down (evaluated later)', () => ctx.move(kind, r.id, 1), at < 0 || at >= alive.length - 1 || !ctx.canEdit),
     iconButton('pencil', 'Edit', () => ctx.edit(kind, r.id), !ctx.canEdit),
-    iconButton('trash', 'Remove', () => ctx.remove(kind, r.id), !ctx.canEdit));
+    iconButton('x-lg', 'Remove', () => ctx.remove(kind, r.id), !ctx.canEdit));
 }
 
 // The row's class: dimmed when disabled, struck through when it is to be removed.
 const rowClass = r => `${r.enabled ? '' : 'fw-off'}${r.removed ? ' fw-removed' : ''}`;
 
 // Row of the traffic-rules table: position, name, zones, protocol/port match, action and hits.
-function ruleRow(r, i, rows, ctx) {
+function ruleRow(r, rows, ctx) {
   return h('tr', { className: rowClass(r) },
     h('td', { className: 'num muted' }, r.removed ? '–' : rows.filter(x => !x.removed).indexOf(r) + 1),
     h('td', {}, nameCell(r)),
@@ -64,7 +64,7 @@ function ruleRow(r, i, rows, ctx) {
 }
 
 // Row of the port-forward table: "PROTO ports on address → target:port"; `kind` 'nat' marks a NAT (not DNAT) rule.
-function redirectRow(r, i, rows, ctx) {
+function redirectRow(r, rows, ctx) {
   const to = [].concat(r.dest_ip ?? []).join(', ');
   return h('tr', { className: rowClass(r) },
     h('td', { className: 'num muted' }, r.removed ? '–' : rows.filter(x => !x.removed).indexOf(r) + 1),
@@ -77,31 +77,25 @@ function redirectRow(r, i, rows, ctx) {
     ctx ? actionsCell('redirects', r, rows, ctx) : null);
 }
 
-// Shared table markup: header row from `cols`, the rows, or a single "empty" message row.
+// Shared table markup: header row from `cols`, the rows (finished <tr> elements, unlike core table(), which builds the cells), or a
+// single "empty" message row.
 const table = (cols, rows, empty) => h('div', { className: 'grid-wrap' }, h('table', { className: 'table fw-table' },
   h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
   h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, empty)))));
-
-// The button that adds an item to a list, disabled for a login that may not write.
-function addButton(label, kind, ctx) {
-  const b = button(label, 'plus-lg', () => ctx.edit(kind, null));
-  b.disabled = !ctx.canEdit;
-  return h('span', { className: 'fw-card-actions' }, b);
-}
 
 // All traffic rules in configuration order (nftables evaluates them in this order); a rule with no
 // destination is about the router itself.
 export function rulesCard(fw, ctx = null) {
   const cols = ['#', 'Name', 'From › to', 'Match', 'Action', 'Hits', ...(ctx ? [''] : [])];
   const rows = fw.rows?.rules ?? fw.rules;
-  return card([icon('list-ul'), h('span', {}, 'Traffic rules'), h('span', { className: 'sub' }, `${fw.rules.length} rules in configuration order · a rule with no destination is about the router itself`), ctx ? addButton('Add rule', 'rules', ctx) : null],
-    table(cols, rows.map((r, i) => ruleRow(r, i, rows, ctx)), 'No traffic rules are configured.'));
+  return card([icon('list-ul'), h('span', {}, 'Traffic rules'), h('span', { className: 'sub' }, `${fw.rules.length} rules in configuration order · a rule with no destination is about the router itself`), ctx ? addButton('Add rule', () => ctx.edit('rules', null), ctx.canEdit) : null],
+    table(cols, rows.map(r => ruleRow(r, rows, ctx)), 'No traffic rules are configured.'));
 }
 
 // Port forwards (DNAT) and other NAT rules (firewall `redirect` sections) with their hit counters.
 export function redirectsCard(fw, ctx = null) {
   const cols = ['#', 'Name', 'From › to', 'Forwards', 'Action', 'Hits', ...(ctx ? [''] : [])];
   const rows = fw.rows?.redirects ?? fw.redirects;
-  return card([icon('arrow-left-right'), h('span', {}, 'Port forwards and NAT'), h('span', { className: 'sub' }, `${fw.redirects.length} configured`), ctx ? addButton('Add port forward', 'redirects', ctx) : null],
-    table(cols, rows.map((r, i) => redirectRow(r, i, rows, ctx)), 'No port forwards or NAT rules are configured.'));
+  return card([icon('arrow-left-right'), h('span', {}, 'Port forwards and NAT'), h('span', { className: 'sub' }, `${fw.redirects.length} configured`), ctx ? addButton('Add port forward', () => ctx.edit('redirects', null), ctx.canEdit) : null],
+    table(cols, rows.map(r => redirectRow(r, rows, ctx)), 'No port forwards or NAT rules are configured.'));
 }

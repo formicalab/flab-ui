@@ -3,10 +3,10 @@
 // every time new output arrives, so the table fills in and the figures move while mtr runs.
 import { copyButton } from '../../core/clipboard.js';
 import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
 import { badge, mono, muted, sparkline } from '../../core/ui.js';
 import { fmtMs } from './diagmodel.js';
 import { asName, asPath, lossKind, mtrReport, networkNotes, networkSegments, parseAsn, parseMtr, pathNotes } from './pathmodel.js';
+import { banner, findingList } from './parts.js';
 
 // The cell of a hop's loss: the percentage with a small bar, in the color of its kind. A silent hop shows "no reply" and a
 // rate-limited one says why its loss is not a fault.
@@ -28,7 +28,7 @@ const ms = v => (v == null ? muted('–') : fmtMs(v));
 // delay and loss in a network, and a finished run can be copied as a plain-text report.
 export function mtrBody(job) {
   const m = parseMtr(job.text, job.running);
-  if (m.error && !m.hops.length) return h('div', { className: 'rt-error' }, icon('x-circle'), `mtr failed: ${m.error}`);
+  if (m.error && !m.hops.length) return banner(`mtr failed: ${m.error}`);
   const asn = job.asn ? parseAsn(job.text) : null;
   const segments = asn?.any ? networkSegments(m.hops, asn) : [];
   const netNotes = networkNotes(segments, m.hops, job.running);
@@ -46,7 +46,7 @@ export function mtrBody(job) {
     h('td', { className: 'num' }, ms(hop.stdev)),
     h('td', {}, hop.history.length > 2 ? sparkline([{ values: hop.history, cls: 'rx' }], { width: 110, height: 24 }) : null)));
   return h('div', { className: 'rt-mtr' },
-    notes.length ? h('div', { className: 'rt-findings' }, notes.map(n => h('div', { className: `rt-finding ${n.level}` }, icon({ ok: 'check-circle', warn: 'exclamation-triangle', bad: 'x-circle' }[n.level]), n.text))) : null,
+    findingList(notes),
     routeStrip(segments, asn?.pending),
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-trace rt-mtrtable' },
       h('thead', {}, h('tr', {}, ['Hop', 'Router', 'Loss', 'Sent', 'Last', 'Average', 'Best', 'Worst', 'Spread', 'Delay over time'].map((c, i) => h('th', { className: [0, 3, 4, 5, 6, 7, 8].includes(i) ? 'num' : '' }, c)))),

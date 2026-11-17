@@ -41,7 +41,7 @@ closes by itself when its card is gone (saved away, discarded). The page does no
 
 **Bridge panel, live part** (`bridgelive.js`, `bridgeLive(net, mesh, name)`, from the `flab.network` status and the optional `flab.mesh` status; shown for a bridge the router runs, also one the
 configuration does not know): the spanning-tree position (this bridge is the root, or the root bridge ID, the root port and path cost, with the mesh peers on the way), bridge ID, priority,
-timers, MAC aging, VLAN filtering and default PVID, IGMP snooping, VLAN devices, MAC and MTU, live throughput, and a member table with type (Ethernet, Wi-Fi with SSID, or mesh with its mesh ID
+timers, MAC aging, VLAN filtering and default PVID, IGMP snooping, VLAN devices, MAC and MTU, live throughput, and a list of the member ports with type (Ethernet, Wi-Fi with SSID, or mesh with its mesh ID
 and number of peers), link, STP state and role, port cost, learned MACs per port, live rate and link flaps. The spanning-tree diagram has the same shape on both sides of a mesh link: a bridge
 that is not the root draws the root bridge (its ID), the link (root port, path cost) with the mesh peer on it, and itself; the root draws itself, the link (port, path cost) with the mesh peers
 that reach it, and "downstream bridge, reached over the mesh". The root cannot show the downstream bridge's ID because only that bridge knows it (the kernel reports the root ID and root port
@@ -65,7 +65,7 @@ state, the device it runs on now (and the device its protocol creates, `pppoe-wa
    from the file, so a stale static address is never requested by a DHCP client. An interface with no protocol gets a warning (netifd ignores it and its device stays down);
    protocol `none` is described as "device up without IP configuration".
 3. **Settings**: only the protocol's essential options (static: addresses, gateway, DNS servers; DHCP: use the provider's DNS and default route; DHCPv6: request
-   address and prefix; PPPoE: username and the write-only password; none: nothing), then a folded **Advanced** block holding every other option of the protocol in groups (the
+   address and prefix; PPPoE: username and the write-only password; none: nothing), then a folded **Advanced** block (the shared `disclosure()` fold of `core/fold.js`; it stays open or closed across the redraws) holding every other option of the protocol in groups (the
    title says how many hold a value), and the options the page has no control for, read only. The groups are Interface (device, boot, disabled, IPv6, MTU, MAC address, force link),
    IPv4 address (addresses with prefix or netmask, gateway, broadcast), IPv6 address and prefixes (static address and gateway, `ip6assign`, `ip6hint`, `ip6class`, `ip6ifaceid`, `delegate`),
    PPPoE login (access concentrator, service, AC MAC, Host-Uniq, keepalive, inactivity timeout, extra pppd options), DHCP client options (broadcast flag, host name, client id, vendor class,
@@ -116,7 +116,7 @@ router advertisements (DHCP page), no Wi-Fi network (Wi-Fi radios page), no stat
 `isPaused`), because the wizard adds to the draft it was opened on; the page's context offers `current()` so the wizard always writes to the latest one.
 
 The controls of one option, the name box, the ports picker, the list of options without a control and the state badge are shared by the panels and the wizard (`controls.js`);
-styles are in `css/board.css` (the board and the live bridge information) and `css/netedit.css` (the `np-` rules of the panels; everything wraps with `overflow-wrap: anywhere` and `min-width: 0`).
+styles are in `css/board.css` (the board and the live bridge information) and `css/netedit.css` (the `np-` rules of the panels; everything wraps with `overflow-wrap: anywhere` and `min-width: 0`). The folds (the interface card's "details", the panels' Advanced block) are `disclosure()` folds; their arrow and header styles are the shared `.fl-disclosure` rules in `css/base.css`.
 
 **Rules and saving**, for all the panels and the wizard:
 - **Validation** (errors block Save): IPv4/IPv6 addresses and prefixes, netmasks, MTU ranges, a static address without prefix and without netmask, a gateway outside the
@@ -133,7 +133,7 @@ styles are in `css/board.css` (the board and the live bridge information) and `c
   `timeoutS`, which the review banner repeats) and a 4 second settling time (`settleMs`). The check reads the config back through the plugin and netifd's interface dump, retrying for about 10 seconds
   while the network reloads (a failed read during a reload is not yet a failed save), and requires every field of every kept section to read back, new sections to exist, removed ones to be gone, and
   every static interface that was up and is enabled in the form to be up again; otherwise the change is rolled back at once and the message says which interface did not come up.
-  Staged leftovers are shown with a "Discard them" button. Unsaved edits survive leaving the page and coming back, and one Save applies them together. A login that may not write, or a router whose plugin lacks `config`, gets the board with a read-only summary in the drawer instead of the editing panels.
+  Staged leftovers are shown with a "Discard this page's staged changes" button. Unsaved edits survive leaving the page and coming back, and one Save applies them together. A login that may not write, or a router whose plugin lacks `config`, gets the board with a read-only summary in the drawer instead of the editing panels.
 - **ACL**: `rpcd/acl.d/flab-network.json` grants `flab.network` `status` and `config` and `uci` `changes` (read), `cable_test` and the `uci`
   write methods (write), and `uci` read and write on the `network` config. It does not grant `uci get`: the pages read the network
   config through `flab.network config` only, so a PPPoE password or a WireGuard key can never reach the browser.

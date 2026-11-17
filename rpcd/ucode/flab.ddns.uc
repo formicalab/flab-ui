@@ -79,6 +79,11 @@ function valid_dir(p) {
 	return whole(p, DIR) && index(p, '..') < 0;
 }
 
+// A directory option of the global section (`ddns_rundir`, `ddns_logdir`), or `fallback` when it is unset or not a plain path.
+function dir_option(glob, key, fallback) {
+	return valid_dir(glob.values[key]) ? glob.values[key] : fallback;
+}
+
 // Whether `n` is a network device name that may reach a command line: a plain interface name that does not start with a dash (which a command would read as an option).
 function plain_ifname(n) {
 	return safe_ifname(n) && index(n, '-') != 0;
@@ -181,17 +186,12 @@ function log_facts(lines) {
 	let problem = null, detected = null;
 	for (let i = length(lines) - 1; i >= from; i--) {
 		let l = lines[i];
-		if (detected == null) {
-			let m = match(l.text, /^Detected IP: ([0-9A-Fa-f.:]+)/);
-			if (m)
-				detected = m[1];
-		}
 		if (match(l.text, /[Uu]pdate successful|Registered IP '[^']*' detected/))
 			break;
 		if (problem == null && index([ 'EMERG', 'ALERT', 'CRIT', 'ERROR', 'WARN' ], l.level) >= 0)
 			problem = { time: l.time, level: l.level, text: replace(l.text, / - TERMINATE$/, '') };
 	}
-	// The address the updater detected is looked for in the whole log, not only in the problem window.
+	// The address the updater detected is the newest one in the whole log, not only in the problem window.
 	for (let i = length(lines) - 1; i >= 0 && detected == null; i--) {
 		let m = match(lines[i].text, /^Detected IP: ([0-9A-Fa-f.:]+)/);
 		if (m)
@@ -378,8 +378,8 @@ function status() {
 	let now = time();
 	let up = uptime();
 	let glob = global_section();
-	let rundir = valid_dir(glob.values.ddns_rundir) ? glob.values.ddns_rundir : DEFAULT_RUNDIR;
-	let logdir = valid_dir(glob.values.ddns_logdir) ? glob.values.ddns_logdir : DEFAULT_LOGDIR;
+	let rundir = dir_option(glob, 'ddns_rundir', DEFAULT_RUNDIR);
+	let logdir = dir_option(glob, 'ddns_logdir', DEFAULT_LOGDIR);
 	let procd = ubus_call(conn, 'service', 'list', { name: 'ddns' });
 	let dump = ubus_call(conn, 'network.interface', 'dump', {});
 	let ctx = { now, uptime: up, rundir, logdir, instances: procd?.ddns?.instances, dump };
@@ -416,8 +416,7 @@ function read_log(request) {
 	let sec = whole(name, NAME) ? filter(service_sections(), (s) => s.name == name)[0] : null;
 	if (!sec)
 		return { ok: false, error: 'There is no such service.' };
-	let glob = global_section();
-	let logdir = valid_dir(glob.values.ddns_logdir) ? glob.values.ddns_logdir : DEFAULT_LOGDIR;
+	let logdir = dir_option(global_section(), 'ddns_logdir', DEFAULT_LOGDIR);
 	let raw = sysfs_raw(`${logdir}/${name}.log`);
 	if (raw == null)
 		return { ok: true, section: name, exists: false, text: '' };
@@ -448,8 +447,7 @@ function control(request) {
 		return refuse(name, action, 'There is no such service.');
 	if (index([ '1', 'true', 'yes', 'on' ], sec.values.enabled) < 0)
 		return refuse(name, action, 'This service is disabled. Enable it and save first.');
-	let glob = global_section();
-	let rundir = valid_dir(glob.values.ddns_rundir) ? glob.values.ddns_rundir : DEFAULT_RUNDIR;
+	let rundir = dir_option(global_section(), 'ddns_rundir', DEFAULT_RUNDIR);
 	if (action == 'force')
 		run(`rm -f ${rundir}/${name}.update`);
 	let result = command_result(`/etc/init.d/ddns stop ${name} </dev/null && /etc/init.d/ddns start ${name} </dev/null`, { timeout: RUN_TIMEOUT, max_output: MAX_OUTPUT });

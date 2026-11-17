@@ -51,12 +51,16 @@ export function fmtSpeed(mbit) {
 }
 
 // An optical power level in dBm as "-4.8 dBm"; "–" when the module does not report one.
-export const fmtDbm = v => (v == null ? '–' : `${v.toFixed(1)} dBm`);
+const fmtDbm = v => (v == null ? '–' : `${v.toFixed(1)} dBm`);
+
+// The share of the CPU link (percent) above which the page calls it busy.
+const CPU_LINK_BUSY = 90;
 
 // The link between a switch and the SoC (its CPU port(s)): its capacity in Mbit/s (the CPU port's fixed speed, else what the
 // conduit MAC negotiated), how much of it the busier direction uses right now (percent, null until the rates are known), and
-// how many times the linked user ports could oversubscribe it (1 or less when the link can carry them all at line rate).
-export function cpuLink(net, sw) {
+// how many times the linked user ports could oversubscribe it (1 or less when the link can carry them all at line rate). Null when the
+// capacity is unknown.
+function cpuLink(net, sw) {
   const byName = new Map(net.ports.map(p => [p.name, p]));
   const conduits = (sw.cpu_ports ?? []).map(c => byName.get(c.conduit)).filter(Boolean);
   const capacity = (sw.cpu_ports ?? []).reduce((sum, c) => sum + (c.speed ?? byName.get(c.conduit)?.speed ?? 0), 0);
@@ -104,7 +108,7 @@ export function jackOrder(net) {
 
 // The line about a switch and its link to the SoC: the user ports (and the fastest speed any advertises, as the router reports it),
 // its CPU ports, the link's capacity, how much of it is in use now, and, when the linked user ports could send more than it
-// carries, how many times it is oversubscribed. Null for a switch without a known CPU link capacity.
+// carries, how many times it is oversubscribed. Returns { busy, text }: `busy` is whether the link is used above CPU_LINK_BUSY.
 export function switchLine(net, sw) {
   const link = cpuLink(net, sw);
   const fastest = Math.max(0, ...net.ports.filter(p => sw.ports.includes(p.name)).map(p => p.max_speed ?? 0));
@@ -186,9 +190,6 @@ export function portFindings(net) {
   }
   return out;
 }
-
-// The share of the CPU link (percent) above which the page calls it busy.
-const CPU_LINK_BUSY = 90;
 
 // Bridge problems: a bridge that is down, a topology change in progress, ports blocked or not yet forwarding
 // despite having link, and STP disabled while more than one member has link (a loop would go unnoticed).

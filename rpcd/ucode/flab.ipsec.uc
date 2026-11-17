@@ -74,7 +74,7 @@ function rate_hash(name) {
 	if (match(name, /SHA2_256/)) return 0.9;
 	if (match(name, /XCBC|CMAC/)) return 0.7;
 	if (match(name, /MD5/)) return 0;
-	if (match(name, /SHA1/)) return 0.4;
+	// SHA-1 and anything not recognized.
 	return 0.4;
 }
 
@@ -555,7 +555,7 @@ function collect() {
 return deferred({
 	'flab.ipsec': {
 		status: {
-			call: function(request) {
+			call: function() {
 				return collect();
 			},
 		},

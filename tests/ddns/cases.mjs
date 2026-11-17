@@ -17,6 +17,8 @@ export const CMD = {
   eth1v6: 'ip -o -6 addr show dev eth1 scope global 2>/dev/null',
   // The command a service whose device is named "-r" must NOT run (it would be read as an option).
   dashDevice: 'ip -o -4 addr show dev -r scope global 2>/dev/null',
+  // Likewise for a device named "eth1\nid": the pattern of a plain name matches its first line, so a second line would reach the shell.
+  newlineDevice: 'ip -o -4 addr show dev eth1\nid scope global 2>/dev/null',
 };
 // The commands that restart one service's updater, forget its last update, and collect what the init script printed.
 export const forceCmd = name => `rm -f /var/run/ddns/${name}.update`;
@@ -29,7 +31,7 @@ export const OUTPUT_CMD = 'head -c 4096 /tmp/flab-ddns.out 2>/dev/null; rm -f /t
 export const SECRETS = { password: 's3cr3t-pass', token: 'tok-9999-abc', proxy: 'proxypass', short: 'abc', v6password: 'pw-v6-1234' };
 
 // The services of the fake router, in file order.
-export const SERVICES = ['home', 'v6', 'custom', 'off', 'big', 'evil'];
+export const SERVICES = ['home', 'v6', 'custom', 'off', 'big', 'evil', 'evilnl'];
 
 // Calls that must restart the updater: [section, action].
 export const RUN = [['home', 'check'], ['home', 'force'], ['v6', 'check'], ['custom', 'check']];

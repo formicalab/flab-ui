@@ -21,7 +21,13 @@
 import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
-import { run, ubus_call, uci_all, sysfs, safe_ifname, num, security_label, iw_channel_info } from 'flab.util';
+import { run, ubus_call, uci_all, sysfs, safe_ifname as lib_safe_ifname, num, security_label, iw_channel_info } from 'flab.util';
+
+// A name that reaches a command line or a path: an interface name. The library check is anchored with ^...$, which ucode matches against
+// the first line of a string, so "wlan0\nid" would pass it; a name with a line break is refused first.
+function safe_ifname(name) {
+	return type(name) == 'string' && index(name, '\n') < 0 && index(name, '\r') < 0 && lib_safe_ifname(name);
+}
 
 // Mesh parameters worth showing, read with `iw dev <if> get mesh_param <name>`.
 const PARAMS = [
@@ -92,7 +98,7 @@ function peers(ifname) {
 		if (st)
 			push(out, st);
 	}
-	return sort(out, (a, b) => a.mac < b.mac ? -1 : a.mac > b.mac);
+	return sort(out, (a, b) => a.mac < b.mac ? -1 : (a.mac > b.mac ? 1 : 0));
 }
 //#endregion
 
@@ -117,7 +123,7 @@ function paths(ifname) {
 			flags: map(filter(PATH_FLAGS, (p) => (flags & p[0]) != 0), (p) => p[1]),
 		});
 	}
-	return sort(out, (a, b) => a.dest < b.dest ? -1 : a.dest > b.dest);
+	return sort(out, (a, b) => a.dest < b.dest ? -1 : (a.dest > b.dest ? 1 : 0));
 }
 
 // Destinations reached through a mesh proxy gate (`iw dev <if> mpp dump`) as [{ dest, proxy }]; columns:
@@ -132,22 +138,14 @@ function proxied(ifname) {
 	return out;
 }
 
-// Per-interface memo of { at: epoch seconds, values }, valid for 60 seconds within this process.
-// Production requests fork fresh workers, so this does not suppress reads across separate polls.
-let param_cache = {};
-
 // Values of the PARAMS mesh parameters for `ifname` as { name: value string }; unreadable ones are left out.
 function params(ifname) {
-	let hit = param_cache[ifname];
-	if (hit && time() - hit.at < 60)
-		return hit.values;
 	let values = {};
 	for (let p in PARAMS) {
 		let v = trim(run(`iw dev ${ifname} get mesh_param ${p} 2>/dev/null`));
 		if (v != '')
 			values[p] = v;
 	}
-	param_cache[ifname] = { at: time(), values };
 	return values;
 }
 //#endregion

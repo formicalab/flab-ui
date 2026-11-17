@@ -1,11 +1,10 @@
 # Ethernet ports (route `#network`)
-The Ethernet ports as hardware, to read and to change: a page of its own (`network/index.js`), refreshed every 3 s so the rates are sharp. The physical ports only; the bridges and the layered device/interface view are on the [Devices and Interfaces](interfaces.md) board, whose port cards open this page. A port's own settings (the `device` section of `/etc/config/network` that names it: MTU, MAC address, link speed, flow control and the rest) are edited under its row (below), through the editor the board shares (`interfaces/editor.js`), so an edit made here is still pending on the board and one Save applies both. The Pause and Refresh buttons are the page's, and the review banners of the settings editor and of the VLAN editor sit in the command bar. The backend (`flab.network`) classifies whatever netifd reports (`devtype` dsa/ethernet = port, bridge,vlan), so another board or a new bridge shows up on the next poll. `shared.js` holds the loader and the
-address helpers the Ethernet, Devices and Interfaces and Traffic pages share.
+The Ethernet ports as hardware, to read and to change: a page of its own (`network/index.js`), refreshed every 3 s so the rates are sharp. The physical ports only; the bridges and the layered device/interface view are on the [Devices and Interfaces](interfaces.md) board, whose port cards open this page. A port's own settings (the `device` section of `/etc/config/network` that names it: MTU, MAC address, link speed, flow control and the rest) are edited under its row (below), through the editor the board shares (`interfaces/editor.js`), so an edit made here is still pending on the board and one Save applies both. The Pause and Refresh buttons are the page's, and the review banners of the settings editor and of the VLAN editor sit in the command bar. The backend (`flab.network`) classifies whatever netifd reports (`devtype` dsa/ethernet = port, bridge,vlan), so another board or a new bridge shows up on the next poll. `shared.js` holds the loader (`loadWired`) that the Ethernet ports, Devices and Interfaces and Traffic pages share.
 
 - **Summary tiles and findings banner**: ports linked, live throughput of the external ports and errors and drops (the
   totals since boot): only totals no row shows. The switch is described by the line above the table and the link changes by
   each row and the banner, so neither has a tile. Like the [Wi-Fi radios](radios.md) page, the page shows each device's live
-  state and keeps everything configured in one **Settings** fold (the same fold, `forms.css`), so nothing is shown twice. The banner appears only when something changed or needs attention:
+  state and keeps everything configured in one **Settings** fold (the same fold, `.wf-block` in `forms.css`, built with `disclosure()` of `core/fold.js`), so nothing is shown twice. The banner appears only when something changed or needs attention:
   a downshifted link (negotiated speed below what both ends support), link flaps and new errors since the page was opened,
   an optical module alarm or a CPU link above 90% used. There is no "all healthy" banner: old error counters do not
   trigger a finding, so such a message would contradict the errors tile and the rows.
@@ -17,7 +16,7 @@ address helpers the Ethernet, Devices and Interfaces and Traffic pages share.
   - **Port**: a jack icon tinted by link state (green up, amber when downshifted, flapping, erroring since the page was
     opened or an optical alarm, gray without link: an unplugged port is normal, not red), the name, the LAN/WAN role from the
     board, an SFP tag for a port with an optical module, the MAC (always shown; the icon's tooltip lists the hardware) and a
-    collapsible **Settings** section under every front-panel port (its summary says whether the port has a device section). The section holds the port's device settings (portSettings in interfaces/panels.js, the same controls as the board's panels), headed "Device section" (or "Defaults" for a port without one): link speed, duplex, auto-negotiation, pause, EEE, MTU, MAC and the advanced options of the port's device section, and a button that resets the port to its defaults by deleting the section (**Reset to defaults**, or **Drop the new settings** for a section not saved yet; a note above it says what it does); a port without a section (which is normal) shows the same form with the defaults, and the first change adds the section: there is no separate step to start. A login that may not change the configuration gets no Settings sections. The form is part of the page's table, so it follows the 3 second refresh only while nothing in it holds the focus or an unsaved edit (ditor.paused('.ne-form')). The internal CPU link has no section.
+    collapsible **Settings** section under every front-panel port (its summary says whether the port has a device section). The section holds the port's device settings (`portSettings` in `interfaces/panels.js`, the same controls as the board's panels), headed "Device section" (or "Defaults" for a port without one): link speed, duplex, auto-negotiation, pause, EEE, MTU, MAC and the advanced options of the port's device section, and a button that resets the port to its defaults by deleting the section (**Reset to defaults**, or **Drop the new settings** for a section not saved yet; a note above it says what it does); a port without a section (which is normal) shows the same form with the defaults, and the first change adds the section: there is no separate step to start. A login that may not change the configuration gets no Settings sections. The form is part of the page's table, so it follows the 3 second refresh only while nothing in it holds the focus or an unsaved edit (ditor.paused('.ne-form')). The internal CPU link has no section.
   - **Hardware**, **Link** (state, speed and duplex; under it what the link negotiated, shown only when it is not the normal
     case or when the port reports it: a forced speed, a downshift, the EEE state, and the speed both ends support with the pause
     frames; how many times the link changed state and how many since the page was opened, an optical alarm, the cable-test
@@ -28,8 +27,8 @@ address helpers the Ethernet, Devices and Interfaces and Traffic pages share.
     MACs, and the VLAN devices on the port).
 
   Above the table, one line per switch says what the router reports about it: the number of user ports and the fastest speed
-  they advertise, its CPU port(s), the CPU link's capacity, how much of it the busier direction uses now (a link above 90% is
-  also a finding in the banner) and, when the linked user ports could send more than it carries, how many times it is
+  they advertise, its CPU port(s), the CPU link's capacity, how much of it the busier direction (from the conduit MAC's counters)
+  uses now (a link above 90% is also a finding in the banner) and, when the linked user ports could send more than it carries, how many times it is
   oversubscribed (for example five 2.5 Gbit/s ports into a 2.5 Gbit/s CPU port). The hardware column gives each switch port's
   number. A switch's CPU port and the SoC MAC behind it come from the device tree (`ports/port@N` with an `ethernet`
   property, matched to the MAC by phandle); a port has an external PHY when its node has a `phy-handle`, otherwise the
@@ -51,15 +50,11 @@ address helpers the Ethernet, Devices and Interfaces and Traffic pages share.
   error counters (`ethtool -S`, error-like names only), recent system-log lines that mention the port, and
   whether anything is new since the page was opened. The backend only computes this for ports that have
   errors or drops.
-- **The CPU link**: the switch box says how much of the link into the SoC is in use (the busier direction, from the conduit MAC's
-  counters) and, when the linked user ports could send more than it carries, how many times it is oversubscribed (for example
-  five 2.5 Gbit/s ports into a 2.5 Gbit/s CPU port). A link above 90% used is a finding. It is computed from data the page
-  already has, so it works for any switch.
 - **EEE**: ports with Energy-Efficient Ethernet show a badge (active, idle or off) next to the negotiation, from
   `ethtool --show-eee`; a port that answers without it is not asked again.
 - **Optical modules** (SFP and SFP+ cages: the device tree wires the port to an `sfp`, ethtool lists FIBRE among its ports, or the
   port type is fibre or direct attach): the module (vendor, part, type, connector, wavelength) and its diagnostics (Tx and Rx
-  power, temperature, voltage, laser bias) from `ethtool -m`, shown with the hardware, an `SFP` tag on the port's tile and an
+  power, temperature, voltage, laser bias) from `ethtool -m`, shown with the hardware, an `SFP` tag on the port's row and an
   alarm badge. Module alarms and warnings that read On are listed and are findings; an empty cage says so; a direct-attach
   cable shows no diagnostics. Optical ports have no cable test.
 - **VLAN tables**: a card per bridge that filters VLANs or has VLANs (a matrix of VLANs against ports: tagged, untagged and the
@@ -120,7 +115,7 @@ address helpers the Ethernet, Devices and Interfaces and Traffic pages share.
   that nothing is interrupted for a port without link). The result lists the four pairs (OK, open circuit, short within a pair,
   short to another pair) with the distance of a fault, stays under the port's row until closed, and says what it means: for
   a link at 100 Mbit/s or less, open pairs C and D are the reason it cannot reach 1 Gbit/s. The downshift finding points to
-  it. Not every PHY driver supports it: the plugin remembers a port that does not (`cable_test: false`) and the button goes
-  away. `cable_test` accepts only a physical Ethernet port that exists (never a bridge, a VLAN device or the SoC link into a
+  it. Not every PHY driver supports it: a reply with `supported: false` makes the page forget the button for that port until it is reloaded (the
+  plugin's own memory of it, `cable_test: false` in the status, only lasts within one worker). `cable_test` accepts only a physical Ethernet port that exists (never a bridge, a VLAN device or the SoC link into a
   switch) and builds no command otherwise; it is the only method of this plugin under `write` in the ACL fragment, so a login
   that may read but not write sees no buttons.

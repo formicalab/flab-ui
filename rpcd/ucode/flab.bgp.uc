@@ -12,8 +12,8 @@
 // rpcd runs plugins in-process; this plugin deliberately calls no ubus objects.
 
 'use strict';
-import { deferred } from 'flab.worker';
 
+import { deferred } from 'flab.worker';
 import { readfile } from 'fs';
 import { run, num } from 'flab.util';
 

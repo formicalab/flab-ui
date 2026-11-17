@@ -7,16 +7,18 @@ import { fmtBytes, fmtNum, fmtSpan } from '../../../core/format.js';
 import { peerDot } from './util.js';
 
 // Icon per finding level (the levels produced by flab.bgp.uc: good, info, warn, bad).
-const LEVEL_ICON = { good: 'check-circle', info: 'info-circle', warn: 'exclamation-triangle', bad: 'shield-exclamation' };
+const LEVEL_ICON = { good: 'check-circle', info: 'info-circle', warn: 'exclamation-triangle', bad: 'x-circle' };
 
 // How many prefixes use each peer as an installed (active) next hop: shows how traffic is spread.
 function nextHopShare(data) {
   const total = new Set(data.paths.map(p => p.prefix)).size;
   if (!total) return null;
+  const installed = new Map();
+  for (const r of data.paths) if (r.in_kernel) installed.set(r.peer, (installed.get(r.peer) ?? 0) + 1);
   return h('div', { className: 'share' },
     h('h3', { className: 'sec-title' }, 'Active next hops per peer'),
     data.peers.map(p => {
-      const active = data.paths.filter(r => r.peer === p.name && r.in_kernel).length;
+      const active = installed.get(p.name) ?? 0;
       return h('div', { className: 'share-row' },
         h('span', { className: 'peer-label' }, peerDot(data, p.name), p.name),
         meter(active, total, active ? 'good' : 'weak'),

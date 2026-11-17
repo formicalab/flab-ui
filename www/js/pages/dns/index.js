@@ -10,8 +10,10 @@
 // countdown, read the status back to prove the change was kept and the resolver still runs, confirm. What a change is, whether
 // it is valid and which UCI operations write it are in edit.js and zones.js.
 import { ubus } from '../../core/ubus.js';
+import { sleep } from '../../core/dom.js';
 import { refreshControl } from '../../core/controls.js';
 import { createEditor } from '../../core/editpage.js';
+import { reveal } from '../../core/fold.js';
 import { emptyState, healthBanner, tile, tiles } from '../../core/ui.js';
 import { engineName, findings, subject, summary } from './model.js';
 import { changesOf, checkApplied, draftFrom, engineRunning, isDirty, plan, problems, zonesReady } from './edit.js';
@@ -32,7 +34,7 @@ async function readAfter() {
   const wasRunning = engineRunning(base);
   let after = await ubus('flab.dns', 'status');
   for (let i = 0; i < 8 && ((wasRunning && !engineRunning(after)) || !zonesReady(base, after, draft)); i++) {
-    await new Promise(r => setTimeout(r, 1000));
+    await sleep(1000);
     after = await ubus('flab.dns', 'status');
   }
   return after;
@@ -44,9 +46,6 @@ const editor = createEditor({
   model: { draftFrom, changesOf, isDirty, problems, plan },
   verify: (base, draft, after) => checkApplied(base, after, draft),
 });
-
-// Opens the collapsed area that holds a control with an error, so the error is not hidden.
-const reveal = el => { const area = el.closest('details'); if (area) area.open = true; };
 
 // Page object registered in pages/index.js (contract documented there).
 export default {

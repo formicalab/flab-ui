@@ -62,6 +62,7 @@ check(rt('custom').running === false && rt('custom').pid === null && rt('custom'
 check(rt('custom').terminated === "No valid certificate(s) found at '/x' for HTTPS communication" && rt('custom').problem?.text === rt('custom').terminated && rt('custom').last_update === null && rt('custom').next_check === null, 'it stopped on a fatal error (the log line ends with TERMINATE), and a stamp from the future (an old file) is ignored');
 check(rt('off').running === false && rt('off').log === false && rt('off').registered_ip === null && rt('off').last_update === null && rt('off').problem === null, 'off: nothing is known about a service that never ran');
 check(rt('evil').local_ip === null, 'a device whose name starts with a dash is never given to a command (the fixture for that command would have answered)', j(rt('evil')));
+check(rt('evilnl').local_ip === null, 'a device name with a line break is never given to a command, although its first line is a plain name (the fixture for that command would have answered)', j(rt('evilnl')));
 
 console.log('\n== what the router offers ==');
 check(st.providers.map(p => p.name).join() === 'cloud.example-v4,duckdns.example,dyn.example,missing.example,old.example', 'the providers, sorted; a line without a tab or with bad JSON is ignored', st.providers.map(p => p.name).join());

@@ -7,7 +7,7 @@
 // Returns the kernel's cumulative CPU time counters (/proc/stat), the load average and the task counts.
 // Utilization is a rate, so it is derived from the difference between two successive calls (the UI does
 // this); the counters are not converted here, which keeps the call instantaneous and rpcd unblocked.
-// Reads procfs only; no other tool is involved.
+// `cpu` reads procfs only; `build` only lists and stats the files under /www/flab. No other tool is involved.
 
 'use strict';
 import { deferred } from 'flab.worker';
@@ -45,7 +45,7 @@ function parse_stat(text) {
 // Builds the flab.system cpu reply from /proc/stat, /proc/loadavg and /proc/uptime. `cores` counts the
 // per-core "cpuN" entries (the aggregate "cpu" entry is excluded); fields are null when a file is unreadable.
 function collect() {
-	let stat = parse_stat(readfile('/proc/stat'));
+	let parsed = parse_stat(readfile('/proc/stat'));
 
 	// "0.01 0.03 0.05 2/210 16460": three averages, runnable/total tasks, last pid.
 	let la = match(readfile('/proc/loadavg') ?? '', /^([0-9.]+) ([0-9.]+) ([0-9.]+) ([0-9]+)\/([0-9]+)/);
@@ -55,11 +55,11 @@ function collect() {
 		generated: time(),
 		// Router uptime lets the UI detect gaps between samples (e.g. after a pause) without its own clock.
 		uptime: up ? +up[1] : null,
-		cores: length(filter(stat.cpus, (c) => c.id != 'cpu')),
-		cpus: stat.cpus,
-		ctxt: stat.ctxt,
-		procs_running: stat.procs_running,
-		procs_blocked: stat.procs_blocked,
+		cores: length(filter(parsed.cpus, (c) => c.id != 'cpu')),
+		cpus: parsed.cpus,
+		ctxt: parsed.ctxt,
+		procs_running: parsed.procs_running,
+		procs_blocked: parsed.procs_blocked,
 		load: la ? [+la[1], +la[2], +la[3]] : null,
 		runnable: la ? +la[4] : null,
 		tasks: la ? +la[5] : null,
@@ -108,12 +108,12 @@ function build() {
 return deferred({
 	'flab.system': {
 		cpu: {
-			call: function(request) {
+			call: function() {
 				return collect();
 			},
 		},
 		build: {
-			call: function(request) {
+			call: function() {
 				return build();
 			},
 		},

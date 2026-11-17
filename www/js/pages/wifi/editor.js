@@ -3,6 +3,7 @@
 // the flab.radio plugin's `config` method, which leaves out every secret (the browser never calls `uci get` on this config), and written through
 // core/uci.js applyChange(): stage, apply with the rollback countdown, read back, check the radios come up, confirm.
 import { ubus, optional } from '../../core/ubus.js';
+import { sleep } from '../../core/dom.js';
 import { createEditor } from '../../core/editpage.js';
 import { CONFIG, changesOf, checkApplied, draftFrom, isDirty, plan, problems, upTargets } from './model.js';
 // How long to wait, after a change is applied, for the radios to come back up (the router undoes the change by itself 30
@@ -23,7 +24,7 @@ async function waitForRadios(targets) {
     });
     if (!down.length) return;
     if (Date.now() > deadline) throw new Error(`${down.map(t => t.radio).join(', ')} did not come back up after the change, so it was undone.`);
-    await new Promise(resolve => setTimeout(resolve, RADIO_POLL_MS));
+    await sleep(RADIO_POLL_MS);
   }
 }
 

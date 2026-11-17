@@ -3,8 +3,21 @@
 import { command_result, begin_budget } from 'flab.exec';
 import { launch_job, MAX_JOB_OUTPUT } from 'flab.jobs';
 import { stat, readfile } from 'fs';
+import { safe_ifname, one_line } from 'flab.util';
 
 let out = {};
+// ucode's `^...$` matches the first line of a multi-line string; the validators must refuse the second line.
+out.validators = {
+	ifname: safe_ifname('lan1'),
+	ifname_newline: safe_ifname('lan1\nid'),
+	ifname_cr: safe_ifname('lan1\rid'),
+	ifname_empty: safe_ifname(''),
+	ifname_number: safe_ifname(5),
+	line: one_line('1.1.1.1'),
+	line_newline: one_line('1.1.1.1\nid'),
+	line_cr: one_line('1.1.1.1\rid'),
+	line_null: one_line(null),
+};
 out.empty = command_result('exit 0');
 out.failure = command_result('printf failed; exit 7');
 out.timeout = command_result('sleep 4', { timeout: 1 });

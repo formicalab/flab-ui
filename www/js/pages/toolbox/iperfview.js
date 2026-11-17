@@ -5,14 +5,19 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { copyButton } from '../../core/clipboard.js';
+import { disclosure } from '../../core/fold.js';
 import { fmtBytes } from '../../core/format.js';
 import { badge, mono, muted, sparkline } from '../../core/ui.js';
 import { stat } from './diagviews.js';
 import { throughputChart } from './charts.js';
 import { clientCommand, describeTest, fmtBitrate, fmtClock, parseIperf, remaining } from './iperfmodel.js';
+import { banner } from './parts.js';
 
 // A command line with its Copy button.
 const commandLine = (text, note) => h('div', { className: 'rt-cmd' }, h('code', {}, text), note ? h('span', { className: 'muted small' }, note) : null, copyButton(text));
+
+// The rate of a test: the one iperf3 reported for the whole run, or the mean of the seconds seen so far; null with no second yet.
+const averageBps = t => t.summary?.bps ?? (t.intervals.length ? t.intervals.reduce((a, i) => a + i.bps, 0) / t.intervals.length : null);
 
 // The state line of the server: a pulsing dot and the countdown while it listens, or how it ended.
 function serverState(job, parsed, port, bind) {
@@ -39,13 +44,13 @@ function connectPanel(info, port, bind) {
   const row = a => h('div', { className: 'rt-addr' }, badge(a.iface, '', `${a.device ?? ''} · zone ${a.zone ?? 'none'}`), mono(a.ip), a.input === 'ACCEPT' ? null : badge(`zone ${a.zone ?? 'none'}: ${a.input.toLowerCase()}`, 'warning', 'The firewall does not accept traffic for the router from this zone'));
   return h('div', { className: 'rt-connect' },
     h('h3', {}, 'Connect from a computer'),
-    open.length ? h('div', { className: 'rt-addrs' }, open.map(row)) : h('div', { className: 'rt-error warn' }, icon('exclamation-triangle'), 'No address of the router is in a zone that accepts traffic for it, so no client can connect. Add a firewall rule for this port, or choose another zone.'),
+    open.length ? h('div', { className: 'rt-addrs' }, open.map(row)) : banner('No address of the router is in a zone that accepts traffic for it, so no client can connect. Add a firewall rule for this port, or choose another zone.', 'warn'),
     first ? h('div', { className: 'rt-cmds' },
       commandLine(clientCommand(first.ip, { port }), 'upload: the computer sends, the router receives'),
       commandLine(clientCommand(first.ip, { port, reverse: true }), 'download: the router sends'),
       commandLine(clientCommand(first.ip, { port, streams: 4 }), 'four parallel streams'),
       commandLine(clientCommand(first.ip, { port, udp: true, rate: '500M' }), 'UDP at 500 Mbit/s, with jitter and loss')) : null,
-    blocked.length ? h('details', { className: 'rt-raw' }, h('summary', {}, `Addresses the firewall blocks (${blocked.length})`), h('div', { className: 'rt-addrs' }, blocked.map(row))) : null);
+    blocked.length ? disclosure({ cls: 'rt-raw', summary: `Addresses the firewall blocks (${blocked.length})`, body: h('div', { className: 'rt-addrs' }, blocked.map(row)) }) : null);
 }
 
 // The figures of a test: the rate (now, or the average of a finished one), the peak, what moved, and the extras of the
@@ -56,7 +61,7 @@ function testStats(t, live) {
   const s = t.summary;
   const bytes = s?.bytes ?? null;
   const lossKind = s?.lostPct > 5 ? 'bad' : s?.lostPct > 0 ? 'warn' : '';
-  const stats = [stat(live ? 'Now' : 'Average', fmtBitrate(live ? now : s?.bps ?? (t.intervals.length ? t.intervals.reduce((a, i) => a + i.bps, 0) / t.intervals.length : null)), 'ok'), stat('Peak', fmtBitrate(peak || null))];
+  const stats = [stat(live ? 'Now' : 'Average', fmtBitrate(live ? now : averageBps(t)), 'ok'), stat('Peak', fmtBitrate(peak || null))];
   if (bytes != null) stats.push(stat('Transferred', fmtBytes(bytes)));
   if (t.protocol === 'UDP') {
     const last = t.intervals.at(-1);
@@ -88,7 +93,7 @@ function history(tests) {
     return h('tr', { className: t.aborted ? 'rt-down' : '' },
       h('td', { className: 'num mono' }, String(t.n)), h('td', {}, t.startedAt ? new Date(t.startedAt).toLocaleTimeString() : '–'),
       h('td', {}, mono(t.client.host)), h('td', {}, describeTest(t), t.aborted ? [' ', badge('interrupted', 'warning')] : null),
-      h('td', { className: 'num' }, fmtBitrate(s?.bps ?? (t.intervals.length ? t.intervals.reduce((a, i) => a + i.bps, 0) / t.intervals.length : null))),
+      h('td', { className: 'num' }, fmtBitrate(averageBps(t))),
       h('td', {}, t.intervals.length > 2 ? sparkline([{ values: t.intervals.map(i => i.bps), cls: 'rx' }], { width: 90, height: 22 }) : null),
       h('td', { className: 'muted' }, extra));
   });
@@ -109,8 +114,8 @@ export function iperfBody(job, status) {
   const latest = parsed.tests.at(-1) ?? null;
   return h('div', { className: 'rt-iperf' },
     serverState(job, parsed, port, bind),
-    exposed.length && job.running ? h('div', { className: 'rt-error warn' }, icon('exclamation-triangle'), `The zone ${exposed.join(', ')} accepts traffic for the router, so while this server runs on every address it can be reached from the internet. Stop it when you are done, or listen on one LAN address only.`) : null,
-    parsed.errors.map(e => h('div', { className: 'rt-error' }, icon('x-circle'), e)),
+    exposed.length && job.running ? banner(`The zone ${exposed.join(', ')} accepts traffic for the router, so while this server runs on every address it can be reached from the internet. Stop it when you are done, or listen on one LAN address only.`, 'warn') : null,
+    parsed.errors.map(e => banner(e)),
     job.running ? (job.connectEl ??= connectPanel(info, port, bind)) : null,
     latest ? latestTest(latest, job.running) : job.running ? h('div', { className: 'rt-text muted rt-waiting' }, h('span', { className: 'spinner-border spinner-border-sm' }), 'Waiting for a client to connect…') : h('div', { className: 'rt-text muted' }, 'No client connected while the server was running.'),
     history(parsed.tests.slice(0, -1)));

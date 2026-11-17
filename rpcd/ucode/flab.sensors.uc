@@ -42,18 +42,16 @@ function thermal_zones(sensors, seen) {
 		if (temp == null)
 			continue;
 
-		let type = read(dir + '/type');
-		seen[replace(type ?? '', /-/g, '_')] = true;
+		let zone_type = read(dir + '/type');
+		seen[replace(zone_type ?? '', /-/g, '_')] = true;
 
-		// Trip points are numbered consecutively from 0; the first missing one ends the list.
+		// Trip points are numbered consecutively from 0; the first missing one ends the list (at most 32 are read).
 		let trips = [];
-		let i = 0;
-		while (true) {
+		for (let i = 0; i < 32; i++) {
 			let at = celsius(`${dir}/trip_point_${i}_temp`);
 			if (at == null)
 				break;
 			push(trips, { type: read(`${dir}/trip_point_${i}_type`), temp: at, hyst: celsius(`${dir}/trip_point_${i}_hyst`) });
-			i++;
 		}
 
 		let crit = null;
@@ -61,7 +59,7 @@ function thermal_zones(sensors, seen) {
 			if (t.type == 'critical')
 				crit = t.temp;
 
-		push(sensors, { id: zone, kind: 'zone', name: type, temp, crit, policy: read(dir + '/policy'), trips });
+		push(sensors, { id: zone, kind: 'zone', name: zone_type, temp, crit, policy: read(dir + '/policy'), trips });
 	}
 }
 
@@ -116,7 +114,7 @@ function collect() {
 return deferred({
 	'flab.sensors': {
 		status: {
-			call: function(request) {
+			call: function() {
 				return collect();
 			},
 		},

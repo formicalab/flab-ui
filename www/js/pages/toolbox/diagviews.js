@@ -5,15 +5,14 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { copyButton } from '../../core/clipboard.js';
+import { disclosure } from '../../core/fold.js';
 import { badge, button, mono, muted } from '../../core/ui.js';
 import { PUBLIC_RESOLVERS, fmtMs, hostOf, parseCheck, parseCompare, parseTls } from './diagmodel.js';
+import { LEVEL_ICON, banner, day, timeBar, working } from './parts.js';
 import { chainDiagram, expiryTimeline } from './tlsdiagram.js';
 
 // The icon and color class of a check step's state.
 const STATE_ICON = { ok: ['check-circle', 'ok'], warn: ['exclamation-triangle', 'warn'], bad: ['x-circle', 'bad'], skip: ['info-circle', 'skip'], pending: ['hourglass-split', 'pending'] };
-
-// A date (milliseconds) as "2026-12-25", or a dash.
-const day = ms => (ms == null ? '–' : new Date(ms).toISOString().slice(0, 10));
 
 // One figure of a summary row (the ping's sent, received and loss; an iperf3 test's rate): a large value over a small label,
 // colored by `kind` ('ok', 'warn' or 'bad').
@@ -37,7 +36,7 @@ export function checkBody(job) {
   const v = c.verdict;
   return h('div', { className: 'rt-checkbody' },
     v ? h('div', { className: `rt-verdict ${v.level}` },
-      h('div', { className: 'rt-headline' }, icon({ ok: 'check-circle', warn: 'exclamation-triangle', bad: 'x-circle' }[v.level]), v.text),
+      h('div', { className: 'rt-headline' }, icon(LEVEL_ICON[v.level]), v.text),
       ...v.notes.map(n => h('div', { className: 'rt-text' }, n))) : null,
     h('div', { className: 'rt-steps' }, c.steps.map(stepRow)));
 }
@@ -94,15 +93,15 @@ export function compareBody(job, status) {
     const differs = first && r.verdict === 'ok' && r.data.join('|') !== first.data.join('|');
     return h('tr', { className: r.verdict && r.verdict !== 'ok' ? 'rt-down' : '' },
       h('td', {}, h('div', { className: 'rt-server' }, serverLabel(r.server, upstream))),
-      h('td', {}, r.running ? h('span', { className: 'rt-running' }, h('span', { className: 'spinner-border spinner-border-sm' }), 'Asking…') : badge(REPLY[r.verdict][1], REPLY[r.verdict][0]),
+      h('td', {}, r.running ? working('Asking…') : badge(REPLY[r.verdict][1], REPLY[r.verdict][0]),
         r.ad ? h('span', { className: 'ms-2' }, badge('DNSSEC', 'info', 'The resolver validated the answer with DNSSEC (the AD flag)')) : null),
       h('td', { className: differs ? 'rt-differs' : '' }, r.answers.length ? h('div', { className: 'rt-answers' }, r.answers.map(a => h('div', {}, mono(a.data), a.type && a.type !== 'A' ? muted(` ${a.type}`) : null))) : muted('–')),
-      h('td', { className: 'num' }, r.ms == null ? muted('–') : h('span', { className: 'rt-avg' }, fmtMs(r.ms), h('span', { className: 'rt-bar' }, h('i', { style: `width:${Math.max(3, r.ms / max * 100).toFixed(0)}%` })))),
+      h('td', { className: 'num' }, r.ms == null ? muted('–') : timeBar(fmtMs(r.ms), r.ms, max)),
       h('td', {}, r.server === c.fastest ? badge('fastest', 'success') : null));
   });
   const summary = !c.done ? null
-    : c.agree === true ? h('div', { className: 'rt-error ok' }, icon('check-circle'), 'Every server that answered gave the same addresses.')
-    : c.agree === false ? h('div', { className: 'rt-error warn' }, icon('exclamation-triangle'), 'The servers gave different answers. That is normal for names behind a CDN, which hands each resolver the addresses nearest to it; for a name that should be fixed, it can mean a stale cache or a tampered resolver.')
+    : c.agree === true ? banner('Every server that answered gave the same addresses.', 'ok')
+    : c.agree === false ? banner('The servers gave different answers. That is normal for names behind a CDN, which hands each resolver the addresses nearest to it; for a name that should be fixed, it can mean a stale cache or a tampered resolver.', 'warn')
     : null;
   return h('div', {},
     responseChart(c.rows, c.fastest, upstream),
@@ -120,7 +119,7 @@ export function compareBody(job, status) {
 // ping the host once it has had a moment. `openPing(ip)` fills the ping form in and runs it.
 export function wolBody(job, status, openPing) {
   const r = job.wake;
-  if (!r?.ok) return h('div', { className: 'rt-error' }, icon('x-circle'), job.error ?? 'The magic packet could not be sent.');
+  if (!r?.ok) return banner(job.error ?? 'The magic packet could not be sent.');
   const host = hostOf(status?.hosts, r.mac);
   const who = host?.name ? `${host.name} (${r.mac})` : r.mac;
   const how = r.method === 'etherwake' ? 'an Ethernet frame (etherwake)' : 'a UDP broadcast to port 9 (socat)';
@@ -158,7 +157,7 @@ function certCard(c) {
       row('Certificate authority', c.ca == null ? null : c.ca ? 'yes' : 'no'),
       row('Serial', c.serial ? mono(c.serial) : null),
       row('SHA-256', c.sha256 ? h('span', { className: 'mono rt-fp' }, c.sha256) : null),
-      c.pem ? h('details', { className: 'rt-raw' }, h('summary', {}, 'PEM'), h('div', { className: 'rt-pem-actions' }, copy), h('pre', {}, c.pem)) : null));
+      c.pem ? disclosure({ cls: 'rt-raw', summary: 'PEM', body: [h('div', { className: 'rt-pem-actions' }, copy), h('pre', {}, c.pem)] }) : null));
 }
 
 // What the chain lacks, drawn where it lacks it: after a certificate that the next one did not issue (a gap), and at the
@@ -173,11 +172,10 @@ function missingNote(c, kind, count) {
 // The certificate check: the verdicts first, then the session and the chain exactly as the server sent it.
 export function tlsBody(job) {
   const t = parseTls(job.text, { name: job.name, target: job.target });
-  if (t.running && !t.chain.length) return h('div', { className: 'rt-running' }, h('span', { className: 'spinner-border spinner-border-sm' }), 'Connecting…');
-  const kind = { ok: 'check-circle', warn: 'exclamation-triangle', bad: 'x-circle' };
+  if (t.running && !t.chain.length) return working('Connecting…');
   const session = [['Protocol', t.protocol], ['Cipher', t.cipher], ['Key exchange', t.group], ['Address', t.address]].filter(([, v]) => v);
   return h('div', { className: 'rt-tlsbody' },
-    h('div', { className: 'rt-findings' }, t.findings.map(f => h('div', { className: `rt-finding ${f.level}` }, icon(kind[f.level]), f.text))),
+    h('div', { className: 'rt-findings' }, t.findings.map(f => h('div', { className: `rt-finding ${f.level}` }, icon(LEVEL_ICON[f.level]), f.text))),
     session.length ? h('div', { className: 'rt-stats' }, session.map(([l, v]) => h('div', { className: 'rt-stat' }, h('div', { className: 'v rt-small' }, v), h('div', { className: 'l' }, l)))) : null,
     t.chain.length ? h('div', { className: 'rt-chain' },
       h('h3', {}, 'Chain and expiry'),

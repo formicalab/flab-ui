@@ -1,25 +1,11 @@
 /* Styling of the network editor of the Devices and Interfaces page (the form controls and the review banner are in
    forms.css). Loaded on demand by core/app.js when the page is first opened. The `ne-` prefix means "network editor". */
 
-/* A block of editing cards under a heading: the cards flow in a column, full width. */
-.ne-section { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
-.ne-section > h3 { margin: 0; font-size: 1rem; }
-.ne-section > .set-legend { padding: 0; border: 0; }
+/* The form of a panel or a group of fields: the controls flow in a column, one row each with a rule between them. */
 .ne-form { display: flex; flex-direction: column; gap: 1.25rem; }
 .ne-form .set-fields { align-items: stretch; row-gap: 0; column-gap: 2rem; }
 .ne-form .set-fields > * { padding: .7rem 0; border-bottom: 1px solid color-mix(in srgb, var(--fl-stroke) 55%, transparent); }
-.ne-groups { display: flex; flex-direction: column; gap: .8rem; }
-.ne-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
-.ne-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
-.ne-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
-.ne-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
-.ne-group-body p { margin: 0; }
 
-/* A section that was added in the form, and one that is going to be removed. */
-.ne-new { border-color: var(--fl-info, var(--fl-stroke)); }
-.ne-removed > :not(.ne-actions) { opacity: .55; }
-.ne-actions { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
-.ne-addbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0; }
 .ne-extra { border-top: 1px dashed var(--fl-stroke); padding-top: .6rem; margin-top: .2rem; }
 .ne-extra p { margin: 0 0 .4rem; }
 .ne-extra .kv { margin: 0; }
@@ -68,10 +54,8 @@
 .np-proto-title { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem .5rem; }
 .np-warn { color: var(--fl-warn-fg); }
 
-/* The Advanced block, the live and "used by" lists, links, the footer notes. */
+/* The Advanced block (a disclosure() with the fl-disclosure-bar header), the live and "used by" lists, links, the footer notes. */
 .np-adv { border: 1px solid var(--fl-stroke); border-radius: 6px; min-width: 0; }
-.np-adv > summary { display: flex; align-items: center; gap: .5rem; padding: .5rem .8rem; font-weight: 600; cursor: pointer; }
-.np-adv[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
 .np-adv-body { display: flex; flex-direction: column; gap: 1.2rem; padding: .7rem .9rem .9rem; min-width: 0; }
 .np-adv-group h4 { margin: 0 0 .2rem; font-size: .85rem; }
 .np-adv-group p { margin: 0 0 .4rem; }

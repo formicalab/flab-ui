@@ -293,6 +293,8 @@ function richFiles(entries) {
   for (const [group, text] of Object.entries(NLBW_OLD)) files[slug(`${NL} ${group} -t 2026-10-01`)] = text;
   // A period that is not listed has data too, so a plugin that passed it on would succeed.
   files[slug(`${NL} ip -t 2025-01-01`)] = NLBW_CURRENT.ip;
+  // Output cut short (a JSON text that does not parse) must give the same answer as no output.
+  files[slug(`${NL} fam -t 2026-10-01`)] = '{"columns":["fam","conns"],"data":[[4,';
   return files;
 }
 
@@ -446,6 +448,7 @@ add('rich-usage-old', 'rich', 'usage', { period: '2026-10-01', group: 'mac,ip' }
 add('rich-usage-old-layer7', 'rich', 'usage', { period: '2026-10-01', group: 'layer7' }, usageReference(NLBW_OLD.layer7));
 add('rich-usage-unlisted', 'rich', 'usage', { period: '2025-01-01', group: 'ip' });
 add('rich-usage-nodata', 'rich', 'usage', { period: '2026-09-01', group: 'ip' });
+add('rich-usage-badjson', 'rich', 'usage', { period: '2026-10-01', group: 'fam' });
 add('nonlbw-usage', 'nonlbw', 'usage', { group: 'ip' });
 add('stopped-usage', 'stopped', 'usage', { group: 'ip' });
 add('big-usage', 'big', 'usage', { period: 'current', group: 'mac,ip' }, usageReference(bigUsage()));

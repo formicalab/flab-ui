@@ -2,8 +2,8 @@
 // as in the OpenWrt Unbound README) or one dnsmasq `server` entry. The form works on a copy and validates as the user types; "Add
 // to the changes" puts it into the draft, and the review banner at the top of the page saves everything at once.
 import { h } from '../../core/dom.js';
-import { icon } from '../../core/icons.js';
 import { openDialog } from '../../core/modal.js';
+import { button } from '../../core/ui.js';
 import { fieldRow, note } from '../../core/forms.js';
 import { ZONE_TYPES } from './schema.js';
 import { fieldsOf, formFor, formProblems, typeLabel } from './zones.js';
@@ -35,8 +35,8 @@ export function openZoneDialog({ data, getDraft, key, onSave, onClose }) {
   let dialog = null;
 
   const errorsBox = h('div', { className: 'set-notes' });
-  const save = h('button', { type: 'button', className: 'btn btn-sm btn-brand', onclick: () => { onSave(form); dialog.close(); } }, icon('check2'), isNew ? 'Add to the changes' : 'Update the changes');
-  const cancel = h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: () => dialog.close() }, 'Cancel');
+  const save = button(isNew ? 'Add to the changes' : 'Update the changes', 'check2', () => { onSave(form); dialog.close(); }, 'btn-brand');
+  const cancel = button('Cancel', null, () => dialog.close());
 
   // Checks the form: the buttons follow, and the messages and the marked inputs show once the user has started typing.
   function validate() {

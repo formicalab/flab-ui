@@ -17,6 +17,7 @@
 //   controls({ rerender, reload })  returns { nodes, update?(data) } for persistent command-bar controls
 //   isPaused()  return true to suspend auto-refresh
 //   css       stylesheet (or array of stylesheets) loaded the first time the page opens
+//   activate?(module)  (an entry of `pages`, not of the page object) called by the shell once the page module is imported and the route is still current
 
 let pendingTool = null;
 
@@ -55,7 +56,7 @@ export const pages = [
   { id: 'interfaces', label: 'Devices and Interfaces', icon: 'diagram-3', resolve: () => import('./interfaces/index.js') },
   { id: 'routing', label: 'Routing', icon: 'globe2', resolve: () => import('./routing/index.js') },
   { id: 'traffic', label: 'Traffic', icon: 'activity', resolve: () => import('./traffic/index.js') },
-  { id: 'services', label: 'Services', icon: 'hdd-stack', resolve: () => import('./services.js') },
+  { id: 'services', label: 'Services', icon: 'hdd-stack', resolve: () => import('./services/index.js') },
   { id: 'toolbox', label: 'Toolbox', icon: 'tools', resolve: () => import('./toolbox/index.js'), activate: activateToolbox },
   { id: 'logs', label: 'Logs', icon: 'journal-text', resolve: () => import('./logs/index.js') },
   { id: 'settings', label: 'System settings', icon: 'gear', nav: 'bottom', resolve: () => import('./settings/index.js') },

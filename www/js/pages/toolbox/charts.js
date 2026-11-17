@@ -77,10 +77,11 @@ export function pingChart(p, ended) {
 
 // The throughput chart of one iperf3 test: an area under the line of the bit rate of each second, with a dot on the latest
 // point, and (for a UDP test with a target) a dashed line at the rate the client aims for. `duration` is the planned length
-// in seconds (the time axis reaches it, so a running test fills the chart from the left); `max` fixes the top of the scale
-// (to compare tests); `live` draws the pulsing dot of a test that is still running.
-export function throughputChart(intervals, { duration = null, max = null, target = null, live = false, width = 560, height = 150 } = {}) {
-  const top = niceMax(Math.max(max ?? 0, target ?? 0, ...intervals.map(i => i.bps)) * 1.08);
+// in seconds (the time axis reaches it, so a running test fills the chart from the left); `live` draws the pulsing dot of a
+// test that is still running.
+export function throughputChart(intervals, { duration = null, target = null, live = false } = {}) {
+  const width = 560, height = 150;
+  const top = niceMax(Math.max(target ?? 0, ...intervals.map(i => i.bps)) * 1.08);
   const span = Math.max(5, duration ?? 0, intervals.at(-1)?.t1 ?? 0);
   const { root, plot, y } = frame(width, height, { l: 78, r: 14, t: 12, b: 24 }, top, v => (v === 0 ? '0' : fmtBitrate(v)));
   // The horizontal position of a time (seconds from the start of the test).

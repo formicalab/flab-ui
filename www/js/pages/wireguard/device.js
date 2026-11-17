@@ -4,6 +4,7 @@
 // exists only in this dialog: the router never receives it.
 import { h } from '../../core/dom.js';
 import { copyButton } from '../../core/clipboard.js';
+import { saveFile } from '../../core/download.js';
 import { openDialog } from '../../core/modal.js';
 import { button } from '../../core/ui.js';
 import { note } from '../../core/forms.js';
@@ -15,16 +16,6 @@ import { parseAddress } from '../../core/ip.js';
 // The form of the dialog: a labeled row with a control and an optional hint.
 const row = (label, control, hint) => h('div', { className: 'set-field' }, h('label', { className: 'form-label' }, label), control, hint ? h('div', { className: 'muted small set-hint' }, hint) : null);
 
-// Starts a download of `text` as the file `name` (the browser's own save, nothing goes to a server).
-function download(name, text) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-  const link = h('a', { href: url, download: name });
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 // Opens the dialog for the interface `item` of ifaceList(). `ctx` is the page's context (data, draft, touched, redraw); `onClosed()` is
 // called when the dialog closes, however it was closed.
 export function openDeviceDialog(ctx, item, onClosed) {
@@ -35,7 +26,7 @@ export function openDeviceDialog(ctx, item, onClosed) {
 
   if (plan.error) {
     dialog.setBody(note('warn', plan.error));
-    dialog.setFooter(button('Close', null, close));
+    dialog.setFooter(button('Close', 'x-lg', close));
     return;
   }
 
@@ -107,10 +98,10 @@ export function openDeviceDialog(ctx, item, onClosed) {
       note('warn', 'This is the only time the device\'s configuration is shown: its private key exists only here and is not stored on the router. Copy it, download it or enter it into the device now.'),
       note('info', `The device was added to ${item.name} in the form. It works only after you press "Save and apply".`),
       h('pre', { className: 'wg-conf mono' }, text)));
-    dialog.setFooter([copyButton(text, 'Copy'), button('Download', 'download', () => download(file, text)), button('Close', null, close, 'btn-brand')]);
+    dialog.setFooter([copyButton(text, 'Copy'), button('Download', 'download', () => saveFile(file, text)), button('Close', 'x-lg', close, 'btn-brand')]);
   };
 
   dialog.setBody(form);
-  dialog.setFooter([button('Cancel', null, close), button('Create the device', 'key', create, 'btn-brand')]);
+  dialog.setFooter([button('Cancel', 'x-lg', close), button('Create the device', 'key', create, 'btn-brand')]);
   name.focus();
 }

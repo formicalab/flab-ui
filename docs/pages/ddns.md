@@ -4,7 +4,7 @@ shows what each service is doing now and edits the config behind it; it needs `d
 custom update address) on the router, and says so when it is missing.
 - **Tiles**: whether the updater (procd's `ddns` service) runs and how many enabled services it runs, how many services are up
   to date, when the last update was sent and when the next check is.
-- **One card per service** (click the header to fold it): the verdict in words, the addresses (the router's, where they come from,
+- **One card per service** (click the header to fold it, like the cards of the DHCP and DNS pages): the verdict in words, the addresses (the router's, where they come from,
   and the one the provider has registered), the last update and the next check, the check and forced-update intervals as the
   updater will really use them, and the updater's process. The verdict is one of *Up to date* (registered address equals the
   router's), *Update pending*, *Problem* (the newest warning or error in the log that no later success has put right), *Not
@@ -49,7 +49,9 @@ custom update address) on the router, and says so when it is missing.
   the ~70 provider files is the most expensive part of the call), the networks, devices and tools, whether the updater
   starts at boot, the version and the CA certificates. `log` reads one service's log (the newest 64 KB). `control` accepts only the
   name of an existing enabled service (letters, digits, underscore; at most 64) and the action `check` or `force`; every command is
-  built from those validated words, and anything else is refused with a reason before a command runs. The ACL fragment
+  built from those validated words, and anything else is refused with a reason before a command runs. A device name read from a service
+  (the `interface` address source) reaches a command only after `safe_ifname()` of `flab.util`, which also rejects a name with a line
+  break (ucode's `^...$` matches the first line of a multi-line string). The ACL fragment
   (`rpcd/acl.d/flab-ddns.json`) grants `status` and `log` (read), `control` (write), and `uci` on the `ddns` config only.
 - The intervals on a card are the ones the updater really uses: a `force_unit` without a `force_interval` applies the default number
   (72) in that unit, so `minutes` means a forced update every 72 minutes, and a check below the updater's minimum is replaced.

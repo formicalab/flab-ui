@@ -46,15 +46,11 @@
 .fwm-cell.fwm-click[role=button]:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: 1px; }
 .fwm-cell.fwm-changed { box-shadow: inset 0 0 0 2px var(--fl-warn-fg); }
 
-/* The dialogs and the defaults card: groups that fold, the check boxes of a choice, and the sentence that says what a rule does */
+/* The dialogs and the defaults card: groups that fold (see disclosure() in core/fold.js), the check boxes of a choice, and the sentence that says what a rule does */
 .fw-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
-.fw-group[hidden] { display: none; }
-.fw-group > summary { cursor: pointer; padding: .5rem .8rem; font-weight: 600; }
-.fw-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
 .fw-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
 .fw-group-body p { margin: 0; }
 .fw-groups { display: flex; flex-direction: column; gap: .8rem; }
-.fw-group [hidden] { display: none !important; }
 .fw-checks { display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; padding: .35rem .5rem; border: 1px solid transparent; border-radius: 6px; }
 .fw-checks.is-invalid { border-color: var(--fl-bad-fg); }
 .fw-check { display: inline-flex; align-items: center; gap: .4rem; margin: 0; padding-left: 0; }

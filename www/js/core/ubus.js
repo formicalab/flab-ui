@@ -13,7 +13,10 @@ export const REQUEST_TIMEOUT_MS = 5000;
 export const PLUGIN_REQUEST_TIMEOUT_MS = 27000;
 
 let sid = globalThis.sessionStorage?.getItem('sid') ?? null;
-let acls = JSON.parse(globalThis.sessionStorage?.getItem('acls') ?? '{}');
+// The cached ACLs; unreadable stored data counts as none (the next sign-in stores them again).
+let acls = (() => {
+  try { return JSON.parse(globalThis.sessionStorage?.getItem('acls') ?? '{}') ?? {}; } catch { return {}; }
+})();
 
 // Raised when the session is gone (expired or destroyed); the shell answers by showing the sign-in screen.
 export class AuthError extends Error {}

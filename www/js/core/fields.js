@@ -1,6 +1,5 @@
-// Shared handling of editable UCI options, used by every page that edits a config (System settings, DHCP) and by the
-// DNS page, which shows its options through the same controls (read only for now). Pure functions with no DOM and no
-// network.
+// Shared handling of editable UCI options, used by every page that edits a config (System settings, DHCP, DNS, Dynamic DNS,
+// firewall, WireGuard, ...). Pure functions with no DOM and no network.
 //
 // A page describes its options as a table of fields (see pages/settings/schema.js for the full format):
 //   { key, type: string | text | bool | int | enum | list, label, hint?, default?, check?, min?, max?, options?, labels?,

@@ -1,8 +1,8 @@
 // The cards of the Dynamic DNS page: one per service (what it is doing, the actions, the log and every option in collapsible
 // groups) and one for the global settings. The controls come from the option tables in schema.js through core/forms.js; the
 // values, the rules and the status verdicts are in model.js.
-import { h } from '../../core/dom.js';
-import { chevron, foldable } from '../../core/fold.js';
+import { h, sleep } from '../../core/dom.js';
+import { chevron, disclosure, foldable } from '../../core/fold.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, can, ubus } from '../../core/ubus.js';
 import { badge, button, card, kv, mono, muted } from '../../core/ui.js';
@@ -26,7 +26,7 @@ const outcomes = new Map();
 // The sections whose log panel is open, for the page to read their logs along with the status.
 export const openLogs = () => [...logs].filter(([, s]) => s.open).map(([name]) => name);
 
-// Reads the log of one service into its panel's state.
+// Reads the log of one service into its panel's state. An expired session is raised as AuthError (the page's load handles it).
 export async function fetchLog(section) {
   const state = logs.get(section) ?? {};
   logs.set(section, state);
@@ -38,6 +38,12 @@ export async function fetchLog(section) {
     state.error = e.message;
   }
   state.loading = false;
+}
+
+// Reads a log for a click handler: an expired session sends the user back to the sign-in screen (through a reload) instead of
+// leaving a rejected promise behind.
+async function readLog(ctx, section) {
+  try { await fetchLog(section); } catch { await ctx.reload(); }
 }
 
 //#endregion
@@ -101,7 +107,7 @@ async function perform(ctx, section, action) {
   outcomes.set(section, reply?.ok
     ? { kind: 'ok', text: action === 'force' ? 'The updater was restarted and is sending the address now.' : 'The updater was restarted and is checking the address now.' }
     : { kind: 'bad', text: `${error ?? reply?.error ?? 'It failed.'}${reply?.output ? ` ${reply.output}` : ''}` });
-  await new Promise(r => setTimeout(r, 2500));
+  await sleep(2500);
   busy = null;
   await ctx.reload();
 }
@@ -128,20 +134,17 @@ function statusBlock(ctx, svc) {
   const log = logs.get(svc.section);
   const asked = t.requested !== t.check ? ` (${spanWords(t.requested)} was asked for; see Intervals)` : '';
   // A control button: disabled for a login that may not run actions, a disabled service or a call in progress.
-  const act = (label, iconName, action, title) => {
-    const b = button(label, iconName, () => perform(ctx, svc.section, action));
-    b.disabled = !allowed || !enabled || Boolean(busy);
-    b.title = !allowed ? 'This login is not allowed to run actions on the updater.' : !enabled ? 'The service is disabled.' : title;
-    return b;
-  };
+  const act = (label, iconName, action, title) => button(label, iconName, () => perform(ctx, svc.section, action), 'btn-fl', {
+    disabled: !allowed || !enabled || Boolean(busy),
+    title: !allowed ? 'This login is not allowed to run actions on the updater.' : !enabled ? 'The service is disabled.' : title,
+  });
   const toggleLog = button(log?.open ? 'Hide log' : 'Log', 'journal-text', async () => {
     const s = logs.get(svc.section) ?? {};
     logs.set(svc.section, s);
     s.open = !s.open;
-    if (s.open) { s.loading = true; ctx.rerender(); await fetchLog(svc.section); }
+    if (s.open) { s.loading = true; ctx.rerender(); await readLog(ctx, svc.section); }
     ctx.rerender();
-  });
-  toggleLog.title = 'The updater\'s own log for this service';
+  }, 'btn-fl', { title: 'The updater\'s own log for this service' });
   return h('div', { className: 'ddns-status' },
     h('div', { className: `ddns-verdict ${verdict.kind}` }, icon(verdictIcon),
       h('div', {}, h('strong', {}, verdict.text), h('div', { className: 'small' }, verdict.detail))),
@@ -170,7 +173,7 @@ function logPanel(ctx, section, log) {
   const important = lines.filter(isNoteworthy);
   const shown = log.all ? lines : important;
   // Reads the log again and redraws the panel.
-  const reload = async () => { log.loading = true; ctx.rerender(); await fetchLog(section); ctx.rerender(); };
+  const reload = async () => { log.loading = true; ctx.rerender(); await readLog(ctx, section); ctx.rerender(); };
   const box = h('div', { className: 'ddns-logbox', tabindex: 0 }, shown.map(l => h('div', { className: `ddns-logline ${l.level}` }, h('span', { className: 'ddns-logtime' }, l.time), h('span', { className: 'ddns-logtext' }, l.text))));
   requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
   const body = log.loading && !log.text ? muted('Reading the log…')
@@ -230,17 +233,18 @@ export function serviceCard(ctx, svc) {
     const fields = SERVICE_FIELDS.filter(f => f.group === g.id && isShown(f, values));
     if (!fields.length) return null;
     const id = `${svc.id}:${g.id}`;
-    return h('details', { className: 'ddns-group', open: opened.get(id) ?? Boolean(g.open), ontoggle: e => opened.set(id, e.target.open) },
-      h('summary', {}, g.title),
-      h('div', { className: 'ddns-group-body' }, h('p', { className: 'muted small' }, g.legend),
-        h('div', { className: 'set-fields' }, fields.map(f => controlFor(ctx, f, `svc:${svc.id}:${f.key}`, values, off, svc)))));
+    return disclosure({
+      cls: 'ddns-group fl-disclosure-bar', summary: g.title, open: opened.get(id) ?? Boolean(g.open), onToggle: open => opened.set(id, open),
+      body: h('div', { className: 'ddns-group-body' }, h('p', { className: 'muted small' }, g.legend),
+        h('div', { className: 'set-fields' }, fields.map(f => controlFor(ctx, f, `svc:${svc.id}:${f.key}`, values, off, svc)))),
+    });
   });
   const actions = off
-    ? h('div', { className: 'ddns-service-actions' }, muted(`Service ${svc.name} is removed when you save.`), button('Undo', 'arrow-clockwise', () => { restoreService(ctx.draft, svc.id); ctx.touched(); ctx.redraw(); }))
+    ? h('div', { className: 'ddns-service-actions' }, muted(`Service ${svc.name} is removed when you save.`), button('Undo', 'arrow-counterclockwise', () => { restoreService(ctx.draft, svc.id); ctx.touched(); ctx.redraw(); }))
     : h('div', { className: 'ddns-service-actions' },
       muted(svc.isNew ? 'Not saved yet.' : `The ddns section "${svc.section}".`),
-      h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !ctx.canEdit, title: `Stop updating ${svc.name} and delete this service`,
-        onclick: () => { removeService(ctx.draft, svc.id); ctx.touched(); ctx.redraw(); } }, icon('trash'), svc.isNew ? 'Discard service' : 'Remove service'));
+      button(svc.isNew ? 'Discard service' : 'Remove service', 'trash', () => { removeService(ctx.draft, svc.id); ctx.touched(); ctx.redraw(); }, 'btn-fl',
+        { disabled: !ctx.canEdit, title: `Stop updating ${svc.name} and delete this service` }));
   const state = svc.isNew ? badge('new', 'info', 'not saved yet') : off ? badge('to be removed', 'danger') : badge(verdict.text, VERDICT[verdict.kind][0], verdict.detail);
   const el = card(
     [chevron(), icon('globe2'), h('span', {}, svc.name || 'New service'), state, h('span', { className: 'sub' }, describe(ctx, svc))],
@@ -254,8 +258,7 @@ export function serviceCard(ctx, svc) {
 
 // The row below the services for adding one.
 export function addServiceBar(ctx) {
-  const add = button('Add service', 'plus-lg', () => { folds.delete(addService(ctx.data, ctx.draft)); ctx.touched(); ctx.redraw(); });
-  add.disabled = !ctx.canEdit;
+  const add = button('Add service', 'plus-lg', () => { folds.delete(addService(ctx.data, ctx.draft)); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !ctx.canEdit });
   return h('div', { className: 'ddns-addbar' }, add,
     h('span', { className: 'muted small' }, 'One service updates one name at one provider, for IPv4 or for IPv6. To update both families, or several names, add a service for each.'));
 }
@@ -275,8 +278,7 @@ export function globalCard(ctx) {
       h('span', { className: 'sub' }, `ddns-scripts ${d.version ?? ''} · ${d.atBoot ? 'starts at boot' : 'does not start at boot'} · run files in ${d.rundir}`)],
     h('div', { className: 'card-body' },
       legend(['These apply to every service. The documentation advises casual users to leave them as they are. The updater itself is started and stopped on the Services page (the "ddns" service).']),
-      h('div', { className: 'set-fields' }, fields)),
-    '');
+      h('div', { className: 'set-fields' }, fields)));
   return foldCard(el, 'global');
 }
 

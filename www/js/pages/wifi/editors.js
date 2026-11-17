@@ -10,6 +10,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, button, muted } from '../../core/ui.js';
 import { fieldRow } from '../../core/forms.js';
+import { disclosure } from '../../core/fold.js';
 import { ENCRYPTIONS, IFACE_FIELDS, IFACE_GROUPS, RADIO_FIELDS, RADIO_GROUPS, encryptionLabel } from './schema.js';
 import { addIface, encryptionOffered, ifaceCtx, ifaceList, ifaceTitle, isShown, radioCtx, removeIface, restoreIface } from './model.js';
 
@@ -22,11 +23,6 @@ const opened = new Map();
 // The options whose value changes which other controls are shown or what a control offers, so changing one redraws the page.
 const RADIO_REDRAWS = new Set(['htmode', 'disabled']);
 const IFACE_REDRAWS = new Set(['encryption', 'ieee80211r', 'macfilter', 'eap_type', 'time_advertisement']);
-
-// Opens every closed group and block that holds the control `el`, so a control with an error is never hidden.
-export function revealControl(el) {
-  for (let d = el.closest('details'); d; d = d.parentElement?.closest('details')) d.open = true;
-}
 
 //#endregion
 
@@ -112,9 +108,8 @@ function networkControl(edit, f, id, values, off) {
 
 // One group of controls in a collapsible block, remembered open or closed under `id`; `extra` is a node shown full width under the controls.
 function group(g, id, controls, extra) {
-  return h('details', { className: 'wf-group', open: opened.get(id) ?? Boolean(g.open), ontoggle: e => opened.set(id, e.target.open) },
-    h('summary', {}, g.title),
-    h('div', { className: 'wf-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, controls), extra));
+  return disclosure({ cls: 'fl-disclosure-bar wf-group', summary: g.title, open: opened.get(id) ?? Boolean(g.open), onToggle: open => opened.set(id, open),
+    body: h('div', { className: 'wf-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, controls), extra) });
 }
 
 //#endregion
@@ -135,10 +130,10 @@ export function radioSettings(name, edit, channels) {
     return fields.length ? group(g, `radio:${name}:${g.id}`, fields.map(f => control(edit, radioField(w, r, f), `${name}:${f.key}`, d, false, RADIO_REDRAWS)), g.id === 'general' ? channels : null) : null;
   });
   const id = `radio:${name}`;
-  return h('details', { className: 'wf-block', open: opened.get(id) ?? false, ontoggle: e => opened.set(id, e.target.open) },
-    h('summary', {}, icon('gear'), h('strong', {}, 'Radio settings'), d.disabled ? badge('disabled', 'warning') : null,
-      muted(`${d.htmode || 'default mode'} · ${d.country || 'default country'}${d.txpower ? ` · ${d.txpower} dBm` : ''}`)),
-    h('div', { className: 'wf-block-body' }, identity(r), groups));
+  return disclosure({ cls: 'wf-block', open: opened.get(id) ?? false, onToggle: open => opened.set(id, open),
+    summary: [icon('gear'), h('strong', {}, 'Radio settings'), d.disabled ? badge('disabled', 'warning') : null,
+      muted(`${d.htmode || 'default mode'} · ${d.country || 'default country'}${d.txpower ? ` · ${d.txpower} dBm` : ''}`)],
+    body: h('div', { className: 'wf-block-body' }, identity(r), groups) });
 }
 
 // The read-only identification of a radio, as the file holds it (the driver type, the phy, the MAC address, the device path and the band, which are detected
@@ -176,16 +171,16 @@ function ifaceEditor(i, edit, live) {
     : v.disabled ? badge('disabled') : i.live ? (i.live.up ? badge('running', 'success') : badge('not running', 'danger')) : null;
   const what = i.mode === 'mesh' ? 'mesh point' : 'network';
   const actions = off
-    ? h('div', { className: 'wf-actions' }, muted(`"${title}" is removed when you save.`), button('Undo', 'arrow-clockwise', () => { restoreIface(edit.draft, i.id); edit.touched(); edit.redraw(); }))
+    ? h('div', { className: 'wf-actions' }, muted(`"${title}" is removed when you save.`), button('Undo', 'arrow-counterclockwise', () => { restoreIface(edit.draft, i.id); edit.touched(); edit.redraw(); }))
     : h('div', { className: 'wf-actions' },
       muted(i.isNew ? `Not saved yet. It is added as the section "${i.name}".` : `The wifi-iface section "${i.section}"${i.anonymous ? ' (unnamed)' : ''}.`),
-      h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled: !edit.canEdit, title: `Remove the ${what} ${title}`,
-        onclick: () => { removeIface(edit.draft, i.id); edit.touched(); edit.redraw(); } }, icon('trash'), i.isNew ? `Discard ${what}` : `Remove ${what}`));
+      button(i.isNew ? `Discard ${what}` : `Remove ${what}`, 'trash', () => { removeIface(edit.draft, i.id); edit.touched(); edit.redraw(); }, 'btn-fl',
+        { disabled: !edit.canEdit, title: `Remove the ${what} ${title}` }));
   const id = `if:${i.id}`;
-  return h('details', { className: `wf-iface${i.isNew ? ' wf-new' : ''}${off ? ' wf-removed' : ''}`, open: opened.get(id) ?? i.isNew, ontoggle: e => opened.set(id, e.target.open) },
-    h('summary', {}, icon(i.mode === 'mesh' ? 'diagram-2' : 'wifi'), h('strong', {}, title), badge(MODE_BADGE[i.mode] ?? i.mode),
-      badge(encryptionLabel(v.encryption || 'none'), /^$|^none$/.test(v.encryption) ? 'danger' : ''), state, ...(live?.badges ?? [])),
-    h('div', { className: `wf-iface-body${off ? ' wf-dim' : ''}` }, off ? null : live?.body, groups, actions));
+  return disclosure({ cls: `wf-iface${i.isNew ? ' wf-new' : ''}`, open: opened.get(id) ?? i.isNew, onToggle: open => opened.set(id, open),
+    summary: [icon(i.mode === 'mesh' ? 'diagram-2' : 'wifi'), h('strong', {}, title), badge(MODE_BADGE[i.mode] ?? i.mode),
+      badge(encryptionLabel(v.encryption || 'none'), /^$|^none$/.test(v.encryption) ? 'danger' : ''), state, ...(live?.badges ?? [])],
+    body: h('div', { className: `wf-iface-body${off ? ' wf-dim' : ''}` }, off ? null : live?.body, groups, actions) });
 }
 
 // The editors of the wireless networks of radio `name`, one block per network (`liveOf(i)` gives the live part of each, see ifaceEditor), and the
@@ -195,9 +190,7 @@ export function networksEditor(name, edit, liveOf = () => null) {
   const mine = ifaceList(w, edit.draft).filter(i => i.device === name);
   const others = w.ifaces.filter(i => i.device === name && !i.editable);
   const add = (label, mode) => {
-    const b = button(label, 'plus-lg', () => { opened.set(`if:${addIface(w, edit.draft, name, mode)}`, true); edit.touched(); edit.redraw(); });
-    b.disabled = !edit.canEdit;
-    return b;
+    return button(label, 'plus-lg', () => { opened.set(`if:${addIface(w, edit.draft, name, mode)}`, true); edit.touched(); edit.redraw(); }, 'btn-fl', { disabled: !edit.canEdit });
   };
   return h('div', { className: 'wf-nets-editor' },
     mine.length ? mine.map(i => ifaceEditor(i, edit, liveOf(i))) : muted('No access point, client network or mesh point is configured on this radio.'),

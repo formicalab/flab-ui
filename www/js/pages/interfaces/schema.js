@@ -31,7 +31,7 @@ export const PROTOS = [
 export const EDITABLE_PROTOS = PROTOS.map(p => p.id);
 
 // The protocols that run over PPP and so take the PPP style `ipv6` option (0, 1 or auto).
-export const PPP_PROTOS = ['pppoe'];
+const PPP_PROTOS = ['pppoe'];
 
 // What each protocol the page does not edit makes of an interface, for the read-only cards.
 export const OTHER_PROTOS = {

@@ -23,7 +23,14 @@ import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
 import { readfile } from 'fs';
-import { fixture, record_file, run, command_result, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname, num, as_list } from 'flab.util';
+import { fixture, record_file, run, command_result, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname as lib_safe_ifname, num, as_list } from 'flab.util';
+
+// A name that reaches a command line or a path: an interface, port or bus name (the `port` of cable_test comes from the browser). The
+// library check is anchored with ^...$, which ucode matches against the first line of a string, so "lan1\nid" would pass it; a name
+// with a line break is refused first.
+function safe_ifname(name) {
+	return type(name) == 'string' && index(name, '\n') < 0 && index(name, '\r') < 0 && lib_safe_ifname(name);
+}
 
 // Names of the kernel's bridge port STP states, indexed by the number in brport/state.
 const STP_STATES = [ 'disabled', 'listening', 'learning', 'forwarding', 'blocking' ];
@@ -139,7 +146,7 @@ function device_view(name, d) {
 // Spanning-tree view of one bridge port; null when the device is not a bridge port. `bridge` is the bridge's
 // view, used to derive the port role.
 function brport_view(name, bridge) {
-	let base = `brport/`;
+	let base = 'brport/';
 	let state = sys(name, base + 'state');
 	if (state == null)
 		return null;
@@ -389,6 +396,10 @@ function hardware(name, d) {
 	let node = match(sys(name, 'uevent') ?? '', /OF_FULLNAME=([^\n]+)/);
 	if (!node && d.devtype != 'dsa')
 		node = match(sys(name, 'device/uevent') ?? '', /OF_FULLNAME=([^\n]+)/);
+	// The path reaches `ls` command lines below, so only the characters of device-tree node names are accepted (and no line break: the
+	// anchored pattern would otherwise accept the first line of a longer string).
+	if (node && (index(node[1], '\r') >= 0 || !match(node[1], /^(\/[A-Za-z0-9,._+@-]+)+$/)))
+		node = null;
 	if (node) {
 		let dt = (path) => compat_label(sysfs('/proc/device-tree' + path + '/compatible'));
 		hw.of_node = node[1];
@@ -538,12 +549,14 @@ function sfp_candidate(hw) {
 	return hw != null && (hw.sfp_dt == true || index(hw.ports ?? [], 'FIBRE') >= 0 || hw.media == 'FIBRE' || hw.media == 'Direct Attach');
 }
 
-// Process-local unsupported-port memo. It persists in direct-call harnesses, not across production workers.
+// Process-local unsupported-port memo. It persists in direct-call harnesses, not across production workers, so the page keeps its own
+// memory of a `supported: false` reply (www/js/pages/network/cable.js).
 let cable_unsupported = {};
 
 // The reply of `cable_test`: runs `ethtool --cable-test` on one physical port and returns the result of each of the four
 // pairs. A PHY that supports it drops the link for a few seconds, so this is only called on request. Anything that is not a
-// physical Ethernet port (a bridge, a VLAN device, the SoC MAC that feeds a switch) is refused before a command is built.
+// physical Ethernet port (a bridge, a VLAN device, the SoC MAC that feeds a switch) is refused before a command is built. The
+// exec helper stops the command after its own 20-second limit, whatever the `timeout` in the command line says.
 //   { ok, port, pairs: [{ pair, code, length_m }] } or { ok: false, port, supported, error }
 function cable_test(request) {
 	let port = request?.args?.port;
@@ -747,10 +760,11 @@ function swconfig_switches(board_switch) {
 }
 //#endregion
 
-// Interfaces that run over another interface (tunnels: `option tunlink`), as { interface: underlying interface }.
-function tunlinks() {
+// Interfaces that run over another interface (tunnels: `option tunlink`), as { interface: underlying interface }; `all` is the
+// network config (uci_all).
+function tunlinks(all) {
 	let out = {};
-	for (let name, s in uci_all('network'))
+	for (let name, s in all)
 		if (s['.type'] == 'interface' && s.tunlink)
 			out[name] = s.tunlink;
 	return out;
@@ -878,10 +892,10 @@ function collect() {
 		p.vlans = filter(vlans, (v) => v.parent == p.name);
 	}
 	let live_vlans = bridge_vlan_live();
-	let conf_vlans = uci_all('network');
+	let net_conf = uci_all('network');
 	for (let b in bridges) {
 		b.vlans = filter(vlans, (v) => v.parent == b.name);
-		b.vlan_table = vlan_table(b, live_vlans, conf_vlans);
+		b.vlan_table = vlan_table(b, live_vlans, net_conf);
 	}
 
 	// Wiring of the board, all read from the device tree and /etc/board.json so it follows any router:
@@ -914,7 +928,7 @@ function collect() {
 	for (let sw in swc.switches)
 		push(switches, sw);
 
-	return { generated: time(), model: board.model, ports, bridges, vlans, switches, tunlinks: tunlinks(), zones: firewall_zones(), dhcp: dhcp_services() };
+	return { generated: time(), model: board.model, ports, bridges, vlans, switches, tunlinks: tunlinks(net_conf), zones: firewall_zones(), dhcp: dhcp_services() };
 }
 
 // Options whose value is a secret (PPPoE and modem passwords, SIM PINs, WireGuard and pre-shared keys, 802.1x and WPA keys): never
@@ -939,10 +953,10 @@ function section_options(sec) {
 }
 
 // The sections of one type in file order, as [{ section, anonymous, values, secrets }].
-function sections_of(all, type) {
+function sections_of(all, kind) {
 	let list = [];
 	for (let name, s in all)
-		if (s['.type'] == type)
+		if (s['.type'] == kind)
 			push(list, { index: s['.index'] ?? 0, section: name, anonymous: s['.anonymous'] == true, ...section_options(s) });
 	return map(sort(list, (a, b) => a.index - b.index), (x) => ({ section: x.section, anonymous: x.anonymous, values: x.values, secrets: x.secrets }));
 }

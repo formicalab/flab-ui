@@ -9,7 +9,7 @@ import { idOf } from './schema.js';
 import { aliasChoices, deviceChoices, portChoices, portOwners, setPort } from './model.js';
 
 // The option ids whose value changes which controls are shown or what they offer, so changing one redraws the form.
-export const REDRAWS = new Set(['proto', 'ip6assign']);
+const REDRAWS = new Set(['proto', 'ip6assign']);
 
 // The interface field `f` with its drop-down choices filled in from what the router reported and the texts that depend on the form's values.
 export function interfaceField(ctx, s, f) {

@@ -5,19 +5,20 @@
 //
 // Two engines are understood and both may be present: Unbound (read through `unbound-control`, which talks to
 // its local control socket) and dnsmasq (read through its ubus object `dnsmasq metrics` and its UCI section).
-// The reply names the engine that answers on port 53, its version, uptime, listening sockets, counters,
+// The reply names the engine that answers on port 53, its version, uptime (s), listening sockets, counters,
 // forwarders (the default ones and the conditional zones), the resolvers learned from the WAN, the configuration
 // options that are set and whether DNSSEC validation is available and on.
 //
-// Read-only: the plugin never writes anything (the page changes settings through rpcd's own `uci` object). `status` takes no arguments (anything sent is ignored), so no value from a request ever reaches
-// a shell; every command below is a fixed string. A command that fails or prints nothing leaves its part of the
-// reply null and adds a warning, it never fails the call.
+// Read-only: the plugin never writes anything (the page changes settings through rpcd's own `uci` object).
+// `status` takes no arguments (anything sent is ignored), so no value from a request ever reaches a shell; every
+// command below is a fixed string, and the only paths read from router data are checked against a strict pattern.
+// A command that fails or prints nothing leaves its part of the reply null and adds a warning, it never fails the call.
 
 'use strict';
 import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
-import { run, sysfs_raw, ubus_call, uci_all, num } from 'flab.util';
+import { run, sysfs_raw, ubus_call, uci_all, num, one_line } from 'flab.util';
 
 // Forwarders, listening sockets and values of one list option returned at most.
 const MAX_FORWARDS = 500;
@@ -74,6 +75,12 @@ function round1(x) {
 // The first value of a UCI option that may be a list.
 function first_of(v) {
 	return type(v) == 'array' ? v[0] : v;
+}
+
+// A UCI option as a list of its values: an array as it is, a single value as one element, a missing option as none. (util's
+// as_list() would also split a single value at spaces.)
+function values_of(v) {
+	return type(v) == 'array' ? v : (v != null ? [v] : []);
 }
 
 //#endregion
@@ -439,8 +446,8 @@ function unbound_uci_zones(all) {
 	for (let name, sec in all) {
 		if (sec?.['.type'] != 'zone')
 			continue;
-		let all_names = type(sec.zone_name) == 'array' ? sec.zone_name : (sec.zone_name != null ? [sec.zone_name] : []);
-		let all_servers = type(sec.server) == 'array' ? sec.server : (sec.server != null ? [sec.server] : []);
+		let all_names = values_of(sec.zone_name);
+		let all_servers = values_of(sec.server);
 		let names = slice(all_names, 0, MAX_FORWARDS);
 		let servers = slice(all_servers, 0, MAX_LIST);
 		let entry = { section: name, type: sec.zone_type ?? '', enabled: sec.enabled == '1', zones: map(names, z => norm_zone(z)), servers, options: pick_options(sec, ZONE_OPTIONS) };
@@ -455,7 +462,7 @@ function unbound_uci_zones(all) {
 // The `server` entries of the dnsmasq section as written, [{ index, value }]: each is a forwarder or a zone rule that can be
 // changed through UCI. At most MAX_FORWARDS are listed; the caller says when the list was longer.
 function dnsmasq_uci_servers(section) {
-	let list = type(section.server) == 'array' ? section.server : (section.server != null ? [section.server] : []);
+	let list = values_of(section.server);
 	let out = [];
 	for (let i = 0; i < length(list) && i < MAX_FORWARDS; i++)
 		push(out, { index: i, value: trim(list[i]) });
@@ -482,8 +489,9 @@ function dnsmasq_local_names(leasefile) {
 	let names = {};
 	for (let f in text_lines(run('ls /tmp/hosts 2>/dev/null'))) {
 		f = trim(f);
-		// The names come from the router's own directory listing; only plain file names are opened.
-		if (!match(f, /^[A-Za-z0-9._-]+$/))
+		// The names come from the router's own directory listing; only plain single-line file names are opened. (A pattern
+		// with ^...$ alone would accept the first line of a multi-line string.)
+		if (!one_line(f) || !match(f, /^[A-Za-z0-9._-]+$/))
 			continue;
 		for (let line in text_lines(sysfs_raw(`/tmp/hosts/${f}`))) {
 			let fields = split(trim(replace(line, /#.*$/, '')), /[[:space:]]+/);
@@ -492,7 +500,7 @@ function dnsmasq_local_names(leasefile) {
 					names[lc(fields[i])] = true;
 		}
 	}
-	let path = (type(leasefile) == 'string' && match(leasefile, /^\/[A-Za-z0-9._\/-]+$/) && !match(leasefile, /\.\./)) ? leasefile : LEASES;
+	let path = (type(leasefile) == 'string' && one_line(leasefile) && match(leasefile, /^\/[A-Za-z0-9._\/-]+$/) && !match(leasefile, /\.\./)) ? leasefile : LEASES;
 	for (let line in text_lines(sysfs_raw(path))) {
 		// "expiry mac address hostname client-id"; "*" is a lease without a name.
 		let name = split(trim(line), /[[:space:]]+/)[3];
@@ -510,7 +518,7 @@ function collect_dnsmasq(info, section, conn, warnings) {
 		out.version = v.version;
 		out.dnssec_supported = v.dnssec;
 	}
-	out.forwards = parse_dnsmasq_servers(type(section.server) == 'array' ? section.server : (section.server != null ? [section.server] : []));
+	out.forwards = parse_dnsmasq_servers(values_of(section.server));
 	if (info.running) {
 		out.uptime = process_age(info.pid);
 		let metrics = ubus_call(conn, 'dnsmasq', 'metrics', {});
@@ -656,7 +664,7 @@ function status() {
 	if (cut_private)
 		private_domains = slice(private_domains, 0, MAX_PRIVATE);
 	let forward_uci = configured == 'unbound' ? uci_zones : (configured == 'dnsmasq' ? dnsmasq_uci_servers(sec_dm) : []);
-	let cut_forward_uci = configured == 'dnsmasq' && type(sec_dm.server) == 'array' && length(sec_dm.server) > MAX_FORWARDS;
+	let cut_forward_uci = configured == 'dnsmasq' && length(values_of(sec_dm.server)) > MAX_FORWARDS;
 
 	// The UCI section that holds the described engine's options, so a page can write them: Unbound's `unbound` section of
 	// /etc/config/unbound, dnsmasq's section of /etc/config/dhcp. Null when the engine has no such section.

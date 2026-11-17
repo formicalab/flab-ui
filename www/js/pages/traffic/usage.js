@@ -2,7 +2,8 @@
 // (flab.traffic usage_periods and usage). The numbers are what nlbwmon has counted since the period started.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { card, emptyState, healthBanner, meter, muted, tile, tiles } from '../../core/ui.js';
+import { button, card, emptyState, healthBanner, meter, muted, tile, tiles } from '../../core/ui.js';
+import { legend } from '../../core/forms.js';
 import { fmtBytes, fmtNum } from '../../core/format.js';
 import { describePeriod, filterHosts, fmtPct, mergeHosts, protocolRows, share, sortHosts, usageFindings, usageTotals } from './model.js';
 
@@ -10,9 +11,10 @@ import { describePeriod, filterHosts, fmtPct, mergeHosts, protocolRows, share, s
 const ROW_LIMIT = 50;
 
 // The note above the tiles: the accounting period the numbers belong to (its dates, its length so far and, for the running
-// one, when it ends and the counters start again from zero), then what the numbers are and what they depend on.
-const note = window => {
-  const p = describePeriod(window);
+// one, when it ends and the counters start again from zero), then what the numbers are and what they depend on. `period` is the
+// reply's accounting window; without one (no data yet) only the second part is shown.
+const note = period => {
+  const p = describePeriod(period);
   return h('div', { className: 'tr-note' }, icon('info-circle'),
     h('div', {},
       p ? h('div', { className: 'tr-note-period' }, h('strong', {}, 'Accounting period: '), `${p.title} (${p.days}). ${p.detail}`) : null,
@@ -79,7 +81,7 @@ function hostsCard(usage, hosts, state, rerender) {
         h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 7, className: 'muted' }, state.hq ? 'No host matches the filter' : 'No host has traffic in this period'))))),
       list.length > shown.length ? h('div', { className: 'tr-more' },
         h('span', { className: 'muted' }, `Showing the first ${shown.length} of ${list.length} hosts.`),
-        h('button', { type: 'button', className: 'btn btn-sm btn-fl', onclick: () => { state.hall = true; rerender(); } }, `Show all ${list.length}`)) : null));
+        button(`Show all ${list.length}`, null, () => { state.hall = true; rerender(); })) : null));
 }
 
 // The protocol card: the traffic of the period by application protocol as nlbwmon recognizes it (HTTPS, DNS, ...),
@@ -95,7 +97,7 @@ function protocolsCard(l7) {
     h('td', { className: 'tr-num' }, fmtNum(p.conns))));
   return card([icon('diagram-3'), 'Protocols', h('span', { className: 'sub' }, 'what the traffic was, by application protocol')],
     h('div', {},
-      h('div', { className: 'tr-legend' }, 'nlbwmon names a flow after its application protocol (HTTPS, DNS, ...) from /usr/share/nlbwmon/protocols; a flow it does not know is listed by transport and port ("TCP 8443").'),
+      legend(['nlbwmon names a flow after its application protocol (HTTPS, DNS, ...) from /usr/share/nlbwmon/protocols; a flow it does not know is listed by transport and port ("TCP 8443").']),
       h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover tr-usage' },
         h('thead', {}, h('tr', {}, ['Protocol', 'Download', 'Upload', 'Total', 'Share of the total', 'Connections'].map((c, i) => h('th', { className: i === 1 || i === 2 || i === 3 || i === 5 ? 'tr-num' : '' }, c)))),
         h('tbody', {}, body.length ? body : h('tr', {}, h('td', { colSpan: 6, className: 'muted' }, 'Nothing counted in this period')))))));
@@ -106,8 +108,7 @@ function protocolsCard(l7) {
 export function usageView(data, state, rerender) {
   if (!data.status?.nlbw) return [emptyState('nlbw is not installed on this router, so per-host usage is not available.')];
   const findings = usageFindings(data.status, data.hosts);
-  if (!data.periods?.running) return [healthBanner(findings, ''), note()];
-  if (!data.hosts?.ok) return [healthBanner(findings, ''), note()];
+  if (!data.periods?.running || !data.hosts?.ok) return [healthBanner(findings, ''), note()];
   const hosts = mergeHosts(data.hosts.rows, data.hosts.names);
   return [
     note(data.hosts.window),

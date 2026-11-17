@@ -79,7 +79,7 @@ export function peerList(item, draft) {
 }
 
 // The name of a peer for messages: its description, else its shortened public key.
-export const peerLabel = (values, key) => values.description.trim() || shortKey(values.public_key.trim() || key) || 'unnamed peer';
+const peerLabel = (values, key) => values.description.trim() || shortKey(values.public_key.trim() || key) || 'unnamed peer';
 
 // The names a new interface may not take: every named section of the network config, the interfaces the kernel has, the names of the
 // other interfaces added in the form.
@@ -262,6 +262,9 @@ export function problems(data, draft) {
   const active = items.filter(i => !i.removed);
   const kernel = kernelPorts(data);
   const ports = new Map();
+  // The review list, worked out once (only needed to tell whether an interface of the router was touched).
+  let reviewList = null;
+  const changes = () => reviewList ??= changesOf(data, draft);
 
   for (const item of items) {
     const d = draft.interfaces[item.id];
@@ -405,7 +408,7 @@ export function problems(data, draft) {
     }
 
     // Changes to a tunnel that carries your own session.
-    if (!item.isNew && changesOf(data, draft).some(c => c.key.startsWith(`if:${item.id}`) || c.key.startsWith(`peer:${item.id}:`))) {
+    if (!item.isNew && changes().some(c => c.key.startsWith(`if:${item.id}`) || c.key.startsWith(`peer:${item.id}:`))) {
       const you = adminSentence(links, item.name);
       if (you) warnings.push(`Applying a change to ${item.name} restarts the tunnel, which briefly interrupts everything that goes through it, including your own connection. ${you}`);
     }

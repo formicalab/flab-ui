@@ -11,7 +11,7 @@
 // view.js; this file wires them to the cards. A login that may not read or write the config, or a reply of the plugin that does not match the config,
 // gets the read-only page.
 import { tile, tiles, emptyState, healthBanner, button } from '../../core/ui.js';
-import { h } from '../../core/dom.js';
+import { h, sleep } from '../../core/dom.js';
 import { can, optional, ubus } from '../../core/ubus.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
 import { fmtNum } from '../../core/format.js';
@@ -54,7 +54,7 @@ async function readAfter() {
     const [status, cfg] = await Promise.all([ubus('flab.firewall', 'status'), uci.get(CONFIG)]);
     after = readFirewall(status, cfg);
     if (!notLoaded(base, after)) break;
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await sleep(1000);
   }
   return after;
 }
@@ -70,7 +70,7 @@ function confirmRisks(risks) {
       body: h('div', {}, h('p', {}, 'The change you are about to save may stop this page from reaching the router:'),
         h('ul', {}, risks.map(r => h('li', {}, r))),
         h('p', { className: 'muted small' }, 'If this page cannot confirm the change within 30 seconds the router puts the previous configuration back by itself. Cancel to go on editing.')),
-      footer: [button('Cancel', null, () => shown.close()), apply],
+      footer: [button('Cancel', 'x-lg', () => shown.close()), apply],
       staticBackdrop: true,
       onClose: () => resolve(answer),
     });
@@ -109,9 +109,6 @@ function summary(fw) {
     tile('Connections', count != null ? fmtNum(count) : '–', max ? `${Math.round(count / max * 100)} % of ${fmtNum(max)} tracked` : '', max && count / max > 0.8 ? 'text-warning' : ''),
     tile('Flow offloading', offloadLabel(fw), fw.flowtable ? `${fw.flowtable.devices.length} devices` : 'no flowtable loaded', fw.defaults.flow_offloading ? 'text-success' : ''));
 }
-
-// The shell's redraw and reload functions, handed over by controls() and view().
-const shell = { rerender: () => {}, reload: () => {} };
 
 // The actions of the editing controls on the draft. Each changes the draft, forgets the outcome of the last save and redraws the page.
 function actionsFor(canEdit) {
@@ -179,15 +176,12 @@ export default {
     return editor.withStaged(readFirewall(fw, cfg));
   },
 
-  controls({ rerender, reload }) {
-    shell.rerender = rerender;
-    shell.reload = reload;
+  controls({ reload }) {
     return { nodes: [pauseControl(state), refreshControl(reload), editor.attach(reload)] };
   },
 
   // When there is no firewall configuration at all, only the findings and an explanation are shown.
   view(data, rerender) {
-    shell.rerender = rerender;
     const status = data.status;
     if (!status.zones.length && !status.running) return [healthBanner(findings(status), ''), emptyState('No firewall configuration was found.')];
     if (!data.editable || !consistent(data)) return readOnlyView(status);

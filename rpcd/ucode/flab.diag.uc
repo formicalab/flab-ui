@@ -1,11 +1,12 @@
 #!/usr/bin/ucode
 //
 // rpcd ucode plugin that runs network diagnostics (ping, traceroute, mtr, DNS lookups, a DNS trace from the root servers,
-// certificate checks) and an iperf3 server as background jobs and streams their output:
+// certificate checks, packet captures) and an iperf3 server as background jobs and streams their output:
 //   ubus call flab.diag status
 //   ubus call flab.diag start '{"tool":"ping","host":"1.1.1.1","count":4}'
 //   ubus call flab.diag start '{"tool":"iperf","minutes":2}'
 //   ubus call flab.diag read '{"id":"<id from start>","from":0}'
+//   ubus call flab.diag download '{"id":"<id of a capture>","from":0}'
 //   ubus call flab.diag stop '{"id":"<id from start>"}'
 //   ubus call flab.diag wake '{"mac":"aa:bb:cc:dd:ee:ff","iface":"br-lan"}'
 //
@@ -17,6 +18,7 @@
 // other call, including the page's own polling. `start` therefore launches the tool detached and returns at once
 // with a job id; the tool writes into /tmp/flab-diag/<id>/out, and `read` returns what has been written so far, so
 // the page shows the output as it arrives. `stop` ends a running job. Jobs are removed ten minutes after they end.
+// The handlers also run in the deferred workers of flab.worker; `start`, `stop` and `wake` are serialized there.
 //
 // Everything that reaches the shell is validated first, because the request comes from a browser:
 //   - the target is a host name or an address made of letters, digits, ".", ":", "_" and "-", and does not start
@@ -24,13 +26,15 @@
 //   - the source is such an address or an interface name; numbers are clamped to fixed ranges;
 //   - the tool, the address family, the traceroute method and the DNS record type come from allow-lists, and the
 //     name-resolution switch must be a real boolean.
-// The tools are fixed (busybox ping and traceroute, the first of dig, kdig, drill and nslookup that exists, and
-// openssl), the argument list or script is built from validated values only, and the job id is generated here and
+// The tools are fixed (busybox ping and traceroute, mtr, the first of dig, kdig, drill and nslookup that exists, openssl and
+// tcpdump), the argument list or script is built from validated values only, and the job id is generated here and
 // checked again whenever it comes back from the browser. `timeout` caps every job. The script tools (the TLS check, the
-// DNS comparison, the DNS trace, a traceroute with AS lookups and the connectivity check) write a script owned by this
-// plugin into the job directory; the only values in it from the request are the validated words above. The iperf3 server
+// DNS comparison, the DNS trace, a traceroute or mtr run with AS lookups, the packet capture and the connectivity check)
+// write a script owned by this plugin into the job directory; the only values in it from the request are the validated
+// words above, whose character sets hold no quote, space or other shell metacharacter. The iperf3 server
 // is the one job that waits for outside clients: its port is at least 1024, the address it listens on must be one of the
-// router's own, only one runs at a time and `timeout` ends it after the minutes chosen.
+// router's own, only one runs at a time and `timeout` ends it after the minutes chosen. A capture file holds other
+// hosts' traffic, which is why `download` is a write-section method of the ACL (as `start` is).
 
 'use strict';
 import { deferred } from 'flab.worker';
@@ -132,13 +136,24 @@ function int_in(v, lo, hi, def) {
 
 //#region Tools
 
-// The first of the DNS tools that is installed ('' when none is): dig, kdig and drill answer every record type
-// properly; busybox nslookup is the last resort and cannot show MX, SRV and similar records in full.
-function dns_tool() {
-	for (let t in [ 'dig', 'kdig', 'drill', 'nslookup' ])
-		if (trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '')
+// Whether the command `cmd` is installed. Only fixed names from this file are passed, never a request value.
+function have(cmd) {
+	return trim(run(`command -v ${cmd} 2>/dev/null`) ?? '') != '';
+}
+
+// The first of `list` that is installed ('' when none is). `known` is an optional { command: bool } map from an earlier
+// probe, so `status` does not spawn a shell for a command it has already looked for.
+function first_tool(list, known) {
+	for (let t in list)
+		if (known?.[t] ?? have(t))
 			return t;
 	return '';
+}
+
+// The DNS tool the router uses: dig, kdig and drill answer every record type properly; busybox nslookup is the last
+// resort and cannot show MX, SRV and similar records in full.
+function dns_tool(known) {
+	return first_tool([ 'dig', 'kdig', 'drill', 'nslookup' ], known);
 }
 
 // The argument list of a ping from the request: [ argv ] or { error }. The run lasts `count` seconds (one ping a second)
@@ -228,7 +243,7 @@ function build_iperf(a) {
 	let port = int_in(a.port, IPERF_MIN_PORT, 65535, IPERF_PORT);
 	if (port == null)
 		return { error: `The port must be between ${IPERF_MIN_PORT} and 65535.` };
-	if (trim(run('command -v iperf3 2>/dev/null') ?? '') == '')
+	if (!have('iperf3'))
 		return { error: 'The router has no iperf3.' };
 	let argv = [ 'iperf3', '-s', '-p', port, '--json-stream', '--forceflush' ];
 	if (a.bind != null && a.bind != '') {
@@ -264,15 +279,24 @@ function dns_argv(tool, host, type_, server) {
 	return argv;
 }
 
+// The record type of a request: the requested one in upper case, 'A' when none is given, null when it is not in TYPES.
+function record_type(a) {
+	let t = a.type == null || a.type == '' ? 'A' : uc(a.type);
+	return index(TYPES, t) < 0 ? null : t;
+}
+
+const NOT_A_TYPE = 'The record type is not one of ' + join(', ', TYPES) + '.';
+const NO_DNS_TOOL = 'The router has no DNS lookup tool (dig, kdig, drill or nslookup).';
+
 // The argument list of a DNS lookup with the best tool the router has. A server may be named (it must be a host
 // name or an address).
 function build_dns(a) {
 	let tool = dns_tool();
 	if (tool == '')
-		return { error: 'The router has no DNS lookup tool (dig, kdig, drill or nslookup).' };
-	let type_ = a.type == null || a.type == '' ? 'A' : uc(a.type);
-	if (index(TYPES, type_) < 0)
-		return { error: 'The record type is not one of ' + join(', ', TYPES) + '.' };
+		return { error: NO_DNS_TOOL };
+	let type_ = record_type(a);
+	if (type_ == null)
+		return { error: NOT_A_TYPE };
 	let server = a.server == null || a.server == '' ? null : a.server;
 	if (server != null && !valid_host(server))
 		return { error: 'The DNS server must be a host name or an address.' };
@@ -364,11 +388,8 @@ function tls_script(host, port, sni, starttls) {
 
 // The first of dig and kdig that is installed ('' when neither is): the AS lookups use `+short`, which drill and nslookup
 // do not have.
-function asn_tool() {
-	for (let t in [ 'kdig', 'dig' ])
-		if (trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '')
-			return t;
-	return '';
+function asn_tool(known) {
+	return first_tool([ 'kdig', 'dig' ], known);
 }
 
 // The awk program that picks the addresses of a traceroute's output that are worth looking up: every public IPv4 and IPv6
@@ -535,7 +556,7 @@ function build_tls(a) {
 	let starttls = a.starttls == null || a.starttls == '' ? null : a.starttls;
 	if (starttls != null && index(STARTTLS, starttls) < 0)
 		return { error: 'STARTTLS must be one of ' + join(', ', STARTTLS) + '.' };
-	if (trim(run('command -v openssl 2>/dev/null') ?? '') == '')
+	if (!have('openssl'))
 		return { error: 'The router has no openssl, which this check needs.' };
 	// A name is sent as SNI (the host itself when none is given); an address is not.
 	let name = sni ?? (is_address(a.host) ? null : a.host);
@@ -547,10 +568,10 @@ function build_tls(a) {
 function build_compare(a) {
 	let tool = dns_tool();
 	if (tool == '')
-		return { error: 'The router has no DNS lookup tool (dig, kdig, drill or nslookup).' };
-	let type_ = a.type == null || a.type == '' ? 'A' : uc(a.type);
-	if (index(TYPES, type_) < 0)
-		return { error: 'The record type is not one of ' + join(', ', TYPES) + '.' };
+		return { error: NO_DNS_TOOL };
+	let type_ = record_type(a);
+	if (type_ == null)
+		return { error: NOT_A_TYPE };
 	if (type(a.servers) != 'array' || length(a.servers) < 1 || length(a.servers) > MAX_SERVERS)
 		return { error: `Choose between 1 and ${MAX_SERVERS} servers.` };
 	let servers = [];
@@ -568,11 +589,21 @@ function build_compare(a) {
 function build_check(a) {
 	let tool = dns_tool();
 	if (tool == '')
-		return { error: 'The router has no DNS lookup tool (dig, kdig, drill or nslookup).' };
+		return { error: NO_DNS_TOOL };
 	let port = int_in(a.port, 1, 65535, 443);
 	if (port == null)
 		return { error: 'The port must be between 1 and 65535.' };
 	return { script: check_script(tool, a.host, port), limit: LIMITS.check, tool, display: `connectivity check (${a.host}${port != 443 ? `:${port}` : ''})` };
+}
+
+// Why the `resolve` and `asn` switches of a traceroute or mtr request are not usable (each must be a real boolean when
+// present), or null.
+function flags_error(a) {
+	if (a.resolve != null && a.resolve !== true && a.resolve !== false)
+		return 'Resolving names must be true or false.';
+	if (a.asn != null && a.asn !== true && a.asn !== false)
+		return 'Looking up the networks must be true or false.';
+	return null;
 }
 
 // The argument list of a traceroute. Output is numeric unless `resolve` is true: busybox then looks up a host name for
@@ -584,10 +615,9 @@ function build_traceroute(a) {
 		return { error: 'The maximum number of hops must be between 1 and 30.' };
 	if (probes == null)
 		return { error: 'The number of probes per hop must be between 1 and 3.' };
-	if (a.resolve != null && a.resolve !== true && a.resolve !== false)
-		return { error: 'Resolving names must be true or false.' };
-	if (a.asn != null && a.asn !== true && a.asn !== false)
-		return { error: 'Looking up the networks must be true or false.' };
+	let flags = flags_error(a);
+	if (flags != null)
+		return { error: flags };
 	let argv = [ 'traceroute', '-w', 2, '-q', probes, '-m', hops ];
 	if (a.resolve !== true)
 		splice(argv, 1, 0, '-n');
@@ -635,11 +665,10 @@ function build_mtr(a) {
 		return { error: `The packet size must be between ${MTR_SIZE[0]} and ${MTR_SIZE[1]} bytes.` };
 	if (size != 0 && method == 'tcp')
 		return { error: 'TCP probes carry no payload, so they have no packet size.' };
-	if (a.resolve != null && a.resolve !== true && a.resolve !== false)
-		return { error: 'Resolving names must be true or false.' };
-	if (a.asn != null && a.asn !== true && a.asn !== false)
-		return { error: 'Looking up the networks must be true or false.' };
-	if (trim(run('command -v mtr 2>/dev/null') ?? '') == '')
+	let flags = flags_error(a);
+	if (flags != null)
+		return { error: flags };
+	if (!have('mtr'))
 		return { error: 'The router has no mtr.' };
 	let argv = [ 'mtr', '--raw', '-c', cycles, '-i', 1, '-G', 2 ];
 	if (a.resolve !== true)
@@ -675,11 +704,11 @@ function build_mtr(a) {
 // The DNS trace: the name, a record type and the address family (4 or 6, default 4). It needs kdig, whose output names the
 // server that answered and the time it took.
 function build_trace(a) {
-	if (trim(run('command -v kdig 2>/dev/null') ?? '') == '')
+	if (!have('kdig'))
 		return { error: 'The DNS trace needs kdig (knot-dig), which this router does not have.' };
-	let type_ = a.type == null || a.type == '' ? 'A' : uc(a.type);
-	if (index(TYPES, type_) < 0)
-		return { error: 'The record type is not one of ' + join(', ', TYPES) + '.' };
+	let type_ = record_type(a);
+	if (type_ == null)
+		return { error: NOT_A_TYPE };
 	let fam = a.family == '6' ? '-6' : '-4';
 	return { script: trace_script(a.host, type_, fam), limit: LIMITS.trace, tool: 'kdig', display: `DNS trace ${a.host} ${type_}` };
 }
@@ -714,10 +743,11 @@ function capture_script(iface, bpf, seconds, packets, snaplen) {
 // and how much of each packet to keep. Only one capture runs at a time, and the files of earlier captures are removed when a
 // new one starts, because they live in memory.
 function build_capture(a) {
-	if (trim(run('command -v tcpdump 2>/dev/null') ?? '') == '')
+	if (!have('tcpdump'))
 		return { error: 'The router has no tcpdump.' };
 	let iface = a.iface;
-	if (type(iface) != 'string' || (iface != 'any' && !(valid_iface(iface) && stat(`/sys/class/net/${iface}`) != null)))
+	// The name must be listed by the kernel: a bare stat() of /sys/class/net/<name> would also accept "." and "..".
+	if (type(iface) != 'string' || (iface != 'any' && !(valid_iface(iface) && index(lsdir('/sys/class/net') ?? [], iface) >= 0)))
 		return { error: 'The interface must be "any" or a network device of this router.' };
 	let seconds = int_in(a.seconds, 1, CAPTURE_SECONDS[length(CAPTURE_SECONDS) - 1], 30);
 	if (seconds == null)
@@ -875,10 +905,10 @@ function start(request) {
 	// values only) into the job directory and runs that. The subshell records the pid of `timeout` (which forwards a
 	// kill to the tool) and the exit code, and is detached from this call.
 	let command = built.script != null ? 'sh job.sh' : join(' ', built.argv);
-	if (built.script != null)
-		// A script is written with LF line endings only: BusyBox sh rejects a carriage return, and the source file may carry CRLF
+	// A script is written with LF line endings only: BusyBox sh rejects a carriage return, and the source file may carry CRLF
 	// (a Windows checkout) inside the multi-line parts of the templates.
-	writefile(`${ROOT}/${id}/job.sh`, replace(built.script, /\r/g, ''));
+	if (built.script != null)
+		writefile(`${ROOT}/${id}/job.sh`, replace(built.script, /\r/g, ''));
 	// Earlier captures live in memory (tmpfs) and only one capture runs at a time, so their files go before a new one starts.
 	if (built.capture)
 		run(`rm -f ${ROOT}/*/cap.pcap`);
@@ -986,11 +1016,8 @@ function norm_mac(s) {
 
 // How a magic packet can be sent from this router: "etherwake" (a raw Ethernet frame), "socat" (a UDP broadcast to
 // port 9) or "" when neither is installed.
-function wol_method() {
-	for (let t in [ 'etherwake', 'socat' ])
-		if (trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '')
-			return t;
-	return '';
+function wol_method(known) {
+	return first_tool([ 'etherwake', 'socat' ], known);
 }
 
 // The hosts a magic packet can be sent to, as [{ mac, name, ip, dev, reserved }] sorted by name then address. The MACs come
@@ -1113,11 +1140,11 @@ function wake(request) {
 function status() {
 	let tools = {};
 	for (let t in [ 'ping', 'traceroute', 'nslookup', 'dig', 'kdig', 'drill', 'openssl', 'mtr', 'iperf3', 'tcpdump' ])
-		tools[t] = trim(run(`command -v ${t} 2>/dev/null`) ?? '') != '';
+		tools[t] = have(t);
 	let devices = sort(filter(lsdir('/sys/class/net') ?? [], valid_iface));
 	return {
-		generated: time(), tools, dns_tool: dns_tool(), asn: asn_tool() != '', types: TYPES, devices, limits: LIMITS, max_pings: MAX_PINGS, mtr_cycles: MTR_CYCLES,
-		starttls: STARTTLS, upstream: upstream_resolvers(), check_host: CHECK_HOST, wol: wol_method(), hosts: wol_hosts(), iperf: tools.iperf3 ? iperf_info() : null,
+		generated: time(), tools, dns_tool: dns_tool(tools), asn: asn_tool(tools) != '', types: TYPES, devices, limits: LIMITS, max_pings: MAX_PINGS, mtr_cycles: MTR_CYCLES,
+		starttls: STARTTLS, upstream: upstream_resolvers(), check_host: CHECK_HOST, wol: wol_method(tools), hosts: wol_hosts(), iperf: tools.iperf3 ? iperf_info() : null,
 		capture: tools.tcpdump ? { seconds: CAPTURE_SECONDS, packets: CAPTURE_PACKETS, snaplen: CAPTURE_SNAPLEN, protos: CAPTURE_PROTOS, shown: CAPTURE_SHOWN, filter_max: CAPTURE_FILTER_MAX } : null,
 	};
 }

@@ -22,7 +22,8 @@ export const STATE_LABEL = { '': 'not a member', t: 'tagged', u: 'untagged', 'u*
 //#region Reading the config
 
 // The sections of an `uci get` reply (a map of section name to options) in file order, each as its options plus `sec`, the name
-// uci gives the section (an option called `name` stays an option).
+// uci gives the section (an option called `name` stays an option). Not core fields.js sectionsOf(): that one filters by type and
+// splits the options from the section name.
 function sectionsOf(values) {
   const map = values && typeof values === 'object' && !Array.isArray(values) ? values : {};
   return Object.entries(map).sort(([, a], [, b]) => (a['.index'] ?? 0) - (b['.index'] ?? 0)).map(([name, s]) => ({ ...s, sec: s['.name'] ?? name }));
@@ -243,7 +244,7 @@ function rowChanges(table, draft) {
 }
 
 // The words for a row's membership, for the review list: "lan1 tagged, lan2 untagged + PVID, bridge".
-export function describeRow(table, row) {
+function describeRow(table, row) {
   const parts = table.columns.filter(c => cellOf(row, c.id)).map(c => `${c.label} ${table.kind === 'bridge' ? STATE_LABEL[cellOf(row, c.id)] : cellOf(row, c.id) === 't' ? 'tagged' : 'untagged'}`);
   if (table.kind === 'bridge' && row.local) parts.push('router');
   return parts.length ? parts.join(', ') : 'no ports';

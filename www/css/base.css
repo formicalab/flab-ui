@@ -119,6 +119,7 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
 .card { background: var(--fl-surface); border: 1px solid var(--fl-stroke); border-radius: 8px; box-shadow: var(--fl-shadow); --bs-card-cap-bg: transparent; }
 .card-header { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: .75rem 1rem; border-bottom: 1px solid var(--fl-stroke); font-weight: 600; }
 .card-header .sub { color: var(--fl-muted); font-weight: 400; font-size: .8rem; }
+.card-header svg { color: var(--fl-brand); }
 /* Summary tiles (label, big value, sub-line) shown in a row at the top of each page */
 .tile .label { color: var(--fl-muted); font-size: .8rem; }
 .tile .value { font-size: 1.75rem; font-weight: 600; line-height: 1.2; }
@@ -198,24 +199,45 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .dot.up { background: var(--fl-ok-fg); animation: pulse 2.4s ease-out infinite; }
 .dot.down { background: var(--fl-bad-fg); }
+.dot.idle { background: var(--fl-muted); opacity: .55; }
 @keyframes pulse {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fl-ok-fg) 55%, transparent); }
   70%, 100% { box-shadow: 0 0 0 8px transparent; }
 }
 
+/* ── Folds (core/fold.js), here because any page may use them ── */
+/* A card that folds down to its header (foldable()): the header is the toggle. The marker is a triangle on the left that points
+   right when folded and down when open, like the arrow of a disclosure. */
+.fl-fold-header { cursor: pointer; }
+.fl-fold-header:hover { background: var(--fl-surface-hover); }
+.fl-fold-header:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
+.fl-chevron { flex: none; width: 0; height: 0; border-left: .5rem solid currentColor; border-top: .3rem solid transparent; border-bottom: .3rem solid transparent; transform: rotate(90deg); transition: transform .15s; }
+.fl-folded > :not(.card-header) { display: none; }
+.fl-folded > .card-header { border-bottom: 0; }
+.fl-folded .fl-chevron { transform: none; }
+
+/* A native <details> fold (disclosure()): the same arrow as a folded card, before the summary content, pointing right when
+   closed and down when open. `.fl-disclosure-bar` makes the summary a padded group header that is divided from the body when open. */
+.fl-disclosure > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; list-style: none; cursor: pointer; }
+.fl-disclosure > summary::-webkit-details-marker { display: none; }
+.fl-disclosure > summary::before { content: ""; flex: none; width: 0; height: 0; border-left: .5rem solid currentColor; border-top: .3rem solid transparent; border-bottom: .3rem solid transparent; transition: transform .15s; }
+.fl-disclosure[open] > summary::before { transform: rotate(90deg); }
+.fl-disclosure > summary:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
+.fl-disclosure-bar > summary { padding: .5rem .8rem; font-weight: 600; }
+.fl-disclosure-bar > summary:hover { background: var(--fl-surface-hover); }
+.fl-disclosure-bar[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+
 /* Bootstrap progress bar and the collapsible "how to read this" legend */
 .progress { height: 6px; background: var(--fl-neutral-bg); border-radius: 3px; }
 .progress-bar { background: var(--fl-brand); }
 details.legend { color: var(--fl-muted); }
-details.legend summary { cursor: pointer; color: var(--fl-text); font-weight: 600; }
+details.legend summary { color: var(--fl-text); font-weight: 600; }
 details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
 
 /* ── Table helpers and health banner (shared by several pages) ── */
-.card-header svg { color: var(--fl-brand); }
 .table .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .table td svg { margin-right: .3rem; vertical-align: -1px; color: var(--fl-muted); }
 .table .dot { display: inline-block; }
-.dot.idle { background: var(--fl-muted); opacity: .55; }
 .net-health { display: flex; align-items: center; gap: .6rem; padding: .7rem 1rem; border-radius: 10px; border: 1px solid var(--fl-stroke); background: var(--fl-surface); }
 .net-health.ok { color: var(--fl-ok-fg); background: var(--fl-ok-bg); border-color: transparent; }
 .net-health.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); border-color: transparent; }

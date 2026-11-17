@@ -3,6 +3,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, button, card, muted, sparkline } from '../../core/ui.js';
+import { disclosure } from '../../core/fold.js';
 import { fmtBytes, fmtLine, fmtNum } from '../../core/format.js';
 import { fmtSpeed, traffic, newFlaps, newErrors, errorsOf, dropsOf, hwLines, jackOrder, switchLine, STP_ROLE, stpKind } from './util.js';
 import { diagnosticsPanel } from './diagnostics.js';
@@ -43,7 +44,7 @@ export function negotiation(p) {
 }
 
 // PHY / switch / SoC / driver / medium lines from the device tree and sysfs (see hwLines).
-export function hardwareCell(p) {
+function hardwareCell(p) {
   const lines = hwLines(p);
   return lines.length
     ? h('div', { className: 'hw-lines' }, lines.map(([k, v]) => h('div', {}, h('span', { className: 'muted' }, `${k} `), v)))
@@ -51,7 +52,7 @@ export function hardwareCell(p) {
 }
 
 // Errors and drops with a button that opens the breakdown row below (only when the backend has one).
-export function errorsCell(p) {
+function errorsCell(p) {
   const errs = errorsOf(p), drops = dropsOf(p);
   if (!errs && !drops) return badge('clean', 'success');
   const open = expanded.has(p.name);
@@ -112,7 +113,7 @@ function portCell(p) {
 
 // The Throughput column: the live rate in each direction, the totals and a graph of the recent rates. A port without counters of its
 // own (a swconfig port) says so instead of drawing an empty graph.
-export function throughputBody(p) {
+function throughputBody(p) {
   const t = traffic(p.name);
   const counted = p.stats?.rx_bytes != null;
   return [
@@ -127,7 +128,7 @@ const throughputCell = p => h('td', { className: 'num' }, ...throughputBody(p));
 
 // The Bridge and VLANs column: the bridge a port belongs to with its spanning-tree state and role and the MAC addresses learned on it (or "not bridged"), then
 // the VLAN devices on the port with their state. The VLAN tables of the bridges are the cards below.
-export function bridgeCell(p) {
+function bridgeCell(p) {
   const vlans = p.vlans ?? [];
   return h('div', {},
     p.bridge
@@ -144,14 +145,15 @@ export function bridgeCell(p) {
 function settingsBlock(p) {
   const open = settingsOpen.has(p.name);
   const set = settingsHas(p.name);
-  const block = h('details', { className: 'wf-block port-set-block', open, ontoggle: e => {
+  const block = disclosure({ cls: 'wf-block port-set-block', open,
     // The toggle event also fires for a section drawn open: only a change the user made counts.
-    if (e.target.open === settingsOpen.has(p.name)) return;
-    if (e.target.open) settingsOpen.add(p.name); else settingsOpen.delete(p.name);
-    rerender();
-  } },
-  h('summary', {}, icon('gear'), h('strong', {}, 'Port settings'), set ? badge('device section', 'info', 'The network config holds device settings for this port') : muted('defaults')),
-    open && settingsCtx ? h('div', { className: 'wf-block-body port-set' }, portSettings(settingsCtx, p.name)) : null);
+    onToggle: now => {
+      if (now === settingsOpen.has(p.name)) return;
+      if (now) settingsOpen.add(p.name); else settingsOpen.delete(p.name);
+      rerender();
+    },
+    summary: [icon('gear'), h('strong', {}, 'Port settings'), set ? badge('device section', 'info', 'The network config holds device settings for this port') : muted('defaults')],
+    body: open && settingsCtx ? h('div', { className: 'wf-block-body port-set' }, portSettings(settingsCtx, p.name)) : null });
   block.dataset.port = p.name;
   return block;
 }
@@ -182,7 +184,7 @@ const COLS = HEAD.length;
 let rerender = () => {};
 
 // Points the Details buttons (and the cable test's redraw) at the redraw of the Ethernet ports page.
-export function bindRedraw(redraw) {
+function bindRedraw(redraw) {
   rerender = redraw;
   hooks.rerender = redraw;
 }

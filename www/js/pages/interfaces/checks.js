@@ -65,47 +65,47 @@ export function subnetText(s) {
 //#region Checks
 
 // An IPv4 address, optionally with a prefix length or a netmask (a static `ipaddr`).
-export const checkIp4Cidr = v => (parseCidr(v)?.family === 4 ? null : 'is not an IPv4 address such as 192.168.1.1, 192.168.1.1/24 or 192.168.1.1/255.255.255.0');
+const checkIp4Cidr = v => (parseCidr(v)?.family === 4 ? null : 'is not an IPv4 address such as 192.168.1.1, 192.168.1.1/24 or 192.168.1.1/255.255.255.0');
 // An IPv6 address with an optional prefix length (a static `ip6addr`).
-export const checkIp6Cidr = v => (parseCidr(v)?.family === 6 ? null : 'is not an IPv6 address such as 2001:db8::1/64');
+const checkIp6Cidr = v => (parseCidr(v)?.family === 6 ? null : 'is not an IPv6 address such as 2001:db8::1/64');
 // A plain IPv4 address.
-export const checkIp4 = v => (v4(v) != null ? null : 'is not an IPv4 address');
+const checkIp4 = v => (v4(v) != null ? null : 'is not an IPv4 address');
 // A plain IPv6 address.
-export const checkIp6 = v => (v6(v) != null ? null : 'is not an IPv6 address');
+const checkIp6 = v => (v6(v) != null ? null : 'is not an IPv6 address');
 // An IPv4 or IPv6 address.
-export const checkIp = v => (parseAddress(v) ? null : 'is not an IP address');
+const checkIp = v => (parseAddress(v) ? null : 'is not an IP address');
 // A dotted IPv4 netmask: contiguous ones followed by zeros.
-export const checkNetmask = v => (maskPrefix(v) != null ? null : 'is not a netmask such as 255.255.255.0');
+const checkNetmask = v => (maskPrefix(v) != null ? null : 'is not a netmask such as 255.255.255.0');
 // A MAC address.
-export const checkMac = v => (MAC.test(v) ? null : 'is not a MAC address such as 74:36:6d:c0:9b:83');
+const checkMac = v => (MAC.test(v) ? null : 'is not a MAC address such as 74:36:6d:c0:9b:83');
 // An even number of hexadecimal digits (a DHCP client identifier, a PPPoE Host-Uniq tag).
-export const checkHexPairs = v => (/^([0-9A-Fa-f]{2})+$/.test(v) ? null : 'must be hexadecimal digits in pairs');
+const checkHexPairs = v => (/^([0-9A-Fa-f]{2})+$/.test(v) ? null : 'must be hexadecimal digits in pairs');
 // A subprefix hint (`ip6hint`): hexadecimal digits.
-export const checkHint = v => (/^[0-9A-Fa-f]{1,8}$/.test(v) ? null : 'must be up to 8 hexadecimal digits, for example 64');
+const checkHint = v => (/^[0-9A-Fa-f]{1,8}$/.test(v) ? null : 'must be up to 8 hexadecimal digits, for example 64');
 // An interface identifier suffix (`ip6ifaceid`): eui64, random, or an address suffix such as ::1:2.
-export const checkIfaceId = v => (v === 'eui64' || v === 'random' || (/^::?[0-9A-Fa-f:]*$/.test(v) && v6(v.startsWith('::') ? v : `::${v}`) != null) ? null : 'must be eui64, random or an address suffix such as ::1');
+const checkIfaceId = v => (v === 'eui64' || v === 'random' || (/^::?[0-9A-Fa-f:]*$/.test(v) && v6(v.startsWith('::') ? v : `::${v}`) != null) ? null : 'must be eui64, random or an address suffix such as ::1');
 // A routing table: a number or a name from /etc/iproute2/rt_tables.
-export const checkTable = v => (/^(\d{1,10}|[A-Za-z][A-Za-z0-9_.-]{0,31})$/.test(v) ? null : 'must be a table number or name');
+const checkTable = v => (/^(\d{1,10}|[A-Za-z][A-Za-z0-9_.-]{0,31})$/.test(v) ? null : 'must be a table number or name');
 // A search domain.
-export const checkDomain = v => CHECKS.domain(v);
+const checkDomain = v => CHECKS.domain(v);
 // A host name for a DHCP request, or * to send none.
-export const checkHostnameOrStar = v => (v === '*' ? null : CHECKS.host(v) === null && !/:/.test(v) ? null : 'must be a host name, or * to send none');
+const checkHostnameOrStar = v => (v === '*' ? null : CHECKS.host(v) === null && !/:/.test(v) ? null : 'must be a host name, or * to send none');
 // The additional DHCP options to send: words of `option:value` where the option is a number or a name.
-export const checkSendOpts = v => (v.split(/\s+/).every(w => /^([0-9]{1,3}|[A-Za-z][A-Za-z0-9_-]*):\S+$/.test(w)) ? null : 'must be words of option:value, for example 60:vendor');
+const checkSendOpts = v => (v.split(/\s+/).every(w => /^([0-9]{1,3}|[A-Za-z][A-Za-z0-9_-]*):\S+$/.test(w)) ? null : 'must be words of option:value, for example 60:vendor');
 // The additional DHCP options to request: option numbers or names separated by spaces (DHCPv4) or commas (DHCPv6).
-export const checkReqOpts = v => (v.split(/[\s,]+/).every(w => /^([0-9]{1,3}|[A-Za-z][A-Za-z0-9_-]*)$/.test(w)) ? null : 'must be option numbers or names separated by spaces or commas');
+const checkReqOpts = v => (v.split(/[\s,]+/).every(w => /^([0-9]{1,3}|[A-Za-z][A-Za-z0-9_-]*)$/.test(w)) ? null : 'must be option numbers or names separated by spaces or commas');
 // A single line of free text.
-export const checkLine = v => (/[\r\n]/.test(v) ? 'must be a single line' : null);
+const checkLine = v => (/[\r\n]/.test(v) ? 'must be a single line' : null);
 // The PPP keepalive: the failures to tolerate and the seconds between echo requests, separated by a space or a comma.
-export const checkKeepalive = v => (/^\d+([\s,]+\d+)?$/.test(v) ? null : 'must be two numbers, such as "5 1": failed echoes before the link is declared down, and seconds between echoes');
-// The IPv6 prefix to request from the provider: auto, no, a length from 1 to 64, or a prefix with its length.
-export const checkReqPrefix = v => (v === 'auto' || v === 'no' || (/^\d{1,2}$/.test(v) && +v >= 0 && +v <= 64) || (parseCidr(v)?.family === 6 && parseCidr(v).hasPrefix) ? null : 'must be auto, no, a prefix length from 1 to 64, or a prefix such as 2001:db8::/56');
+const checkKeepalive = v => (/^\d+([\s,]+\d+)?$/.test(v) ? null : 'must be two numbers, such as "5 1": failed echoes before the link is declared down, and seconds between echoes');
+// The IPv6 prefix to request from the provider: auto, no, a length from 0 to 64 (odhcp6c reads -P 0 as auto), or a prefix with its length.
+const checkReqPrefix = v => (v === 'auto' || v === 'no' || (/^\d{1,2}$/.test(v) && +v >= 0 && +v <= 64) || (parseCidr(v)?.family === 6 && parseCidr(v).hasPrefix) ? null : 'must be auto, no, a prefix length from 0 to 64, or a prefix such as 2001:db8::/56');
 
 // A prefix class name (a name from the upstream interfaces, or local).
-export const checkClass = v => (/^[A-Za-z0-9_.-]+$/.test(v) ? null : 'must be a class name such as local or the name of an upstream interface');
+const checkClass = v => (/^[A-Za-z0-9_.-]+$/.test(v) ? null : 'must be a class name such as local or the name of an upstream interface');
 
 // The IPv6 ULA prefix of the router (`ula_prefix`): `auto` (generate one), or a /48 inside fd00::/8, the locally assigned unique local addresses.
-export function checkUla(v) {
+function checkUla(v) {
   if (v === 'auto') return null;
   const c = parseCidr(v);
   if (c?.family !== 6 || !c.hasPrefix || c.prefix !== 48) return 'must be auto, or an IPv6 /48 prefix such as fd12:3456:789a::/48';

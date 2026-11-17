@@ -1,9 +1,5 @@
-/* Wi-Fi page styling (one card per radio). Loaded on demand by core/app.js when the page is first opened. */
-
-/* Table and card-header helpers; these repeat the identical rules in base.css */
-.card-header svg { color: var(--fl-brand); }
-.table .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.table td svg { margin-right: .3rem; vertical-align: -1px; color: var(--fl-muted); }
+/* Wi-Fi radios page styling (one card per radio). Loaded on demand by core/app.js when the page is first opened, after radios.css (the
+   channel utilization and the plain channel strip) and forms.css (the shared controls and folds). */
 
 /* Radio card grid and card; the accent bar turns red when the radio is down */
 .rd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 980px), 1fr)); gap: 1.25rem; }
@@ -60,7 +56,7 @@
 .rd-pick .chn.dfs { border-color: var(--fl-stroke); }
 .rd-pick .chn.nofit { opacity: .55; background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgb(128 128 128 / .18) 4px 8px); cursor: not-allowed; }
 .rd-pick .chn.pend { background: var(--fl-ok-bg); color: var(--fl-ok-fg); border-color: var(--fl-ok-fg); border-style: dashed; }
-.rd-pick .chn.sel { background: var(--fl-ok-fg); color: var(--fl-surface); border: 1px solid var(--fl-ok-fg); border-style: solid; font-weight: 600; box-shadow: 0 4px 14px -4px var(--fl-ok-fg); transform: translateY(-2px); }
+.rd-pick .chn.sel { background: var(--fl-ok-fg); color: var(--fl-surface); border: 1px solid var(--fl-ok-fg); font-weight: 600; box-shadow: 0 4px 14px -4px var(--fl-ok-fg); transform: translateY(-2px); }
 .rd-pick .chn.pv { background: var(--fl-info-bg); color: var(--fl-info-fg); border-color: var(--fl-info-fg); box-shadow: inset 0 -3px 0 var(--fl-info-fg); }
 .rd-pick .chn.pv-bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); border-color: var(--fl-bad-fg); box-shadow: inset 0 -3px 0 var(--fl-bad-fg); opacity: 1; }
 .rd-pick .chn.pv-main { transform: translateY(-2px); font-weight: 600; }
@@ -93,15 +89,10 @@
 .mesh-fold > summary { font-size: .85rem; font-weight: 600; color: var(--fl-muted); padding: .2rem 0; }
 .mesh-fold[open] > summary { margin-bottom: .5rem; }
 
-/* ── Editing: the wireless networks (SSIDs) of a radio and the groups of the radio's Settings fold (the fold itself, .wf-block, is in forms.css, shared with
-   the Ethernet ports page). The controls themselves are the shared ones of forms.css (set-fields, set-field, set-check). ── */
-.wf-iface > summary { padding: .8rem 1.25rem; }
-.wf-iface > summary .wps-btn { padding: .05rem .55rem; font-size: .75rem; }
-.wf-iface > summary .wps-btn svg { margin-right: .3rem; }
-.wf-iface > summary:hover { background: var(--fl-surface-hover); }
+/* ── Editing: the wireless networks (SSIDs) of a radio and the groups of the radio's Settings fold. The folds are disclosure() of core/fold.js (the
+   arrow, and the padded bar of a group, are .fl-disclosure and .fl-disclosure-bar in base.css; the Settings fold itself, .wf-block, is in forms.css, shared
+   with the Ethernet ports page). The controls themselves are the shared ones of forms.css (set-fields, set-field, set-check). ── */
 .wf-group { border: 1px solid var(--fl-stroke); border-radius: 6px; }
-.wf-group > summary { padding: .5rem .8rem; font-weight: 600; }
-.wf-group[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
 .wf-group-body { padding: .7rem .9rem .9rem; display: flex; flex-direction: column; gap: .7rem; }
 .wf-group-body p { margin: 0; }
 .wf-group .set-fields > *, .wf-basic > * { padding: .5rem 0; }
@@ -109,7 +100,12 @@
 /* The wireless networks of a radio: one block each, a new one outlined, one going to be removed dimmed. */
 .wf-nets-editor { display: flex; flex-direction: column; gap: .8rem; }
 .wf-iface { border: 1px solid var(--fl-stroke); border-radius: 8px; }
+.wf-iface > summary { padding: .8rem 1.25rem; }
+.wf-iface > summary:hover { background: var(--fl-surface-hover); }
 .wf-iface[open] > summary { border-bottom: 1px solid var(--fl-stroke); }
+.wf-iface summary svg { color: var(--fl-brand); }
+.wf-iface > summary .wps-btn { padding: .05rem .55rem; font-size: .75rem; }
+.wf-iface > summary .wps-btn svg { margin-right: .3rem; }
 .wf-new { border-color: var(--fl-info-fg); }
 .wf-iface-body { display: flex; flex-direction: column; gap: .8rem; padding: .9rem 1rem 1rem; }
 .wf-dim > .wf-group { opacity: .55; }
@@ -119,7 +115,6 @@
 .wf-nets.is-invalid { border-color: var(--fl-bad-fg); background: var(--fl-bad-bg); }
 .wf-net { display: flex; align-items: center; gap: .45rem; margin: 0; padding-left: 0; }
 .wf-net .form-check-input { float: none; margin: 0; }
-.wf-iface summary svg { color: var(--fl-brand); }
 
 /* Narrow screens: single-column detail columns */
 @media (max-width: 991.98px) { .rd-cols { grid-template-columns: 1fr; } .rd-hw { margin-left: 0; } }

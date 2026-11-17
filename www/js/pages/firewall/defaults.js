@@ -8,6 +8,7 @@ import { badge, card } from '../../core/ui.js';
 import { fieldRow } from '../../core/forms.js';
 import { DEFAULT_FIELDS, DEFAULT_GROUPS } from './schema.js';
 import { isShown } from './edit.js';
+import { fieldGroup } from './parts.js';
 
 // Whether the card is folded, and which groups are open: kept across redraws.
 let folded = true;
@@ -33,8 +34,7 @@ export function defaultsCard(ctx) {
       redraw: ctx.redraw,
       register: el => { ctx.inputs[`defaults:${f.key}`] = el; },
     }));
-    return h('details', { className: 'fw-group', open: opened.get(id) ?? Boolean(g.open), ontoggle: e => opened.set(id, e.target.open) },
-      h('summary', {}, g.title), h('div', { className: 'fw-group-body' }, h('p', { className: 'muted small' }, g.legend), h('div', { className: 'set-fields' }, nodes)));
+    return fieldGroup(opened, id, g, nodes);
   });
   const d = ctx.draft.defaults;
   const el = card(
@@ -43,7 +43,6 @@ export function defaultsCard(ctx) {
       badge(`forward ${(d.forward || 'drop').toLowerCase()}`, 'info', 'Default policy for traffic between interfaces of a zone, for a zone with none of its own'),
       d.flow_offloading ? badge(d.flow_offloading_hw ? 'hardware offloading' : 'software offloading', 'success') : null,
       h('span', { className: 'sub' }, 'defaults section · default policies, protections, flow offloading')],
-    h('div', { className: 'card-body fw-groups' }, groups),
-    '');
+    h('div', { className: 'card-body fw-groups' }, groups));
   return foldable(el, folded, now => { folded = now; });
 }
