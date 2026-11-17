@@ -26,7 +26,7 @@ const roleOf = p => p.allowed_ips.some(a => /\/0$/.test(a)) ? 'gateway' : p.allo
 // [badge text, tooltip] for each peer role from roleOf().
 const ROLE = {
   gateway: ['all traffic', 'A gateway: the peer is allowed to carry every address (0.0.0.0/0 or ::/0), so it is the way out to the internet'],
-  site: ['remote network', 'A site-to-site link: a whole network behind the peer, another router, is in its Allowed IPs'],
+  site: ['site-to-site', 'A site-to-site link: a whole network behind the peer, another router, is in its Allowed IPs'],
   client: ['client', 'A single host, such as a phone or a laptop, with one address in the tunnel'],
 };
 
@@ -158,7 +158,7 @@ function peersTable(ctx, item) {
   const peers = peerList(item, ctx.draft);
   const rows = peers.flatMap(pe => [peerRow(ctx, item, pe), pe.editable && !pe.removed && (pe.isNew || opened.has(`peer:${item.id}:${pe.id}`)) ? peerEditor(ctx, item, pe, cols.length) : null]);
   return h('div', {},
-    peers.length ? legend(['The badge after a peer\'s name says what it is. client: a single host, such as a phone or a laptop. remote network: a whole network behind another router (a site-to-site link; make one with Add site-to-site peer). all traffic: a gateway that carries every address.']) : null,
+    peers.length ? legend(['The badge after a peer\'s name says what it is. client: a single host, such as a phone or a laptop. site-to-site: a whole network behind another router (make one with Add site-to-site peer). all traffic: a gateway that carries every address.']) : null,
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table wg-table' },
       h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
       h('tbody', {}, peers.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No peers are configured on this interface.'))))));

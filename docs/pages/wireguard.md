@@ -10,7 +10,7 @@ poll (flagged as not in the configuration). The page also edits the configuratio
   zone; the foldable *Interface settings* form (above the live values and the peers); the peers table. An interface that only the kernel has (made with `wg-quick` or `ip link`) is
   shown read only with a note.
 - **Peers table**: name (UCI `description`) and a role badge from the allowed IPs (*client*: host routes only, a phone or a laptop;
-  *remote network*: a whole network behind another router, a site-to-site link; *all traffic*: a `/0`, a gateway), with a legend above the table that says so, shortened public key (full key on hover),
+  *site-to-site*: a whole network behind another router; *all traffic*: a `/0`, a gateway), with a legend above the table that says so, shortened public key (full key on hover),
   endpoint (empty for roaming peers), allowed IPs, handshake state, keepalive, live and total traffic, and the buttons *Edit* (opens the peer's
   editor under its row), *Remove* and *Undo*.
 - **Handshake state**: *connected* when the last handshake is under 180 s old (WireGuard rekeys every 120 s
