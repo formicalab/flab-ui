@@ -63,10 +63,11 @@ const sock = (n, local, lport, remote, rport, state) => `  ${String(n).padStart(
 const HEADER = '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode';
 const ZERO6 = '00000000000000000000000000000000';
 
-// The files of the main scenario (path to contents), as files.json.
-function files() {
+// The files of the main scenario (path to contents), as files.json. `handler` is the netifd protocol handler: wireguard.uc on current
+// releases, wireguard.sh on older ones (scenario `oldproto`).
+function files(handler = 'wireguard.uc') {
   return {
-    '/lib/netifd/proto/wireguard.sh': '#!/bin/sh\n# proto handler\n',
+    [`/lib/netifd/proto/${handler}`]: '# proto handler\n',
     '/sys/class/net/wg0/mtu': '1420\n', '/sys/class/net/wg0/statistics/rx_bytes': '1000\n', '/sys/class/net/wg0/statistics/tx_bytes': '2000\n',
     '/sys/class/net/wg9/mtu': '1420\n', '/sys/class/net/wg9/statistics/rx_bytes': '0\n', '/sys/class/net/wg9/statistics/tx_bytes': '0\n',
     '/proc/net/tcp': [
@@ -102,7 +103,8 @@ const WG0 = {
   'persistent-keepalive': `${KEYS.phone}\t25\n${KEYS.site}\toff\n${KEYS.kernelOnly}\toff`,
 };
 
-// Writes one scenario; `main` is the router with WireGuard, `empty` one without.
+// Writes one scenario; `main` is the router with WireGuard (handler wireguard.uc), `oldproto` the same with the older wireguard.sh,
+// `empty` one without.
 function scenario(name) {
   const dir = path.join(root, name);
   fs.rmSync(dir, { recursive: true, force: true });
@@ -120,7 +122,7 @@ function scenario(name) {
   putJson('uci_firewall.json', { values: FIREWALL });
   putJson('uci_uhttpd.json', { values: UHTTPD });
   putJson('uci_dropbear.json', { values: DROPBEAR });
-  putJson('files.json', files());
+  putJson('files.json', files(name === 'oldproto' ? 'wireguard.sh' : 'wireguard.uc'));
   put('wg show interfaces', 'wg0 wg9\n');
   const now = Math.floor(Date.now() / 1000) - 30;
   for (const ifname of ['wg0', 'wg9']) {
@@ -129,5 +131,5 @@ function scenario(name) {
 }
 
 fs.mkdirSync(root, { recursive: true });
-for (const name of ['main', 'empty']) scenario(name);
+for (const name of ['main', 'empty', 'oldproto']) scenario(name);
 fs.writeFileSync(path.join(root, 'keys.json'), JSON.stringify({ KEYS, SECRETS }));

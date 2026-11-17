@@ -14,7 +14,7 @@
 //     peers, endpoints, allowed-ips, latest-handshakes, transfer, persistent-keepalive), which
 //     never print the private or pre-shared key
 //   - UCI firewall: the zone an interface belongs to
-//   - sysfs: interface MTU and counters, and /lib/netifd/proto/wireguard.sh (whether netifd has the protocol handler)
+//   - sysfs: interface MTU and counters, and /lib/netifd/proto/wireguard.uc (wireguard.sh on older releases): whether netifd has the protocol handler
 //   - TCP connections to the router's web interface and SSH port (/proc/net/tcp, /proc/net/tcp6; the ports come from UCI
 //     uhttpd and dropbear): the page uses their remote addresses to warn before a change cuts the tunnel the
 //     administrator is working through
@@ -274,7 +274,7 @@ function collect() {
 
 	return {
 		generated: now,
-		proto_installed: sysfs_raw('/lib/netifd/proto/wireguard.sh') != null,
+		proto_installed: sysfs_raw('/lib/netifd/proto/wireguard.uc') != null || sysfs_raw('/lib/netifd/proto/wireguard.sh') != null,
 		names: sort(taken),
 		sessions: admin_sessions(),
 		interfaces: map(filter(names, safe_ifname), (n) => interface_view(all, fw, n, running[n] == true, now)),

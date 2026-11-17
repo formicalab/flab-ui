@@ -6,7 +6,7 @@ poll (flagged as not in the configuration). The page also edits the configuratio
 - **Tiles**: interfaces up, peers connected, latest handshake, live traffic (rates derived in the browser from
   the byte counters).
 - **Interface card**: state, firewall zone, addresses, listen port, public key (not secret), MTU, firewall
-  mark, totals; the buttons *Add a device*, *Add peer* and *Remove interface*; a note with a link to the Firewall page when the interface is in no
+  mark, totals; the buttons *Add remote device*, *Add remote peer* and *Remove interface*; a note with a link to the Firewall page when the interface is in no
   zone; the peers table; and the foldable *Interface settings* form. An interface that only the kernel has (made with `wg-quick` or `ip link`) is
   shown read only with a note.
 - **Peers table**: name (UCI `description`) and a role badge from the allowed IPs (*client*: host routes only,
@@ -33,7 +33,7 @@ poll (flagged as not in the configuration). The page also edits the configuratio
   X25519 a small BigInt implementation of RFC 7748 derives the public key from random bytes of the browser's own generator; where there is no
   secure random generator at all, the button is disabled and the page says to paste a key made with `wg genkey`). The public key of a typed or
   generated private key is shown next to the box (with *Copy*). A pre-shared key is 32 random bytes from the same generator.
-- **Add a device**: a dialog for a phone or laptop of an interface that is running. It takes a name, the router's public address (offered: the
+- **Add remote device**: a dialog for a phone or laptop of an interface that is running (*Add remote peer* is for a peer whose public key you already have, such as another router). It takes a name, the router's public address (offered: the
   host name the page was opened with), the UDP port, what the device sends through the tunnel (the tunnel networks, everything, or a list),
   an optional DNS server, a keepalive and whether to use a pre-shared key. It makes the device's key pair in the browser, adds the device as a peer
   of the form (its public key and the next free address of each family from the interface's tunnel network, skipping what other peers allow) and shows
@@ -65,7 +65,7 @@ poll (flagged as not in the configuration). The page also edits the configuratio
 - **The firewall zone is another page's job**: a new interface is in no zone until you put it in one on the Firewall page (the card links there); the
   listen port also needs a firewall rule from the zone the peers come from.
 - **Plugin missing**: a router without `flab.wireguard` gets a note instead of the page; a router without netifd's wireguard protocol handler
-  (`wireguard-tools`) gets a note that interfaces cannot start. A login that may not write sees the page read only.
+  (`wireguard-tools`; the handler file is `wireguard.uc` on current releases, `wireguard.sh` on older ones) gets a note that interfaces cannot start. A login that may not write sees the page read only.
 - **ACL**: `rpcd/acl.d/flab-wireguard.json` grants `flab.wireguard` `status` (read), `uci` `changes` (read) and `set`, `add`, `delete`, `revert`, `apply`,
   `confirm`, `rollback` (write), and `uci` read and write on the `network` config. It has to list that config under read because `uci changes` needs it, although the config holds the
   private and pre-shared keys: it does not grant `uci get`, the page never calls it (a test fails if it does) and reads the config only through the plugin, which leaves the keys out.

@@ -164,9 +164,9 @@ function toolbar(ctx, item, onDialog) {
   if (item.removed) return h('div', { className: 'wg-toolbar' }, muted(`${item.name} and its peers are removed when you save.`), h('span', { className: 'wg-spacer' }),
     button('Undo', 'arrow-counterclockwise', () => { restoreInterface(ctx.draft, item.id); ctx.touched(); ctx.redraw(); }));
   const canEdit = ctx.canEdit;
-  const device = button('Add a device', 'plus-lg', () => { onDialog(true); openDeviceDialog(ctx, item, () => onDialog(false)); }, 'btn-brand',
-    item.isNew ? { disabled: true, title: 'Save the interface first: the device needs the interface\'s public key.' } : { disabled: !canEdit });
-  const peer = button('Add peer', 'plus-lg', () => { opened.add(`peer:${item.id}:${addPeer(ctx.draft, item.id)}`); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !canEdit });
+  const device = button('Add remote device', 'plus-lg', () => { onDialog(true); openDeviceDialog(ctx, item, () => onDialog(false)); }, 'btn-brand',
+    item.isNew ? { disabled: true, title: 'Save the interface first: the device needs the interface\'s public key.' } : { disabled: !canEdit, title: 'Set up a phone, a laptop or another client: its key pair is made here and its configuration can be copied or downloaded' });
+  const peer = button('Add remote peer', 'plus-lg', () => { opened.add(`peer:${item.id}:${addPeer(ctx.draft, item.id)}`); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !canEdit, title: 'Add a remote peer whose public key you already have, such as another router or a site' });
   const remove = button(item.isNew ? 'Discard interface' : 'Remove interface', 'trash', async () => {
     const you = item.data ? adminSentence(adminLinks(ctx.data), item.name) : null;
     if (you && !(await confirmDanger({ title: `Remove ${item.name}?`, paragraphs: [you, `Removing ${item.name} and its peers ends that connection once you save. If this page cannot reach the router afterwards, the router puts the old settings back by itself within 30 seconds.`], confirmLabel: 'Remove interface' }))) return;

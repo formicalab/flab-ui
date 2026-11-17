@@ -6,7 +6,7 @@
 
 - **One look for every fold.** Native folds (setting groups, "show more", legends, raw output) are built by `disclosure()` in `core/fold.js` with one arrow, the same as a folded card; the per-page summary and arrow styles are gone. The DNS cards use the shared fold code too.
 - Buttons are built by `button()` (now takes `title`, `disabled` and `ariaLabel`); the icon vocabulary (remove, add, save, revert, error, warning and so on) is applied on every page and documented in `docs/frontend.md`. The Toolbox error and finding banners share one helper.
-- Fixes: a failed sign-in for a reason other than the credentials says why; the DDNS Log and Refresh buttons return to the sign-in screen when the session expired; the Routing lookup fold keeps its state across refreshes; the Ethernet ports cable-test button disappears for a port that cannot run it; the Overview temperature labels no longer assume one board.
+- Fixes: WireGuard reported "the protocol handler is not installed" on current OpenWrt, where netifd's handler is `wireguard.uc` (not `wireguard.sh`); both are recognized now. The WireGuard buttons read **Add remote device** and **Add remote peer**, with a tooltip each. A failed sign-in for a reason other than the credentials says why; the DDNS Log and Refresh buttons return to the sign-in screen when the session expired; the Routing lookup fold keeps its state across refreshes; the Ethernet ports cable-test button disappears for a port that cannot run it; the Overview temperature labels no longer assume one board.
 
 ### Backend
 

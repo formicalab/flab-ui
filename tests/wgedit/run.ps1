@@ -49,7 +49,7 @@ $plugin = Join-Path $root 'rpcd\ucode\flab.wireguard.uc'
 $libs = Join-Path $root 'rpcd\lib\flab'
 $work = Join-Path ([IO.Path]::GetTempPath()) 'flab-wgedit-test'
 $remote = '/tmp/flab-wgedit-test'
-$scenarios = 'main', 'empty'
+$scenarios = 'main', 'empty', 'oldproto'
 
 #region Helpers
 function Invoke-Remote {

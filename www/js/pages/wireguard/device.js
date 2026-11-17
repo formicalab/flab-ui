@@ -1,4 +1,4 @@
-// "Add a device": the dialog that sets up a client (a phone, a laptop) for an interface. It makes the client's key pair in the browser,
+// "Add remote device": the dialog that sets up a client (a phone, a laptop) for an interface. It makes the client's key pair in the browser,
 // adds the client as a peer of the interface in the form (its public key and the next free tunnel address; nothing is saved until
 // "Save and apply"), and shows the client's WireGuard configuration once, with copy and download buttons. The client's private key
 // exists only in this dialog: the router never receives it.
@@ -20,7 +20,7 @@ const row = (label, control, hint) => h('div', { className: 'set-field' }, h('la
 // called when the dialog closes, however it was closed.
 export function openDeviceDialog(ctx, item, onClosed) {
   const plan = devicePlan(ctx.data, ctx.draft, item.id);
-  const dialog = openDialog({ title: `Add a device to ${item.name}`, subtitle: 'A phone, a laptop or any other WireGuard client', body: h('div', {}), footer: [], size: 'lg', staticBackdrop: true, onClose: onClosed });
+  const dialog = openDialog({ title: `Add a remote device to ${item.name}`, subtitle: 'A phone, a laptop or any other WireGuard client', body: h('div', {}), footer: [], size: 'lg', staticBackdrop: true, onClose: onClosed });
   // Closes the dialog.
   const close = () => dialog.close();
 
