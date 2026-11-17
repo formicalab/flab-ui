@@ -9,6 +9,7 @@
   --fl-surface: #ffffff;
   --fl-surface-hover: #f5f5f5;
   --fl-stroke: #e0e0e0;
+  --fl-control-border: #8a8a8a;
   --fl-text: #242424;
   --fl-muted: #616161;
   --fl-brand: #0f6cbd;
@@ -30,6 +31,7 @@
   --fl-surface: #292929;
   --fl-surface-hover: #333333;
   --fl-stroke: #424242;
+  --fl-control-border: #9b9b9b;
   --fl-text: #ffffff;
   --fl-muted: #adadad;
   --fl-brand: #479ef5;
@@ -136,8 +138,15 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
    button's border falls back to the text color. A disabled button keeps its normal look at reduced opacity. */
 .btn-fl { --bs-btn-disabled-bg: var(--fl-surface); --bs-btn-disabled-border-color: var(--fl-stroke); --bs-btn-disabled-color: var(--fl-text); }
 .btn-brand { --bs-btn-disabled-bg: var(--fl-brand); --bs-btn-disabled-border-color: var(--fl-brand); --bs-btn-disabled-color: #fff; }
-.form-control, .form-select { background-color: var(--fl-surface); border-color: var(--fl-stroke); border-bottom-color: #8a8a8a; border-radius: 4px; }
+.form-control, .form-select { background-color: var(--fl-surface); border-color: var(--fl-stroke); border-bottom-color: var(--fl-control-border); border-radius: 4px; }
 .form-control:focus, .form-select:focus { border-color: var(--fl-stroke); border-bottom: 2px solid var(--fl-brand); box-shadow: none; background-color: var(--fl-surface); }
+/* Checkboxes, radios and switches. Bootstrap draws the box with --bs-border-color, which this theme sets to the pale card stroke, so an unchecked box
+   looked disabled; it gets the stronger control border instead, and the brand color when it is checked or has the focus. A disabled one keeps
+   Bootstrap's reduced opacity, which is then the only thing that makes it look disabled. */
+.form-check-input { background-color: var(--fl-surface); border-color: var(--fl-control-border); }
+.form-check-input:hover:not(:disabled) { border-color: var(--fl-brand); }
+.form-check-input:focus { border-color: var(--fl-brand); box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--fl-brand) 25%, transparent); }
+.form-check-input:checked, .form-check-input[type=checkbox]:indeterminate { background-color: var(--fl-brand); border-color: var(--fl-brand); }
 
 /* ── Data grid ── */
 .grid-wrap { overflow-x: auto; }

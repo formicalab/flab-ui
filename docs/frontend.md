@@ -155,6 +155,7 @@ This is the one place that says how shared UI looks and behaves; the other docs 
   | Download, upload | `download`, `upload` |
 
   The navigation icons are in `pages/index.js`. A new icon is pasted into `PATHS` (see [Development](development.md)).
+- **Checkboxes, radios and switches** are Bootstrap's `form-check-input` and are styled once in `css/base.css`: an unchecked box has the stronger `--fl-control-border` (the theme's `--bs-border-color` is the pale card stroke, which made an enabled box look disabled), a checked one the brand color, and only a disabled one is faded. A page does not restyle them, except for layout.
 - **Folds.** A native `<details>` is always built with `disclosure({ cls, summary, summaryCls, body, open, onToggle })` from
   `core/fold.js`, never with `h('details')`: it draws one arrow before the summary content (right when closed, down when
   open) and styles the summary (`.fl-disclosure` in `css/base.css`, so any page can use it). `cls: 'fl-disclosure-bar ...'` makes the summary a
