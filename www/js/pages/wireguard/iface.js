@@ -158,13 +158,13 @@ function peersTable(ctx, item) {
   const peers = peerList(item, ctx.draft);
   const rows = peers.flatMap(pe => [peerRow(ctx, item, pe), pe.editable && !pe.removed && (pe.isNew || opened.has(`peer:${item.id}:${pe.id}`)) ? peerEditor(ctx, item, pe, cols.length) : null]);
   return h('div', {},
-    peers.length ? legend(['The badge after a peer\'s name says what it is. client: a single host, such as a phone or a laptop. remote network: a whole network behind another router (a site-to-site link). all traffic: a gateway that carries every address.']) : null,
+    peers.length ? legend(['The badge after a peer\'s name says what it is. client: a single host, such as a phone or a laptop. remote network: a whole network behind another router (a site-to-site link; make one with Add site-to-site peer). all traffic: a gateway that carries every address.']) : null,
     h('div', { className: 'grid-wrap' }, h('table', { className: 'table wg-table' },
       h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
       h('tbody', {}, peers.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No peers are configured on this interface.'))))));
 }
 
-// The row of buttons under the header: add a client, add a peer, and remove the interface (or discard it when it is new, or undo).
+// The row of buttons under the header: add a client, add a site-to-site peer, and remove the interface (or discard it when it is new, or undo).
 function toolbar(ctx, item, onDialog) {
   const key = `if:${item.id}`;
   if (item.removed) return h('div', { className: 'wg-toolbar' }, muted(`${item.name} and its peers are removed when you save.`), h('span', { className: 'wg-spacer' }),
@@ -172,7 +172,7 @@ function toolbar(ctx, item, onDialog) {
   const canEdit = ctx.canEdit;
   const client = button('Add client', 'plus-lg', () => { onDialog(true); openClientDialog(ctx, item, () => onDialog(false)); }, 'btn-brand',
     item.isNew ? { disabled: true, title: 'Save the interface first: the client needs the interface\'s public key.' } : { disabled: !canEdit, title: 'Set up a phone, a laptop or another client: its keys are made here and its configuration is shown once, as a QR code and as text' });
-  const peer = button('Add peer manually', 'plus-lg', () => { opened.add(`peer:${item.id}:${addPeer(ctx.draft, item.id)}`); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !canEdit, title: 'Enter a peer by hand, such as the router of another network (a site-to-site link) or a gateway: you need its public key' });
+  const peer = button('Add site-to-site peer', 'plus-lg', () => { opened.add(`peer:${item.id}:${addPeer(ctx.draft, item.id, { route_allowed_ips: true })}`); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !canEdit, title: 'Connect another router, so that its network and yours can reach each other (a site-to-site link): you need its public key, its endpoint and the networks behind it. Routes for those networks are created.' });
   const remove = button(item.isNew ? 'Discard interface' : 'Remove interface', 'trash', async () => {
     const you = item.data ? adminSentence(adminLinks(ctx.data), item.name) : null;
     if (you && !(await confirmDanger({ title: `Remove ${item.name}?`, paragraphs: [you, `Removing ${item.name} and its peers ends that connection once you save. If this page cannot reach the router afterwards, the router puts the old settings back by itself within 30 seconds.`], confirmLabel: 'Remove interface' }))) return;

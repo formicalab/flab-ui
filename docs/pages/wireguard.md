@@ -6,7 +6,7 @@ poll (flagged as not in the configuration). The page also edits the configuratio
 - **Tiles**: interfaces up, peers connected, latest handshake, live traffic (rates derived in the browser from
   the byte counters).
 - **Interface card**: state, firewall zone, addresses, listen port, public key (not secret), MTU, firewall
-  mark, totals; the buttons *Add client*, *Add peer manually* and *Remove interface*; a note with a link to the Firewall page when the interface is in no
+  mark, totals; the buttons *Add client*, *Add site-to-site peer* and *Remove interface*; a note with a link to the Firewall page when the interface is in no
   zone; the foldable *Interface settings* form (above the live values and the peers); the peers table. An interface that only the kernel has (made with `wg-quick` or `ip link`) is
   shown read only with a note.
 - **Peers table**: name (UCI `description`) and a role badge from the allowed IPs (*client*: host routes only, a phone or a laptop;
@@ -33,8 +33,7 @@ poll (flagged as not in the configuration). The page also edits the configuratio
   X25519 a small BigInt implementation of RFC 7748 derives the public key from random bytes of the browser's own generator; where there is no
   secure random generator at all, the button is disabled and the page says to paste a key made with `wg genkey`). The public key of a typed or
   generated private key is shown next to the box (with *Copy*). A pre-shared key is 32 random bytes from the same generator.
-- **Add client**: a dialog (the wide one, so that the hints do not wrap much) for a phone or laptop of an interface that is running; *Add peer manually* is for
-  a peer you enter by hand, such as the router of another network (a site-to-site link) or a gateway, whose public key you have. It takes a name, the router's public address (offered: the
+- **Add client**: a dialog (the wide one, so that the hints do not wrap much) for a phone or laptop of an interface that is running. It takes a name, the router's public address (offered: the
   host name the page was opened with), the UDP port, what the client sends through the tunnel (the tunnel networks, everything, or a list),
   an optional DNS server, a keepalive and whether to use a pre-shared key. It makes the client's key pair in the browser, adds the client as a peer
   of the form (its public key and the next free address of each family from the interface's tunnel network, skipping what other peers allow) and shows
@@ -43,6 +42,7 @@ poll (flagged as not in the configuration). The page also edits the configuratio
   (<interface>-<client>.conf). The code is drawn in the browser (core/qr.js with the vendored www/vendor/qrcode.js, loaded only when it is first needed, error correction level L)
   and holds the same text, so it is as secret as the private key: it exists only in the dialog, and the peer reaches the router only when you press *Save and apply*.
   A configuration too long for the largest QR code (about 2.9 KB) shows a note instead of the code.
+- **Add site-to-site peer**: connects another router, so that its network and yours reach each other. It opens the peer editor with *Create routes for the allowed IPs* already on; you enter the other router's public key, its endpoint and the networks behind it as the allowed IPs. A gateway is the same peer with `0.0.0.0/0` and `::/0` as the allowed IPs. The legend above the peers table points to this button.
 - **Validation** (errors block Save; warnings do not): the interface name, a listen port that is a number and that no other enabled interface (or
   an interface only the kernel has) uses, addresses as CIDR (a dotted netmask is accepted), the MTU range and the firewall mark, a typed key that is
   44 base64 characters with the right padding bits, a peer's public key (required, not the interface's own, not repeated on the interface),

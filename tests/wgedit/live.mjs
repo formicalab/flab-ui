@@ -216,15 +216,15 @@ const real = await page.evaluate(async () => {
   return { names: r.interfaces.map(i => i.name), configured: r.interfaces.filter(i => i.configured).map(i => i.name), peers: r.interfaces.reduce((n, i) => n + i.peers.length, 0) };
 });
 check(real.names.length >= 1 && await page.locator('.wg-card').count() === real.names.length, 'every interface of the router has a card', JSON.stringify(real));
-check(await page.locator('.wg-table tbody tr').count() >= real.peers && await page.locator('.wg-toolbar button:has-text("Add peer manually")').count() === real.configured.length, 'the peers are listed and every configured interface has its buttons', JSON.stringify(real));
+check(await page.locator('.wg-table tbody tr').count() >= real.peers && await page.locator('.wg-toolbar button:has-text("Add site-to-site peer")').count() === real.configured.length, 'the peers are listed and every configured interface has its buttons', JSON.stringify(real));
 await page.locator('details.wg-panel summary').first().click();
 const pw = page.locator('.wg-form input[type=password]');
 check(await pw.count() >= 1 && await pw.evaluateAll(els => els.every(e => e.value === '')), 'a stored private key is never shown: the box is empty', String(await pw.count()));
 check(await pw.evaluateAll(els => els.some(e => /stored; leave empty/.test(e.placeholder))), 'and says that one is stored');
 check(!/private_key|preshared_key/.test(await page.locator('main').innerText()), 'no secret option on the page');
 check(await saveBtn().isDisabled() && await bar().isHidden(), 'nothing is pending');
-await page.locator('.wg-toolbar button:has-text("Add peer manually")').first().click();
-check(await page.locator('tr.wg-peer-edit').count() === 1 && /1 unsaved change/.test(await page.locator('.set-bar-summary').innerText()), 'Add peer manually adds a draft peer (nothing is written)');
+await page.locator('.wg-toolbar button:has-text("Add site-to-site peer")').first().click();
+check(await page.locator('tr.wg-peer-edit').count() === 1 && /1 unsaved change/.test(await page.locator('.set-bar-summary').innerText()), 'Add site-to-site peer adds a draft peer (nothing is written)');
 await page.click('button:has-text("Discard edits")');
 await page.waitForTimeout(600);
 await shot('real');
@@ -319,9 +319,9 @@ check(/^Saved/.test(await outcome()), 'saving the peer works');
 check(mock.cfg.cfg0b2c3d.persistent_keepalive === '25' && mock.cfg.cfg0b2c3d.preshared_key === pskTyped && mock.cfg.cfg0b2c3d.endpoint_host === 'site.example.com', 'the peer\'s section was changed in place', JSON.stringify(mock.cfg.cfg0b2c3d));
 
 console.log('\n== adding and removing a peer ==');
-await card('wg0').locator('.wg-toolbar button:has-text("Add peer manually")').click();
+await card('wg0').locator('.wg-toolbar button:has-text("Add site-to-site peer")').click();
 const fresh = card('wg0').locator('tr.wg-peer-edit').last();
-check(await fresh.count() === 1 && /new/.test(await card('wg0').locator('.wg-table tbody tr:not(.wg-peer-edit)').nth(3).innerText()), 'Add peer manually opens an editor for the new peer');
+check(await fresh.count() === 1 && /new/.test(await card('wg0').locator('.wg-table tbody tr:not(.wg-peer-edit)').nth(3).innerText()), 'Add site-to-site peer opens an editor for the new peer');
 await input(fresh, 'Name').fill('Laptop');
 await input(fresh, 'Public key').fill(TABLET);
 await field(fresh, 'Allowed IPs').locator('button:has-text("Add allowed IP")').click();
@@ -330,7 +330,7 @@ check(await errorCount() === 0 && /Laptop/.test(await page.locator('.set-bar-sum
 await saveBtn().click();
 check(/^Saved/.test(await outcome()), 'saving the new peer works');
 const added = Object.entries(mock.cfg).find(([, s]) => s['.type'] === 'wireguard_wg0' && s.description === 'Laptop');
-check(added && added[1]['.anonymous'] && added[1].public_key === TABLET && JSON.stringify(added[1].allowed_ips) === JSON.stringify(['10.8.0.20/32']) && !('preshared_key' in added[1]) && !('route_allowed_ips' in added[1]), 'the new peer is an anonymous wireguard_wg0 section with only the options that were set', JSON.stringify(added));
+check(added && added[1]['.anonymous'] && added[1].public_key === TABLET && JSON.stringify(added[1].allowed_ips) === JSON.stringify(['10.8.0.20/32']) && !('preshared_key' in added[1]) && added[1].route_allowed_ips === '1', 'the new peer is an anonymous wireguard_wg0 section with only the options that were set (a site-to-site peer starts with routes on)', JSON.stringify(added));
 check(await peerRow(card('wg0'), 'Laptop').count() === 1, 'the peer is listed after the save');
 // Removing a peer that is not the one your session comes through.
 await peerRow(card('wg0'), 'Old').locator('button:has-text("Remove")').click();
@@ -438,7 +438,7 @@ await input(nw, 'Listen port').fill('51821');
 check(/also the listen port of wg0/.test(await notes()), 'a port another interface uses is refused');
 await input(nw, 'Listen port').fill('51830');
 await field(nw, 'Addresses').locator('input').first().fill('10.9.0.1/24');
-await nw.locator('button:has-text("Add peer manually")').click();
+await nw.locator('button:has-text("Add site-to-site peer")').click();
 const nped = nw.locator('tr.wg-peer-edit');
 await input(nped, 'Name').fill('First');
 await input(nped, 'Public key').fill(K(21));
@@ -545,7 +545,7 @@ await refresh();
 
 console.log('\n== a login that may not write ==');
 const ro = await open({ ubus: { system: ['board', 'info'], service: ['list'], 'flab.wireguard': ['status'], uci: ['get', 'changes'] } });
-check(/not allowed to change the configuration/.test(await ro.locator('main').innerText()) && await ro.locator('button:has-text("Add WireGuard interface")').isDisabled() && await ro.locator('button:has-text("Add peer manually")').first().isDisabled() && await ro.locator('button:has-text("Edit")').first().isDisabled(), 'the controls are disabled and the page says why');
+check(/not allowed to change the configuration/.test(await ro.locator('main').innerText()) && await ro.locator('button:has-text("Add WireGuard interface")').isDisabled() && await ro.locator('button:has-text("Add site-to-site peer")').first().isDisabled() && await ro.locator('button:has-text("Edit")').first().isDisabled(), 'the controls are disabled and the page says why');
 await ro.locator('details.wg-panel summary').first().click();
 check(await ro.locator('.wg-panel input').first().isDisabled() && /Phone/.test(await ro.locator('.wg-table').first().innerText()), 'the form is read only, and the status is still shown');
 await ro.close();
