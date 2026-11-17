@@ -237,7 +237,7 @@ await page.waitForSelector('.wg-form');
 console.log('\n== reading (mock router) ==');
 check(await tile(0) === '1 / 1' && await tile(1) === '1 / 2', 'tiles: the interface is up and one of two enabled peers is connected', `${await tile(0)} | ${await tile(1)}`);
 check(await card('wg0').count() === 1 && await peerRow(card('wg0'), 'Phone').count() === 1 && await card('wg0').locator('.wg-table tbody tr').count() === 3, 'a card with three peers');
-check(/connected/.test(await peerRow(card('wg0'), 'Phone').innerText()) && /site/.test(await peerRow(card('wg0'), 'Site').innerText()) && /routes installed/.test(await peerRow(card('wg0'), 'Site').innerText()), 'the live state and the role of each peer are shown next to the configuration');
+check(/connected/.test(await peerRow(card('wg0'), 'Phone').innerText()) && /remote network/.test(await peerRow(card('wg0'), 'Site').innerText()) && /routes installed/.test(await peerRow(card('wg0'), 'Site').innerText()), 'the live state and the role of each peer are shown next to the configuration');
 check(await card('wg0').locator('button:has-text("Edit")').count() === 3 && await card('wg0').locator('button:has-text("Add client")').isEnabled(), 'each peer can be edited, and a client can be added');
 check(!(await card('wg0').locator('details.wg-panel').evaluate(e => e.open)), 'the settings panel starts closed');
 check(!(await page.locator('main').innerText()).includes('CANARY') && !(await page.content()).includes('CANARY'), 'no secret of the mock router is anywhere in the page');

@@ -9,8 +9,8 @@ poll (flagged as not in the configuration). The page also edits the configuratio
   mark, totals; the buttons *Add client*, *Add peer manually* and *Remove interface*; a note with a link to the Firewall page when the interface is in no
   zone; the foldable *Interface settings* form (above the live values and the peers); the peers table. An interface that only the kernel has (made with `wg-quick` or `ip link`) is
   shown read only with a note.
-- **Peers table**: name (UCI `description`) and a role badge from the allowed IPs (*client*: host routes only,
-  *site*: a whole network behind the peer, *all traffic*: a `/0`), shortened public key (full key on hover),
+- **Peers table**: name (UCI `description`) and a role badge from the allowed IPs (*client*: host routes only, a phone or a laptop;
+  *remote network*: a whole network behind another router, a site-to-site link; *all traffic*: a `/0`, a gateway), with a legend above the table that says so, shortened public key (full key on hover),
   endpoint (empty for roaming peers), allowed IPs, handshake state, keepalive, live and total traffic, and the buttons *Edit* (opens the peer's
   editor under its row), *Remove* and *Undo*.
 - **Handshake state**: *connected* when the last handshake is under 180 s old (WireGuard rekeys every 120 s
@@ -34,7 +34,7 @@ poll (flagged as not in the configuration). The page also edits the configuratio
   secure random generator at all, the button is disabled and the page says to paste a key made with `wg genkey`). The public key of a typed or
   generated private key is shown next to the box (with *Copy*). A pre-shared key is 32 random bytes from the same generator.
 - **Add client**: a dialog (the wide one, so that the hints do not wrap much) for a phone or laptop of an interface that is running; *Add peer manually* is for
-  a peer you enter by hand, such as the router of another site or a gateway, whose public key you have. It takes a name, the router's public address (offered: the
+  a peer you enter by hand, such as the router of another network (a site-to-site link) or a gateway, whose public key you have. It takes a name, the router's public address (offered: the
   host name the page was opened with), the UDP port, what the client sends through the tunnel (the tunnel networks, everything, or a list),
   an optional DNS server, a keepalive and whether to use a pre-shared key. It makes the client's key pair in the browser, adds the client as a peer
   of the form (its public key and the next free address of each family from the interface's tunnel network, skipping what other peers allow) and shows
