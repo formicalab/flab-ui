@@ -123,6 +123,50 @@ function wiredDevice(client) {
 
 // One physical-port card connected to each device learned through it with cubic SVG curves. The FDB intentionally
 // does not claim that a device is directly plugged in: several devices may share a port behind another switch.
+function connectedTopology(source, devices, renderDevice, cls = '') {
+  const deviceNodes = devices.map(renderDevice);
+  const deviceGroup = h('div', { className: `cc-devices ${cls}` }, ...deviceNodes);
+  const svg = svgEl('svg', { class: 'cc-wires', 'aria-hidden': 'true' });
+  const row = h('div', { className: `cc-wire-row ${cls}` }, svg, source, deviceGroup);
+
+  let queued = false;
+  const draw = () => {
+    if (!row.isConnected) return;
+    svg.replaceChildren();
+    if (getComputedStyle(svg).display === 'none') return;
+    const bounds = row.getBoundingClientRect();
+    svg.setAttribute('width', String(bounds.width));
+    svg.setAttribute('height', String(bounds.height));
+    const sourceBounds = source.getBoundingClientRect();
+    const p1 = [sourceBounds.right - bounds.left, sourceBounds.top + sourceBounds.height / 2 - bounds.top];
+    for (const node of deviceNodes) {
+      const target = node.getBoundingClientRect();
+      const p2 = [target.left - bounds.left, target.top + target.height / 2 - bounds.top];
+      const dx = Math.max(24, (p2[0] - p1[0]) / 2);
+      const d = `M${p1[0]},${p1[1]} C${p1[0] + dx},${p1[1]} ${p2[0] - dx},${p2[1]} ${p2[0]},${p2[1]}`;
+      svg.append(svgEl('path', { d, class: 'cc-wire' }),
+        svgEl('circle', { cx: p1[0], cy: p1[1], r: 3, class: 'cc-endpoint' }),
+        svgEl('circle', { cx: p2[0], cy: p2[1], r: 3, class: 'cc-endpoint' }));
+    }
+  };
+  const schedule = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; draw(); });
+  };
+  let seen = false;
+  const observer = new ResizeObserver(() => {
+    if (row.isConnected) seen = true;
+    else if (seen) { observer.disconnect(); return; }
+    schedule();
+  });
+  observer.observe(row);
+  observer.observe(deviceGroup);
+  document.fonts?.ready.then(schedule);
+  schedule();
+  return row;
+}
+
 function wiredTopology(clients) {
   const byPort = new Map();
   for (const client of clients) {
@@ -134,49 +178,29 @@ function wiredTopology(clients) {
     const portNode = h('div', { className: 'cc-port' },
       icon('ethernet', 28),
       h('div', {}, h('strong', {}, port), h('span', { className: 'small muted' }, devices[0].speed ? `${devices[0].speed} Mbit/s${devices[0].duplex ? ` · ${devices[0].duplex}` : ''}` : 'link unavailable')));
-    const deviceNodes = devices.map(wiredDevice);
-    const deviceGroup = h('div', { className: 'cc-devices' }, ...deviceNodes);
-    const svg = svgEl('svg', { class: 'cc-wires', 'aria-hidden': 'true' });
-    const row = h('div', { className: 'cc-wire-row' }, svg, portNode, deviceGroup);
-    root.append(row);
-
-    let queued = false;
-    const draw = () => {
-      if (!row.isConnected) return;
-      svg.replaceChildren();
-      if (getComputedStyle(svg).display === 'none') return;
-      const bounds = row.getBoundingClientRect();
-      svg.setAttribute('width', String(bounds.width));
-      svg.setAttribute('height', String(bounds.height));
-      const source = portNode.getBoundingClientRect();
-      const p1 = [source.right - bounds.left, source.top + source.height / 2 - bounds.top];
-      for (const node of deviceNodes) {
-        const target = node.getBoundingClientRect();
-        const p2 = [target.left - bounds.left, target.top + target.height / 2 - bounds.top];
-        const dx = Math.max(24, (p2[0] - p1[0]) / 2);
-        const d = `M${p1[0]},${p1[1]} C${p1[0] + dx},${p1[1]} ${p2[0] - dx},${p2[1]} ${p2[0]},${p2[1]}`;
-        svg.append(svgEl('path', { d, class: 'cc-wire' }),
-          svgEl('circle', { cx: p1[0], cy: p1[1], r: 3, class: 'cc-endpoint' }),
-          svgEl('circle', { cx: p2[0], cy: p2[1], r: 3, class: 'cc-endpoint' }));
-      }
-    };
-    const schedule = () => {
-      if (queued) return;
-      queued = true;
-      requestAnimationFrame(() => { queued = false; draw(); });
-    };
-    let seen = false;
-    const observer = new ResizeObserver(() => {
-      if (row.isConnected) seen = true;
-      else if (seen) { observer.disconnect(); return; }
-      schedule();
-    });
-    observer.observe(row);
-    observer.observe(deviceGroup);
-    document.fonts?.ready.then(schedule);
-    schedule();
+    root.append(connectedTopology(portNode, devices, wiredDevice));
   }
   return root;
+}
+
+function wirelessDevice(client) {
+  return h('div', { className: 'cc-device' },
+    h('div', { className: 'cc-device-icon' }, icon('laptop', 20)),
+    h('div', { className: 'cc-device-body' },
+      h('strong', {}, client.hostname || 'Unknown device'),
+      h('span', { className: 'cc-device-address' }, client.ipv4 || client.ipv6[0] || 'No address learned'),
+      h('span', { className: 'mono small' }, client.mac),
+      h('span', { className: 'cc-device-radio' }, client.signal == null ? 'signal unavailable' : `${client.signal} dBm`,
+        client.standard ? ` · ${client.standard}` : '')));
+}
+
+function wirelessTopology(iface, radio, clients) {
+  const source = h('div', { className: 'cc-port cc-access-point' },
+    icon('wifi', 28),
+    h('div', {},
+      h('strong', {}, iface.ssid || 'Hidden SSID'),
+      h('span', { className: 'small muted' }, `${radio.name} · ${radio.band ?? '?'} · ${clients.length} client${clients.length === 1 ? '' : 's'}`)));
+  return connectedTopology(source, clients, wirelessDevice, 'cc-wifi');
 }
 
 // The filter box and the radio selector of the command bar, built once; the host shows them only on this view.
@@ -251,7 +275,9 @@ export const connected = {
           [h('span', {}, i.ssid || 'Hidden'), badge(i.mode), badge(i.security, SECURITY_KIND(i.security)),
             h('span', { className: 'sub' }, `${i.ifname ?? 'N/A'} · ${r.name} ${r.band ?? ''} · ch ${r.channel}`),
             h('span', { className: 'ms-auto' }, badge(`${clients.length} client${clients.length === 1 ? '' : 's'}`, 'info'))],
-          clientTable(clients, rerender)));
+          h('div', {},
+            clients.length ? wirelessTopology(i, r, clients) : emptyState('No clients connected'),
+            clients.length ? disclosure({ cls: 'cc-client-details', summary: 'Client details', body: clientTable(clients, rerender) }) : null)));
       }
     }
     if (!groups.length) groups.push(emptyState('No matching devices', button('Clear filters', 'x-lg', () => {
@@ -266,6 +292,8 @@ export const connected = {
       body: h('div', { className: 'row mt-2' }, LEGEND.map(([title, items]) => h('div', { className: 'col-md-4' },
         h('div', { className: 'fw-semibold' }, title), h('ul', {}, items.map(t => h('li', {}, t)))))) }) : null;
 
-    return [summary, legend, ...groups].filter(Boolean);
+    const wiredGroups = groups.filter(group => group.classList?.contains('card') && group.querySelector?.('.cc-wired'));
+    const wirelessGroups = groups.filter(group => !wiredGroups.includes(group));
+    return [summary, ...wiredGroups, legend, ...wirelessGroups].filter(Boolean);
   },
 };

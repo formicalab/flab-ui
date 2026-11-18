@@ -30,6 +30,15 @@
   min-width: 0;
   max-width: 48rem;
 }
+.cc-devices.cc-wifi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  max-width: none;
+}
+.cc-access-point { min-width: 0; }
+.cc-wire-row.cc-wifi { margin: .5rem 1rem .25rem; }
+.cc-client-details { margin: .75rem 1rem 1rem; }
+.cc-device-radio { color: var(--fl-muted); font-size: .75rem; }
 .cc-device {
   position: relative;
   z-index: 1;
@@ -65,4 +74,5 @@
   .cc-wired { padding: .5rem; }
   .cc-port { width: min(100%, 13rem); }
   .cc-wires { display: none; }
+  .cc-devices.cc-wifi { grid-template-columns: 1fr; }
 }
