@@ -262,24 +262,33 @@ export const connected = {
       tile('WPA3 clients', `${wpa3} / ${clientsAll.length}`, 'SAE or OWE'),
       tile('Need attention', weak, 'security grade C or D', weak ? 'text-warning' : ''));
 
-    const groups = [];
-    if (wired.length) groups.push(card(
+    const wiredGroup = wired.length ? card(
       [h('span', {}, 'Ethernet'), badge('bridge FDB'), h('span', { className: 'sub' }, 'Learned through each physical port; devices can be behind an attached switch'),
         h('span', { className: 'ms-auto' }, badge(`${wired.length} device${wired.length === 1 ? '' : 's'}`, 'info'))],
-      wiredTopology(wired)));
+      wiredTopology(wired)) : null;
+    const wirelessGroups = [];
     for (const r of radios) {
       for (const i of ifsOf(r)) {
         const clients = i.clients.filter(c => matches(c, i.ssid ?? '', state.q));
         if (state.q && !clients.length) continue;
-        groups.push(card(
-          [h('span', {}, i.ssid || 'Hidden'), badge(i.mode), badge(i.security, SECURITY_KIND(i.security)),
+        wirelessGroups.push(h('section', { className: 'cc-wifi-group' },
+          h('div', { className: 'cc-wifi-group-head' },
+            h('span', {}, i.ssid || 'Hidden'), badge(i.mode), badge(i.security, SECURITY_KIND(i.security)),
             h('span', { className: 'sub' }, `${i.ifname ?? 'N/A'} · ${r.name} ${r.band ?? ''} · ch ${r.channel}`),
-            h('span', { className: 'ms-auto' }, badge(`${clients.length} client${clients.length === 1 ? '' : 's'}`, 'info'))],
+            h('span', { className: 'ms-auto' }, badge(`${clients.length} client${clients.length === 1 ? '' : 's'}`, 'info'))),
           h('div', {},
             clients.length ? wirelessTopology(i, r, clients) : emptyState('No clients connected'),
             clients.length ? disclosure({ cls: 'cc-client-details', summary: 'Client details', body: clientTable(clients, rerender) }) : null)));
       }
     }
+    const legend = clientsAll.length ? disclosure({ cls: 'legend card card-body', summary: 'Wi-Fi legend',
+      body: h('div', { className: 'row mt-2' }, LEGEND.map(([title, items]) => h('div', { className: 'col-md-4' },
+        h('div', { className: 'fw-semibold' }, title), h('ul', {}, items.map(t => h('li', {}, t)))))) }) : null;
+    const wifiGroup = wirelessGroups.length ? card(
+      [icon('wifi', 20), h('span', {}, 'Wi-Fi devices'),
+        h('span', { className: 'sub' }, `${clientsAll.length} associated client${clientsAll.length === 1 ? '' : 's'} across ${wirelessGroups.length} network${wirelessGroups.length === 1 ? '' : 's'}`)],
+      h('div', {}, legend, ...wirelessGroups)) : null;
+    const groups = [wiredGroup, wifiGroup].filter(Boolean);
     if (!groups.length) groups.push(emptyState('No matching devices', button('Clear filters', 'x-lg', () => {
       state.q = '';
       state.radio = 'all';
@@ -288,12 +297,6 @@ export const connected = {
       rerender();
     })));
 
-    const legend = clientsAll.length ? disclosure({ cls: 'legend card card-body', summary: 'Wi-Fi legend',
-      body: h('div', { className: 'row mt-2' }, LEGEND.map(([title, items]) => h('div', { className: 'col-md-4' },
-        h('div', { className: 'fw-semibold' }, title), h('ul', {}, items.map(t => h('li', {}, t)))))) }) : null;
-
-    const wiredGroups = groups.filter(group => group.classList?.contains('card') && group.querySelector?.('.cc-wired'));
-    const wirelessGroups = groups.filter(group => !wiredGroups.includes(group));
-    return [summary, ...wiredGroups, legend, ...wirelessGroups].filter(Boolean);
+    return [summary, ...groups].filter(Boolean);
   },
 };
