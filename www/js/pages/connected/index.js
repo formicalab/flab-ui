@@ -27,6 +27,7 @@ const signalMeter = signal => {
 
 // Filter text, selected radio ('all' or a radio name) and table sort: module-level so they survive the redraw on every poll.
 const state = { q: '', radio: 'all', sort: { key: 'signal', dir: -1 } };
+const openClientDetails = new Set();
 
 // A fixed-width monospace cell that is cut with an ellipsis; the full text is the tooltip.
 const clip = (text, title) => h('span', { className: 'mono clip', title: title || text }, text);
@@ -293,7 +294,17 @@ export const connected = {
             h('span', { className: 'ms-auto' }, badge(`${clients.length} client${clients.length === 1 ? '' : 's'}`, 'info'))),
           h('div', {},
             clients.length ? wirelessTopology(i, r, clients) : emptyState('No clients connected'),
-            clients.length ? disclosure({ cls: 'cc-client-details', summary: 'Client details', body: clientTable(clients, rerender) }) : null)));
+            clients.length ? disclosure({
+              cls: 'cc-client-details',
+              summary: 'Client details',
+              body: clientTable(clients, rerender),
+              open: openClientDetails.has(`${r.name}:${i.ifname ?? i.ssid ?? ''}`),
+              onToggle: open => {
+                const key = `${r.name}:${i.ifname ?? i.ssid ?? ''}`;
+                if (open) openClientDetails.add(key);
+                else openClientDetails.delete(key);
+              },
+            }) : null)));
       }
     }
     const legend = clientsAll.length ? h('div', { className: 'legend card card-body' },
