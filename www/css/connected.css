@@ -103,8 +103,9 @@
 .cc-wifi-card .legend {
   margin: 0 0 1rem;
   padding: 1rem 1.1rem;
-  border: 0;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--fl-brand) 5%, var(--fl-surface)), var(--fl-surface));
+  border: 1px solid color-mix(in srgb, var(--fl-brand) 16%, var(--fl-stroke));
+  border-radius: .6rem;
+  background: color-mix(in srgb, var(--fl-brand) 4%, var(--fl-surface));
   box-shadow: none;
 }
 .cc-summary-card > .card-body { padding: 1rem 1.15rem 1.15rem; }
