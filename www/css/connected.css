@@ -127,7 +127,7 @@
 .cc-client-details > summary { padding: .3rem .1rem; }
 .cc-client-details .grid-wrap { margin-top: .65rem; }
 .cc-wifi-card .cc-access-point {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--fl-brand) 11%, var(--fl-surface)), var(--fl-surface));
+  background: color-mix(in srgb, var(--fl-brand) 7%, var(--fl-surface));
 }
 .cc-wifi-card .cc-device {
   border-color: color-mix(in srgb, var(--fl-brand) 18%, var(--fl-stroke));
