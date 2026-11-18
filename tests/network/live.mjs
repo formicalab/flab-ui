@@ -102,7 +102,7 @@ await page.addInitScript(([id, granted]) => {
 }, [sid, acls]);
 await page.goto(baseUrl);
 await page.waitForSelector('.tile');
-check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Ethernet ports', 'Wi-Fi radios', 'IPsec VPN', 'WireGuard', 'Firewall', 'DHCP', 'DNS', 'Dynamic DNS', 'Devices and Interfaces', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: the two hardware pages (Ethernet ports, Wi-Fi radios, which holds the networks and mesh points), VPNs, Firewall, DHCP, DNS, Dynamic DNS, Devices and Interfaces, Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
+check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Ethernet ports', 'Wi-Fi radios', 'Firewall', 'VPN: IPsec', 'VPN: WireGuard', 'Devices and Interfaces', 'DHCP', 'DNS', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: hardware pages, Firewall, VPNs, Devices and Interfaces, DHCP, the combined DNS page, Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
 //#region Ethernet ports page
 await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');

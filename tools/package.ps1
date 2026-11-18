@@ -110,6 +110,112 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
 #region Helpers
+function Get-ArtifactEntries {
+    <#
+    .SYNOPSIS
+    Returns the source files and install targets declared by tools/artifact-manifest.json.
+    .DESCRIPTION
+    Validates the manifest, expands each source directory and produces the exact paths expected in the package.
+    .OUTPUTS
+    Objects with Source, RelativePath and Target properties.
+    #>
+    $path = Join-Path $root 'tools\artifact-manifest.json'
+    $manifest = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    if (-not $manifest.entries) { throw "The artifact manifest has no entries: $path" }
+    $entries = foreach ($entry in $manifest.entries) {
+        $glob = $entry.PSObject.Properties['glob']?.Value
+        $exclusive = [bool]$entry.PSObject.Properties['exclusive']?.Value
+        $source = Join-Path $root ($entry.source -replace '/', '\')
+        if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "Artifact source directory is missing: $entry.source" }
+        $files = @(Get-ChildItem -LiteralPath $source -Recurse -File)
+        if ($glob) { $files = @($files | Where-Object { $_.Name -like $glob }) }
+        if (-not $files) { throw "Artifact source has no matching files: $entry.source" }
+        foreach ($file in $files) {
+            $relative = [IO.Path]::GetRelativePath($source, $file.FullName) -replace '\\', '/'
+            [pscustomobject]@{
+                Source = $file.FullName
+                RelativePath = $relative
+                Target = ($entry.target.TrimEnd('/') + '/' + $relative)
+                Exclusive = $exclusive
+            }
+        }
+    }
+    if (-not $entries) { throw 'The artifact manifest resolved to no files.' }
+    return $entries
+}
+
+function Test-ArtifactContract {
+    <#
+    .SYNOPSIS
+    Checks the source artifact manifest before a build or sync.
+    .DESCRIPTION
+    Ensures every declared artifact exists, targets are absolute and plugin/ACL names remain paired.
+    #>
+    $entries = @(Get-ArtifactEntries)
+    $targets = @($entries | ForEach-Object Target)
+    if ($targets.Count -ne @($targets | Select-Object -Unique).Count) { throw 'The artifact manifest maps two source files to the same install path.' }
+    $plugins = @($entries | Where-Object { $_.Target -like '/usr/share/rpcd/ucode/flab.*.uc' } | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.Target) })
+    $acls = @($entries | Where-Object { $_.Target -like '/usr/share/rpcd/acl.d/flab-*.json' } | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.Target) })
+    foreach ($plugin in $plugins) {
+        $expectedAcl = $plugin.Replace('flab.', 'flab-')
+        if ($expectedAcl -notin $acls) { throw "Missing ACL artifact $expectedAcl.json for $plugin." }
+    }
+    foreach ($entry in $entries) {
+        if (-not $entry.Target.StartsWith('/')) { throw "Artifact target must be absolute: $($entry.Target)" }
+        if ($entry.Target -match '\s') { throw "Artifact target contains whitespace and cannot use sha256sum -c: $($entry.Target)" }
+        if (-not (Test-Path -LiteralPath $entry.Source -PathType Leaf)) { throw "Artifact file is missing: $($entry.Source)" }
+    }
+    return $entries
+}
+
+function Test-InstalledArtifacts {
+    <#
+    .SYNOPSIS
+    Verifies the installed flab-ui file contract on the router.
+    .DESCRIPTION
+    Checks every manifest target and rejects extra files under the exclusive web installation directory.
+    #>
+    param([Parameter(Mandatory)]$Entries)
+
+    $checks = @($Entries | ForEach-Object { "$((Get-FileHash -LiteralPath $_.Source -Algorithm SHA256).Hash.ToLower())  $($_.Target)" })
+    $local = Join-Path ([IO.Path]::GetTempPath()) ("flab-artifacts-$PID.txt")
+    $remote = "/tmp/flab-artifacts-$PID.expected"
+    [IO.File]::WriteAllText($local, (($checks -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+    try {
+        scp -O -q $local "${Router}:$remote"
+        if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
+        Invoke-Remote @"
+set -eu
+trap 'rm -f $remote /tmp/flab-artifacts.paths /tmp/flab-artifacts.actual /tmp/flab-artifacts.web /tmp/flab-artifacts.group' EXIT
+sha256sum -c $remote >/dev/null
+awk '{ print `$2 }' $remote > /tmp/flab-artifacts.paths
+find /www/flab -type f | sort > /tmp/flab-artifacts.actual
+grep '^/www/flab/' /tmp/flab-artifacts.paths | sort > /tmp/flab-artifacts.web
+if ! cmp /tmp/flab-artifacts.web /tmp/flab-artifacts.actual; then
+  echo 'Installed /www/flab file set differs from the artifact manifest.' >&2
+  diff -u /tmp/flab-artifacts.web /tmp/flab-artifacts.actual >&2 || true
+  exit 1
+fi
+check_group() {
+  dir="`$1"; pattern="`$2"
+  find "`$dir" -maxdepth 1 -type f -name "`$pattern" | sort > /tmp/flab-artifacts.actual
+  grep "^`$dir/" /tmp/flab-artifacts.paths | sort > /tmp/flab-artifacts.group
+  if ! cmp /tmp/flab-artifacts.group /tmp/flab-artifacts.actual; then
+    echo "Installed artifact group differs from the manifest: `$dir" >&2
+    diff -u /tmp/flab-artifacts.group /tmp/flab-artifacts.actual >&2 || true
+    exit 1
+  fi
+}
+check_group /usr/share/rpcd/ucode 'flab.*.uc'
+check_group /usr/share/ucode/flab '*.uc'
+check_group /usr/share/rpcd/acl.d 'flab-*.json'
+"@ | Write-Host
+    }
+    finally {
+        Remove-Item -LiteralPath $local -ErrorAction SilentlyContinue
+    }
+}
+
 function ConvertTo-BuildPath {
     <#
     .SYNOPSIS
@@ -298,6 +404,7 @@ function Build-Package {
     #>
     param([switch]$FromFeed)
 
+    $null = Test-ArtifactContract
     New-Item -ItemType Directory $OutDir -Force | Out-Null
     Write-Host $(if ($FromFeed) { 'Building the package from the source the feed Makefile names...' } else { 'Building the package from the working tree...' })
     $feed = if ($FromFeed) { '1' } else { '0' }
@@ -326,6 +433,7 @@ function Install-Package {
     #>
     param([Parameter(Mandatory)][string]$Apk)
 
+    $artifacts = @(Test-ArtifactContract)
     $expected = @(Get-ChildItem (Join-Path (Join-Path $root 'rpcd') 'ucode') -Filter 'flab.*.uc' | ForEach-Object { $_.BaseName })
     if (-not $expected) { throw 'No rpcd plugin found in rpcd/ucode.' }
     $apkName = Split-Path $Apk -Leaf
@@ -342,6 +450,7 @@ rm -f /tmp/$apkName
 "@ | Write-Host
 
     Wait-Objects -Expected $expected
+    Test-InstalledArtifacts -Entries $artifacts
     # The installed version must be the one that was built: the apk file name is name-version-release.apk.
     $installed = (Invoke-Remote 'apk list -I flab-ui 2>/dev/null | head -n 1') -replace '^(\S+).*$', '$1'
     if ($installed -ne [IO.Path]::GetFileNameWithoutExtension($apkName)) { throw "The router reports '$installed', not $apkName." }
@@ -358,7 +467,7 @@ function Restore-PackageCheckout {
     .SYNOPSIS
     Restores the unpublished package change to its pre-release baseline.
     .DESCRIPTION
-    Compare-and-swap updates only this run's branch tip, then restores only the Makefile in the index and worktree.
+    Compare-and-swap updates only this run's branch tip, then restores the flab-ui package files in the index and worktree.
     No remote ref or unrelated path is changed. Refuses to overwrite a branch moved by another process.
     .PARAMETER Baseline
     The package branch's original commit.
@@ -375,8 +484,34 @@ function Restore-PackageCheckout {
         throw 'Package branch changed during release; refusing automatic recovery.'
     }
     $null = Invoke-Native git @('-C', $PackagesDir, 'update-ref', "refs/heads/$Branch", $Baseline, $ExpectedHead)
-    $null = Invoke-Native git @('-C', $PackagesDir, 'restore', "--source=$Baseline", '--staged', '--worktree', '--', 'admin/flab-ui/Makefile')
+    $null = Invoke-Native git @('-C', $PackagesDir, 'restore', "--source=$Baseline", '--staged', '--worktree', '--', 'admin/flab-ui')
+    $null = Invoke-Native git @('-C', $PackagesDir, 'clean', '-fd', '--', 'admin/flab-ui/files/usr/share/rpcd/acl.d')
     [IO.File]::WriteAllBytes((Join-Path $PackagesDir 'admin\flab-ui\Makefile'), $OriginalBytes)
+}
+
+function Sync-PackageFiles {
+    <#
+    .SYNOPSIS
+    Copies OpenWrt-owned integration files into the packages checkout.
+    .DESCRIPTION
+    Keeps the rpcd ACL fragments identical in the source repository and the package feed's files/ tree, deleting
+    stale copies first. Other application files continue to come from the immutable source archive.
+    #>
+    $source = Join-Path $root 'rpcd\acl.d'
+    $target = Join-Path $PackagesDir 'admin\flab-ui\files\usr\share\rpcd\acl.d'
+    if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "ACL source directory is missing: $source" }
+    New-Item -ItemType Directory $target -Force | Out-Null
+    Get-ChildItem -LiteralPath $target -Filter 'flab-*.json' -File | Remove-Item -Force
+    Copy-Item (Join-Path $source 'flab-*.json') $target
+    $sourceFiles = @(Get-ChildItem -LiteralPath $source -Filter 'flab-*.json' -File)
+    $targetFiles = @(Get-ChildItem -LiteralPath $target -Filter 'flab-*.json' -File)
+    if ($sourceFiles.Count -ne $targetFiles.Count) { throw 'The package ACL file count does not match the source repository.' }
+    foreach ($file in $sourceFiles) {
+        $copy = Join-Path $target $file.Name
+        if ((Get-FileHash $file.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $copy -Algorithm SHA256).Hash) {
+            throw "The package ACL copy differs: $($file.Name)"
+        }
+    }
 }
 
 function Publish-Release {
@@ -445,6 +580,7 @@ function Publish-Release {
             $text = Set-MakeVariable $text 'PKG_LICENSE_FILES' 'LICENSE www/LICENSE'
         }
         [IO.File]::WriteAllText($makefile, $text, [Text.UTF8Encoding]::new($false))
+        Sync-PackageFiles
 
         # Build from the tarball the Makefile now names, so the SDK checks PKG_HASH; install it when asked to.
         $builtApk = Build-Package -FromFeed
@@ -455,11 +591,13 @@ function Publish-Release {
         $sumFile = "$builtApk.sha256"
         [IO.File]::WriteAllText($sumFile, "$apkHash  $apkName`n", [Text.UTF8Encoding]::new($false))
 
-        Write-Host 'Committing the Makefile in the packages checkout...'
+        Write-Host 'Committing the Makefile and integration files in the packages checkout...'
         if ((Invoke-Native git @('-C', $PackagesDir, 'rev-parse', 'HEAD')) -ne $packagesHead) { throw 'Package HEAD changed during release.' }
-        $otherChanges = @(Invoke-Native git @('-C', $PackagesDir, 'status', '--porcelain') | Where-Object { $_ -notmatch '^ M admin/flab-ui/Makefile$' })
-        if ($otherChanges.Count) { throw 'Other package changes appeared during release; refusing to commit them.' }
-        $null = Invoke-Native git @('-C', $PackagesDir, 'add', 'admin/flab-ui/Makefile')
+        $otherChanges = @(Invoke-Native git @('-C', $PackagesDir, 'status', '--porcelain') | Where-Object {
+            $_ -notmatch 'admin/flab-ui/(Makefile|files/usr/share/rpcd/acl\.d/flab-.*\.json)$'
+        })
+        if ($otherChanges.Count) { throw "Other package changes appeared during release; refusing to commit them: $($otherChanges -join ', ')" }
+        $null = Invoke-Native git @('-C', $PackagesDir, 'add', 'admin/flab-ui/Makefile', 'admin/flab-ui/files/usr/share/rpcd/acl.d')
         if ($Amend) {
             $null = Invoke-Native git @('-C', $PackagesDir, 'commit', '--quiet', '--amend', '--no-edit')
         }
@@ -529,6 +667,7 @@ function Sync-Router {
     configuration apply is waiting for confirmation, because the rollback timer lives in rpcd's memory. Files removed
     from rpcd/ are not removed on the router. The result is not an installed package version: use Deploy for that.
     #>
+    $artifacts = @(Test-ArtifactContract)
     $work = Join-Path ([IO.Path]::GetTempPath()) ("flab-sync-" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory $work | Out-Null
     try {
@@ -549,6 +688,9 @@ function Sync-Router {
             scp -O -q $backendTar "${Router}:/tmp/flab-backend.tar"
             if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
             $backendScript = @'
+find /usr/share/rpcd/ucode -maxdepth 1 -type f -name 'flab.*.uc' -exec rm -f {} +
+find /usr/share/ucode/flab -maxdepth 1 -type f -name '*.uc' -exec rm -f {} +
+find /usr/share/rpcd/acl.d -maxdepth 1 -type f -name 'flab-*.json' -exec rm -f {} +
 tar -xof /tmp/flab-backend.tar -C /
 chmod 0644 /usr/share/rpcd/acl.d/flab-*.json /usr/share/rpcd/ucode/flab.*.uc /usr/share/ucode/flab/*.uc
 rm -f /tmp/flab-backend.tar
@@ -574,6 +716,7 @@ $backendScript
     if ($Backend) {
         $expected = @(Get-ChildItem (Join-Path (Join-Path $root 'rpcd') 'ucode') -Filter 'flab.*.uc' | ForEach-Object { $_.BaseName })
         Wait-Objects -Expected $expected
+        Test-InstalledArtifacts -Entries $artifacts
     }
     $hostName = $Router.Split('@')[-1]
     $page = Invoke-WebRequest -Uri "https://$hostName/flab/" -SkipCertificateCheck

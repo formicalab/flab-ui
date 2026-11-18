@@ -14,6 +14,8 @@ const STORAGE_KEY = 'flab.build';
 const PARALLEL = 6;
 
 // Downloads every file again into the HTTP cache, a few at a time. Resolves to false when any download failed.
+// Reading the body is required: fetch() resolves when the headers arrive, while consuming the body proves that
+// the complete response reached the browser before its build id is recorded.
 async function refetch(files, load) {
   const queue = [...files];
   let ok = true;
@@ -22,6 +24,7 @@ async function refetch(files, load) {
       try {
         const response = await load(file);
         if (!response.ok) ok = false;
+        else await response.arrayBuffer();
       } catch {
         ok = false;
       }

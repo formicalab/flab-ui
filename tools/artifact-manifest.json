@@ -1,0 +1,8 @@
+{
+  "entries": [
+    { "source": "www", "target": "/www/flab", "exclusive": true },
+    { "source": "rpcd/ucode", "target": "/usr/share/rpcd/ucode", "glob": "flab.*.uc" },
+    { "source": "rpcd/lib/flab", "target": "/usr/share/ucode/flab", "glob": "*.uc" },
+    { "source": "rpcd/acl.d", "target": "/usr/share/rpcd/acl.d", "glob": "flab-*.json" }
+  ]
+}

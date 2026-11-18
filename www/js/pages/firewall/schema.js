@@ -234,9 +234,9 @@ export const FORWARDING_FIELDS = [
 
 // The groups of the defaults card.
 export const DEFAULT_GROUPS = [
-  { id: 'policy', title: 'Default policies', open: true, legend: 'The verdict for traffic that no zone, rule or forwarding decides. A zone with an empty policy uses these. Without a value the firewall drops (OpenWrt\'s own configuration sets input and forward to REJECT and output to ACCEPT).' },
-  { id: 'protection', title: 'Protection', open: true, legend: 'Basic protections of the router and the traffic through it.' },
-  { id: 'offload', title: 'Flow offloading', open: true, legend: 'Lets established connections skip most of the firewall and routing code, so the router forwards faster with less CPU. It needs a kernel and a device that support it, and it bypasses some features (traffic shaping, packet marks, some per-packet rules).' },
+  { id: 'policy', title: 'Default policies', legend: 'The verdict for traffic that no zone, rule or forwarding decides. A zone with an empty policy uses these. Without a value the firewall drops (OpenWrt\'s own configuration sets input and forward to REJECT and output to ACCEPT).' },
+  { id: 'protection', title: 'Protection', legend: 'Basic protections of the router and the traffic through it.' },
+  { id: 'offload', title: 'Flow offloading', legend: 'Lets established connections skip most of the firewall and routing code, so the router forwards faster with less CPU. It needs a kernel and a device that support it, and it bypasses some features (traffic shaping, packet marks, some per-packet rules).' },
   { id: 'advanced', title: 'Advanced', legend: 'Kernel and connection tracking switches. The defaults are right for nearly every router.' },
 ];
 

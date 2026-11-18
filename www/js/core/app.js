@@ -63,17 +63,22 @@ async function route() {
   if (!current()) return;
 
   // Pages marked nav: 'bottom' (Settings) sit under the spacer with Sign out; the rest fill the main list.
-  const link = p => h('a', { href: `#${p.id}`, className: `nav-link-fl ${p === entry ? 'active' : ''}` }, icon(p.icon), p.label);
-  const nav = h('nav', { className: 'nav-pane' },
-    h('div', { className: 'brand' }, h('strong', {}, board ? board.hostname : 'Router'), h('span', {}, board ? board.model : '')),
-    ...pages.filter(p => p.nav !== 'bottom').map(link),
+  const active = p => p.id === (entry.navId ?? entry.id);
+  const link = p => h('a', {
+    href: `#${p.id}`,
+    className: `nav-link-fl ${active(p) ? 'active' : ''}`,
+    ariaCurrent: active(p) ? 'page' : null,
+  }, icon(p.icon), p.label);
+  const nav = h('nav', { className: 'nav-pane', ariaLabel: 'Main navigation' },
+    h('div', { className: 'brand' }, h('strong', {}, board ? board.hostname : 'OpenWrt'), h('span', {}, board ? board.model : '')),
+    ...pages.filter(p => !p.nav).map(link),
     h('div', { className: 'nav-spacer' }),
     ...pages.filter(p => p.nav === 'bottom').map(link),
     h('button', { type: 'button', className: 'nav-link-fl', onclick: signOut }, icon('box-arrow-right'), 'Sign out'));
 
-  const results = h('main', {}, h('div', { className: 'text-center muted p-5' }, h('div', { className: 'spinner-border spinner-border-sm' })));
+  const results = h('main', { id: 'page-content' }, h('div', { className: 'text-center muted p-5' }, h('div', { className: 'spinner-border spinner-border-sm' })));
   const stamp = h('span', { className: 'muted small' });
-  const cmdbar = h('header', { className: 'cmdbar' }, h('h1', {}, entry.label), stamp);
+  const cmdbar = h('header', { className: 'cmdbar' }, h('h1', {}, entry.title ?? entry.label), stamp);
   byId('app').replaceChildren(h('div', { className: 'shell' }, nav, h('div', { className: 'content' }, cmdbar, results)));
 
   let module;
@@ -96,7 +101,8 @@ async function route() {
   // Redraws the page from the last data without polling; controls call it so filter changes apply instantly.
   const rerender = () => { if (current() && data) results.replaceChildren(...page.view(data, rerender)); };
   const ctl = page.controls ? page.controls({ rerender, reload: () => load() }) : { nodes: [] };
-  cmdbar.replaceChildren(h('h1', {}, page.title ?? page.label), ...ctl.nodes, stamp);
+  if (ctl.nodes.some(node => node?.role === 'tablist')) results.setAttribute('role', 'tabpanel');
+  cmdbar.replaceChildren(h('h1', {}, entry.title ?? entry.label), ...ctl.nodes, stamp);
 
   // Polls the page once and redraws it. A failed poll shows the error in place of the content; an expired session
   // returns to the login form. Only the newest request counts: an older reply that arrives late (a slow router, an

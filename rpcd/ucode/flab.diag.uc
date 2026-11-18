@@ -39,10 +39,12 @@
 'use strict';
 import { deferred } from 'flab.worker';
 import { launch_job, MAX_JOB_OUTPUT } from 'flab.jobs';
+import { command_line, int_in, is_address, valid_host, valid_iface, whole } from 'flab.diag-validation';
+import { download_job, new_job_id, read_job, stop_job, sweep_jobs } from 'flab.diag-jobs';
 
-import { run, command_result, safe_ifname, uci_all, ubus_call, as_list } from 'flab.util';
+import { run, command_result, uci_all, ubus_call, as_list } from 'flab.util';
 import { connect } from 'ubus';
-import { mkdir, readfile, writefile, lsdir, stat, access, open } from 'fs';
+import { mkdir, readfile, writefile, lsdir, stat } from 'fs';
 
 // Where the jobs live (tmpfs): one directory per job with `out` (the output), `pid` and `rc` (the exit code).
 const ROOT = getenv('FLAB_DIAG_ROOT') ?? '/tmp/flab-diag';
@@ -96,43 +98,6 @@ const CAPTURE_FILTER_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX
 const DOWNLOAD_CHUNK = 196608;
 // The process names of everything a job can run (/proc/<pid>/comm), checked before `stop` sends a kill.
 const OURS = [ 'timeout', 'ping', 'ping6', 'traceroute', 'traceroute6', 'nslookup', 'dig', 'kdig', 'drill', 'mtr', 'mtr-packet', 'iperf3', 'tcpdump' ];
-
-//#region Validation
-
-// Whether `s` is a string that matches `re` as a whole (`^` and `$` also match at line breaks, so a match has to
-// cover the entire string).
-function whole(s, re) {
-	let m = type(s) == 'string' ? match(s, re) : null;
-	return m != null && m[0] == s;
-}
-
-// A host name or an address: at most 253 characters of letters, digits, ".", ":", "_" and "-", not starting with "-".
-function valid_host(s) {
-	return whole(s, /^[A-Za-z0-9_.:][A-Za-z0-9_.:-]{0,252}$/);
-}
-
-// An IPv4 or IPv6 address (only characters an address can hold).
-function is_address(s) {
-	if (whole(s, /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/))
-		return true;
-	return type(s) == 'string' && index(s, ':') >= 0 && whole(s, /^[0-9A-Fa-f:.]{2,45}$/);
-}
-
-// An interface name that cannot be taken for an option.
-function valid_iface(s) {
-	return safe_ifname(s) && substr(s, 0, 1) != '-';
-}
-
-// `v` as an integer between lo and hi; `def` when it is absent or an empty string; null when it is out of range or
-// not a number (a literal 0 is a number, not "absent").
-function int_in(v, lo, hi, def) {
-	if (v == null || (type(v) == 'string' && v == ''))
-		return def;
-	let n = +v;
-	return (n >= lo && n <= hi && n == int(n)) ? int(n) : null;
-}
-
-//#endregion
 
 //#region Tools
 
@@ -803,64 +768,6 @@ function build_capture(a) {
 
 //#region Jobs
 
-// A job id: twelve lowercase hex digits.
-function valid_id(s) {
-	return whole(s, /^[0-9a-f]{12}$/);
-}
-
-// Whether a process with this pid exists.
-function alive(pid) {
-	return pid != null && access(`/proc/${pid}`) == true;
-}
-
-// The state of one job directory: { running, exit, pid, mtime }. A job whose `rc` file is missing but whose
-// process is gone (stopped by a kill) is finished with no exit code.
-function job_state(id) {
-	let dir = `${ROOT}/${id}`;
-	let rc = trim(readfile(`${dir}/rc`) ?? '');
-	let pid = trim(readfile(`${dir}/pid`) ?? '');
-	pid = match(pid, /^[0-9]+$/) ? +pid : null;
-	let st = stat(`${dir}/out`) ?? stat(dir);
-	let age = st ? time() - st.mtime : 0;
-	if (rc != '')
-		return { running: false, exit: +rc, pid, mtime: st?.mtime };
-	// The pid file appears a moment after the directory; until then the job has just started.
-	if (pid == null)
-		return { running: age < 3, exit: null, pid, mtime: st?.mtime };
-	return { running: alive(pid), exit: null, pid, mtime: st?.mtime };
-}
-
-// Removes finished jobs older than KEEP seconds, and the oldest ones beyond MAX_JOBS; returns the number running.
-function sweep() {
-	let ids = filter(lsdir(ROOT) ?? [], valid_id);
-	let running = 0, kept = [];
-	for (let id in ids) {
-		let s = job_state(id);
-		if (s.running) {
-			running++;
-			continue;
-		}
-		if (s.mtime != null && time() - s.mtime > KEEP)
-			run(`rm -rf ${ROOT}/${id}`);
-		else
-			push(kept, { id, mtime: s.mtime ?? 0 });
-	}
-	kept = sort(kept, (a, b) => a.mtime - b.mtime);
-	while (length(kept) >= MAX_JOBS)
-		run(`rm -rf ${ROOT}/${shift(kept).id}`);
-	return running;
-}
-
-// A new random job id (12 hex digits from /dev/urandom) that has no directory yet, or null.
-function new_id() {
-	for (let i = 0; i < 5; i++) {
-		let id = hexenc(readfile('/dev/urandom', 6) ?? '');
-		if (valid_id(id) && mkdir(`${ROOT}/${id}`))
-			return id;
-	}
-	return null;
-}
-
 // The name servers the router was told to use by its upstream (the DHCP or PPP server of the ISP), from the
 // resolv.conf that netifd writes: addresses only, loopback and duplicates left out, at most four.
 function upstream_resolvers() {
@@ -895,16 +802,18 @@ function start(request) {
 		return { ok: false, error: built.error };
 
 	mkdir(ROOT, 0700);
-	if (sweep() >= MAX_RUNNING)
+	if (sweep_jobs(ROOT, KEEP, MAX_JOBS) >= MAX_RUNNING)
 		return { ok: false, error: `${MAX_RUNNING} diagnostics are already running. Stop one or wait for it to end.` };
-	let id = new_id();
+	let id = new_job_id(ROOT);
 	if (id == null)
 		return { ok: false, error: 'Could not create a job.' };
 
 	// A simple tool is its validated words joined by spaces; a script tool writes its script (built from validated
 	// values only) into the job directory and runs that. The subshell records the pid of `timeout` (which forwards a
 	// kill to the tool) and the exit code, and is detached from this call.
-	let command = built.script != null ? 'sh job.sh' : join(' ', built.argv);
+	let command = built.script != null ? 'sh job.sh' : command_line(built.argv);
+	if (command == null)
+		return { ok: false, error: 'The diagnostic command contains an invalid argument.' };
 	// A script is written with LF line endings only: BusyBox sh rejects a carriage return, and the source file may carry CRLF
 	// (a Windows checkout) inside the multi-line parts of the templates.
 	if (built.script != null)
@@ -922,82 +831,19 @@ function start(request) {
 // there is more to come), and whether it still runs. `size` is the offset to ask for next, so a job whose output outgrows
 // one reply (an iperf3 server that stays up for minutes) is read in pieces.
 function read(request) {
-	let id = request?.args?.id;
-	if (!valid_id(id) || stat(`${ROOT}/${id}`) == null)
-		return { ok: false, error: 'There is no such job.' };
-	let path = `${ROOT}/${id}/out`;
-	let total = stat(path)?.size ?? 0;
-	let from = int_in(request.args.from, 0, 1000000000, 0) ?? 0;
-	if (from > total)
-		from = total;
-	let text = '';
-	if (from < total) {
-		let f = open(path, 'r');
-		if (f != null) {
-			f.seek(from);
-			text = f.read(MAX_OUTPUT) ?? '';
-			f.close();
-		}
-		// A reply that stops short of the end of the output ends at a line break, so no line (and no multi-byte character)
-		// is split between two replies.
-		if (from + length(text) < total) {
-			let cut = rindex(text, '\n');
-			if (cut >= 0)
-				text = substr(text, 0, cut + 1);
-		}
-	}
-	let s = job_state(id);
-	return {
-		ok: true, id, running: s.running, exit: s.exit,
-		size: from + length(text), text,
-		truncated: from + length(text) < total,
-		output_limited: stat(`${ROOT}/${id}/truncated`) != null,
-		max_output: MAX_JOB_OUTPUT,
-		timed_out: stat(`${ROOT}/${id}/timed_out`) != null || s.exit == 124 || s.exit == 137,
-		stopped: s.exit == 143 && stat(`${ROOT}/${id}/timed_out`) == null && stat(`${ROOT}/${id}/truncated`) == null,
-	};
+	return read_job(ROOT, request?.args?.id, request?.args?.from, MAX_OUTPUT, MAX_JOB_OUTPUT);
 }
 
 // The reply of `download`: the capture file of a packet-capture job from byte offset `from`, DOWNLOAD_CHUNK bytes at most,
 // as base64 (the page asks again from `from + length` until `done`, and puts the pieces together into a .pcap file). The
 // file is whatever has been written so far while the capture still runs.
 function download(request) {
-	let id = request?.args?.id;
-	if (!valid_id(id) || stat(`${ROOT}/${id}`) == null)
-		return { ok: false, error: 'There is no such job.' };
-	let path = `${ROOT}/${id}/cap.pcap`;
-	let st = stat(path);
-	if (st == null)
-		return { ok: false, error: 'This job has no capture file. A newer capture may have replaced it.' };
-	let from = int_in(request.args.from, 0, 1000000000, 0) ?? 0;
-	let data = '';
-	let f = from < st.size ? open(path, 'r') : null;
-	if (f != null) {
-		f.seek(from);
-		data = f.read(DOWNLOAD_CHUNK) ?? '';
-		f.close();
-	}
-	return { ok: true, id, from, size: st.size, length: length(data), data: b64enc(data), done: from + length(data) >= st.size, running: job_state(id).running };
+	return download_job(ROOT, request?.args?.id, request?.args?.from, DOWNLOAD_CHUNK);
 }
 
 // The reply of `stop`: ends a running job (a kill for `timeout`, which passes it on to the tool).
 function stop(request) {
-	let id = request?.args?.id;
-	if (!valid_id(id) || stat(`${ROOT}/${id}`) == null)
-		return { ok: false, error: 'There is no such job.' };
-	let s = job_state(id);
-	if (!s.running)
-		return { ok: true, id, running: false };
-	// Only a process that is one of our tools (or their `timeout` wrapper, or the shell running one of our job scripts)
-	// is killed, so a recycled pid is never hit. busybox records the tool itself for `$!`, and `timeout` passes the kill
-	// on, so either name is possible.
-	if (s.pid != null) {
-		let comm = trim(readfile(`/proc/${s.pid}/comm`) ?? '');
-		let cmdline = readfile(`/proc/${s.pid}/cmdline`) ?? '';
-		if (index(OURS, comm) >= 0 || (comm == 'sh' && index(cmdline, 'job.sh') >= 0))
-			run(`kill ${s.pid} 2>/dev/null`);
-	}
-	return { ok: true, id, running: false };
+	return stop_job(ROOT, request?.args?.id, OURS);
 }
 
 //#endregion

@@ -14,11 +14,24 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 const text = node => typeof node === 'string' ? node : (node?.children ?? []).map(text).join(' ');
 const find = (node, match) => match(node) ? node : (node?.children ?? []).map(child => find(child, match)).find(Boolean);
 
+test('the shipped shell enforces a same-origin content security policy', async () => {
+  const html = await readFile(new URL('../../www/index.html', import.meta.url), 'utf8');
+  const policy = html.match(/Content-Security-Policy"[\s\S]*?content="([^"]+)"/)?.[1];
+  assert.ok(policy, 'index.html has a CSP meta policy');
+  assert.match(policy, /default-src 'self'/);
+  assert.match(policy, /script-src 'self'/);
+  assert.match(policy, /connect-src 'self'/);
+  assert.match(policy, /object-src 'none'/);
+  assert.match(policy, /base-uri 'none'/);
+  assert.doesNotMatch(policy, /script-src[^;]*'unsafe-inline'/);
+});
+
 async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } = {}) {
   const events = {}, calls = [], styles = [], timers = new Map(), renders = [], controls = {}, paused = { on: false };
   const element = (tag, props = {}, ...children) => ({
     tag, ...props, children: children.flat().filter(c => c != null),
     replaceChildren(...next) { this.children = next; },
+    setAttribute(name, value) { this[name.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value; },
   });
   const app = element('div');
   let timer = 0, onLogin;
@@ -45,7 +58,10 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } 
       const id = specifier.split('/')[1].replace('.js', '');
       calls.push(`import:${id}`);
       if (imports[id]) await imports[id].promise;
-      return synthetic({ openTool: (tool, host) => calls.push(`tool:${tool}:${host}`), default: {
+      return synthetic({
+        openTool: (tool, host) => calls.push(`tool:${tool}:${host}`),
+        openTab: tab => calls.push(`tab:${tab}`),
+        default: {
         id, label: id, interval: id === 'interfaces' ? () => 2000 : 1000, css: `css/${id}.css`, isPaused: () => paused.on,
         load: () => { calls.push(`load:${id}`); return loads[id]?.() ?? Promise.resolve({ value: id }); },
         controls: ctl => { controls[id] = ctl; return { nodes: [] }; },
@@ -89,8 +105,10 @@ test('login imports no page modules; successful sign-in resolves only the select
   await s.signIn();
   assert.deepEqual(s.calls, ['import:overview', 'load:overview']);
   const links = s.app.children[0].children[0].children.filter(n => n?.href);
-  assert.equal(links.map(n => n.href).join(','), '#overview,#network,#radios,#ipsec,#wireguard,#firewall,#dhcp,#dns,#ddns,#interfaces,#routing,#traffic,#services,#toolbox,#logs,#settings');
+  assert.equal(links.map(n => n.href).join(','), '#overview,#network,#radios,#firewall,#ipsec,#wireguard,#interfaces,#dhcp,#dns,#routing,#traffic,#services,#toolbox,#logs,#settings');
+  assert.deepEqual(links.slice(3, 6).map(n => n.children.at(-1)), ['Firewall', 'VPN: IPsec', 'VPN: WireGuard']);
   assert.equal(links.at(-1).children.at(-1), 'System settings');
+  assert.equal(links[0].ariaCurrent, 'page');
 });
 
 test('aliases invalidate the old route; unknown routes retain the default page', async () => {
@@ -104,6 +122,10 @@ test('aliases invalidate the old route; unknown routes retain the default page',
   assert.equal(s.context.location.hash, '#radios');
   await s.navigate('#mesh');
   assert.equal(s.context.location.hash, '#radios');
+  await s.navigate('#ddns');
+  assert.equal(s.calls.at(-2), 'tab:dynamic');
+  assert.equal(s.calls.at(-1), 'load:dns');
+  assert.equal(s.app.children[0].children[0].children.filter(n => n?.href).find(n => n.href === '#dns').className.includes('active'), true);
   await s.navigate('#missing');
   assert.equal(s.calls.at(-1), 'load:overview');
 });

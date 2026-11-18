@@ -8,10 +8,32 @@ suites use Edge. No browser compatibility matrix is established yet. HTTPS is re
 clipboard and WebCrypto capabilities also depend on the browser and secure context. WireGuard has a JavaScript X25519
 fallback, but key generation still requires `crypto.getRandomValues`.
 
+The shipped shell enforces a Content Security Policy through `<meta http-equiv>`: scripts, styles, fonts and ubus
+connections are same-origin, data URLs are allowed only for images, and objects are blocked. Local dynamic layout
+values may use style attributes, but inline script and event-handler attributes are forbidden. The equivalent
+policy should also be sent as an HTTP header by a fronting web server so it is visible to browsers before the
+document is parsed.
+
+Recommended response headers for `/flab/` and its assets:
+
+```text
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+X-Frame-Options: DENY
+```
+
+`frame-ancestors` is valid only in an HTTP response header, so the equivalent meta policy cannot enforce it.
+The package deliberately does not modify an existing uhttpd listener; apply these headers in its site configuration
+or on the trusted reverse proxy that fronts it.
+
 ## Boot and routing (`js/core/app.js`)
 
 - `main.js` calls `initTheme()` then `start()`.
 - Routing is hash based (`#overview`, `#radios`, ...). The first entry in `pages/index.js` is the default.
+  The merged DNS page uses `#dns` for the resolver and `#ddns` for Dynamic DNS, so refresh and browser navigation
+  preserve the selected tab.
 - On every route change the shell rebuilds: navigation pane, command bar (page title, the page's
   persistent controls, "Updated hh:mm:ss" stamp) and a `<main>` results area.
 - `page.load()` fetches data, `page.view(data, rerender)` returns nodes. A `setInterval` repeats
@@ -23,8 +45,10 @@ fallback, but key generation still requires `crypto.getRandomValues`.
   started an edit), so a slow router cannot rebuild a form under the user; an explicit reload (a save, Refresh) is
   always applied.
 - Page CSS (`page.css`) is added once to `<head>` the first time the page opens.
-- The registry contains navigation metadata and dynamic imports. The shell loads the selected page only after sign-in,
-  caches successful imports and rejects stale navigation results; page styles remain loaded on demand.
+- The registry contains the rendered navigation metadata and dynamic imports. The shell uses its label, title and icon
+  as the single source of truth, loads the selected page only after sign-in, caches successful imports and rejects
+  stale navigation results; page styles remain loaded on demand. On narrow screens the navigation becomes a wrapping
+  top bar.
 - An `AuthError` from the shell's load path returns the user to the sign-in screen ("Session expired"); action
   handlers must explicitly trigger that path or display their own session error.
 
@@ -38,9 +62,10 @@ removes that problem:
 - the router's `flab.system build` returns `id`, a hash of every file's path, size, modification time and status-change
   time under `/www/flab`, and `files`, the list of those files;
 - the browser compares `id` with the one in `localStorage` (`flab.build`). When it differs, every file is requested
-  again with `cache: 'reload'`, which replaces the cached copy, the new `id` is stored and, unless this is the first
-  run in this browser, the page reloads so the new code runs. A failed download leaves the stored `id`, so the next
-  start retries; a router that cannot answer leaves the page as it is.
+  again with `cache: 'reload'`, which replaces the cached copy. Each complete response body must finish downloading
+  before the new `id` is stored and, unless this is the first run in this browser, the page reloads so the new code
+  runs. A failed status or interrupted body leaves the stored `id`, so the next start retries; a router that cannot
+  answer leaves the page as it is.
 
 The status-change time moves whenever a file is written, so every install, upgrade and `-Action Sync` is noticed
 even when the size and modification time do not change. Code cached before this check existed cannot run it: after
@@ -81,7 +106,8 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   [UI conventions](#ui-conventions) for `button` and the other shared looks.
 - **`fold.js`**: `disclosure()`, `foldable()` with `chevron()`, and `reveal()`; see [UI conventions](#ui-conventions).
 - **`controls.js`**: `searchControl`, `selectControl`, `tabsControl`, `pauseControl`, `toggleControl`, `refreshControl`
-  bind to a page's `state` object.
+  bind to a page's `state` object. Tab strips expose an ARIA relationship to the page panel and support Left/Right,
+  Home and End keys.
 - **`format.js`**: `fmtBytes`, `fmtBps`, `fmtLine` (bytes per second as Mbit/s), `fmtDur`, `fmtSpan`,
   `fmtNum`, `fmtRate`, `ipNum`. `ip.js` (`parseAddress()`, IPv4 and IPv6 as BigInt) is for comparing addresses.
 - **`forms.js`, `fields.js`, `ops.js`, `editpage.js`**: what the editing pages share (field rows, option
@@ -100,6 +126,8 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   resolves to `null` for data a page can do without (a missing plugin or ACL) but still raises
   `AuthError`. `can(object, method)` answers from the ACLs returned at sign-in (root's `*` allows everything),
   so a page can disable controls the login may not use.
+  `optional()` suppresses only ACL or object/method-unavailable errors. Transport, protocol, timeout and backend
+  failures remain visible instead of looking like an uninstalled optional feature.
   An optional fourth argument supplies `timeoutMs`: native/UCI requests are capped at five seconds, plugin requests
   at 27 seconds, including response-body reads. Backend error details from nonzero ubus results are included in the
   exception with a bounded length. Mutating requests are not retried automatically.
@@ -165,6 +193,12 @@ This is the one place that says how shared UI looks and behaves; the other docs 
   Space) and a click on a control inside it does not toggle. `reveal(el)` opens every closed group and unfolds the card around a
   control, so a control with an error is never hidden. Pages add only container layout (borders, margins, body padding), never
   their own marker, arrow or cursor rules.
+- **Configuration folds.** Routine daemon, service and pool option groups start collapsed. A control group needed to
+  resolve an error is opened automatically, and a user's open/closed choices survive polls. Dialogs may keep the
+  essential first groups open so a new item is usable immediately.
+- **Page composition.** Summary and live status come before editable configuration when the page combines both.
+  Use `page-section-title` to label the transition. Empty states should offer a direct next action (clear filters,
+  add the missing item, open Services, and so on) when one exists.
 - **Notes and banners.** `note(kind, text)` from `core/forms.js` (kinds `bad`, `warn`, `ok`, `info`) for a line about a form or
   an action, `healthBanner(findings, okText)` for what needs attention on a page, `emptyState(text)` when a page has nothing to
   list, and `badge` kinds `success`, `warning`, `danger` and `info` for status pills.

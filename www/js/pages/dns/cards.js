@@ -120,7 +120,7 @@ export function resolverCard(data, edit) {
   const port = data.engines?.[e]?.port;
   const state = badge(`${engineName(e)} ${running ? 'running' : 'not running'}`, running ? 'success' : 'danger',
     running ? `${engineName(e)} is running${port ? ` and answers on port ${port}` : ''}.` : `${engineName(e)} is configured but not running, so nothing answers DNS queries from it.`);
-  return card([icon('broadcast'), 'Configuration', state, h('span', { className: 'sub' }, `${file} · ${listening}`)],
+  return card([icon('gear'), 'Configuration', state, h('span', { className: 'sub' }, `${file} · ${listening}`)],
     configPart(data, e, file, edit, chips));
 }
 

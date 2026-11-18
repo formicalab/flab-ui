@@ -44,11 +44,11 @@ export const GLOBAL_FIELDS = [
     hint: 'The identity this router presents to DHCPv6 clients, in hexadecimal; empty lets odhcpd choose one. Stored in /etc/config/network. Clients that remember the old one may ask for their leases again.' },
 ];
 
-// The groups of a pool's options, in order. `open` groups are expanded by default.
+// The groups of a pool's options, in order. They start collapsed so the pool summary remains prominent.
 export const POOL_GROUPS = [
-  { id: 'service', title: 'Services', open: true,
+  { id: 'service', title: 'Services',
     legend: 'Which services this interface offers to its clients: DHCPv4, DHCPv6, router advertisements (RA) and the neighbor discovery proxy (NDP).' },
-  { id: 'v4', title: 'DHCPv4 pool and options', open: true,
+  { id: 'v4', title: 'DHCPv4 pool and options',
     legend: 'The address range is counted from the start of the interface\'s subnet: start 128 and limit 120 on 192.168.1.0/24 serve .128 to .247. The options below are announced to clients; an empty list means the router\'s own address.' },
   { id: 'v6', title: 'DHCPv6', legend: 'Stateful addressing (IA_NA), prefix delegation (IA_PD) and relaying.' },
   { id: 'ra', title: 'Router advertisements', legend: 'What the IPv6 router advertisements tell clients: whether to use SLAAC or DHCPv6, lifetimes, timers and the route preference.' },

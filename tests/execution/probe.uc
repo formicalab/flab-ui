@@ -2,7 +2,9 @@
 
 import { command_result, begin_budget } from 'flab.exec';
 import { launch_job, MAX_JOB_OUTPUT } from 'flab.jobs';
-import { stat, readfile } from 'fs';
+import { command_line, int_in, valid_host } from 'flab.diag-validation';
+import { read_job } from 'flab.diag-jobs';
+import { mkdir, readfile, stat, writefile } from 'fs';
 import { safe_ifname, one_line } from 'flab.util';
 
 let out = {};
@@ -17,7 +19,18 @@ out.validators = {
 	line_newline: one_line('1.1.1.1\nid'),
 	line_cr: one_line('1.1.1.1\rid'),
 	line_null: one_line(null),
+	host: valid_host('router.example'),
+	host_option: valid_host('-bad.example'),
+	number: int_in('12', 1, 20, 5),
+	number_bad: int_in('12x', 1, 20, 5),
+	command: command_line(['ping', '-c', 3, 'router.example']),
+	command_refuses_line: command_line(['ping', '127.0.0.1\nid']) == null,
 };
+mkdir(`${getenv('FLAB_JOB_DIR')}/abcdef123456`);
+writefile(`${getenv('FLAB_JOB_DIR')}/abcdef123456/out`, "first\nsecond\n");
+writefile(`${getenv('FLAB_JOB_DIR')}/abcdef123456/rc`, '0\n');
+out.job_read = read_job(getenv('FLAB_JOB_DIR'), 'abcdef123456', 0, 64, 262144);
+out.job_bad_id = read_job(getenv('FLAB_JOB_DIR'), '../../etc', 0, 64, 262144);
 out.empty = command_result('exit 0');
 out.failure = command_result('printf failed; exit 7');
 out.timeout = command_result('sleep 4', { timeout: 1 });

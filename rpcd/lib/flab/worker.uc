@@ -5,6 +5,7 @@
 // gets { args } and returns the reply object; throwing is turned into { error: ... }. See docs/backend.md.
 import { task, timer } from 'uloop';
 import { STATUS_NO_DATA, STATUS_TIMEOUT, STATUS_NO_MEMORY, STATUS_UNKNOWN_ERROR } from 'ubus';
+import { lsdir, mkdir, rmdir, stat } from 'fs';
 import { begin_budget } from 'flab.exec';
 
 // Seconds; stay below rpcd's default 30-second request timeout, including cleanup. The commands of one request share
@@ -14,6 +15,27 @@ const DEADLINE = 24;
 const MAX_REPLY = 1048576;
 // One bounded pool per plugin module, shared by its requests; excess calls fail instead of queueing.
 const MAX_WORKERS = 4;
+// Process-wide guard across independently loaded plugin modules. A router polling many pages must not create
+// four forks per plugin at once.
+const MAX_TOTAL_WORKERS = 8;
+const SLOT_ROOT = '/tmp/flab-workers';
+
+// Reserves one of the process-wide worker slots using an atomic mkdir. A slot cannot outlive the worker's
+// 24-second deadline; older directories are leftovers from a process crash and may be reclaimed.
+function reserve_worker_slot() {
+	mkdir(SLOT_ROOT, 0700);
+	for (let name in lsdir(SLOT_ROOT) ?? []) {
+		let info = stat(`${SLOT_ROOT}/${name}`);
+		if (match(name, /^[0-9]+$/) && info && time() - info.mtime > DEADLINE + 5)
+			rmdir(`${SLOT_ROOT}/${name}`);
+	}
+	for (let slot = 0; slot < MAX_TOTAL_WORKERS; slot++) {
+		let path = `${SLOT_ROOT}/${slot}`;
+		if (mkdir(path, 0700))
+			return path;
+	}
+	return null;
+};
 // Methods that change something on the router (start or stop a service, wake a host, run a test): at most one per object at a
 // time, a second one is refused while the first runs.
 const MUTATING = [ 'control', 'start', 'stop', 'wake', 'cable_test', 'wps' ];
@@ -35,6 +57,11 @@ export function deferred(objects) {
 					request.reply({ error: 'This object is busy. Try again shortly.' }, STATUS_UNKNOWN_ERROR);
 					return null;
 				}
+				let slot = reserve_worker_slot();
+				if (slot == null) {
+					request.reply({ error: 'The backend worker budget is busy. Try again shortly.' }, STATUS_UNKNOWN_ERROR);
+					return null;
+				}
 				let args = request.args;
 				let pending = request.defer();
 				let finished = false, guard, child;
@@ -43,6 +70,7 @@ export function deferred(objects) {
 						return;
 					finished = true;
 					active--;
+					rmdir(slot);
 					if (mutating)
 						delete mutations[object_name];
 					guard?.cancel();

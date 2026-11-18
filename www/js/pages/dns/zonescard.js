@@ -181,5 +181,5 @@ export function zonesCard(data, state, edit) {
     h('div', { className: 'dns-top' }, zoneList(data, state, engine, edit, act, () => dialogFor(null))),
   ];
   const sub = `${engineName(engine)} · ${fmtNum(items.length)} zone${items.length === 1 ? '' : 's'} · ${fmtNum(domains)} domain${domains === 1 ? '' : 's'}${data.truncated?.forwards ? ' (cut)' : ''}${wan ? ` · ${wan}` : ''}`;
-  return foldCard(state, 'zones', [icon('signpost-split'), 'Zones', h('span', { className: 'sub' }, sub)], h('div', {}, body));
+  return foldCard(state, 'zones', [icon('list-ul'), 'Zones', h('span', { className: 'sub' }, sub)], h('div', {}, body));
 }

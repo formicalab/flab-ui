@@ -87,8 +87,9 @@ export function sparkline(series, { width = 160, height = 36, max: fixedMax } = 
   return svg;
 }
 
-// A card holding one muted sentence, shown when a page has nothing to list.
-export const emptyState = text => h('div', { className: 'card' }, h('div', { className: 'card-body muted' }, text));
+// A card holding one muted sentence and an optional next action, shown when a page has nothing to list.
+export const emptyState = (text, action = null) =>
+  h('div', { className: 'card' }, h('div', { className: 'empty-state card-body' }, h('div', { className: 'muted' }, text), action));
 
 // A banner listing what needs attention ({ level: 'bad' | 'warn' | 'info', text }), or a green all-clear.
 export function healthBanner(list, okText) {

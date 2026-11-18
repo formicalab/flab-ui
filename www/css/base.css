@@ -94,7 +94,6 @@ small, .small { font-size: .8rem; }
   content: ""; position: absolute; left: 0; top: 25%; bottom: 25%; width: 3px; border-radius: 2px; background: var(--fl-brand);
 }
 .nav-spacer { flex: 1; }
-
 /* Content column and sticky command bar (page title, search box, filters and action buttons) */
 .content { min-width: 0; display: flex; flex-direction: column; }
 .cmdbar {
@@ -104,6 +103,10 @@ small, .small { font-size: .8rem; }
 }
 .cmdbar h1 { font-size: 1.2rem; font-weight: 600; margin: 0 auto 0 0; }
 .cmdbar .form-control, .cmdbar .form-select { width: auto; min-width: 11rem; }
+.cmdbar .seg { order: 1; }
+.cmdbar .search, .cmdbar .form-select { order: 2; }
+.cmdbar .cmd-pause, .cmdbar .cmd-refresh { order: 3; margin-left: auto; }
+.cmdbar .cmd-refresh + .small { margin-left: 0; }
 .search { position: relative; }
 .search svg { position: absolute; left: .6rem; top: 50%; transform: translateY(-50%); color: var(--fl-muted); pointer-events: none; }
 .search input { padding-left: 2rem; }
@@ -116,6 +119,8 @@ small, .small { font-size: .8rem; }
 .seg-tab.active { background: var(--fl-brand); color: #fff; }
 /* Page body: vertical stack of the page's cards */
 main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
+.page-section-title { display: flex; align-items: center; gap: .55rem; margin: .2rem 0 -.45rem; font-size: 1rem; color: var(--fl-muted); }
+.page-section-title svg { color: var(--fl-brand); }
 
 /* ── Surfaces: cards and summary tiles ── */
 .card { background: var(--fl-surface); border: 1px solid var(--fl-stroke); border-radius: 8px; box-shadow: var(--fl-shadow); --bs-card-cap-bg: transparent; }
@@ -126,6 +131,7 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
 .tile .label { color: var(--fl-muted); font-size: .8rem; }
 .tile .value { font-size: 1.75rem; font-weight: 600; line-height: 1.2; }
 .tile .sub { color: var(--fl-muted); font-size: .75rem; }
+.empty-state { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 
 /* ── Buttons and form controls ── */
 .btn { border-radius: 4px; }
@@ -330,7 +336,7 @@ details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
   .login-motif circle, .login-card, .login-error { animation: none; }
 }
 
-/* App shell on narrow screens: navigation pane becomes a wrapping top bar above a single content column */
+/* App shell on narrow screens: navigation becomes a wrapping top bar above a single content column. */
 @media (max-width: 767.98px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .nav-pane { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: .5rem; border-right: 0; border-bottom: 1px solid var(--fl-stroke); }
@@ -338,6 +344,10 @@ details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
   .nav-link-fl { width: auto; }
   .nav-spacer { display: none; }
   .cmdbar, main { padding-left: 1rem; padding-right: 1rem; }
+  .cmdbar h1 { flex: 1 0 100%; }
+  .cmdbar .search { flex: 1 1 12rem; }
+  .cmdbar .search input { width: 100%; }
+  .cmdbar .form-select { min-width: 9rem; }
 }
 
 /* Dialogs (core/modal.js): Bootstrap's modal markup on a native <dialog>. `.modal` already makes it fill the viewport and scroll, and

@@ -55,10 +55,10 @@ export const DEVICE_TYPES = [
 
 // The groups of an interface card, in order: id, title, an explanation, and whether the group starts open.
 export const IFACE_GROUPS = [
-  { id: 'general', title: 'Interface', open: true, legend: 'The protocol, the device the interface is bound to and whether it comes up at boot.' },
-  { id: 'ipv4', title: 'IPv4 address', open: true, legend: 'The addresses of a static interface. An address may carry its prefix length (192.168.1.1/24); the netmask below completes the ones that do not.' },
+  { id: 'general', title: 'Interface', legend: 'The protocol, the device the interface is bound to and whether it comes up at boot.' },
+  { id: 'ipv4', title: 'IPv4 address', legend: 'The addresses of a static interface. An address may carry its prefix length (192.168.1.1/24); the netmask below completes the ones that do not.' },
   { id: 'ipv6', title: 'IPv6 address and prefixes', legend: 'A static IPv6 address and gateway, and how this interface takes part in prefix delegation: a downstream interface asks for a share (ip6assign) of the prefix an upstream interface received.' },
-  { id: 'pppoe', title: 'PPPoE login', open: true, legend: 'The account the provider gave you. The password is never shown here; leave it empty to keep the stored one.' },
+  { id: 'pppoe', title: 'PPPoE login', legend: 'The account the provider gave you. The password is never shown here; leave it empty to keep the stored one.' },
   { id: 'dhcp', title: 'DHCP client options', legend: 'What the DHCP client sends to the server and asks it for. Providers that check the client identity may need these.' },
   { id: 'dhcpv6', title: 'DHCPv6 client options', legend: 'How the DHCPv6 client asks the provider for an address and a prefix.' },
   { id: 'dns', title: 'DNS and default route', legend: 'The resolvers the router itself uses for this interface, and whether the interface installs the default route.' },
@@ -191,7 +191,7 @@ export const IFACE_FIELDS = [
 
 // The groups of a device card, in order.
 export const DEVICE_GROUPS = [
-  { id: 'general', title: 'Device', open: true, legend: 'What the device is and the ports it joins.' },
+  { id: 'general', title: 'Device', legend: 'What the device is and the ports it joins.' },
   { id: 'stp', title: 'Spanning tree and aging', legend: 'Spanning tree prevents loops between bridges; the timers only matter when it is on.' },
   { id: 'multicast', title: 'Multicast', legend: 'IGMP snooping sends multicast only to the ports that asked for it. The intervals are in hundredths of a second.' },
   { id: 'link', title: 'Link', legend: 'Forced link parameters of the port. Leave them empty to let the port negotiate.' },

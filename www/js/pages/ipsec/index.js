@@ -4,7 +4,7 @@
 // poll goes through record() before the data is rendered. `compact` hides the per-connection details.
 import { h } from '../../core/dom.js';
 import { ubus } from '../../core/ubus.js';
-import { tile, tiles, emptyState, GRADE_KIND } from '../../core/ui.js';
+import { tile, tiles, emptyState, GRADE_KIND, button } from '../../core/ui.js';
 import { searchControl, selectControl, pauseControl, refreshControl, toggleControl } from '../../core/controls.js';
 import { fmtBps, fmtBytes, fmtSpan } from '../../core/format.js';
 import { record, series, latest } from './rates.js';
@@ -82,7 +82,7 @@ export default {
 
   // Connections matching the state filter and every search term (name, state, remote addresses, remote
   // ID or child names) are shown; the scoring explanation sits above them, the daemon card below.
-  view(data) {
+  view(data, rerender) {
     const q = state.q.toLowerCase();
     // Connections matching the state filter and every search term.
     const shown = data.connections.filter(c => {
@@ -98,7 +98,11 @@ export default {
       scoringCard(),
       shown.length
         ? h('div', { className: `vpn-grid ${state.compact ? 'compact' : ''}` }, shown.map(c => connectionCard(c, { compact: state.compact })))
-        : emptyState(data.connections.length ? 'No connection matches the filter.' : 'No IPsec connections are configured.'),
+        : emptyState(
+          data.connections.length ? 'No connection matches the filter.' : 'No IPsec connections are configured.',
+          data.connections.length && (state.q || state.filter !== 'all')
+            ? button('Clear filters', 'x-lg', () => { state.q = ''; state.filter = 'all'; rerender(); })
+            : null),
       daemonCard(data.daemon),
     ];
   },

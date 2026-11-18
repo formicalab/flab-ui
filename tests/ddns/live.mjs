@@ -199,8 +199,9 @@ const refresh = async () => { await page.click('button:has-text("Refresh")'); aw
 //#region Navigation and the real router (read only)
 console.log('== navigation ==');
 const nav = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
-check(nav.indexOf('Dynamic DNS') === nav.indexOf('DNS') + 1, 'Dynamic DNS sits right after DNS', nav.join(' | '));
-check((await page.locator('.cmdbar h1').innerText()).trim() === 'Dynamic DNS · ddns-scripts', 'the page title');
+check(!nav.includes('Dynamic DNS') && nav.includes('DNS'), 'Dynamic DNS is part of the DNS navigation entry', nav.join(' | '));
+check((await page.locator('.cmdbar h1').innerText()).trim() === 'DNS', 'the combined page title');
+check((await page.getByRole('tab', { name: 'Dynamic DNS' }).getAttribute('aria-selected')) === 'true', 'the compatibility route selects Dynamic DNS');
 
 console.log('\n== the real router (read only, nothing is written or run) ==');
 const real = await page.evaluate(async () => {

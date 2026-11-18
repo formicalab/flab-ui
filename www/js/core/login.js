@@ -24,14 +24,6 @@ const MOTIF = `<svg viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice" a
   <g class="nodes">${NODES.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 3 === 0 ? 7 : 5}" style="animation-delay:${(i * 0.7).toFixed(1)}s"/>`).join('')}</g>
 </svg>`;
 
-const FEATURES = [
-  ['ethernet', 'Ports, bridges and VLANs'],
-  ['wifi', 'Wi-Fi radios and mesh'],
-  ['lock', 'IPsec and WireGuard VPN'],
-  ['shield-check', 'Firewall zones and rules'],
-  ['globe2', 'BGP routing'],
-];
-
 // Static markup only (the strings above), never router data.
 const svgBox = (cls, markup) => {
   const el = h('div', { className: cls });
@@ -81,10 +73,9 @@ export function showLogin(onSuccess, message) {
 
   const hero = h('div', { className: 'login-hero' },
     svgBox('login-logo', LOGO),
-    h('h2', {}, 'Router'),
+    h('h2', {}, 'OpenWrt'),
     h('div', { className: 'login-host' }, icon('hdd-stack', 14), location.hostname || 'this router'),
-    h('p', {}, 'Live status of every layer, from the ports up.'),
-    h('ul', {}, FEATURES.map(([name, text]) => h('li', {}, icon(name, 18), text))));
+    h('p', {}, 'Live status of every layer, from the ports up.'));
 
   byId('app').replaceChildren(h('div', { className: 'login' },
     svgBox('login-motif', MOTIF),

@@ -81,7 +81,7 @@ export function poolCard(ctx, pool) {
         { disabled: !ctx.canEdit, title: `Stop serving ${pool.iface} and delete this pool` }));
   const state = pool.isNew ? badge('new', 'info', 'not saved yet') : off ? badge('to be removed', 'danger') : null;
   const el = card(
-    [chevron(), icon('signpost-split'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, state, h('span', { className: 'sub' }, describe(ctx, pool))],
+    [chevron(), icon('list-ul'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, state, h('span', { className: 'sub' }, describe(ctx, pool))],
     h('div', { className: `card-body dhcp-groups${off ? ' dhcp-removed-pool' : ''}` }, actions, groups, extraOptions(pool.extra, '/etc/config/dhcp')),
     pool.isNew ? 'dhcp-new-pool' : '');
   return foldCard(el, pool.section);
@@ -107,7 +107,7 @@ export function daemonCard(ctx) {
   const running = ctx.data.daemonRunning;
   const d = ctx.draft.daemon;
   const el = card(
-    [chevron(), icon('hdd-stack'), h('span', {}, 'odhcpd daemon'),
+    [chevron(), icon('gear'), h('span', {}, 'odhcpd daemon'),
       running == null ? muted('state not available') : badge(running ? 'running' : 'not running', running ? 'success' : 'danger'),
       h('span', { className: 'sub' }, `${d.maindhcp ? 'main DHCPv4 server' : 'not the main DHCPv4 server'} · log level ${d.loglevel === '' ? `${DAEMON_FIELDS.find(f => f.key === 'loglevel').default} (default)` : d.loglevel}`)],
     h('div', {},

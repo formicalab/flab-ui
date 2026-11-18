@@ -115,6 +115,11 @@ Shared modules (`rpcd/lib/flab/`, imported as `flab.util`, `flab.vici`, `flab.ex
 - **Worker state.** A worker is a fork snapshot, not a persistent service. Module-local provider, hardware/EEE
   and cable-support caches are request-scoped in production and are not merged back into rpcd. This trades more
   repeated discovery work for isolation and responsiveness; test memory and polling cost on smaller devices.
+  Each plugin module still has a four-worker cap, and `flab.worker` also keeps a process-wide eight-worker budget
+  across all plugin modules so concurrent pages cannot multiply the fork count without bound.
+- **Diagnostic helpers.** `flab.diag-validation` owns the request validators and safe command-line quoting, while
+  `flab.diag-jobs` owns job IDs, state, bounded reads/downloads, retention and stop checks. `flab.diag` keeps the
+  tool-specific command builders and output parsers.
 - **Diagnostic storage.** Output-file and retained browser text are each capped at 256 KiB, independently of the
   64 KiB read chunks. Reaching the job limit terminates the producer and reports the cap explicitly. Cleanup of old
   finished jobs runs on another start request, not from a periodic timer.

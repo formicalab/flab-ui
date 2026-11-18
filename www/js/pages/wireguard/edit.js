@@ -5,6 +5,7 @@
 import { h } from '../../core/dom.js';
 import { copyButton } from '../../core/clipboard.js';
 import { disclosure } from '../../core/fold.js';
+import { icon } from '../../core/icons.js';
 import { openDialog } from '../../core/modal.js';
 import { button } from '../../core/ui.js';
 import { fieldRow } from '../../core/forms.js';
@@ -104,7 +105,7 @@ export function interfaceForm(ctx, item) {
   const privateKey = IFACE_FIELDS.find(f => f.secret);
   if (item.isNew) opened.add(key);
   return disclosure({
-    cls: 'fl-disclosure-bar wg-panel', summary: 'Interface settings', open: opened.has(key),
+    cls: 'fl-disclosure-bar wg-panel', summary: [icon('gear'), 'Interface settings'], open: opened.has(key),
     onToggle: open => { if (open) opened.add(key); else opened.delete(key); },
     body: h('div', { className: 'wg-panel-body' },
       item.isNew ? nameControl(ctx, item) : null,

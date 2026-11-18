@@ -210,7 +210,7 @@ const refresh = async () => { await page.click('button:has-text("Refresh")'); aw
 //#region Navigation and the real router (read only)
 console.log('== navigation ==');
 const nav = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
-check(nav.indexOf('DHCP') === nav.indexOf('Firewall') + 1 && nav.indexOf('DNS') === nav.indexOf('DHCP') + 1 && nav.indexOf('Dynamic DNS') === nav.indexOf('DNS') + 1 && nav.indexOf('Devices and Interfaces') === nav.indexOf('Dynamic DNS') + 1, 'DHCP sits after Firewall, then DNS and Dynamic DNS, before the Devices and Interfaces recap', nav.join(' | '));
+check(nav.indexOf('Devices and Interfaces') === nav.indexOf('VPN: WireGuard') + 1 && nav.indexOf('DHCP') === nav.indexOf('Devices and Interfaces') + 1 && nav.indexOf('DNS') === nav.indexOf('DHCP') + 1, 'Devices and Interfaces follows the VPN pages and precedes DHCP and the combined DNS page', nav.join(' | '));
 check((await page.locator('.cmdbar h1').innerText()).trim() === 'DHCP and router advertisements · odhcpd', 'the page title');
 
 console.log('\n== the real router (read only, nothing is written) ==');

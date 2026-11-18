@@ -247,7 +247,7 @@ export function serviceCard(ctx, svc) {
         { disabled: !ctx.canEdit, title: `Stop updating ${svc.name} and delete this service` }));
   const state = svc.isNew ? badge('new', 'info', 'not saved yet') : off ? badge('to be removed', 'danger') : badge(verdict.text, VERDICT[verdict.kind][0], verdict.detail);
   const el = card(
-    [chevron(), icon('globe2'), h('span', {}, svc.name || 'New service'), state, h('span', { className: 'sub' }, describe(ctx, svc))],
+    [chevron(), icon('gear'), h('span', {}, svc.name || 'New service'), state, h('span', { className: 'sub' }, describe(ctx, svc))],
     h('div', { className: `card-body ddns-groups${off ? ' ddns-removed' : ''}` },
       svc.isNew ? nameControl(ctx, svc) : null,
       !svc.isNew && !off ? statusBlock(ctx, svc) : null,

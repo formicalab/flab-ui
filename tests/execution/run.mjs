@@ -24,6 +24,13 @@ const failure = (method, pattern) => {
   assert.match(r.stdout, pattern, `${method} must also carry a useful error payload`);
   return JSON.parse(r.stdout);
 };
+const failureFor = (object, method, pattern) => {
+  const r = spawnSync('ssh', [router, `ubus -s ${jail}/run/bus -t 28 call ${object} ${method}`], { encoding: 'utf8' });
+  if (r.error) throw r.error;
+  assert.notEqual(r.status, 0, `${object}.${method} must fail at the ubus transport level`);
+  assert.match(r.stdout, pattern, `${object}.${method} must carry a useful error payload`);
+  return JSON.parse(r.stdout);
+};
 const pending = method => new Promise((resolve, reject) => {
   const p = spawn('ssh', [router, `ubus -s ${jail}/run/bus -t 28 call flab.execution-test ${method}`]);
   let text = '', error = '';
@@ -70,7 +77,7 @@ cd ${remote}
 for f in rpcd/ucode/*.uc; do ucode -L "${remote}/rpcd/lib/*.uc" -c -o /dev/null "$f"; done
 mkdir job stream
 FLAB_JOB_DIR=${remote}/job FLAB_STREAM_DIR=${remote}/stream ucode -L "${remote}/rpcd/lib/*.uc" tests/execution/probe.uc >probe.json
-mkdir -p root/bin root/sbin root/usr/bin root/usr/lib/ucode root/usr/share/rpcd/ucode root/usr/share/ucode/flab root/lib root/dev root/run root/etc
+mkdir -p root/bin root/sbin root/usr/bin root/usr/lib/ucode root/usr/share/rpcd/ucode root/usr/share/ucode/flab root/lib root/dev root/run root/tmp root/etc
 printf 'root:x:0:0:Test:/root:/bin/sh\\n' >root/etc/passwd
 printf 'root:x:0:\\n' >root/etc/group
 cp -L /bin/busybox root/bin/
@@ -103,7 +110,12 @@ chroot ${jail} /sbin/rpcd -s /run/bus -t 30 >rpcd.log 2>&1 & echo $! >rpcd.pid
   assert.deepEqual(native.validators, {
     ifname: true, ifname_newline: false, ifname_cr: false, ifname_empty: false, ifname_number: false,
     line: true, line_newline: false, line_cr: false, line_null: false,
+    host: true, host_option: false, number: 12, number_bad: null,
+    command: 'ping -c 3 router.example', command_refuses_line: true,
   }, 'a value with a line break must fail the helper validators, whose ^...$ patterns only see the first line');
+  assert.deepEqual(native.job_bad_id, { ok: false, error: 'There is no such job.' });
+  assert.equal(native.job_read.text, "first\nsecond\n");
+  assert.equal(native.job_read.ok, true);
   assert.equal(native.job.size, native.job.max);
   assert.equal(native.job.limited, true);
   assert.notEqual(native.job.code, '');
@@ -165,6 +177,27 @@ chroot ${jail} /sbin/rpcd -s /run/bus -t 30 >rpcd.log 2>&1 & echo $! >rpcd.pid
   await new Promise(resolve => setTimeout(resolve, 300));
   failure('sleep', /busy/);
   assert.ok((await Promise.all(crowded)).every(r => r.ok));
+  // Start all eight calls from one SSH connection: several independent ssh handshakes trip dropbear's
+  // connection limit before they test the rpcd worker budget.
+  const concurrent = new Promise((resolve, reject) => {
+    const script = `set -e
+mkdir -p ${remote}/workers
+pids=
+for i in 0 1 2 3; do
+  ubus -s ${jail}/run/bus -t 28 call flab.execution-test sleep >${remote}/workers/a$i.json & pids="$pids $!"
+  ubus -s ${jail}/run/bus -t 28 call flab.execution-other sleep >${remote}/workers/b$i.json & pids="$pids $!"
+done
+for p in $pids; do wait "$p"; done
+cat ${remote}/workers/*.json`;
+    const p = spawn('ssh', [router, script]);
+    let out = '', error = '';
+    p.stdout.on('data', b => out += b);
+    p.stderr.on('data', b => error += b);
+    p.on('close', code => code ? reject(new Error(`concurrent workers failed ${code}: ${error || out}`)) : resolve(out));
+  });
+  await new Promise(resolve => setTimeout(resolve, 800));
+  failureFor('flab.execution-third', 'sleep', /busy/);
+  assert.equal((await concurrent).match(/"output":/g)?.length, 8);
   const timeoutAt = performance.now();
   assert.equal(failure('deadline', /timed out/).timed_out, true);
   assert.ok(performance.now() - timeoutAt < 27000, 'worker deadline must precede rpcd timeout');

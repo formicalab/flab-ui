@@ -106,7 +106,9 @@ function protocolsCard(l7) {
 // The nodes of the Usage tab. `data` is { status, periods, period, hosts, l7 } as loaded by the page; the tab is not
 // offered without nlbw, but a poll can still arrive after nlbw was removed, so that case has its own message.
 export function usageView(data, state, rerender) {
-  if (!data.status?.nlbw) return [emptyState('nlbw is not installed on this router, so per-host usage is not available.')];
+  if (!data.status?.nlbw) return [emptyState(
+    'nlbw is not installed on this router, so per-host usage is not available.',
+    h('a', { href: '#services', className: 'btn btn-sm btn-fl' }, 'Open Services'))];
   const findings = usageFindings(data.status, data.hosts);
   if (!data.periods?.running || !data.hosts?.ok) return [healthBanner(findings, ''), note()];
   const hosts = mergeHosts(data.hosts.rows, data.hosts.names);

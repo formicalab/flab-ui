@@ -18,8 +18,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | WireGuard | Interfaces and peers; edit them. |
 | Firewall | Zones, rules and port forwards with live nftables counters; edit them. |
 | DHCP | odhcpd and dnsmasq leases, reservations and pools; edit them. |
-| DNS | Unbound or dnsmasq state, options and zones; edit them. |
-| Dynamic DNS | ddns-scripts services, status and logs; edit them. |
+| DNS | Resolver status, options and zones in one tab; ddns-scripts services, status and logs in another tab. |
 | Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. A second view lists the connected Wi-Fi clients. The ports and the radios open their own pages. |
 | Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |
 | Traffic | Bandwidth, connections and nlbwmon usage; edit the nlbwmon settings. |
@@ -51,7 +50,9 @@ It targets apk-based OpenWrt (a snapshot, or a release built with apk). To build
 
 The router must already serve `/www` and `/ubus` through uhttpd. Configure HTTPS, its certificate and an HTTP-to-HTTPS
 redirect before signing in; flab-ui does not configure TLS or firewall access. Manage it from a trusted LAN or VPN,
-not an exposed WAN port.
+not an exposed WAN port. The page enforces a restrictive same-origin Content Security Policy; a reverse proxy or
+uhttpd header configuration should additionally send the policy and the other security headers described in the
+[frontend documentation](docs/frontend.md).
 
 Installing reloads `rpcd`, so no reboot is needed. Then open `https://<router>/flab/` and sign in as `root` with the
 router's root password. Do not install or remove the package during a configuration apply. To remove it:

@@ -30,5 +30,15 @@ let methods = deferred({
 		cable_test: { call: () => ({ ok: true }) },
 	},
 });
+let other = deferred({
+	'flab.execution-other': {
+		sleep: { call: () => command_result('sleep 2; printf other') },
+	},
+	'flab.execution-third': {
+		sleep: { call: () => command_result('sleep 2; printf third') },
+	},
+});
+for (let object, handlers in other)
+	methods[object] = handlers;
 methods['flab.execution-test'].pulse = { call: () => ({ ticks }) };
 return methods;

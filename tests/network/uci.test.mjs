@@ -11,7 +11,7 @@ globalThis.sessionStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v
 // Dynamically imports a module from www/js/core, after the sessionStorage stand-in above is in place.
 const core = f => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/core', f)).href);
 const { createUci, APPLY_TIMEOUT_S } = await core('uci.js');
-const { can, optional, AuthError, login, clearSession, ubus, REQUEST_TIMEOUT_MS, PLUGIN_REQUEST_TIMEOUT_MS } = await core('ubus.js');
+const { can, optional, AuthError, AccessError, UnavailableError, login, clearSession, ubus, REQUEST_TIMEOUT_MS, PLUGIN_REQUEST_TIMEOUT_MS } = await core('ubus.js');
 
 let failed = 0;
 // Prints PASS/FAIL for one condition (with detail on failure) and counts failures for the exit code.
@@ -232,6 +232,12 @@ globalThis.fetch = async (_, options) => {
 };
 error = await caught(() => ubus('uci', 'apply', {}));
 check(!(error instanceof AuthError) && /cannot be reached/.test(error?.message), 'an unreachable session probe is not falsely reported as a confirmed expiry', error?.message);
+reply([3]);
+error = await caught(() => ubus('flab.optional', 'status'));
+check(error instanceof UnavailableError, 'a missing ubus method is classified as unavailable');
+reply([9, { error: 'worker failed' }]);
+error = await caught(() => ubus('flab.optional', 'status'));
+check(!(error instanceof UnavailableError) && /worker failed/.test(error?.message), 'an ordinary worker failure is not classified as unavailable', error?.message);
 
 console.log('== transport: explicit deadlines, including stalled response bodies ==');
 const realSetTimeout = globalThis.setTimeout;
@@ -277,7 +283,13 @@ for (const timeoutMs of [0, -1, Infinity, NaN]) {
 globalThis.fetch = real;
 
 console.log('== optional() ==');
-check(await optional(Promise.reject(new Error('plugin missing'))) === null && await optional(Promise.resolve(5)) === 5, 'a failed optional call gives null, a good one its value');
+check(await optional(Promise.reject(new AccessError('not granted'))) === null
+  && await optional(Promise.reject(new UnavailableError('plugin missing'))) === null
+  && await optional(Promise.resolve(5)) === 5,
+  'only unavailable optional calls give null; successful calls keep their value');
+let backendFailure = false;
+try { await optional(Promise.reject(new Error('worker failed'))); } catch (e) { backendFailure = e.message === 'worker failed'; }
+check(backendFailure, 'an ordinary backend failure remains visible instead of looking like a missing optional feature');
 let raised = false;
 try { await optional(Promise.reject(new AuthError('Session expired'))); } catch (e) { raised = e instanceof AuthError; }
 check(raised, 'an expired session is still raised, so the page returns to sign-in');

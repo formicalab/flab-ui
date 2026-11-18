@@ -95,7 +95,7 @@ const countryError = v => (/^[A-Z0-9]{2}$/.test(v) ? null : 'must be a two-lette
 
 // The groups of a radio's settings, in order: id, title, whether the group starts open and an explanation.
 export const RADIO_GROUPS = [
-  { id: 'general', title: 'Radio', open: true, legend: 'Whether the radio is on, the generation and width it runs, which channels automatic selection may use, where it is (the country decides the channels and the power) and how strong it transmits. The channel is chosen with the tiles under these options.' },
+  { id: 'general', title: 'Radio', legend: 'Whether the radio is on, the generation and width it runs, which channels automatic selection may use, where it is (the country decides the channels and the power) and how strong it transmits. The channel is chosen with the tiles under these options.' },
   { id: 'rates', title: 'Rates and coexistence', legend: 'Which data rates the radio offers and how it behaves next to neighbors. Prefer the cell density to the explicit rate lists.' },
   { id: 'advanced', title: 'Advanced', legend: 'Rarely needed. The defaults suit almost every setup. Not every option is used by every driver: the OpenWrt documentation says which ones a chipset reads.' },
 ];
@@ -167,9 +167,9 @@ export const RADIO_FIELDS = [
 
 // The groups of a wireless network's settings, in order.
 export const IFACE_GROUPS = [
-  { id: 'basic', title: 'Network', open: true, legend: 'The name, the networks it is attached to and how it is protected.' },
+  { id: 'basic', title: 'Network', legend: 'The name, the networks it is attached to and how it is protected.' },
   { id: 'mesh', title: 'Mesh options', legend: 'What the wireless configuration can pass to a mesh point. The mesh parameters (forwarding, RSSI threshold, HWMP root mode and the rest) are not among them; the ones in force are listed with the interface.' },
-  { id: 'enterprise', title: 'Enterprise authentication', open: true, legend: 'WPA-Enterprise authenticates each user instead of using one shared password: an access point asks a RADIUS server, a client proves itself with EAP.' },
+  { id: 'enterprise', title: 'Enterprise authentication', legend: 'WPA-Enterprise authenticates each user instead of using one shared password: an access point asks a RADIUS server, a client proves itself with EAP.' },
   { id: 'security', title: 'Security options', legend: 'Protected management frames, SAE and WPS.' },
   { id: 'clients', title: 'Clients and traffic', legend: 'Who may connect, how many, and how traffic is handled.' },
   { id: 'roaming', title: 'Roaming (802.11r, k, v)', legend: 'Features that help clients move between access points of the same network. The access points must agree on them, and the 802.11k and r features need the full hostapd (wpad), not the basic one.' },

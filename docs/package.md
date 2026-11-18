@@ -12,11 +12,17 @@ merged into [openwrt/packages](https://github.com/openwrt/packages)) installs:
 | `rpcd/ucode/*.uc` | `/usr/share/rpcd/ucode/` |
 | `rpcd/acl.d/*.json` | `/usr/share/rpcd/acl.d/` |
 | `rpcd/lib/flab/*.uc` | `/usr/share/ucode/flab/` |
+| `admin/flab-ui/files/.../acl.d/*.json` in the packages checkout | `/usr/share/rpcd/acl.d/` |
 
 It depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`, `ucode-mod-fs`, `ucode-mod-ubus`, `ucode-mod-uci`, `ucode-mod-uloop`, `uhttpd` and
 `uhttpd-mod-ubus`. The programs the pages read from (`swanctl`, `birdc`, `wg`, `nft`, `iw`, `nlbw`, ...) are optional
 runtime tools, not dependencies: install the ones for the pages you use. Installing and removing the package reloads rpcd.
 The package is built from the `v<version>` tag of this repository; `tests/` and `tools/` are not installed.
+`tools/artifact-manifest.json` is the checked-in source-to-install contract. Builds reject missing plugin/ACL pairs,
+and installs verify every declared target plus the complete `/www/flab` file set.
+The source `rpcd/acl.d/` files are authoritative for development. Release tooling copies them into the packages
+checkout's `admin/flab-ui/files/usr/share/rpcd/acl.d/`, where the OpenWrt Makefile installs the reviewed copies rather
+than taking ACL integration files from the source archive.
 It does not configure uhttpd's document root, HTTPS listener, certificate, redirect or firewall access. `/www` and
 `/ubus` must already be served, and a working HTTPS setup needs the router's TLS support as well as uhttpd.
 

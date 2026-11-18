@@ -154,7 +154,7 @@ function control(ctx, f) {
 
 // One card of the form, from its schema group: its legend on top, then its fields in a flowing grid.
 function groupCard(ctx, g) {
-  return card([icon(g.icon), h('span', {}, g.title)],
+  return card([icon('gear'), h('span', {}, g.title)],
     h('div', {}, legend(g.legend), h('div', { className: 'card-body set-fields' }, FIELDS.filter(f => f.group === g.id).map(f => control(ctx, f)))));
 }
 

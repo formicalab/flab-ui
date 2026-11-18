@@ -5,7 +5,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Router</title>
+  <!-- Restrict active content to this origin. Style attributes are generated locally for charts and layout. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>OpenWrt</title>
   <!-- Empty icon: avoids a favicon.ico request to the router -->
   <link rel="icon" href="data:,">
   <!-- Bootstrap 5.3 (vendored), then the Fluent theming layered on top of it -->

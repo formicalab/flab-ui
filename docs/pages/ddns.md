@@ -1,4 +1,4 @@
-# Dynamic DNS (route `#ddns`)
+# Dynamic DNS (`#dns` → **Dynamic DNS**; `#ddns` remains a compatibility route)
 The ddns-scripts client (`/etc/config/ddns`) that keeps a DNS name pointing at the router's changing public address. The page
 shows what each service is doing now and edits the config behind it; it needs `ddns-scripts` (and a provider package or a
 custom update address) on the router, and says so when it is missing.

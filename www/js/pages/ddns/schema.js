@@ -13,11 +13,11 @@
 
 //#region Service groups
 
-// The groups of a service card, in order: id, title, an explanation, and whether the group starts open.
+// The groups of a service card, in order: id, title and an explanation. They all start collapsed.
 export const SERVICE_GROUPS = [
-  { id: 'account', title: 'Provider and account', open: true, legend: 'Which dynamic DNS provider to update, the name to keep up to date and the account the update is sent with.' },
-  { id: 'source', title: 'Detecting the address', open: true, legend: 'Where the updater reads the address it sends to the provider, and which network coming up starts it.' },
-  { id: 'custom', title: 'Custom provider', open: true, legend: 'For a provider that is not in the list: the address the update is sent to (or a script that sends it).' },
+  { id: 'account', title: 'Provider and account', legend: 'Which dynamic DNS provider to update, the name to keep up to date and the account the update is sent with.' },
+  { id: 'source', title: 'Detecting the address', legend: 'Where the updater reads the address it sends to the provider, and which network coming up starts it.' },
+  { id: 'custom', title: 'Custom provider', legend: 'For a provider that is not in the list: the address the update is sent to (or a script that sends it).' },
   { id: 'connection', title: 'Connection', legend: 'How the updater talks to the provider and to DNS: HTTPS, a proxy, and which network or address family to use.' },
   { id: 'timing', title: 'Intervals', legend: 'How often the updater checks the address, when it sends an update although nothing changed, and how it retries. Each number has its own unit.' },
   { id: 'logging', title: 'Logging', legend: 'What the updater writes to the system log and to its own log file (shown under "Log" in the service card).' },

@@ -11,6 +11,7 @@
 // The controls and the review banner are shared with System settings (core/forms.js). The page redraws on every
 // poll, so polling is suspended while there is something to lose: unsaved edits, a focused control or a save.
 import { h } from '../../core/dom.js';
+import { icon } from '../../core/icons.js';
 import { optional, ubus } from '../../core/ubus.js';
 import { tile, tiles } from '../../core/ui.js';
 import { refreshControl, searchControl, selectControl } from '../../core/controls.js';
@@ -110,8 +111,8 @@ export default {
 
     // The MACs that already have a reservation (in the draft), so a lease is not offered for reserving twice.
     const reservedMacs = new Set(state.draft.hosts.filter(r => !r.removed).flatMap(r => hostNorm(r.values).mac.split(' ')).filter(Boolean));
-    // The settings come first (daemon, pools, announced prefixes), then what the clients currently hold (leases) and
-    // the reservations. Both editable groups are `.dhcp-form`, so neither is polled over while focused.
+    // Live state comes first; editable service and reservation configuration is grouped below it. Both editable
+    // groups are `.dhcp-form`, so neither is polled over while focused.
     const settings = h('div', { className: 'dhcp-form' },
       daemonCard(ctx),
       ...poolList(data, state.draft).map(p => poolCard(ctx, p)),
@@ -126,10 +127,12 @@ export default {
         ? 'odhcpd is not running, so DHCPv6 and router advertisements are not served (DHCPv4 comes from dnsmasq). The configuration can still be edited.'
         : 'odhcpd is not running, so there are no leases and no clients are being served. The configuration can still be edited.') : null,
       data.leasesUnreadable ? note('bad', 'dnsmasq serves DHCPv4, but its lease file could not be read, so the DHCPv4 leases are not shown.') : null,
-      settings,
       announcedCard(data, filter),
       leases4Card(data, filter, { reservedMacs, canReserve: canEdit, reserve }),
       leases6Card(data, filter),
+      h('h2', { className: 'page-section-title' }, icon('gear'), 'DHCP configuration'),
+      settings,
+      h('h2', { className: 'page-section-title' }, icon('person'), 'Reservations and network boot'),
       reservations,
     ];
     ctx.sync();

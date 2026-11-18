@@ -5,7 +5,7 @@
 // This module is not a page of its own: pages/interfaces/index.js hosts it (its load, view, command-bar nodes and pause rule).
 import { h } from '../../core/dom.js';
 import { ubus, optional } from '../../core/ubus.js';
-import { badge, card, emptyState, tile, tiles, muted, GRADE_KIND } from '../../core/ui.js';
+import { badge, button, card, emptyState, tile, tiles, muted, GRADE_KIND } from '../../core/ui.js';
 import { disclosure } from '../../core/fold.js';
 import { searchControl, selectControl } from '../../core/controls.js';
 import { fmtRate, ipNum } from '../../core/format.js';
@@ -160,7 +160,13 @@ export const connected = {
           clientTable(clients, rerender)));
       }
     }
-    if (!groups.length) groups.push(emptyState('No matching clients'));
+    if (!groups.length) groups.push(emptyState('No matching clients', button('Clear filters', 'x-lg', () => {
+      state.q = '';
+      state.radio = 'all';
+      if (filters) filters.querySelector('input').value = '';
+      radioSelect?.node && (radioSelect.node.value = 'all');
+      rerender();
+    })));
 
     const legend = disclosure({ cls: 'legend card card-body', summary: 'Legend',
       body: h('div', { className: 'row mt-2' }, LEGEND.map(([title, items]) => h('div', { className: 'col-md-4' },

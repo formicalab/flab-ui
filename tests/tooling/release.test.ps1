@@ -68,6 +68,8 @@ function Build-Package {
     $metadata = [IO.File]::ReadAllText((Join-Path $PackagesDir 'admin\flab-ui\Makefile'))
     $expectedLicense = if ($hasWebLicense) { 'LICENSE www/LICENSE' } else { 'LICENSE' }
     Assert-Release ($metadata -match "(?m)^PKG_LICENSE_FILES:=$([regex]::Escape($expectedLicense))`r?$") 'License metadata does not match the tagged source.'
+    $feedAcl = Join-Path $PackagesDir 'admin\flab-ui\files\usr\share\rpcd\acl.d\flab-base.json'
+    Assert-Release (([IO.File]::ReadAllText($feedAcl).Trim()) -eq '{"from":"source"}') 'Package ACL files do not match the tagged source.'
     if ($failure -eq 'build') { throw 'injected build failure' }
     $apk = Join-Path $OutDir "flab-ui-$Version-r1.apk"
     [IO.File]::WriteAllText($apk, 'apk fixture')
@@ -150,9 +152,15 @@ try {
                     $directory = Join-Path $repo 'admin\flab-ui'
                     New-Item -ItemType Directory $directory | Out-Null
                     [IO.File]::WriteAllText((Join-Path $directory 'Makefile'), "PKG_VERSION:=0.1.3`nPKG_RELEASE:=2`nPKG_HASH:=old`nPKG_LICENSE_FILES:=LICENSE`n")
+                    $aclDirectory = Join-Path $directory 'files\usr\share\rpcd\acl.d'
+                    New-Item -ItemType Directory $aclDirectory -Force | Out-Null
+                    [IO.File]::WriteAllText((Join-Path $aclDirectory 'flab-base.json'), '{"from":"old-feed"}')
                 }
                 else {
                     [IO.File]::WriteAllText((Join-Path $repo 'source.txt'), 'source')
+                    $aclDirectory = Join-Path $repo 'rpcd\acl.d'
+                    New-Item -ItemType Directory $aclDirectory -Force | Out-Null
+                    [IO.File]::WriteAllText((Join-Path $aclDirectory 'flab-base.json'), '{"from":"source"}')
                     if ($hasWebLicense) {
                         $web = Join-Path $repo 'www'
                         New-Item -ItemType Directory $web | Out-Null
@@ -176,6 +184,8 @@ try {
             $baselineIndex = Test-Git -C $PackagesDir write-tree
             $makefilePath = Join-Path $PackagesDir 'admin\flab-ui\Makefile'
             $baselineBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($makefilePath))
+            $baselineAclPath = Join-Path $PackagesDir 'admin\flab-ui\files\usr\share\rpcd\acl.d\flab-base.json'
+            $baselineAclBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($baselineAclPath))
             $caught = $false
             try { Publish-Release }
             catch { $caught = $true }
@@ -185,6 +195,7 @@ try {
                 Assert-Release ((Test-Git -C $PackagesDir rev-parse HEAD) -eq $baseline) 'HEAD was not restored.'
                 Assert-Release ((Test-Git -C $PackagesDir write-tree) -eq $baselineIndex) 'Index was not restored.'
                 Assert-Release ([Convert]::ToBase64String([IO.File]::ReadAllBytes($makefilePath)) -eq $baselineBytes) 'Worktree was not restored.'
+                Assert-Release ([Convert]::ToBase64String([IO.File]::ReadAllBytes($baselineAclPath)) -eq $baselineAclBytes) 'ACL integration files were not restored.'
                 $dirty = Test-Git -C $PackagesDir status --porcelain
                 Assert-Release (-not $dirty) "Recovery left a dirty package checkout: $dirty"
             }
@@ -203,6 +214,8 @@ try {
                 $expectedLicense = if ($hasWebLicense) { 'LICENSE www/LICENSE' } else { 'LICENSE' }
                 Assert-Release ($publishedMetadata -match "(?m)^PKG_LICENSE_FILES:=$([regex]::Escape($expectedLicense))$") 'Published license metadata does not match the source.'
                 Assert-Release ($publishedMetadata -match '(?m)^PKG_VERSION:=0\.1\.4$' -and $publishedMetadata -match '(?m)^PKG_RELEASE:=1$') 'Version and license metadata were not published together.'
+                $publishedAcl = (Test-Git --git-dir $packageRemote show "${remoteNow}:admin/flab-ui/files/usr/share/rpcd/acl.d/flab-base.json") -join "`n"
+                Assert-Release ($publishedAcl.Trim() -eq '{"from":"source"}') 'Published package ACL copy does not match the source.'
             }
             Write-Host "PASS $failure amend=$Amend"
         }

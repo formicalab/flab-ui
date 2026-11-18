@@ -1,4 +1,9 @@
-# DNS (route `#dns`)
+# DNS (route `#dns`, with the `#ddns` compatibility route)
+The DNS navigation entry combines two tabs: **DNS resolver** and **Dynamic DNS**. The latter is the ddns-scripts
+configuration and runtime described in [Dynamic DNS](ddns.md).
+
+## DNS resolver
+
 The state of the router's DNS resolver and its settings. It shows what the resolver does and how it is configured, and lets
 you change the resolver's **single-valued options** (a yes/no option, a choice, a number, a name) in `/etc/config/unbound` or
 `/etc/config/dhcp`, and its **zones** (Unbound's `config zone` blocks, dnsmasq's `server` entries: add, edit, remove, in a dialog);

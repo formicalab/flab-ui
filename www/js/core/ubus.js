@@ -21,8 +21,21 @@ let acls = (() => {
 // Raised when the session is gone (expired or destroyed); the shell answers by showing the sign-in screen.
 export class AuthError extends Error {}
 
+// An RPC target exists only when its ACL/object/method is installed. Optional page data may omit only this
+// class of failure; timeouts, transport errors and backend failures must remain visible.
+export class UnavailableError extends Error {}
+
+// The session is alive, but its ACL does not permit the requested call.
+export class AccessError extends Error {}
+
 // Whether a session id is stored; says nothing about whether the router still accepts it.
 export const hasSession = () => Boolean(sid);
+
+const unavailable = (message, code) => {
+  const error = new UnavailableError(message);
+  error.code = code;
+  return error;
+};
 
 // One JSON-RPC `call` to ubus. Returns the method's result object; throws on a transport error, a JSON-RPC
 // error (flagged `denied` for -32002, which is both "expired" and "not allowed") or a nonzero ubus status.
@@ -52,13 +65,22 @@ async function rpc(obj, method, args = {}, token = sid || NULL_SID, timeoutMs = 
       if (!res.ok) throw new Error(`The router answered HTTP ${res.status} to ${obj}.${method}.`);
       let j;
       try { j = await res.json(); } catch { throw new Error(`The router sent an unreadable reply to ${obj}.${method}.`); }
-      if (j?.error) throw Object.assign(new Error(j.error.message), { denied: j.error.code === -32002 });
+      if (j?.error) {
+        const message = j.error.message || 'The router rejected the ubus call.';
+        if (j.error.code === -32601 || /not found|unknown (object|method)|method not found/i.test(message))
+          throw unavailable(message, j.error.code);
+        throw Object.assign(new Error(message), { denied: j.error.code === -32002 });
+      }
       if (!Array.isArray(j?.result)) throw new Error(`The router sent an unexpected reply to ${obj}.${method}.`);
       const [code, data] = j.result;
       if (code !== 0) {
         const detail = typeof data?.error === 'string' ? data.error : '';
         const summary = detail.length > 500 ? `${detail.slice(0, 499)}…` : detail;
-        throw Object.assign(new Error(`${obj}.${method} failed (ubus code ${code})${summary ? `: ${summary}` : ''}`), { denied: code === 6 });
+        const error = `${obj}.${method} failed (ubus code ${code})${summary ? `: ${summary}` : ''}`;
+        // ubus 3 is METHOD_NOT_FOUND and 4 is NOT_FOUND. They represent an optional object/method that is
+        // not installed, unlike NO_DATA, TIMEOUT or UNKNOWN_ERROR, which indicate a failing implementation.
+        if (code === 3 || code === 4) throw unavailable(error, code);
+        throw Object.assign(new Error(error), { denied: code === 6 });
       }
       return data;
     })()]);
@@ -83,15 +105,16 @@ export async function ubus(obj, method, args, { timeoutMs = obj.startsWith('flab
       if (probeError.denied) throw new AuthError('Session expired');
       throw probeError;
     }
-    throw new Error(`Access denied by ACL: ${obj}.${method}`);
+    throw new AccessError(`Access denied by ACL: ${obj}.${method}`);
   }
 }
 
-// For data a page can do without (an optional plugin, an ACL that was not granted): resolves to null instead
-// of failing the page. An expired session is still raised, because the whole page needs a new sign-in then.
+// For an installed feature the page can do without: resolves to null only when an optional ACL, object or
+// method is genuinely unavailable. Authentication, transport, protocol and backend failures remain visible.
 export const optional = promise => promise.catch(e => {
   if (e instanceof AuthError) throw e;
-  return null;
+  if (e instanceof AccessError || e instanceof UnavailableError) return null;
+  throw e;
 });
 
 // Whether the signed-in login may call `obj.method`, from the ACLs rpcd returned at sign-in. "*" grants every
