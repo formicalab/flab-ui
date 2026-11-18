@@ -1,9 +1,9 @@
-// The Connected devices view of Devices and Interfaces: the Wi-Fi clients connected now, one table per wireless network (SSID), moved here from the
-// old Wi-Fi page. The columns show MAC, addresses, hostname, signal, standard, bandwidth, bitrate, security, AKM/cipher/PMF details and the 0-100 score; the
-// filter and the radio selector are in the command bar. Data comes from the flab.wifi plugin. Only Wi-Fi clients are listed for now; the view is the
-// place for the other connected devices (wired clients, DHCP leases) later.
+// The Connected devices view of Devices and Interfaces: Ethernet devices learned through bridge ports and Wi-Fi clients,
+// grouped by SSID. The search applies to both; the radio selector only filters Wi-Fi. Data comes from flab.network and
+// flab.wifi. A MAC learned on a wired port can be behind an attached unmanaged switch, so the UI says "through port".
 // This module is not a page of its own: pages/interfaces/index.js hosts it (its load, view, command-bar nodes and pause rule).
 import { h } from '../../core/dom.js';
+import { icon } from '../../core/icons.js';
 import { ubus, optional } from '../../core/ubus.js';
 import { badge, button, card, emptyState, tile, tiles, muted, GRADE_KIND, SECURITY_KIND } from '../../core/ui.js';
 import { disclosure } from '../../core/fold.js';
@@ -97,6 +97,88 @@ const LEGEND = [
     '* means unavailable fields used neutral defaults']],
 ];
 
+function wiredMatches(client, q) {
+  if (!q) return true;
+  const hay = [client.port, client.mac, client.ipv4, ...client.ipv6, client.hostname, client.bridge].join(' ').toLowerCase();
+  return q.toLowerCase().split(/\s+/).every(term => hay.includes(term));
+}
+
+const SVG = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS(SVG, tag);
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+  return el;
+}
+
+function wiredDevice(client) {
+  const address = [client.ipv4, ...client.ipv6.slice(0, 1)].filter(Boolean).join(' · ');
+  return h('div', { className: 'cc-device' },
+    h('div', { className: 'cc-device-icon' }, icon('laptop', 20)),
+    h('div', { className: 'cc-device-body' },
+      h('strong', {}, client.hostname || 'Unknown device'),
+      h('span', { className: 'cc-device-address' }, address || 'No address learned'),
+      h('span', { className: 'mono small' }, client.mac),
+      client.ipv6.length > 1 ? h('span', { className: 'muted small', title: client.ipv6.join('\n') }, `+${client.ipv6.length - 1} more IPv6`) : null));
+}
+
+// One physical-port card connected to each device learned through it with cubic SVG curves. The FDB intentionally
+// does not claim that a device is directly plugged in: several devices may share a port behind another switch.
+function wiredTopology(clients) {
+  const byPort = new Map();
+  for (const client of clients) {
+    if (!byPort.has(client.port)) byPort.set(client.port, []);
+    byPort.get(client.port).push(client);
+  }
+  const root = h('div', { className: 'cc-wired' });
+  for (const [port, devices] of byPort) {
+    const portNode = h('div', { className: 'cc-port' },
+      icon('ethernet', 28),
+      h('div', {}, h('strong', {}, port), h('span', { className: 'small muted' }, devices[0].speed ? `${devices[0].speed} Mbit/s${devices[0].duplex ? ` · ${devices[0].duplex}` : ''}` : 'link unavailable')));
+    const deviceNodes = devices.map(wiredDevice);
+    const deviceGroup = h('div', { className: 'cc-devices' }, ...deviceNodes);
+    const svg = svgEl('svg', { class: 'cc-wires', 'aria-hidden': 'true' });
+    const row = h('div', { className: 'cc-wire-row' }, svg, portNode, deviceGroup);
+    root.append(row);
+
+    let queued = false;
+    const draw = () => {
+      if (!row.isConnected) return;
+      svg.replaceChildren();
+      if (getComputedStyle(svg).display === 'none') return;
+      const bounds = row.getBoundingClientRect();
+      svg.setAttribute('width', String(bounds.width));
+      svg.setAttribute('height', String(bounds.height));
+      const source = portNode.getBoundingClientRect();
+      const p1 = [source.right - bounds.left, source.top + source.height / 2 - bounds.top];
+      for (const node of deviceNodes) {
+        const target = node.getBoundingClientRect();
+        const p2 = [target.left - bounds.left, target.top + target.height / 2 - bounds.top];
+        const dx = Math.max(24, (p2[0] - p1[0]) / 2);
+        const d = `M${p1[0]},${p1[1]} C${p1[0] + dx},${p1[1]} ${p2[0] - dx},${p2[1]} ${p2[0]},${p2[1]}`;
+        svg.append(svgEl('path', { d, class: 'cc-wire' }),
+          svgEl('circle', { cx: p1[0], cy: p1[1], r: 3, class: 'cc-endpoint' }),
+          svgEl('circle', { cx: p2[0], cy: p2[1], r: 3, class: 'cc-endpoint' }));
+      }
+    };
+    const schedule = () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; draw(); });
+    };
+    let seen = false;
+    const observer = new ResizeObserver(() => {
+      if (row.isConnected) seen = true;
+      else if (seen) { observer.disconnect(); return; }
+      schedule();
+    });
+    observer.observe(row);
+    observer.observe(deviceGroup);
+    document.fonts?.ready.then(schedule);
+    schedule();
+  }
+  return root;
+}
+
 // The filter box and the radio selector of the command bar, built once; the host shows them only on this view.
 let filters = null;
 let radioSelect = null;
@@ -106,13 +188,19 @@ export const connected = {
   // Nothing on this view holds unsaved input; the host adds the Pause button.
   isPaused: () => false,
 
-  // The clients of every radio, per wireless network; optional, so the other views work when the Wi-Fi plugin is missing.
-  load: async () => ({ clients: await optional(ubus('flab.wifi', 'clients')) }),
+  // Wired bridge members and the clients of every radio; either backend may be unavailable independently.
+  load: async () => {
+    const [clients, wired] = await Promise.all([
+      optional(ubus('flab.wifi', 'clients')),
+      optional(ubus('flab.network', 'clients')),
+    ]);
+    return { clients, wired };
+  },
 
   // The filter box and the radio dropdown, as one command-bar node (hidden until the view is shown, see setActive).
   attach(rerender) {
     radioSelect = selectControl(state, 'radio', rerender, 'Radio');
-    filters = h('span', { className: 'cc-filters', style: 'display: none' }, searchControl(state, 'q', rerender, 'Filter clients…'), radioSelect.node);
+    filters = h('span', { className: 'cc-filters', style: 'display: none' }, searchControl(state, 'q', rerender, 'Filter devices…'), radioSelect.node);
     return filters;
   },
 
@@ -124,30 +212,37 @@ export const connected = {
     radioSelect?.setOptions([['all', 'All radios'], ...(data.clients?.radios ?? []).map(r => [r.name, `${r.name} (${r.band ?? '?'})`])]);
   },
 
-  // Summary tiles, the legend, then one client card per radio interface (SSID). With a filter active, SSIDs without a matching client are hidden.
+  // Summary tiles, one Ethernet card, then one client card per radio interface (SSID) and the Wi-Fi legend.
   // Client counts and averages cover all radios, regardless of the radio selector.
   view(data, rerender) {
-    const all = data.clients?.radios;
-    if (!all) return [emptyState('The Wi-Fi plugin (flab.wifi) is not available on this router, so connected clients are not listed.')];
+    const all = data.clients?.radios ?? null;
+    const wiredAll = data.wired?.clients ?? [];
+    if (!all && !wiredAll.length) return [emptyState('No connected-device backend is available on this router.')];
 
     // Mesh interfaces and their peers are on the Wi-Fi radios page.
     const ifsOf = r => r.interfaces.filter(i => i.mode !== 'mesh');
-    const radios = all.filter(r => state.radio === 'all' || r.name === state.radio);
-    const clientsAll = all.flatMap(r => ifsOf(r).flatMap(i => i.clients));
+    const radios = (all ?? []).filter(r => state.radio === 'all' || r.name === state.radio);
+    const clientsAll = (all ?? []).flatMap(r => ifsOf(r).flatMap(i => i.clients));
+    const wired = wiredAll.filter(client => wiredMatches(client, state.q));
     const signals = clientsAll.map(c => c.signal).filter(s => s != null);
     const avg = signals.length ? Math.round(signals.reduce((a, b) => a + b, 0) / signals.length) : null;
     const wpa3 = clientsAll.filter(c => /WPA3|OWE/.test(c.security)).length;
     const weak = clientsAll.filter(c => c.rating && ['C', 'D'].includes(c.rating.grade)).length;
 
     const summary = tiles(
-      tile('Connected clients', clientsAll.length, `${all.length} radios`),
-      ...all.map(r => tile(`${r.name} · ${r.band ?? '?'}`,
+      tile('Connected devices', clientsAll.length + wiredAll.length, `${clientsAll.length} wireless · ${wiredAll.length} Ethernet`),
+      tile('Ethernet devices', wiredAll.length, `${new Set(wiredAll.map(c => c.port)).size} learned ports`),
+      ...(all ?? []).map(r => tile(`${r.name} · ${r.band ?? '?'}`,
         ifsOf(r).reduce((n, i) => n + i.clients.length, 0), `channel ${r.channel}${r.htmode ? ' · ' + r.htmode : ''}`)),
       tile('Average signal', avg == null ? '–' : `${avg} dBm`, 'across all clients'),
       tile('WPA3 clients', `${wpa3} / ${clientsAll.length}`, 'SAE or OWE'),
       tile('Need attention', weak, 'security grade C or D', weak ? 'text-warning' : ''));
 
     const groups = [];
+    if (wired.length) groups.push(card(
+      [h('span', {}, 'Ethernet'), badge('bridge FDB'), h('span', { className: 'sub' }, 'Learned through each physical port; devices can be behind an attached switch'),
+        h('span', { className: 'ms-auto' }, badge(`${wired.length} device${wired.length === 1 ? '' : 's'}`, 'info'))],
+      wiredTopology(wired)));
     for (const r of radios) {
       for (const i of ifsOf(r)) {
         const clients = i.clients.filter(c => matches(c, i.ssid ?? '', state.q));
@@ -159,7 +254,7 @@ export const connected = {
           clientTable(clients, rerender)));
       }
     }
-    if (!groups.length) groups.push(emptyState('No matching clients', button('Clear filters', 'x-lg', () => {
+    if (!groups.length) groups.push(emptyState('No matching devices', button('Clear filters', 'x-lg', () => {
       state.q = '';
       state.radio = 'all';
       if (filters) filters.querySelector('input').value = '';
@@ -167,10 +262,10 @@ export const connected = {
       rerender();
     })));
 
-    const legend = disclosure({ cls: 'legend card card-body', summary: 'Legend',
+    const legend = clientsAll.length ? disclosure({ cls: 'legend card card-body', summary: 'Wi-Fi legend',
       body: h('div', { className: 'row mt-2' }, LEGEND.map(([title, items]) => h('div', { className: 'col-md-4' },
-        h('div', { className: 'fw-semibold' }, title), h('ul', {}, items.map(t => h('li', {}, t)))))) });
+        h('div', { className: 'fw-semibold' }, title), h('ul', {}, items.map(t => h('li', {}, t)))))) }) : null;
 
-    return [summary, legend, ...groups];
+    return [summary, legend, ...groups].filter(Boolean);
   },
 };

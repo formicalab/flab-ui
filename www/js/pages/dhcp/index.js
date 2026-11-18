@@ -111,12 +111,11 @@ export default {
 
     // The MACs that already have a reservation (in the draft), so a lease is not offered for reserving twice.
     const reservedMacs = new Set(state.draft.hosts.filter(r => !r.removed).flatMap(r => hostNorm(r.values).mac.split(' ')).filter(Boolean));
-    // Live state comes first; editable service and reservation configuration is grouped below it. Both editable
-    // groups are `.dhcp-form`, so neither is polled over while focused.
-    const settings = h('div', { className: 'dhcp-form' },
-      daemonCard(ctx),
-      ...poolList(data, state.draft).map(p => poolCard(ctx, p)),
-      addPoolBar(ctx));
+    // Configuration is ordered from service-wide settings to pools and reservations; live leases are last.
+    // Each editable group is `.dhcp-form`, so it is not polled over while focused.
+    const settings = h('div', { className: 'dhcp-form' }, daemonCard(ctx));
+    const pools = h('div', { className: 'dhcp-form' },
+      ...poolList(data, state.draft).map(p => poolCard(ctx, p)), addPoolBar(ctx));
     const reservations = h('div', { className: 'dhcp-form' }, reservationsCard(ctx), bootCard(ctx));
     // Turns a lease row into a static reservation draft and redraws.
     const reserve = l => { reserveFrom(state.draft, l); state.message = null; editor.redraw(); };
@@ -127,13 +126,16 @@ export default {
         ? 'odhcpd is not running, so DHCPv6 and router advertisements are not served (DHCPv4 comes from dnsmasq). The configuration can still be edited.'
         : 'odhcpd is not running, so there are no leases and no clients are being served. The configuration can still be edited.') : null,
       data.leasesUnreadable ? note('bad', 'dnsmasq serves DHCPv4, but its lease file could not be read, so the DHCPv4 leases are not shown.') : null,
+      h('h2', { className: 'page-section-title' }, icon('gear'), 'DHCP settings'),
+      settings,
+      h('h2', { className: 'page-section-title' }, icon('hdd-network'), 'Pool settings'),
+      pools,
+      h('h2', { className: 'page-section-title' }, icon('person'), 'Reservations and network boot'),
+      reservations,
+      h('h2', { className: 'page-section-title' }, icon('activity'), 'Current leases'),
       announcedCard(data, filter),
       leases4Card(data, filter, { reservedMacs, canReserve: canEdit, reserve }),
       leases6Card(data, filter),
-      h('h2', { className: 'page-section-title' }, icon('gear'), 'DHCP configuration'),
-      settings,
-      h('h2', { className: 'page-section-title' }, icon('person'), 'Reservations and network boot'),
-      reservations,
     ];
     ctx.sync();
     return page.filter(Boolean);

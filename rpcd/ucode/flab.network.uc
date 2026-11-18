@@ -23,7 +23,7 @@ import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
 import { readfile } from 'fs';
-import { fixture, record_file, run, command_result, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname as lib_safe_ifname, num, as_list } from 'flab.util';
+import { fixture, record_file, run, command_result, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname as lib_safe_ifname, num, as_list, normalize_mac } from 'flab.util';
 
 // A name that reaches a command line or a path: an interface, port or bus name (the `port` of cable_test comes from the browser). The
 // library check is anchored with ^...$, which ucode matches against the first line of a string, so "lan1\nid" would pass it; a name
@@ -87,19 +87,31 @@ function stats_view(d) {
 
 // Learned and local MAC entries per bridge port number, from the kernel's binary forwarding table
 // (16 bytes per entry: MAC[6], port, is_local, aging timer[4], high port byte, padding[3]).
-// The result is keyed by the port number as a string; the full number is port + (high byte << 8).
-function fdb_counts(bridge) {
+// The full port number is port + (high byte << 8).
+function fdb_entries(bridge) {
 	let raw = fixture('brforward_' + bridge);
 	if (raw == null) {
 		raw = readfile(`/sys/class/net/${bridge}/brforward`) ?? '';
 		record_file('brforward_' + bridge, raw);
 	}
 
-	let out = {};
+	let out = [];
 	for (let i = 0; i + 16 <= length(raw); i += 16) {
-		let port = `${ord(raw, i + 6) + (ord(raw, i + 12) << 8)}`;
+		let port = ord(raw, i + 6) + (ord(raw, i + 12) << 8);
+		let mac = sprintf('%02x:%02x:%02x:%02x:%02x:%02x',
+			ord(raw, i), ord(raw, i + 1), ord(raw, i + 2),
+			ord(raw, i + 3), ord(raw, i + 4), ord(raw, i + 5));
+		push(out, { port, mac, local: ord(raw, i + 7) != 0 });
+	}
+	return out;
+}
+
+function fdb_counts(bridge) {
+	let out = {};
+	for (let entry in fdb_entries(bridge)) {
+		let port = `${entry.port}`;
 		out[port] ??= { macs: 0, local: 0 };
-		if (ord(raw, i + 7))
+		if (entry.local)
 			out[port].local++;
 		else
 			out[port].macs++;
@@ -230,6 +242,124 @@ function bridge_view(name, d, devices, conn) {
 	for (let k, v in fdb)
 		view.macs += v.macs;
 	return view;
+}
+//#endregion
+
+//#region Connected Ethernet devices
+
+// Active DHCPv4 leases keyed by normalized MAC, including dnsmasq's lease file when odhcpd is not the server.
+function ethernet_leases(conn) {
+	let map = {};
+	let reply = ubus_call(conn, 'dhcp', 'ipv4leases', {}) ?? {};
+	for (let dev, value in reply.device ?? {})
+		for (let lease in value.leases ?? []) {
+			let mac = normalize_mac(lease.mac ?? '');
+			if (mac)
+				map[mac] = lease;
+		}
+	for (let line in split(readfile('/tmp/dhcp.leases') ?? '', '\n')) {
+		let p = split(line, /\s+/);
+		let mac = length(p) >= 5 ? normalize_mac(p[1]) : null;
+		if (mac)
+			map[mac] = { address: p[2], hostname: p[3] != '*' ? p[3] : null };
+	}
+	return map;
+}
+
+// Host labels use static DHCP reservations first, then active DHCP names and /etc/ethers.
+function ethernet_names(leases) {
+	let names = {};
+	for (let name, section in uci_all('dhcp')) {
+		if (section['.type'] != 'host')
+			continue;
+		for (let raw in as_list(section.mac)) {
+			let mac = normalize_mac(raw);
+			if (mac && section.name)
+				names[mac] = section.name;
+		}
+	}
+	for (let mac, lease in leases)
+		if (!names[mac] && lease.hostname)
+			names[mac] = lease.hostname;
+	for (let line in split(readfile('/etc/ethers') ?? '', '\n')) {
+		let p = split(line, /\s+/);
+		let mac = length(p) >= 2 ? normalize_mac(p[0]) : null;
+		if (mac && !names[mac])
+			names[mac] = p[1];
+	}
+	return names;
+}
+
+function ethernet_addresses(leases) {
+	let ipv4 = {}, ipv6 = {};
+	for (let mac, lease in leases)
+		if (lease.address)
+			ipv4[mac] = lease.address;
+	// ARP fills addresses for clients which do not currently have a DHCP lease.
+	for (let line in split(readfile('/proc/net/arp') ?? '', '\n')) {
+		let p = split(line, /\s+/);
+		let mac = length(p) >= 6 && (+p[2] & 2) ? normalize_mac(p[3]) : null;
+		if (mac && !ipv4[mac] && p[3] != '00:00:00:00:00:00')
+			ipv4[mac] = p[0];
+	}
+	for (let line in split(run('ip -6 neigh show 2>/dev/null'), '\n')) {
+		let p = split(line, /\s+/), ll = index(p, 'lladdr');
+		let mac = ll >= 0 && ll + 1 < length(p) ? normalize_mac(p[ll + 1]) : null;
+		let state = p[length(p) - 1];
+		if (mac && state != 'FAILED' && state != 'INCOMPLETE') {
+			ipv6[mac] ??= [];
+			if (index(ipv6[mac], p[0]) < 0)
+				push(ipv6[mac], p[0]);
+		}
+	}
+	return { ipv4, ipv6 };
+}
+
+// Ethernet clients observed through each bridge member's forwarding table. Multiple devices can be learned on one
+// physical port when an unmanaged switch is attached; the reply intentionally says "port", not "directly connected".
+function ethernet_clients() {
+	let conn = connect();
+	let devices = ubus_call(conn, 'network.device', 'status', {}) ?? {};
+	let leases = ethernet_leases(conn);
+	let names = ethernet_names(leases);
+	let addresses = ethernet_addresses(leases);
+	let clients = [];
+
+	for (let bridge, device in devices) {
+		if (!safe_ifname(bridge) || device.devtype != 'bridge')
+			continue;
+		let ports = {};
+		for (let member in device['bridge-members'] ?? []) {
+			let memberDevice = devices[member] ?? {};
+			if (memberDevice.devtype != 'dsa' && memberDevice.devtype != 'ethernet')
+				continue;
+			let portNo = hex_value(sys(member, 'brport/port_no'));
+			if (portNo != null)
+				ports[`${portNo}`] = member;
+		}
+		for (let entry in fdb_entries(bridge)) {
+			let port = ports[`${entry.port}`];
+			if (!port || entry.local)
+				continue;
+			let deviceView = device_view(port, devices[port] ?? {});
+			push(clients, {
+				bridge,
+				port,
+				mac: entry.mac,
+				ipv4: addresses.ipv4[entry.mac],
+				ipv6: addresses.ipv6[entry.mac] ?? [],
+				hostname: names[entry.mac],
+				speed: deviceView.speed,
+				duplex: deviceView.duplex,
+			});
+		}
+	}
+
+	clients = sort(clients, (a, b) => {
+		let byPort = natural_less(a.port, b.port);
+		return byPort != 0 ? byPort : (a.mac < b.mac ? -1 : a.mac > b.mac ? 1 : 0);
+	});
+	return { generated: time(), clients };
 }
 //#endregion
 
@@ -986,13 +1116,18 @@ function network_config() {
 	return { generated: time(), interfaces: sections_of(all, 'interface'), devices: sections_of(all, 'device'), globals: globals[0] ?? null, other, bridge_vlans };
 }
 
-// rpcd registration: ubus object flab.network. `status` takes no arguments; `config` returns the editable part of the network config
-// without secrets; `cable_test` (port) runs one cable test on request.
+// rpcd registration: ubus object flab.network. `status` takes no arguments; `clients` reports learned Ethernet devices;
+// `config` returns the editable part of the network config without secrets; `cable_test` runs one cable test on request.
 return deferred({
 	'flab.network': {
 		status: {
 			call: function(request) {
 				return collect();
+			},
+		},
+		clients: {
+			call: function(request) {
+				return ethernet_clients();
 			},
 		},
 		config: {

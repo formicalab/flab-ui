@@ -729,6 +729,10 @@ function Sync-Router {
                 New-Item -ItemType Directory $target -Force | Out-Null
                 Copy-Item (Join-Path (Join-Path $root 'rpcd') $pair[0] | Join-Path -ChildPath '*') $target
             }
+            foreach ($file in Get-ChildItem -LiteralPath (Join-Path $stage 'usr\share\rpcd\acl.d') -Filter 'flab-*.json' -File) {
+                $text = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n").Replace("`r", "`n")
+                [IO.File]::WriteAllText($file.FullName, $text, [Text.UTF8Encoding]::new($false))
+            }
             $backendTar = Join-Path $work 'backend.tar'
             $null = Invoke-Native tar @('--format', 'ustar', '-cf', $backendTar, '-C', $stage, '.')
             scp -O -q $backendTar "${Router}:/tmp/flab-backend.tar"
