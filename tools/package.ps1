@@ -173,15 +173,20 @@ function Get-InstalledArtifactHash {
     .SYNOPSIS
     Returns the hash expected for an artifact after package installation.
     .DESCRIPTION
-    OpenWrt-owned ACL copies are normalized to LF in the packages tree; other artifacts retain their source bytes.
+    OpenWrt-owned ACL copies are normalized to LF in the packages tree. Feed builds also contain Git's LF form of
+    text files, while working-tree builds retain the checkout bytes.
     .PARAMETER Entry
     One resolved artifact-manifest entry.
+    .PARAMETER FromFeed
+    The artifact came from the immutable Git tag tarball rather than the local working tree.
     .OUTPUTS
     The lowercase SHA-256 hash installed on the router.
     #>
-    param([Parameter(Mandatory)]$Entry)
+    param([Parameter(Mandatory)]$Entry, [switch]$FromFeed)
 
-    if ($Entry.Target -like '/usr/share/rpcd/acl.d/flab-*.json') {
+    $textExtensions = @('.css', '.html', '.js', '.json', '.md', '.uc', '')
+    $extension = [IO.Path]::GetExtension($Entry.Source)
+    if ($Entry.Target -like '/usr/share/rpcd/acl.d/flab-*.json' -or ($FromFeed -and $extension -in $textExtensions)) {
         $text = [IO.File]::ReadAllText($Entry.Source).Replace("`r`n", "`n").Replace("`r", "`n")
         $bytes = [Text.UTF8Encoding]::new($false).GetBytes($text)
         return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
@@ -196,9 +201,9 @@ function Test-InstalledArtifacts {
     .DESCRIPTION
     Checks every manifest target and rejects extra files under the exclusive web installation directory.
     #>
-    param([Parameter(Mandatory)]$Entries)
+    param([Parameter(Mandatory)]$Entries, [switch]$FromFeed)
 
-    $checks = @($Entries | ForEach-Object { "$(Get-InstalledArtifactHash -Entry $_)  $($_.Target)" })
+    $checks = @($Entries | ForEach-Object { "$(Get-InstalledArtifactHash -Entry $_ -FromFeed:$FromFeed)  $($_.Target)" })
     $local = Join-Path ([IO.Path]::GetTempPath()) ("flab-artifacts-$PID.txt")
     $remote = "/tmp/flab-artifacts-$PID.expected"
     [IO.File]::WriteAllText($local, (($checks -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
@@ -459,8 +464,10 @@ function Install-Package {
     of truth) and the page answers over HTTPS.
     .PARAMETER Apk
     Path of the apk.
+    .PARAMETER FromFeed
+    Verify package bytes against the immutable Git tag form rather than the local checkout form.
     #>
-    param([Parameter(Mandatory)][string]$Apk)
+    param([Parameter(Mandatory)][string]$Apk, [switch]$FromFeed)
 
     $artifacts = @(Test-ArtifactContract)
     $expected = @(Get-ChildItem (Join-Path (Join-Path $root 'rpcd') 'ucode') -Filter 'flab.*.uc' | ForEach-Object { $_.BaseName })
@@ -482,7 +489,7 @@ rm -f /tmp/flab-ui-*.apk
 "@ | Write-Host
 
     Wait-Objects -Expected $expected
-    Test-InstalledArtifacts -Entries $artifacts
+    Test-InstalledArtifacts -Entries $artifacts -FromFeed:$FromFeed
     # The installed version must be the one that was built: the apk file name is name-version-release.apk.
     $installed = (Invoke-Remote 'apk list -I flab-ui 2>/dev/null | head -n 1') -replace '^(\S+).*$', '$1'
     if ($installed -ne [IO.Path]::GetFileNameWithoutExtension($apkName)) { throw "The router reports '$installed', not $apkName." }
@@ -621,7 +628,7 @@ function Publish-Release {
         $builtApk = Build-Package -FromFeed
         $apkName = Split-Path $builtApk -Leaf
         if ($apkName -ne "flab-ui-$Version-r1.apk") { throw "Expected flab-ui-$Version-r1.apk, built $apkName" }
-        if (-not $SkipInstallCheck) { Install-Package $builtApk }
+        if (-not $SkipInstallCheck) { Install-Package $builtApk -FromFeed }
         $releaseApks = @(Get-ChildItem -LiteralPath $OutDir -Filter "flab-ui*-$Version-r1.apk" -File | Sort-Object Name)
         if ($releaseApks.Count -lt 2) { throw 'The modular release did not produce a complete apk set.' }
         $apkHash = (Get-FileHash $builtApk -Algorithm SHA256).Hash.ToLower()
@@ -853,7 +860,10 @@ function Test-Consistency {
 if ($MyInvocation.InvocationName -eq '.') { return }
 switch ($Action) {
     'Build' { $null = Build-Package -FromFeed:$UseFeedSource }
-    'Deploy' { Install-Package (Build-Package -FromFeed:$UseFeedSource) }
+    'Deploy' {
+        $apk = Build-Package -FromFeed:$UseFeedSource
+        Install-Package $apk -FromFeed:$UseFeedSource
+    }
     'Sync' { Sync-Router }
     'Check' { Test-Consistency }
     'Remove' {
