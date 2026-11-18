@@ -11,6 +11,19 @@ import { searchControl, selectControl } from '../../core/controls.js';
 import { fmtRate, ipNum } from '../../core/format.js';
 // Badge color for a client's signal strength in dBm: >= -50 strong, >= -70 usable, below that weak.
 const SIGNAL_KIND = s => s == null ? '' : s >= -50 ? 'success' : s >= -70 ? 'warning' : 'danger';
+const signalBars = s => s == null ? 0 : s >= -50 ? 4 : s >= -65 ? 3 : s >= -75 ? 2 : s >= -85 ? 1 : 0;
+const signalLabel = s => s == null ? 'Signal unavailable' : s >= -50 ? 'Excellent' : s >= -65 ? 'Good' : s >= -75 ? 'Fair' : s >= -85 ? 'Weak' : 'Very weak';
+const signalMeter = signal => {
+  const count = signalBars(signal);
+  return h('span', {
+    className: `cc-signal ${SIGNAL_KIND(signal)}`,
+    title: `${signalLabel(signal)}${signal == null ? '' : `, ${signal} dBm`}`,
+    ariaLabel: `${signalLabel(signal)}${signal == null ? '' : `, ${signal} dBm`}`,
+  },
+  h('span', { className: 'cc-signal-bars', 'aria-hidden': 'true' },
+    [1, 2, 3, 4].map(level => h('i', { className: level <= count ? 'on' : '' }))),
+  signal == null ? 'N/A' : `${signal} dBm`);
+};
 
 // Filter text, selected radio ('all' or a radio name) and table sort: module-level so they survive the redraw on every poll.
 const state = { q: '', radio: 'all', sort: { key: 'signal', dir: -1 } };
@@ -26,7 +39,7 @@ const COLS = [
   { key: 'ipv6', label: 'IPv6', w: 14, sort: c => c.ipv6[0] || '', cell: c => !c.ipv6.length ? muted('N/A')
     : clip(c.ipv6[0] + (c.ipv6.length > 1 ? ` (+${c.ipv6.length - 1})` : ''), c.ipv6.join('\n')) },
   { key: 'hostname', label: 'Hostname', w: 9, sort: c => (c.hostname || '').toLowerCase(), cell: c => c.hostname || muted('Unknown') },
-  { key: 'signal', label: 'Signal', w: 7, sort: c => c.signal ?? -999, cell: c => c.signal == null ? 'N/A' : badge(`${c.signal} dBm`, SIGNAL_KIND(c.signal)) },
+  { key: 'signal', label: 'Signal', w: 7, sort: c => c.signal ?? -999, cell: c => signalMeter(c.signal) },
   { key: 'standard', label: 'Wi-Fi std', w: 6, sort: c => c.standard || '', cell: c => c.standard || muted('Unknown') },
   { key: 'width', label: 'BW', w: 5, sort: c => c.width ?? 0, cell: c => c.width ? `${c.width} MHz` : '–' },
   { key: 'bitrate', label: 'Bitrate (↑/↓ Mbit/s)', w: 11, sort: c => Math.max(c.tx ?? 0, c.rx ?? 0), cell: c => `↑${fmtRate(c.tx)} / ↓${fmtRate(c.rx)}` },
@@ -192,8 +205,8 @@ function wirelessDevice(client) {
         client.security ? badge(client.security, SECURITY_KIND(client.security)) : null),
       h('span', { className: 'cc-device-address' }, client.ipv4 || client.ipv6[0] || 'No address learned'),
       h('span', { className: 'mono small' }, client.mac),
-      h('span', { className: 'cc-device-radio' }, client.signal == null ? 'signal unavailable' : `${client.signal} dBm`,
-        client.standard ? ` · ${client.standard}` : '')));
+      h('span', { className: 'cc-device-radio' }, signalMeter(client.signal),
+        client.standard ? h('span', {}, ` · ${client.standard}`) : null)));
 }
 
 function wirelessTopology(iface, radio, clients) {

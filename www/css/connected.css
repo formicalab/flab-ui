@@ -46,6 +46,26 @@
 }
 .cc-wifi-group-head .sub { color: var(--fl-muted); font-size: .8rem; font-weight: 400; }
 .cc-device-radio { color: var(--fl-muted); font-size: .75rem; }
+.cc-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: .38rem;
+  white-space: nowrap;
+  color: var(--fl-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cc-signal-bars { display: inline-flex; align-items: flex-end; gap: 2px; width: 17px; height: 14px; }
+.cc-signal-bars i { width: 3px; border-radius: 1px; background: color-mix(in srgb, var(--fl-muted) 35%, transparent); }
+.cc-signal-bars i:nth-child(1) { height: 4px; }
+.cc-signal-bars i:nth-child(2) { height: 7px; }
+.cc-signal-bars i:nth-child(3) { height: 10px; }
+.cc-signal-bars i:nth-child(4) { height: 13px; }
+.cc-signal.success .cc-signal-bars i.on { background: var(--fl-ok-fg); }
+.cc-signal.warning .cc-signal-bars i.on { background: var(--fl-warn-fg); }
+.cc-signal.danger .cc-signal-bars i.on { background: var(--fl-bad-fg); }
+.cc-signal.success { color: var(--fl-ok-fg); }
+.cc-signal.warning { color: var(--fl-warn-fg); }
+.cc-signal.danger { color: var(--fl-bad-fg); }
 .cc-device {
   position: relative;
   z-index: 1;
