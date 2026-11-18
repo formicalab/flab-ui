@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.9 - 2026-11-18
+
+### Packaging
+
+- Split the installation into the required `flab-ui-base` package, eleven independently installable feature
+  packages and a `flab-ui` full-install metapackage.
+- Discover installed feature manifests at run time and register only the pages and rpcd backends provided by
+  installed modules. The base package is usable on its own.
+- Make package installation and removal restart rpcd reliably, while preserving shared assets and dependencies
+  without cross-package file conflicts.
+- Build, install, verify and publish the complete APK set, including installed-file checksums and package smoke
+  tests for plugin/ACL pairs.
+
+### Reliability
+
+- Retry feature-module discovery after a transient rpcd failure instead of leaving the page base-only for the
+  remainder of the browser session.
+- Bound diagnostic workers process-wide, separate diagnostic validation and job lifecycle code, and improve package
+  artifact and release recovery validation.
+
 ## 0.1.8 - 2026-11-17
 
 ### Interface
