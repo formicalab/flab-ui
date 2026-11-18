@@ -35,6 +35,11 @@ rpcd ---- built-in objects:  session, system, network.interface, service, uci (c
    swanctl --raw (VICI) · birdc · nft · wg · ip xfrm/route · hostapd_cli · iw · logread · dmesg · netifd · uci · sysfs
 ```
 
+The installed frontend is modular. `flab-ui-base` always provides the shell, shared assets, Overview and System
+settings. Feature packages install page assets, rpcd plugins/ACLs and one JSON manifest under
+`/www/flab/modules`. `flab.system modules` discovers the manifests and the shell dynamically registers only those
+installed features. `flab-ui` is the metapackage for the complete installation.
+
 Design principles:
 
 - **No build step, no framework.** Plain ES modules and CSS. The whole app (excluding Bootstrap) is
@@ -46,7 +51,8 @@ Design principles:
   rpcd gives root read and write `*`, which means every ACL group installed on the router; the ACL fragments in
   `rpcd/acl.d` are what add the flab-ui calls to it. Everything the plugins and pages read or write is therefore
   limited by what root may do, and by the safeguards below (validation, apply with rollback).
-- **Modular by page.** One folder or file per page on each side, registered in one list.
+- **Modular by feature.** Base pages are registered in the shell; optional packages register entries through
+  `/www/flab/modules/*.json`.
 - **No secrets leave the router.** Plugins whitelist fields; key material is never forwarded, and log lines
   that look like secrets are redacted.
 

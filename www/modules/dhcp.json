@@ -1,0 +1,1 @@
+{"entries":[{"id":"dhcp","label":"DHCP","icon":"hdd-network","order":70,"module":"./dhcp/index.js"}]}

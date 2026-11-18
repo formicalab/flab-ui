@@ -41,12 +41,15 @@ Download the apk (and its `.sha256`) from the [latest release](https://github.co
 copy both to the router, verify the checksum and install it. The package is unsigned, so apk needs `--allow-untrusted`:
 
 ```sh
-scp -O flab-ui-<version>-r1.apk flab-ui-<version>-r1.apk.sha256 root@<router>:/tmp/
-ssh root@<router> 'cd /tmp && sha256sum -c flab-ui-<version>-r1.apk.sha256 && apk add --allow-untrusted ./flab-ui-<version>-r1.apk'
+scp -O flab-ui*<version>-r1.apk flab-ui-<version>-r1.apk.sha256 root@<router>:/tmp/
+ssh root@<router> 'cd /tmp && sha256sum -c flab-ui-<version>-r1.apk.sha256 && apk add --allow-untrusted ./flab-ui-*.apk'
 ```
 
 It targets apk-based OpenWrt (a snapshot, or a release built with apk). To build it yourself, see
 [Package](docs/package.md#building-the-package).
+
+For a smaller installation, install `flab-ui-base` and only the desired
+`flab-ui-mod-*` apks instead of the `flab-ui` metapackage. The UI discovers installed modules at run time.
 
 The router must already serve `/www` and `/ubus` through uhttpd. Configure HTTPS, its certificate and an HTTP-to-HTTPS
 redirect before signing in; flab-ui does not configure TLS or firewall access. Manage it from a trusted LAN or VPN,
@@ -54,7 +57,7 @@ not an exposed WAN port. The page enforces a restrictive same-origin Content Sec
 uhttpd header configuration should additionally send the policy and the other security headers described in the
 [frontend documentation](docs/frontend.md).
 
-Installing reloads `rpcd`, so no reboot is needed. Then open `https://<router>/flab/` and sign in as `root` with the
+Installing restarts `rpcd`, so no reboot is needed. Then open `https://<router>/flab/` and sign in as `root` with the
 router's root password. Do not install or remove the package during a configuration apply. To remove it:
 
 ```sh

@@ -18,6 +18,9 @@ export const mono = text => h('span', { className: 'mono' }, text);
 // Badge kind for the 0-100 security grades (A+ … D) shown for Wi-Fi clients and IPsec connections.
 export const GRADE_KIND = { 'A+': 'success', A: 'success', B: 'info', C: 'warning', D: 'danger' };
 
+// Badge color of a wireless security label; shared so connected-device views do not depend on the radio UI module.
+export const SECURITY_KIND = s => /WPA3|OWE/.test(s) ? 'success' : /WPA2/.test(s) ? 'warning' : /Open|WEP|^WPA-/.test(s) ? 'danger' : '';
+
 // A card with an optional header row and a body (any node or list of nodes); `extra` adds CSS classes.
 export const card = (header, body, extra = '') => h('div', { className: `card ${extra}` },
   header ? h('div', { className: 'card-header' }, header) : null, body);

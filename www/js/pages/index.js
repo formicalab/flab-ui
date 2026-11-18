@@ -36,32 +36,44 @@ function activateToolbox(module) {
   module.openTool(tool, host);
 }
 
-// Network pages go from the physical layer up: the two hardware pages (Ethernet ports and Wi-Fi radios: read and change the ports and the radios, and for the radios
-// the access points, client networks and mesh points on them), tunnels, firewall; DHCP and router advertisements, a service on top of those, come next, then DNS, the resolver those clients use, and Dynamic DNS, which keeps
-// a name pointing at the router; DNS and Dynamic DNS share one page with tabs. Devices and Interfaces (the network board: bridges, VLANs, interfaces and zones, where they are edited,
-// and the connected devices) ties them together, followed by routing (kernel routes, static-route editing and BGP), traffic (where the bandwidth goes), the services, the toolbox
-// (diagnostic tools) and the logs.
-// System settings sits at the bottom of the navigation, by Sign out.
 // Keep this module free of page imports, including Toolbox's openTool helper: the login screen only needs
 // navigation metadata. Native ES modules cache successful imports and preserve each page's state on return.
-export const pages = [
+export const basePages = [
   { id: 'overview', label: 'Overview', icon: 'speedometer2', resolve: () => import('./overview/index.js') },
-  { id: 'network', label: 'Ethernet ports', icon: 'ethernet', resolve: () => import('./network/index.js') },
-  { id: 'radios', label: 'Wi-Fi radios', icon: 'wifi', resolve: () => import('./radios/index.js') },
-  { id: 'firewall', label: 'Firewall', icon: 'brick-wall', resolve: () => import('./firewall/index.js') },
-  { id: 'ipsec', label: 'VPN: IPsec', icon: 'shield-lock', resolve: () => import('./ipsec/index.js') },
-  { id: 'wireguard', label: 'VPN: WireGuard', icon: 'shield-lock', resolve: () => import('./wireguard/index.js') },
-  { id: 'interfaces', label: 'Devices and Interfaces', icon: 'diagram-3', resolve: () => import('./interfaces/index.js') },
-  { id: 'dhcp', label: 'DHCP', icon: 'hdd-network', resolve: () => import('./dhcp/index.js') },
-  { id: 'dns', label: 'DNS', icon: 'list-ul', resolve: () => import('./dns/index.js'), activate: module => module.openTab('resolver') },
-  { id: 'ddns', label: 'Dynamic DNS', title: 'DNS', icon: 'cloud', nav: 'hidden', navId: 'dns', resolve: () => import('./dns/index.js'), activate: module => module.openTab('dynamic') },
-  { id: 'routing', label: 'Routing', icon: 'signpost-split', resolve: () => import('./routing/index.js') },
-  { id: 'traffic', label: 'Traffic', icon: 'activity', resolve: () => import('./traffic/index.js') },
-  { id: 'services', label: 'Services', icon: 'hdd-stack', resolve: () => import('./services/index.js') },
-  { id: 'toolbox', label: 'Toolbox', icon: 'tools', resolve: () => import('./toolbox/index.js'), activate: activateToolbox },
-  { id: 'logs', label: 'Logs', icon: 'journal-text', resolve: () => import('./logs/index.js') },
   { id: 'settings', label: 'System settings', icon: 'gear', nav: 'bottom', resolve: () => import('./settings/index.js') },
 ];
+
+// Builds the registry from validated installed-module manifests. A module controls its own feature directories and
+// backend ACL/plugin, while the base package always keeps Overview and System settings available.
+export function installedPages(manifests = []) {
+  const ids = new Set(basePages.map(p => p.id));
+  const installed = [];
+  for (const manifest of manifests) {
+    if (!manifest || !Array.isArray(manifest.entries)) continue;
+    for (const entry of manifest.entries) {
+      if (!entry || typeof entry.id !== 'string' || !/^[a-z0-9-]+$/.test(entry.id)
+        || typeof entry.label !== 'string' || typeof entry.icon !== 'string'
+        || typeof entry.module !== 'string' || !entry.module.startsWith('./')
+        || ids.has(entry.id) || !Number.isFinite(entry.order)) continue;
+      ids.add(entry.id);
+      installed.push({
+        ...entry,
+        resolve: () => import(entry.module),
+        activate: entry.activation === 'toolbox' ? activateToolbox
+          : entry.tab ? module => module.openTab?.(entry.tab)
+          : undefined,
+      });
+    }
+  }
+  return [
+    ...basePages.filter(p => p.nav !== 'bottom'),
+    ...installed.sort((a, b) => a.order - b.order),
+    ...basePages.filter(p => p.nav === 'bottom'),
+  ];
+}
+
+// Compatibility export for code that imports the uninstalled registry before sign-in.
+export const pages = basePages;
 
 // Routes that were pages once and now open another page: #bridges is part of the Devices and Interfaces board, #wifi and #mesh are part of the Wi-Fi radios page.
 export const aliases = { bridges: 'interfaces', wifi: 'radios', mesh: 'radios' };

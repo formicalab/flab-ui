@@ -4,7 +4,7 @@
 // counters (airtime, bytes) are turned into rates here, so what is shown follows channel changes, DFS events and interfaces coming and going.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, meter, sparkline, muted } from '../../core/ui.js';
+import { badge, meter, sparkline, muted, SECURITY_KIND } from '../../core/ui.js';
 import { createTracker, latest } from '../../core/rates.js';
 import { runningBlock } from '../wifi/channels.js';
 
@@ -43,8 +43,7 @@ export const airtime = r => {
   return { busy, busyNow: latest(busy), rxNow: latest(rx), txNow: latest(tx) };
 };
 
-// Badge color of a security label: modern (WPA3, OWE) green, WPA2 amber, open or broken (WEP, WPA1) red.
-export const SECURITY_KIND = s => /WPA3|OWE/.test(s) ? 'success' : /WPA2/.test(s) ? 'warning' : /Open|WEP|^WPA-/.test(s) ? 'danger' : '';
+export { SECURITY_KIND };
 
 // The state of a radio as [text, badge kind].
 export const stateOf = r => (!r.enabled ? ['disabled', ''] : r.retry_failed ? ['failed', 'danger'] : r.pending ? ['starting', 'warning'] : r.up ? ['up', 'success'] : ['down', 'danger']);

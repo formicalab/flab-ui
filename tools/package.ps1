@@ -7,10 +7,10 @@ Builds, installs, removes and releases the flab-ui OpenWrt package.
 Build     builds the apk from the working tree with an OpenWrt SDK and writes it to -OutDir. The apk is named
           flab-ui-<version>-r<UTC time>.apk, where the version is the Makefile's, so it is never mistaken for a release.
 Deploy    builds, copies the apk to the router, removes the installed flab-ui and adds the new one (installing and
-          removing reload rpcd; the package's own scripts do that), then waits until every flab.* ubus object of
+          removing restarts rpcd; the package's own scripts do that), then waits until every flab.* ubus object of
           rpcd/ucode exists, the page answers over HTTPS and the router reports the version that was built.
 Sync      the fast loop for editing: copies www/ to /www/flab on the router without building an apk (with -Backend,
-          also rpcd/ and reloads rpcd). Browsers pick the new files up when the page is reloaded.
+          also rpcd/ and restarts rpcd). Browsers pick the new files up when the page is reloaded.
 Check     reports whether the Makefile version/release, the Git tag, PKG_HASH, CHANGELOG.md, the GitHub release's apk
           and the router's installed apk agree. Fails on any mismatch.
 Remove    runs apk del on the router and checks that no flab.* object is left.
@@ -42,7 +42,7 @@ running on the same router.
 Build, Deploy, Sync, Check, Remove or Release (see the description).
 
 .PARAMETER Backend
-Sync only: also copy rpcd/ and reload rpcd. Never use while a configuration apply awaits confirmation.
+Sync only: also copy rpcd/ and restart rpcd. Never use while a configuration apply awaits confirmation.
 
 .PARAMETER Router
 SSH destination of the router, for example root@192.168.1.1. Defaults to the FLAB_ROUTER environment variable, else
@@ -168,6 +168,27 @@ function Test-ArtifactContract {
     return $entries
 }
 
+function Get-InstalledArtifactHash {
+    <#
+    .SYNOPSIS
+    Returns the hash expected for an artifact after package installation.
+    .DESCRIPTION
+    OpenWrt-owned ACL copies are normalized to LF in the packages tree; other artifacts retain their source bytes.
+    .PARAMETER Entry
+    One resolved artifact-manifest entry.
+    .OUTPUTS
+    The lowercase SHA-256 hash installed on the router.
+    #>
+    param([Parameter(Mandatory)]$Entry)
+
+    if ($Entry.Target -like '/usr/share/rpcd/acl.d/flab-*.json') {
+        $text = [IO.File]::ReadAllText($Entry.Source).Replace("`r`n", "`n").Replace("`r", "`n")
+        $bytes = [Text.UTF8Encoding]::new($false).GetBytes($text)
+        return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+    }
+    return (Get-FileHash -LiteralPath $Entry.Source -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
 function Test-InstalledArtifacts {
     <#
     .SYNOPSIS
@@ -177,7 +198,7 @@ function Test-InstalledArtifacts {
     #>
     param([Parameter(Mandatory)]$Entries)
 
-    $checks = @($Entries | ForEach-Object { "$((Get-FileHash -LiteralPath $_.Source -Algorithm SHA256).Hash.ToLower())  $($_.Target)" })
+    $checks = @($Entries | ForEach-Object { "$(Get-InstalledArtifactHash -Entry $_)  $($_.Target)" })
     $local = Join-Path ([IO.Path]::GetTempPath()) ("flab-artifacts-$PID.txt")
     $remote = "/tmp/flab-artifacts-$PID.expected"
     [IO.File]::WriteAllText($local, (($checks -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
@@ -298,7 +319,7 @@ function Wait-Objects {
     .SYNOPSIS
     Waits until rpcd serves exactly the expected flab.* ubus objects (none when the list is empty).
     .DESCRIPTION
-    rpcd reloads asynchronously after the package scripts return, so the objects appear or disappear a moment later.
+    rpcd restarts during package scripts, but ubus registration can finish a moment later.
     Throws with the difference when they are not as expected after the timeout.
     .PARAMETER Expected
     The ubus object names that must exist, for example flab.wifi.
@@ -339,9 +360,9 @@ function Set-MakeVariable {
 #endregion
 
 #region Build
-# Stages only what the package installs, because the SDK writes its build stamps into the source directory it is given;
-# the staging folder lives in the SDK's own tmp/ and is recreated on every run. The newest apk is taken, since the apk
-# of an earlier version may still be in the SDK's bin folder.
+# Stages the shared source tree, because the SDK writes its build stamps into the source directory it is given. The
+# staging folder lives in the SDK's own tmp/ and is recreated on every run. Every apk for this package release is
+# copied; the unprefixed flab-ui apk is the metapackage returned to the caller.
 $buildScript = @'
 set -eu
 SRC='@@SRC@@'
@@ -363,6 +384,7 @@ ORIGINAL="$SDK/.flab-ui-package-original"
   echo "An interrupted build left $ORIGINAL; restore the SDK package entry before retrying." >&2; exit 1;
 }
 make package/flab-ui/clean > "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
+PACKAGE=$(ls -d package/feeds/*/flab-ui | head -n 1)
 if [ '@@FEED@@' = 1 ]; then
   make package/flab-ui/compile V=s >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
 else
@@ -372,7 +394,6 @@ else
   # Files read from a Windows drive in WSL are rwxrwxrwx; the package must not install them that way.
   find "$STAGE" -type d -exec chmod 0755 {} + -o -type f -exec chmod 0644 {} +
   # Temporarily redirect only the SDK's installed package entry; never edit the feed checkout's Makefile.
-  PACKAGE=$(ls -d package/feeds/*/flab-ui | head -n 1)
   OVERRIDE="$SDK/.flab-ui-package"
   bash "$SRC/tools/stage-source.sh" "$PACKAGE" "$OVERRIDE" "$STAGE" '@@DEVREL@@'
   mv "$PACKAGE" "$ORIGINAL"
@@ -386,10 +407,18 @@ else
   make package/flab-ui/compile V=s >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
 fi
 mkdir -p "$OUT"
-APK=$(ls -t bin/packages/*/*/flab-ui-*.apk 2>/dev/null | head -n 1 || true)
-[ -n "$APK" ] || { echo "The build produced no flab-ui apk (is this an apk-based SDK?). Log: $LOG" >&2; exit 1; }
+VERSION=$(sed -n 's/^PKG_VERSION:=//p' "$PACKAGE/Makefile")
+if [ '@@FEED@@' = 1 ]; then
+  RELEASE=$(sed -n 's/^PKG_RELEASE:=//p' "$PACKAGE/Makefile")
+else
+  RELEASE='@@DEVREL@@'
+fi
+APKS=$(find bin/packages -type f -name "flab-ui*-$VERSION-r$RELEASE.apk" | sort)
+[ -n "$APKS" ] || { echo "The build produced no flab-ui apk set (is this an apk-based SDK?). Log: $LOG" >&2; exit 1; }
+APK=$(printf '%s\n' "$APKS" | grep "/flab-ui-$VERSION-r$RELEASE.apk$" | head -n 1 || true)
+[ -n "$APK" ] || { echo "The build produced no full flab-ui metapackage. Log: $LOG" >&2; exit 1; }
 rm -f "$OUT"/flab-ui-*.apk
-cp "$APK" "$OUT/"
+cp $APKS "$OUT/"
 basename "$APK"
 '@
 
@@ -437,16 +466,19 @@ function Install-Package {
     $expected = @(Get-ChildItem (Join-Path (Join-Path $root 'rpcd') 'ucode') -Filter 'flab.*.uc' | ForEach-Object { $_.BaseName })
     if (-not $expected) { throw 'No rpcd plugin found in rpcd/ucode.' }
     $apkName = Split-Path $Apk -Leaf
+    $apks = @(Get-ChildItem -LiteralPath $OutDir -Filter 'flab-ui-*.apk' -File)
+    if ($apks.Count -lt 2) { throw 'The modular build did not produce a complete apk set.' }
 
-    Write-Host "Installing $apkName on the router..."
-    scp -O -q $Apk "${Router}:/tmp/$apkName"
+    Write-Host "Installing $($apks.Count) modular apks on the router..."
+    scp -O -q $apks.FullName "${Router}:/tmp/"
     if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
     Invoke-Remote @"
 set -e
-if apk info -e flab-ui >/dev/null 2>&1; then apk del flab-ui; fi
+packages=`$(apk info 2>/dev/null | grep '^flab-ui' || true)
+[ -z "`$packages" ] || apk del `$packages
 rm -rf /www/flab
-apk add --allow-untrusted /tmp/$apkName
-rm -f /tmp/$apkName
+apk add --allow-untrusted /tmp/flab-ui-*.apk
+rm -f /tmp/flab-ui-*.apk
 "@ | Write-Host
 
     Wait-Objects -Expected $expected
@@ -503,14 +535,17 @@ function Sync-PackageFiles {
     New-Item -ItemType Directory $target -Force | Out-Null
     Get-ChildItem -LiteralPath $target -Filter 'flab-*.json' -File | Remove-Item -Force
     Copy-Item (Join-Path $source 'flab-*.json') $target
+    foreach ($file in Get-ChildItem -LiteralPath $target -Filter 'flab-*.json' -File) {
+        $text = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n").Replace("`r", "`n")
+        [IO.File]::WriteAllText($file.FullName, $text, [Text.UTF8Encoding]::new($false))
+    }
     $sourceFiles = @(Get-ChildItem -LiteralPath $source -Filter 'flab-*.json' -File)
     $targetFiles = @(Get-ChildItem -LiteralPath $target -Filter 'flab-*.json' -File)
     if ($sourceFiles.Count -ne $targetFiles.Count) { throw 'The package ACL file count does not match the source repository.' }
     foreach ($file in $sourceFiles) {
         $copy = Join-Path $target $file.Name
-        if ((Get-FileHash $file.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $copy -Algorithm SHA256).Hash) {
-            throw "The package ACL copy differs: $($file.Name)"
-        }
+        $sourceText = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n").Replace("`r", "`n")
+        if ($sourceText -ne [IO.File]::ReadAllText($copy)) { throw "The package ACL copy differs: $($file.Name)" }
     }
 }
 
@@ -587,9 +622,12 @@ function Publish-Release {
         $apkName = Split-Path $builtApk -Leaf
         if ($apkName -ne "flab-ui-$Version-r1.apk") { throw "Expected flab-ui-$Version-r1.apk, built $apkName" }
         if (-not $SkipInstallCheck) { Install-Package $builtApk }
+        $releaseApks = @(Get-ChildItem -LiteralPath $OutDir -Filter "flab-ui*-$Version-r1.apk" -File | Sort-Object Name)
+        if ($releaseApks.Count -lt 2) { throw 'The modular release did not produce a complete apk set.' }
         $apkHash = (Get-FileHash $builtApk -Algorithm SHA256).Hash.ToLower()
         $sumFile = "$builtApk.sha256"
-        [IO.File]::WriteAllText($sumFile, "$apkHash  $apkName`n", [Text.UTF8Encoding]::new($false))
+        $checksums = @($releaseApks | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" })
+        [IO.File]::WriteAllText($sumFile, (($checksums -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
 
         Write-Host 'Committing the Makefile and integration files in the packages checkout...'
         if ((Invoke-Native git @('-C', $PackagesDir, 'rev-parse', 'HEAD')) -ne $packagesHead) { throw 'Package HEAD changed during release.' }
@@ -616,19 +654,20 @@ flab-ui $Version
 
 $changelog
 
-An architecture-independent apk (``noarch``) for apk-based OpenWrt. Install it on the router:
+Architecture-independent apks (``noarch``) for apk-based OpenWrt. The ``flab-ui`` apk is the full-install
+metapackage; ``flab-ui-base`` plus selected ``flab-ui-mod-*`` packages can also be installed. Install the complete set on the router:
 
 ``````sh
-scp -O $apkName root@<router>:/tmp/
-ssh root@<router> 'apk add --allow-untrusted /tmp/$apkName'
+scp -O flab-ui*-$Version-r1.apk root@<router>:/tmp/
+ssh root@<router> 'apk add --allow-untrusted /tmp/flab-ui-*.apk'
 ``````
 
 Then open ``https://<router>/flab/`` and sign in as root. The package is unsigned, so apk needs ``--allow-untrusted``.
 
-SHA-256 of ``$apkName``: ``$apkHash``
+SHA-256 of the full metapackage ``$apkName``: ``$apkHash``. The checksum asset contains every apk.
 It was built by the OpenWrt SDK from the source tarball of this tag (SHA-256 ``$sourceHash``).
 "@
-        $releaseArgs = @('release', 'create', $tag, $builtApk, $sumFile, '--repo', $slug, '--verify-tag', '--title', "flab-ui $Version", '--notes', $notes)
+        $releaseArgs = @('release', 'create', $tag) + @($releaseApks.FullName) + @($sumFile, '--repo', $slug, '--verify-tag', '--title', "flab-ui $Version", '--notes', $notes)
         if ($Draft) { $releaseArgs += '--draft' }
         $null = Invoke-Native gh $releaseArgs
         $released = $true
@@ -694,7 +733,7 @@ find /usr/share/rpcd/acl.d -maxdepth 1 -type f -name 'flab-*.json' -exec rm -f {
 tar -xof /tmp/flab-backend.tar -C /
 chmod 0644 /usr/share/rpcd/acl.d/flab-*.json /usr/share/rpcd/ucode/flab.*.uc /usr/share/ucode/flab/*.uc
 rm -f /tmp/flab-backend.tar
-/etc/init.d/rpcd reload
+/etc/init.d/rpcd restart
 '@
         }
         # Extract beside the live folder and rename, so a request never sees a half-copied tree.

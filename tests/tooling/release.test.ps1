@@ -73,6 +73,7 @@ function Build-Package {
     if ($failure -eq 'build') { throw 'injected build failure' }
     $apk = Join-Path $OutDir "flab-ui-$Version-r1.apk"
     [IO.File]::WriteAllText($apk, 'apk fixture')
+    [IO.File]::WriteAllText((Join-Path $OutDir "flab-ui-base-$Version-r1.apk"), 'base fixture')
     return $apk
 }
 

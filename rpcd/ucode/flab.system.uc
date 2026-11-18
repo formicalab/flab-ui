@@ -3,6 +3,7 @@
 // rpcd ucode plugin with system facts the standard ubus objects lack:
 //   ubus call flab.system cpu    CPU statistics as JSON
 //   ubus call flab.system build  identifier and file list of the installed web files (browser cache refresh)
+//   ubus call flab.system modules installed optional frontend module manifests
 //
 // Returns the kernel's cumulative CPU time counters (/proc/stat), the load average and the task counts.
 // Utilization is a rate, so it is derived from the difference between two successive calls (the UI does
@@ -104,7 +105,27 @@ function build() {
 	};
 }
 
-// rpcd registration: ubus object flab.system with the methods `cpu` and `build` (no arguments).
+// Reads optional module manifests installed by flab-ui feature packages. Invalid files are ignored rather than
+// taking down the base UI; the browser independently validates every field before creating a route.
+function modules() {
+	let root = `${WEB_ROOT}/modules`, out = [];
+	for (let name in sort(lsdir(root) ?? [])) {
+		let m = match(name, /^([a-z0-9-]+)\.json$/);
+		let raw = m ? readfile(`${root}/${name}`) : null;
+		if (raw == null)
+			continue;
+		try {
+			let value = json(raw);
+			if (type(value) == 'object' && type(value.entries) == 'array')
+				push(out, value);
+		} catch (e) {
+			continue;
+		}
+	}
+	return { modules: out };
+}
+
+// rpcd registration: ubus object flab.system.
 return deferred({
 	'flab.system': {
 		cpu: {
@@ -115,6 +136,11 @@ return deferred({
 		build: {
 			call: function() {
 				return build();
+			},
+		},
+		modules: {
+			call: function() {
+				return modules();
 			},
 		},
 	},

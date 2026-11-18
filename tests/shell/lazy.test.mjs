@@ -26,7 +26,30 @@ test('the shipped shell enforces a same-origin content security policy', async (
   assert.doesNotMatch(policy, /script-src[^;]*'unsafe-inline'/);
 });
 
-async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } = {}) {
+const allModules = [
+  { entries: [
+    { id: 'network', label: 'Ethernet ports', icon: 'ethernet', order: 10, module: './network/index.js' },
+    { id: 'interfaces', label: 'Devices and Interfaces', icon: 'diagram-3', order: 60, module: './interfaces/index.js' },
+  ] },
+  { entries: [{ id: 'radios', label: 'Wi-Fi radios', icon: 'wifi', order: 20, module: './radios/index.js' }] },
+  { entries: [{ id: 'firewall', label: 'Firewall', icon: 'brick-wall', order: 30, module: './firewall/index.js' }] },
+  { entries: [
+    { id: 'ipsec', label: 'VPN: IPsec', icon: 'shield-lock', order: 40, module: './ipsec/index.js' },
+    { id: 'wireguard', label: 'VPN: WireGuard', icon: 'shield-lock', order: 50, module: './wireguard/index.js' },
+  ] },
+  { entries: [{ id: 'dhcp', label: 'DHCP', icon: 'hdd-network', order: 70, module: './dhcp/index.js' }] },
+  { entries: [
+    { id: 'dns', label: 'DNS', icon: 'list-ul', order: 80, module: './dns/index.js', tab: 'resolver' },
+    { id: 'ddns', label: 'Dynamic DNS', title: 'DNS', icon: 'cloud', nav: 'hidden', navId: 'dns', order: 81, module: './dns/index.js', tab: 'dynamic' },
+  ] },
+  { entries: [{ id: 'routing', label: 'Routing', icon: 'signpost-split', order: 90, module: './routing/index.js' }] },
+  { entries: [{ id: 'traffic', label: 'Traffic', icon: 'activity', order: 100, module: './traffic/index.js' }] },
+  { entries: [{ id: 'services', label: 'Services', icon: 'hdd-stack', order: 110, module: './services/index.js' }] },
+  { entries: [{ id: 'toolbox', label: 'Toolbox', icon: 'tools', order: 120, module: './toolbox/index.js', activation: 'toolbox' }] },
+  { entries: [{ id: 'logs', label: 'Logs', icon: 'journal-text', order: 130, module: './logs/index.js' }] },
+];
+
+async function shell({ signedIn = true, imports = {}, loads = {}, boards = [], modules = allModules } = {}) {
   const events = {}, calls = [], styles = [], timers = new Map(), renders = [], controls = {}, paused = { on: false };
   const element = (tag, props = {}, ...children) => ({
     tag, ...props, children: children.flat().filter(c => c != null),
@@ -77,7 +100,9 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [] } 
     './icons.js': await synthetic({ icon: () => null }),
     './ubus.js': await synthetic({
       hasSession: () => signedIn, AuthError,
-      ubus: () => boards.shift()?.promise ?? Promise.resolve({ hostname: 'test', model: 'image' }),
+      ubus: (object, method) => object === 'flab.system' && method === 'modules'
+        ? Promise.resolve(typeof modules === 'function' ? modules() : modules).then(modules => ({ modules }))
+        : boards.shift()?.promise ?? Promise.resolve({ hostname: 'test', model: 'image' }),
       logout: async () => { signedIn = false; }, clearSession: () => { signedIn = false; },
     }),
     './login.js': await synthetic({ showLogin: callback => { onLogin = callback; app.replaceChildren('LOGIN'); } }),
@@ -109,6 +134,28 @@ test('login imports no page modules; successful sign-in resolves only the select
   assert.deepEqual(links.slice(3, 6).map(n => n.children.at(-1)), ['Firewall', 'VPN: IPsec', 'VPN: WireGuard']);
   assert.equal(links.at(-1).children.at(-1), 'System settings');
   assert.equal(links[0].ariaCurrent, 'page');
+});
+
+test('the base package renders without feature modules', async () => {
+  const s = await shell({ modules: [] });
+  const links = s.app.children[0].children[0].children.filter(n => n?.href);
+  assert.equal(links.map(n => n.href).join(','), '#overview,#settings');
+  assert.equal(s.calls.at(-1), 'load:overview');
+  await s.navigate('#firewall');
+  assert.equal(s.calls.at(-1), 'load:overview', 'an unavailable module route falls back safely');
+});
+
+test('a transient module discovery failure is retried on the next route', async () => {
+  let attempts = 0;
+  const s = await shell({ modules: () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('rpcd is restarting');
+    return allModules;
+  } });
+  assert.equal(s.app.children[0].children[0].children.filter(n => n?.href).map(n => n.href).join(','), '#overview,#settings');
+  await s.navigate('#missing');
+  assert.equal(attempts, 2);
+  assert.equal(s.app.children[0].children[0].children.filter(n => n?.href).some(n => n.href === '#network'), true);
 });
 
 test('aliases invalidate the old route; unknown routes retain the default page', async () => {

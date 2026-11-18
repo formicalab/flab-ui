@@ -1,0 +1,1 @@
+{"entries":[{"id":"toolbox","label":"Toolbox","icon":"tools","order":120,"module":"./toolbox/index.js","activation":"toolbox"}]}

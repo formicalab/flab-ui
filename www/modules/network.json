@@ -1,0 +1,1 @@
+{"entries":[{"id":"network","label":"Ethernet ports","icon":"ethernet","order":10,"module":"./network/index.js"},{"id":"interfaces","label":"Devices and Interfaces","icon":"diagram-3","order":60,"module":"./interfaces/index.js"}]}

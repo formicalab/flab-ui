@@ -5,11 +5,10 @@
 // This module is not a page of its own: pages/interfaces/index.js hosts it (its load, view, command-bar nodes and pause rule).
 import { h } from '../../core/dom.js';
 import { ubus, optional } from '../../core/ubus.js';
-import { badge, button, card, emptyState, tile, tiles, muted, GRADE_KIND } from '../../core/ui.js';
+import { badge, button, card, emptyState, tile, tiles, muted, GRADE_KIND, SECURITY_KIND } from '../../core/ui.js';
 import { disclosure } from '../../core/fold.js';
 import { searchControl, selectControl } from '../../core/controls.js';
 import { fmtRate, ipNum } from '../../core/format.js';
-import { SECURITY_KIND } from '../radios/parts.js';
 // Badge color for a client's signal strength in dBm: >= -50 strong, >= -70 usable, below that weak.
 const SIGNAL_KIND = s => s == null ? '' : s >= -50 ? 'success' : s >= -70 ? 'warning' : 'danger';
 

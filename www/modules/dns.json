@@ -1,0 +1,1 @@
+{"entries":[{"id":"dns","label":"DNS","icon":"list-ul","order":80,"module":"./dns/index.js","tab":"resolver"},{"id":"ddns","label":"Dynamic DNS","title":"DNS","icon":"cloud","nav":"hidden","navId":"dns","order":81,"module":"./dns/index.js","tab":"dynamic"}]}

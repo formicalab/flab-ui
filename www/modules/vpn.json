@@ -1,0 +1,1 @@
+{"entries":[{"id":"ipsec","label":"VPN: IPsec","icon":"shield-lock","order":40,"module":"./ipsec/index.js"},{"id":"wireguard","label":"VPN: WireGuard","icon":"shield-lock","order":50,"module":"./wireguard/index.js"}]}

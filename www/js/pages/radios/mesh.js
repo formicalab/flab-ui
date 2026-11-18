@@ -7,7 +7,9 @@ import { badge, kv, meter, section, muted, mono } from '../../core/ui.js';
 import { createTracker, latest } from '../../core/rates.js';
 import { fmtBytes, fmtLine, fmtNum, fmtSpan } from '../../core/format.js';
 import { disclosure } from '../../core/fold.js';
-import { STP_ROLE } from '../network/util.js';
+const STP_ROLE = {
+  root: 'Root port', designated: 'Designated', alternate: 'Alternate (blocked)', backup: 'Backup', disabled: 'Disabled',
+};
 
 // Module-level so the rate history survives the redraw on every poll; a peer series is keyed by the
 // interface and the peer's MAC.

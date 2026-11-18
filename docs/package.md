@@ -6,6 +6,28 @@ The proposed `flab-ui` package (`admin/flab-ui` on the
 [`flab-ui` branch of formicalab/packages](https://github.com/formicalab/packages/tree/flab-ui/admin/flab-ui), not yet
 merged into [openwrt/packages](https://github.com/openwrt/packages)) installs:
 
+The package definition builds one base package, feature modules and a full-install metapackage:
+
+| Package | Purpose |
+|---|---|
+| `flab-ui-base` | Shell, shared assets/libraries, Overview and System settings |
+| `flab-ui-mod-network` | Ethernet ports, VLANs, Devices and Interfaces, connected clients |
+| `flab-ui-mod-wireless` | Wi-Fi radios, networks and mesh |
+| `flab-ui-mod-firewall` | Firewall |
+| `flab-ui-mod-vpn` | IPsec and WireGuard |
+| `flab-ui-mod-dhcp` | DHCP and router advertisements |
+| `flab-ui-mod-dns` | DNS and Dynamic DNS |
+| `flab-ui-mod-routing` | Routes and BGP |
+| `flab-ui-mod-traffic` | Traffic and nlbwmon |
+| `flab-ui-mod-toolbox` | Network diagnostic tools |
+| `flab-ui-mod-services` | Service control |
+| `flab-ui-mod-logs` | System and kernel logs |
+| `flab-ui` | Metapackage that depends on the base and every module |
+
+Feature modules install a JSON manifest in `/www/flab/modules`. `flab.system modules` reads them, and the shell
+registers only installed pages. Removing a feature package therefore removes its navigation entry and rpcd backend.
+`flab-ui-base` remains required by every module.
+
 | Source | Installed to |
 |---|---|
 | `www/` | `/www/flab/` (served by uhttpd at `https://<router>/flab/`) |
@@ -16,8 +38,9 @@ merged into [openwrt/packages](https://github.com/openwrt/packages)) installs:
 
 It depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`, `ucode-mod-fs`, `ucode-mod-ubus`, `ucode-mod-uci`, `ucode-mod-uloop`, `uhttpd` and
 `uhttpd-mod-ubus`. The programs the pages read from (`swanctl`, `birdc`, `wg`, `nft`, `iw`, `nlbw`, ...) are optional
-runtime tools, not dependencies: install the ones for the pages you use. Installing and removing the package reloads rpcd.
-The package is built from the `v<version>` tag of this repository; `tests/` and `tools/` are not installed.
+runtime tools, not dependencies: install the ones for the pages you use. Installing and removing a package restarts rpcd
+so it rescans the plugin executables.
+The packages are built from the `v<version>` tag of this repository; `tests/` and `tools/` are not installed.
 `tools/artifact-manifest.json` is the checked-in source-to-install contract. Builds reject missing plugin/ACL pairs,
 and installs verify every declared target plus the complete `/www/flab` file set.
 The source `rpcd/acl.d/` files are authoritative for development. Release tooling copies them into the packages
@@ -97,7 +120,7 @@ pwsh -File tools/package.ps1 -Action Release -Version 0.1.4 -Router root@192.168
 - **Editing loop.** Use `Sync` while changing pages: it replaces `/www/flab` with a copy of `www/` in about a second
   and needs no SDK. Reload the browser: the page notices that the router's files changed and downloads them again
   (see [Browser cache](frontend.md#browser-cache)). `-Backend` also copies `rpcd/` to the places the package installs
-  it and reloads rpcd; do not use it while a configuration apply is waiting for confirmation, because the rollback
+  it and restarts rpcd; do not use it while a configuration apply is waiting for confirmation, because the rollback
   timer lives in rpcd's memory. Files deleted from `rpcd/` stay on the router; `Deploy` cleans that up. Use `Deploy`
   before calling a change done: it exercises the real package (files, permissions, dependencies, scripts).
 - **Versions.** The version of a working-tree apk is the Makefile's `PKG_VERSION`, and its release is the UTC build time
@@ -155,8 +178,9 @@ definition and smoke test to `master`, not this application's source tree. Keep 
 hash-verified, use a real maintainer identity and matching `Signed-off-by`, and reset `PKG_RELEASE` on a version bump.
 The source is architecture-independent, but fresh-image dependency checks and more than one board remain important.
 
-Run the feed build, its `test.sh` and current upstream formalities before submission. The smoke test compiles installed
-plugins and checks the `flab.util` import; it does not exercise the web UI, actual rollback, or optional daemon behavior.
+Run the feed build, its `test.sh` and current upstream formalities before submission. The smoke test handles each
+subpackage, compiles installed plugins, checks every plugin/ACL pair and validates base shared imports; it does not
+exercise the web UI, actual rollback, or optional daemon behavior.
 Keep the license notices of bundled third-party assets in the distributed package as well as in the source.
 The contribution policy requires disclosure of AI assistance and human review. The current workflow stops at
 preparation and updates to this source repository and its packages fork: do not open a PR against the main OpenWrt

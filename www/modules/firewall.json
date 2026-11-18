@@ -1,0 +1,1 @@
+{"entries":[{"id":"firewall","label":"Firewall","icon":"brick-wall","order":30,"module":"./firewall/index.js"}]}

@@ -7,7 +7,7 @@ import { ubus, hasSession, logout, clearSession, AuthError } from './ubus.js';
 import { showLogin } from './login.js';
 import { ensureCurrent } from './freshness.js';
 import { button, card } from './ui.js';
-import { pages, aliases } from '../pages/index.js';
+import { basePages, installedPages, aliases } from '../pages/index.js';
 
 // Module-level state: the refresh interval of the open page, a function that refreshes the open page (for the
 // tab becoming visible again), the number of the current route (a route that was superseded while it awaited the
@@ -18,6 +18,8 @@ let routeNo = 0;
 let board = null;
 let freshnessChecked = false;
 const loadedCss = new Set();
+let pages = basePages;
+let modulesLoaded = false;
 
 // Page-specific stylesheets are loaded once, the first time the page is opened. `css` may be one path or a list.
 function ensureCss(hrefs) {
@@ -29,7 +31,7 @@ function ensureCss(hrefs) {
 }
 
 // The first registered page opens when the URL has no hash.
-const defaultPageId = pages[0].id;
+const defaultPageId = basePages[0].id;
 
 // Renders the page named by the URL hash (shell, navigation, command bar) and starts its refresh loop.
 // Runs on start and on every hashchange; shows the login form first when there is no session.
@@ -45,6 +47,17 @@ async function route() {
   if (!freshnessChecked) {
     freshnessChecked = true;
     if (await ensureCurrent()) return;
+    if (!current()) return;
+  }
+  if (!modulesLoaded) {
+    try {
+      const reply = await ubus('flab.system', 'modules');
+      pages = installedPages(reply?.modules);
+      modulesLoaded = true;
+    } catch (e) {
+      if (e instanceof AuthError) return expire();
+      pages = basePages;
+    }
     if (!current()) return;
   }
   // A route that moved to another page (see `aliases` in pages/index.js): the hash is replaced, which runs this function again.
