@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.10 - 2026-11-18
+
+### Connected devices
+
+- Add learned Ethernet clients to Devices and Interfaces using the bridge forwarding database, correlated with DHCP,
+  ARP/NDP and static reservation names. Each entry reports the Ethernet port it was learned through without assuming
+  that the device is directly attached.
+- Replace the client list with port/AP topology cards and curved dependency lines, with matching styling for Ethernet
+  ports and Wi-Fi access points.
+- Merge Wi-Fi networks into one Wi-Fi devices pane, show security and a colored RSSI meter beside each client, and keep
+  expanded client details open across automatic refreshes.
+
+### Interface
+
+- Reorder the DHCP page to show daemon settings, pool settings, reservations and network boot before current leases.
+- Improve connected-device spacing, borders and mobile layout; keep the Wi-Fi legend visible in a lightly tinted panel.
+
 ## 0.1.9 - 2026-11-18
 
 ### Packaging
