@@ -31,8 +31,8 @@
   max-width: 48rem;
 }
 .cc-devices.cc-wifi {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  display: flex;
+  flex-direction: column;
   max-width: none;
 }
 .cc-access-point { min-width: 0; }
@@ -138,6 +138,6 @@
   .cc-summary-card > .card-body, .cc-wifi-card > .card-body { padding: .75rem; }
   .cc-port { width: min(100%, 13rem); }
   .cc-wires { display: none; }
-  .cc-devices.cc-wifi { grid-template-columns: 1fr; }
+  .cc-devices.cc-wifi { flex-direction: column; }
   .cc-wifi-group { padding: .75rem; }
 }
