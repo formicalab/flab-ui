@@ -1,14 +1,14 @@
 /* The Connected devices view of Devices and Interfaces: the filter box and the radio selector of the command bar. */
 .cc-filters { gap: .5rem; align-items: center; }
 
-.cc-wired { padding: .75rem 1rem 1rem; }
+.cc-wired { padding: .15rem; }
 .cc-wire-row {
   position: relative;
   display: grid;
   grid-template-columns: 10rem minmax(0, 1fr);
   align-items: center;
   gap: clamp(4rem, 9vw, 9rem);
-  padding: .65rem 0;
+  padding: .4rem 0;
 }
 .cc-port {
   position: relative;
@@ -36,15 +36,12 @@
   max-width: none;
 }
 .cc-access-point { min-width: 0; }
-.cc-wire-row.cc-wifi { margin: .5rem 1rem .25rem; }
-.cc-client-details { margin: .75rem 1rem 1rem; }
-.cc-wifi-group + .cc-wifi-group { border-top: 1px solid var(--fl-stroke); margin-top: .75rem; padding-top: .75rem; }
 .cc-wifi-group-head {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: .45rem;
-  padding: .25rem 1rem 0;
+  padding: 0 0 .75rem;
   font-weight: 600;
 }
 .cc-wifi-group-head .sub { color: var(--fl-muted); font-size: .8rem; font-weight: 400; }
@@ -54,7 +51,7 @@
   z-index: 1;
   display: flex;
   align-items: flex-start;
-  gap: .65rem;
+  gap: .7rem;
   min-width: 0;
   padding: .65rem .75rem;
   border: 1px solid var(--fl-stroke);
@@ -79,10 +76,44 @@
 .cc-wire { fill: none; stroke: color-mix(in srgb, var(--fl-brand) 35%, var(--fl-stroke)); stroke-width: 1.5; }
 .cc-endpoint { fill: var(--fl-brand); stroke: var(--fl-surface); stroke-width: 2; }
 
+.cc-wifi-card > .card-body { padding: 1rem; }
+.cc-wifi-card .legend {
+  margin: 0 0 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--fl-brand) 18%, var(--fl-stroke));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--fl-brand) 5%, var(--fl-surface)), var(--fl-surface));
+  box-shadow: none;
+}
+.cc-summary-card > .card-body { padding: 1rem 1.15rem 1.15rem; }
+.cc-wifi-card .legend ul { margin-bottom: 0; }
+.cc-wifi-card .legend li + li { margin-top: .2rem; }
+.cc-wifi-group {
+  padding: 1rem;
+  border: 1px solid var(--fl-stroke);
+  border-radius: .7rem;
+  background: color-mix(in srgb, var(--fl-surface-hover) 45%, var(--fl-surface));
+}
+.cc-wifi-group + .cc-wifi-group { margin-top: 1rem; }
+.cc-wire-row.cc-wifi { margin: 0; }
+.cc-client-details {
+  margin: 1rem 0 0;
+  border-top: 1px solid var(--fl-stroke);
+  padding-top: .75rem;
+}
+.cc-client-details > summary { padding: .3rem .1rem; }
+.cc-client-details .grid-wrap { margin-top: .65rem; }
+.cc-wifi-card .cc-access-point {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--fl-brand) 11%, var(--fl-surface)), var(--fl-surface));
+}
+.cc-wifi-card .cc-device {
+  border-color: color-mix(in srgb, var(--fl-brand) 18%, var(--fl-stroke));
+}
+
 @media (max-width: 720px) {
   .cc-wire-row { grid-template-columns: 1fr; gap: .5rem; }
-  .cc-wired { padding: .5rem; }
+  .cc-summary-card > .card-body, .cc-wifi-card > .card-body { padding: .75rem; }
   .cc-port { width: min(100%, 13rem); }
   .cc-wires { display: none; }
   .cc-devices.cc-wifi { grid-template-columns: 1fr; }
+  .cc-wifi-group { padding: .75rem; }
 }
