@@ -1,12 +1,12 @@
 /* The Connected devices view of Devices and Interfaces: the filter box and the radio selector of the command bar. */
 .cc-filters { gap: .5rem; align-items: center; }
 
-.cc-wired { padding: .25rem 0 .5rem; }
+.cc-wired { padding: .75rem 1rem 1rem; }
 .cc-wire-row {
   position: relative;
   display: grid;
   grid-template-columns: 10rem minmax(0, 1fr);
-  align-items: stretch;
+  align-items: center;
   gap: clamp(4rem, 9vw, 9rem);
   padding: .65rem 0;
 }
@@ -24,10 +24,11 @@
 .cc-port > svg { flex: none; color: var(--fl-brand); }
 .cc-port strong { display: block; text-transform: uppercase; }
 .cc-devices {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: .6rem;
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
   min-width: 0;
+  max-width: 48rem;
 }
 .cc-device {
   position: relative;
@@ -61,6 +62,7 @@
 
 @media (max-width: 720px) {
   .cc-wire-row { grid-template-columns: 1fr; gap: .5rem; }
+  .cc-wired { padding: .5rem; }
   .cc-port { width: min(100%, 13rem); }
   .cc-wires { display: none; }
 }
