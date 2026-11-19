@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Overview
+
+- Fix the Storage "Written since boot" figure: discards that the overlay's loop device sends to the eMMC (for example
+  the overlay format) are no longer counted as data written. The call reports them separately as `discarded` and the
+  tile's tooltip says so.
+- Drop the redundant Network card header and stack Internet connectivity and IPv6 delegation below 1800 px so long
+  IPv6 addresses never overflow.
+
+### Sign-in
+
+- Center the host name pill against the title in the compact sign-in header.
+
 ## 0.1.12 - 2026-11-19
 
 ### Overview

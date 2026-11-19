@@ -125,7 +125,7 @@
 .cpu-keys .key.irq { background: var(--fl-warn-fg); }
 
 /* Below a wide desktop the Network card stacks its two halves */
-@media (max-width: 1499.98px) {
+@media (max-width: 1799.98px) {
   .ov-network-grid { grid-template-columns: 1fr; }
   .ov-network .ov-prefix { border-left: 0; border-top: 1px solid var(--fl-stroke); padding: 1.25rem 0 0; }
   .ov-address { white-space: normal; overflow-wrap: anywhere; }

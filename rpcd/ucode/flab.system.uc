@@ -187,6 +187,21 @@ function disks(block) {
 		if (length(stat) >= 7) {
 			disk.read = +stat[2] * 512;
 			disk.written = +stat[6] * 512;
+			// A loop device on this disk (the f2fs overlay) turns its discards into zero-fill writes that the disk
+			// counts as written data. They are not data written by the system, so they are reported separately.
+			let discarded = 0;
+			for (let loop, item in block) {
+				let backing = replace(item.backing ?? '', /^\//, '');
+				if (match(loop, /^loop[0-9]+$/) && index(backing, name) == 0 && match(substr(backing, length(name)), /^(p?[0-9]+)?$/)) {
+					let loopStat = split(trim(attribute(loop, 'stat')), /[ ]+/);
+					if (length(loopStat) >= 14)
+						discarded += +loopStat[13] * 512;
+				}
+			}
+			if (discarded > 0) {
+				disk.discarded = discarded < disk.written ? discarded : disk.written;
+				disk.written -= disk.discarded;
+			}
 		}
 		disk.partitions = [];
 		for (let part in sort(keys(block)))

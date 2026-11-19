@@ -328,6 +328,7 @@ details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
   .login-hero { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .3rem 1rem; padding: 1.2rem 1.4rem; }
   .login-hero p, .login-hero ul { display: none; }
   .login-hero h2 { margin: 0; font-size: 1.5rem; }
+  .login-host { align-self: center; }
   .login-logo svg { width: 48px; height: 48px; }
   .login-form { padding: 1.5rem 1.4rem; }
 }
