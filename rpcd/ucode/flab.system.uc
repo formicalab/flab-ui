@@ -218,6 +218,67 @@ function disks(block) {
 	return list;
 }
 
+// The NAND chip as the kernel logged it at boot ("nand: Macronix MX30LF1G18AC", "nand: 128 MiB, SLC, ...").
+// The boot log can have rotated out, so every field is optional.
+function nandChip() {
+	let chip = {};
+	let result = command_result("dmesg 2>/dev/null | grep -E 'nand: ' | head -6", { timeout: 3, max_output: 8192 });
+	for (let line in split(result.output ?? '', '\n')) {
+		line = trim(line);
+		let geometry = match(line, /nand: ([0-9]+) MiB, ([A-Za-z]+), erase size: ([0-9]+) KiB, page size: ([0-9]+)/);
+		let name = match(line, /nand: ([A-Z][A-Za-z]+ [A-Z0-9][A-Za-z0-9._-]*)$/);
+		if (geometry)
+			chip = { ...chip, size: +geometry[1] * 1048576, cell: geometry[2], erase: +geometry[3] * 1024, page: +geometry[4] };
+		else if (name)
+			chip.model = name[1];
+	}
+	return chip;
+}
+
+function numberAt(path) {
+	let value = trim(readfile(path) ?? '');
+	return match(value, /^[0-9]+$/) ? +value : null;
+}
+
+// Raw NAND flash managed by UBI (many routers and repeaters): chip identity, wear from UBI's erase counters, the
+// bad-block count against UBI's spare reserve, ECC activity and the UBI volumes in place of partitions.
+function nandDisks(chip) {
+	let list = [];
+	for (let ubi in sort(lsdir('/sys/class/ubi') ?? [])) {
+		if (!match(ubi, /^ubi[0-9]+$/))
+			continue;
+		let base = `/sys/class/ubi/${ubi}`;
+		let total = 0, corrected = 0, failures = 0;
+		for (let mtd in (lsdir('/sys/class/mtd') ?? []))
+			if (match(mtd, /^mtd[0-9]+$/) && trim(readfile(`/sys/class/mtd/${mtd}/type`) ?? '') == 'nand') {
+				total += numberAt(`/sys/class/mtd/${mtd}/size`) ?? 0;
+				corrected += numberAt(`/sys/class/mtd/${mtd}/corrected_bits`) ?? 0;
+				failures += numberAt(`/sys/class/mtd/${mtd}/ecc_failures`) ?? 0;
+			}
+		let disk = { name: ubi, kind: 'NAND flash', model: chip.model ?? 'NAND flash', size: chip.size ?? total,
+			cell: chip.cell, erase: numberAt(`${base}/eraseblock_size`), page: chip.page,
+			nand: { maxErase: numberAt(`${base}/max_ec`), bad: numberAt(`${base}/bad_peb_count`),
+				reserved: numberAt(`${base}/reserved_for_bad`), blocks: numberAt(`${base}/total_eraseblocks`), corrected, failures },
+			partitions: [] };
+		for (let entry in sort(lsdir('/sys/class/ubi') ?? []))
+			if (index(entry, ubi + '_') == 0 && match(entry, /^ubi[0-9]+_[0-9]+$/))
+				push(disk.partitions, { name: entry, label: trim(readfile(`/sys/class/ubi/${entry}/name`) ?? ''),
+					size: numberAt(`/sys/class/ubi/${entry}/data_bytes`) ?? 0 });
+		push(list, disk);
+	}
+	return list;
+}
+
+// The UBI volume behind a block device name such as ubi0_3 (the volume itself) or ubiblock0_1 (read-only squashfs on it).
+function ubiVolume(name, chip) {
+	let found = match(name, /^(ubi|ubiblock)([0-9]+)_([0-9]+)$/);
+	if (!found)
+		return null;
+	let volume = `ubi${found[2]}_${found[3]}`;
+	return { kind: 'NAND flash', model: chip.model ?? 'NAND flash', partition: trim(readfile(`/sys/class/ubi/${volume}/name`) ?? '') || volume,
+		volumeSize: numberAt(`/sys/class/ubi/${volume}/data_bytes`) };
+}
+
 function storage() {
 	let mounts = [];
 	let result = command_result("df -kP 2>/dev/null | awk 'NR > 1 { print $1 \"\\t\" $2 \"\\t\" $3 \"\\t\" $4 \"\\t\" $5 \"\\t\" $6 }'",
@@ -253,9 +314,18 @@ function storage() {
 		let size = +(trim(readfile(`/sys/class/block/${name}/size`) ?? '0')) * 512;
 		block[name] = { name, model, kind, backing, removable, size };
 	}
+	let chip = length(lsdir('/sys/class/ubi') ?? []) ? nandChip() : {};
 	let backingHardware = (device) => {
-		if (device == '/dev/root')
+		let ubi = ubiVolume(replace(device, /^\/dev\//, ''), chip);
+		if (ubi)
+			return ubi;
+		if (device == '/dev/root') {
+			if (block.mmcblk0?.kind != 'MMC')
+				for (let name in sort(keys(block)))
+					if (match(name, /^ubiblock[0-9]+_[0-9]+$/))
+						return ubiVolume(name, chip);
 			return { kind: block.mmcblk0?.kind == 'MMC' ? 'eMMC firmware' : 'Firmware storage', model: block.mmcblk0?.model ?? 'root device' };
+		}
 		if (match(device, /^\/dev\/loop/)) {
 			let name = replace(device, /^\/dev\//, '');
 			let backing = block[name]?.backing ?? '';
@@ -284,17 +354,18 @@ function storage() {
 			if (item.fstype == 'tmpfs')
 				hardware = { kind: 'Volatile RAM', model: 'System memory' };
 			else if (item.fstype == 'overlay')
-				hardware = backingHardware('/dev/loop0');
+				hardware = backingHardware(byMount['/overlay']?.device ?? '/dev/loop0');
 			else
 				hardware = backingHardware(item.device);
-			item.hardware = hardware;
-			item.deviceSize = item.fstype == 'overlay'
-				? block.mmcblk0?.size ?? block.loop0?.size ?? 0
+			item.deviceSize = hardware.volumeSize
+				?? (item.fstype == 'overlay' ? block.mmcblk0?.size ?? block.loop0?.size ?? 0
 				: item.device == '/dev/root' ? block.mmcblk0?.size ?? 0
-				: block[replace(item.device, /^\/dev\//, '')]?.size ?? 0;
+				: block[replace(item.device, /^\/dev\//, '')]?.size ?? 0);
+			delete hardware.volumeSize;
+			item.hardware = hardware;
 			push(mounts, item);
 		}
-	return { ok: true, disks: disks(block), filesystems: sort(mounts, (a, b) => {
+	return { ok: true, disks: [...disks(block), ...nandDisks(chip)], filesystems: sort(mounts, (a, b) => {
 		let ar = a.mount == '/' ? 0 : a.mount == '/overlay' ? 1 : a.mount == '/tmp' ? 2 : 3;
 		let br = b.mount == '/' ? 0 : b.mount == '/overlay' ? 1 : b.mount == '/tmp' ? 2 : 3;
 		return ar - br || (a.mount == b.mount ? 0 : a.mount < b.mount ? -1 : 1);

@@ -1,6 +1,7 @@
 /* Overview page styling (temperature sensors, CPU load). Loaded on demand by core/app.js. */
 
 .ov-network-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(27rem, 1.1fr); gap: 1.25rem; }
+.ov-network-grid.ov-single { grid-template-columns: minmax(0, 1fr); }
 .ov-network .ov-prefix { border-left: 1px solid var(--fl-stroke); padding-left: 1.5rem; }
 .ov-section-head { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
 .ov-section-head h2 { margin: 0; font-size: 1rem; font-weight: 600; }

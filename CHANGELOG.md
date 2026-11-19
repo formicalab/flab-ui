@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.15 - 2026-11-19
+
+### Overview
+
+- Raw NAND flash (UBI) is now understood, as found on repeaters and many routers: the Storage card shows the chip
+  (vendor, model, cell type), the most-worn block's erase count, bad blocks against UBI's spare reserve, ECC
+  activity and the UBI volumes, with a spare-block health badge. Mounts on UBI volumes name their hardware instead of
+  "Loop device" or "Block storage".
+- A router behind another router (static private address, for example a repeater or access point in a mesh) is shown
+  as "Upstream router" with its default route, a "static" badge instead of "received", and no empty IPv6 delegation
+  half. "Provider" wording is only used where a prefix really is delegated.
+
 ## 0.1.14 - 2026-11-19
 
 ### Overview

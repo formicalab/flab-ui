@@ -63,7 +63,7 @@ export default {
           h('div', { className: 'ov-globe' }, icon(network.unavailable ? 'info-circle' : network.online ? 'globe2' : 'x-circle')),
           h('div', {},
             h('div', { className: 'muted small' }, connectivityNote(network)),
-            h('div', { className: 'ov-internet-title' }, network.unavailable ? 'Unknown' : network.online ? 'Connected' : 'Offline'))),
+            h('div', { className: 'ov-internet-title' }, network.unavailable ? 'Unknown' : network.upstream ? 'Upstream router' : network.online ? 'Connected' : 'Offline'))),
         h('div', { className: 'ov-protocols' },
           protocol('IPv4', network.ipv4, network.unavailable),
           protocol('IPv6', network.ipv6, network.unavailable)),
@@ -93,7 +93,7 @@ export default {
                 h('b', {}, a.name), h('span', { className: 'mono' }, `${a.address}/${a.mask}`)))
               : [h('div', { className: 'muted small' }, 'None: no part of this prefix is delegated to the router\'s networks.')])),
         ] : h('div', { className: 'ov-prefix-empty' }, icon('diagram-3', 28),
-          network.unavailable ? 'Delegation data is unavailable.' : 'The provider has not delegated an IPv6 prefix.')));
+          network.unavailable ? 'Delegation data is unavailable.' : 'No IPv6 prefix has been delegated to this router.')));
 
     return [
       h('div', { className: 'card ov-hero' },
@@ -115,7 +115,10 @@ export default {
             cpu ? `critical at ${cpu.crit ?? '–'} °C` : (hot ? sensorLabel(hot).title : ''),
             (cpu || hot) ? levelText[sensorLevel(cpu || hot)] : ''))),
       card(null,
-        h('div', { className: 'card-body ov-network-grid' }, internet, prefix),
+        // Behind another router there is nothing to delegate: show the uplink alone instead of an empty half.
+        network.upstream && !network.prefix
+          ? h('div', { className: 'card-body ov-network-grid ov-single' }, internet)
+          : h('div', { className: 'card-body ov-network-grid' }, internet, prefix),
         'ov-network'),
       cpuData ? cpuCard(cpuData) : null,
       sensors ? temperatureCard(sensors) : null,
@@ -131,30 +134,44 @@ export default {
   },
 };
 
-// Physical storage device: identity, wear estimate, traffic since boot and partition table.
+// Physical storage device: identity, wear, traffic since boot and partitions. eMMC reports its own wear estimate;
+// raw NAND (UBI) has no wear gauge, so it shows the erase counter, bad blocks against the spare reserve and ECC activity.
 function diskPanel(d) {
   const worn = d.wear?.worst;
+  const nand = d.nand;
   const eol = d.eol && d.eol !== 'normal';
-  const health = eol ? [`end of life: ${d.eol}`, 'danger'] : worn?.to != null && worn.to >= 80 ? ['wearing out', 'warning'] : ['wear normal', 'success'];
+  let health = null;
+  if (nand) {
+    const exhausted = nand.reserved > 0 && nand.bad >= nand.reserved;
+    health = nand.failures > 0 ? ['ECC failures', 'danger'] : exhausted ? ['no spare blocks left', 'danger']
+      : nand.reserved > 0 && nand.bad * 4 >= nand.reserved * 3 ? ['few spare blocks left', 'warning'] : nand.bad != null ? ['spare blocks ok', 'success'] : null;
+  } else if (worn || d.eol)
+    health = eol ? [`end of life: ${d.eol}`, 'danger'] : worn?.to != null && worn.to >= 80 ? ['wearing out', 'warning'] : ['wear normal', 'success'];
+  const healthTip = nand
+    ? 'Bad blocks against UBI\'s spare reserve, and uncorrectable ECC errors. Raw NAND has no wear gauge; the erase count shows its most-worn block.'
+    : 'The device\'s own wear estimate (JEDEC life-time and pre-EOL registers). It does not detect bad blocks, read errors or data corruption.';
   const fw = d.firmware?.replace(/(?:00)+$/, '');
   return h('div', { className: 'ov-disk' },
     h('div', { className: 'ov-disk-head' },
       h('b', {}, [d.vendor, d.model].filter(Boolean).join(' ') || d.name),
-      badge(d.kind, 'info'), d.rotational ? h('span', { className: 'chip' }, 'spinning disk') : null,
+      badge(d.kind, 'info'), d.cell ? h('span', { className: 'chip' }, d.cell) : null, d.rotational ? h('span', { className: 'chip' }, 'spinning disk') : null,
       d.readonly ? h('span', { className: 'chip' }, 'read-only') : null,
-      (worn || d.eol) ? h('span', { title: 'The device\'s own wear estimate (JEDEC life-time and pre-EOL registers). It does not detect bad blocks, read errors or data corruption.' }, badge(health[0], health[1])) : null,
-      h('span', { className: 'muted small mono ov-disk-dev' }, `/dev/${d.name}`)),
+      health ? h('span', { title: healthTip }, badge(health[0], health[1])) : null,
+      h('span', { className: 'muted small mono ov-disk-dev' }, nand ? d.name : `/dev/${d.name}`)),
     h('div', { className: 'ov-disk-facts' },
       diskFact('Capacity', fmtBytes(d.size)),
       d.date ? diskFact('Manufactured', d.date) : null,
       fw ? diskFact('Firmware', fw) : null,
       worn ? diskFact('Life used', worn.to == null ? 'over 100%' : `${worn.from}–${worn.to}%`, 'estimate by the device') : null,
+      nand?.maxErase != null ? diskFact('Most-worn block', `${nand.maxErase} erase cycles`, 'Highest erase counter of any block; SLC NAND is typically rated for tens of thousands') : null,
+      nand?.bad != null ? diskFact('Bad blocks', `${nand.bad}${nand.reserved != null ? ` · ${nand.reserved} spare` : ''}`, `of ${nand.blocks ?? '?'} blocks; UBI keeps a reserve to replace them`) : null,
+      nand ? diskFact('ECC', `${nand.corrected} corrected · ${nand.failures} failed`, 'Bit errors the controller fixed, and reads it could not fix') : null,
       d.written != null ? diskFact('Written since boot', fmtBytes(d.written),
         d.discarded ? `Excludes ${fmtBytes(d.discarded)} of discards (e.g. the overlay format) that the eMMC counts as writes` : 'Data written to the device') : null,
       d.read != null ? diskFact('Read since boot', fmtBytes(d.read)) : null,
-      d.erase ? diskFact('Erase unit', fmtBytes(+d.erase)) : null),
+      d.erase ? diskFact(nand ? 'Erase block' : 'Erase unit', fmtBytes(+d.erase)) : null),
     d.partitions?.length ? h('div', { className: 'chips ov-parts' },
-      h('span', { className: 'muted small' }, 'Partitions'),
+      h('span', { className: 'muted small' }, nand ? 'UBI volumes' : 'Partitions'),
       d.partitions.map(p => h('span', { className: 'chip', title: p.name }, `${p.label || p.name} · ${fmtBytes(p.size)}`))) : null);
 }
 
@@ -210,13 +227,16 @@ function storageRow(fs) {
 // The line above the headline: which WAN carries traffic, or why there is none.
 function connectivityNote(network) {
   if (network.unavailable) return 'Connection data is unavailable';
+  if (network.upstream) return `Default route via ${network.ipv4.gateway} on ${network.ipv4.name}`;
   if (network.online) return `Via ${network.sources.join(' + ')}`;
   return network.sources.length ? `${network.sources.join(' + ')} has no usable address` : 'No WAN default route is installed';
 }
 
-// One address family: its address (flagged when private), or why the family is not available.
+// One address family: its address (flagged when private), or why the family is not available. Only addresses that
+// came from a provider say "received"; a configured one says "static".
 function protocol(label, wan, unknown) {
-  const state = unknown ? ['unknown', ''] : !wan ? ['unavailable', ''] : wan.address ? ['received', 'success'] : ['no address', 'warning'];
+  const state = unknown ? ['unknown', ''] : !wan ? ['unavailable', ''] : !wan.address ? ['no address', 'warning']
+    : wan.static ? ['static', 'info'] : ['received', 'success'];
   return h('div', { className: `ov-protocol ${wan ? 'active' : ''}` },
     h('div', { className: 'ov-protocol-head' }, h('b', {}, label), badge(...state)),
     unknown ? h('div', { className: 'muted' }, 'Not reported')

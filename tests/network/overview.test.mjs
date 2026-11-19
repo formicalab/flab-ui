@@ -54,7 +54,15 @@ assert.equal(readOverviewNetwork({ interface: [{ ...v6, 'ipv6-prefix': [] }] }).
 assert.deepEqual(readOverviewNetwork({ interface: [{ ...v6, 'ipv6-prefix': [{ address: '2a01:200::', mask: 56 }] }] }).prefix.assigned, []);
 // A router behind a modem or CGNAT has a private WAN address and is still online.
 const natted = readOverviewNetwork({ interface: [{ ...dump.interface[1], 'ipv4-address': [{ address: '192.168.100.2', mask: 24 }] }] });
-assert.deepEqual([natted.online, natted.ipv4.address, natted.ipv4.private], [true, '192.168.100.2', true]);
+assert.deepEqual([natted.online, natted.ipv4.address, natted.ipv4.private, natted.upstream], [true, '192.168.100.2', true, false]);
+// A repeater: a static private address on lan with the main router as gateway. There is an upstream router, no provider.
+const repeater = readOverviewNetwork({ interface: [{ interface: 'loopback', up: true }, { interface: 'lan', up: true, proto: 'static',
+  'ipv4-address': [{ address: '192.168.1.127', mask: 24 }], route: [{ target: '0.0.0.0', mask: 0, nexthop: '192.168.1.1' }],
+  'dns-server': ['192.168.1.1'], 'ipv6-address': [], 'ipv6-prefix': [], 'ipv6-prefix-assignment': [] }] });
+assert.deepEqual([repeater.upstream, repeater.online, repeater.ipv4.static, repeater.ipv4.gateway, repeater.ipv6, repeater.prefix],
+  [true, true, true, '192.168.1.1', null, null]);
+// A static address with a public IP (an ISP-assigned one) is a real WAN, not an upstream router.
+assert.equal(readOverviewNetwork({ interface: [{ ...dump.interface[1], proto: 'static' }] }).upstream, false);
 // A default route without any address yet is not online.
 const bare = readOverviewNetwork({ interface: [{ ...dump.interface[1], 'ipv4-address': [] }] });
 assert.deepEqual([bare.online, bare.state, bare.ipv4.address, bare.sources], [false, 'WAN up', null, ['wan']]);

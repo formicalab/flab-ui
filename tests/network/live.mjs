@@ -24,6 +24,8 @@ const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'
 const mock = { network: null, radio: null, mesh: null, wireguard: null, firewall: null, logs: null };   // null = pass through to the real router
 // undefined = pass the netifd interface dump through; an object answers it; null makes the call fail like a refused ACL.
 let dumpMock;
+// Same idea for flab.system storage: an object answers it, undefined passes it through.
+let storageMock;
 let tick = null;                                // optional per-poll mutation, used to simulate traffic and airtime
 // The cable-test answers by port (the harness results), or null; the ports a test was asked for; and any test that would have reached
 // the real router (a test can drop the link, so one must never get there).
@@ -52,6 +54,8 @@ const handleUbus = async route => {
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [0, result] }) });
   }
   const plugin = PLUGINS[body?.params?.[1]] ?? null;
+  if (storageMock !== undefined && body?.params?.[1] === 'flab.system' && body.params[2] === 'storage')
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [0, storageMock] }) });
   if (dumpMock !== undefined && body?.params?.[1] === 'network.interface' && body.params[2] === 'dump')
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(dumpMock === null
       ? { jsonrpc: '2.0', id: body.id, result: [6] } : { jsonrpc: '2.0', id: body.id, result: [0, dumpMock] }) });
@@ -124,9 +128,12 @@ check(await page.locator('.ov-disk').count() > 0 && /Capacity/.test(await page.l
     route: [{ target: '::', mask: 0, nexthop: 'fe80::1', metric: 512 }], 'dns-server': ['2001:4860:4860::8888'] };
   const withPrefix = assigned => ({ ...wan6, 'ipv6-prefix': [{ address: '2a01:200::', mask: 56, valid: 3600, assigned }] });
   const scenarios = [
-    ['no Internet at all', { interface: [lan] }, /Offline/, /No WAN default route is installed/, /no IPv4 connection/, /no IPv6 connection/, /has not delegated an IPv6 prefix/],
-    ['IPv4 only, no IPv6', { interface: [lan, wan] }, /Connected/, /No IPv6 default route/, /9\.9\.9\.9/, /no IPv6 connection/, /has not delegated an IPv6 prefix/],
-    ['IPv6 without a delegated prefix', { interface: [lan, wan, wan6] }, /Connected/, /2a01:100::1\/64/, /has not delegated an IPv6 prefix/],
+    ['no Internet at all', { interface: [lan] }, /Offline/, /No WAN default route is installed/, /no IPv4 connection/, /no IPv6 connection/, /No IPv6 prefix has been delegated to this router/],
+    ['IPv4 only, no IPv6', { interface: [lan, wan] }, /Connected/, /No IPv6 default route/, /9\.9\.9\.9/, /no IPv6 connection/, /No IPv6 prefix has been delegated to this router/],
+    ['IPv6 without a delegated prefix', { interface: [lan, wan, wan6] }, /Connected/, /2a01:100::1\/64/, /No IPv6 prefix has been delegated to this router/],
+    ['a repeater behind the main router', { interface: [{ interface: 'loopback', up: true }, { interface: 'lan', up: true, proto: 'static', l3_device: 'br-lan', 'ipv4-address': [{ address: '192.168.1.127', mask: 24 }],
+      route: [{ target: '0.0.0.0', mask: 0, nexthop: '192.168.1.1' }], 'dns-server': ['192.168.1.1'], 'ipv6-address': [], 'ipv6-prefix': [] }] },
+      /Upstream router/, /Default route via 192\.168\.1\.1 on lan/, /static/, /192\.168\.1\.127\/24/],
     ['a prefix delegated to no LAN', { interface: [lan, wan, withPrefix({})] }, /Provider prefix/, /2a01:200::\/56/, /None: no part of this prefix is delegated/],
     ['a prefix delegated to a LAN', { interface: [lan, wan, withPrefix({ lan: { address: '2a01:200::', mask: 60 } })] }, /Delegated to router networks/, /2a01:200::\/60/],
     ['a private WAN address behind a modem', { interface: [lan, { ...wan, 'ipv4-address': [{ address: '192.168.100.2', mask: 24 }] }] }, /Connected/, /192\.168\.100\.2\/24/, /private address/],
@@ -142,8 +149,43 @@ check(await page.locator('.ov-disk').count() > 0 && /Capacity/.test(await page.l
     const missing = patterns.filter(p => !p.test(body)).map(String);
     check(missing.length === 0 && errors.length === before,
       `Overview says it plainly when there is ${name}`, `${missing.join(' ')} | ${errors.slice(before).join(' | ')} | ${body.replace(/\s+/g, ' ')}`);
+    if (name.startsWith('a repeater'))
+      check(!/received|IPv6 delegation|provider/i.test(body), 'a repeater behind the main router claims no provider, no received address and no delegation', body.replace(/\s+/g, ' '));
   }
   dumpMock = undefined;
+  await page.reload();
+  await page.waitForSelector('.ov-network');
+}
+// Overview storage on raw NAND (UBI) and eMMC wear states, driven through a mocked flab.system storage answer.
+{
+  const fs = [{ device: 'overlayfs:/overlay', mount: '/', total: 78798848, used: 475136, available: 74256384, percent: 1, fstype: 'overlay', readonly: false,
+    hardware: { kind: 'NAND flash', model: 'Macronix MX30LF1G18AC', partition: 'rootfs_data' }, deviceSize: 87486464 }];
+  const nand = nandState => ({ name: 'ubi0', kind: 'NAND flash', model: 'Macronix MX30LF1G18AC', size: 134217728, cell: 'SLC', erase: 126976,
+    nand: { maxErase: 33, bad: 4, reserved: 16, blocks: 868, corrected: 1, failures: 0, ...nandState }, partitions: [{ name: 'ubi0_3', label: 'rootfs_data', size: 87486464 }] });
+  const emmc = wear => ({ name: 'mmcblk0', kind: 'eMMC', vendor: 'Samsung', model: '8GTF4R', size: 7818182656, ...wear, partitions: [] });
+  const cases = [
+    ['healthy NAND', nand({}), [/Macronix MX30LF1G18AC/, /spare blocks ok/, /33 erase cycles/, /4 · 16 spare/, /1 corrected · 0 failed/, /UBI volumes/, /rootfs_data/]],
+    ['NAND running out of spare blocks', nand({ bad: 13 }), [/few spare blocks left/]],
+    ['NAND with no spare blocks', nand({ bad: 16 }), [/no spare blocks left/]],
+    ['NAND with uncorrectable ECC errors', nand({ failures: 2 }), [/ECC failures/]],
+    ['eMMC reporting one wear area only', emmc({ wear: { slc: null, mlc: { from: 0, to: 10 }, worst: { from: 0, to: 10 } }, eol: 'normal' }), [/wear normal/, /Life used\s*0–10%/]],
+    ['eMMC near the end of its life', emmc({ wear: { slc: null, mlc: { from: 80, to: 90 }, worst: { from: 80, to: 90 } }, eol: 'normal' }), [/wearing out/]],
+    ['eMMC pre-EOL warning', emmc({ eol: 'warning' }), [/end of life: warning/]],
+    ['a disk exposing no health data at all', emmc({}), [/Samsung 8GTF4R/, /Capacity/]],
+  ];
+  for (const [name, disk, patterns] of cases) {
+    storageMock = { ok: true, disks: [disk], filesystems: fs };
+    const before = errors.length;
+    await page.reload();
+    await page.waitForSelector('.ov-disk');
+    const body = await page.locator('.ov-disk').innerText();
+    const missing = patterns.filter(p => !p.test(body)).map(String);
+    const badges = await page.locator('.ov-disk-head .fl-badge').allInnerTexts();
+    check(missing.length === 0 && errors.length === before, `Storage shows ${name}`, `${missing.join(' ')} | ${errors.slice(before).join(' | ')} | ${body.replace(/\s+/g, ' ')} | ${badges}`);
+    if (name.startsWith('a disk exposing'))
+      check(badges.length === 1, 'a disk exposing no health data claims no health', badges.join(' | '));
+  }
+  storageMock = undefined;
   await page.reload();
   await page.waitForSelector('.ov-network');
 }

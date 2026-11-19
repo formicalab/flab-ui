@@ -37,6 +37,7 @@ function wanOf(ifaces, family) {
         address: address?.address ?? null,
         mask: address?.mask ?? null,
         private: Boolean(address) && family === 4 && !isGlobalV4(address.address),
+        static: i.proto === 'static',
         gateway: route.gateway,
         metric: route.metric,
         dns: i['dns-server'] ?? [],
@@ -80,6 +81,9 @@ export function readOverviewNetwork(dump) {
 
   return {
     unavailable,
+    // A statically addressed private uplink (repeater, access point or router behind another one): there is no
+    // provider here, only an upstream router that supplies the Internet.
+    upstream: Boolean(ipv4?.static && ipv4.private),
     online,
     state: unavailable ? 'Unavailable' : online ? 'Online' : sources.length ? 'WAN up' : 'Offline',
     ipv4,
