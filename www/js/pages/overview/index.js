@@ -59,20 +59,20 @@ export default {
     const internet = h('section', { className: 'ov-internet' },
       h('div', { className: 'ov-section-head' }, icon('globe2'), h('h2', {}, 'Internet connectivity')),
       h('div', {},
-        h('div', { className: `ov-internet-main ${network.online ? 'online' : 'offline'}` },
-          h('div', { className: 'ov-globe' }, icon(network.online ? 'globe2' : 'x-circle')),
+        h('div', { className: `ov-internet-main ${network.unavailable ? 'unknown' : network.online ? 'online' : 'offline'}` },
+          h('div', { className: 'ov-globe' }, icon(network.unavailable ? 'info-circle' : network.online ? 'globe2' : 'x-circle')),
           h('div', {},
-            h('div', { className: 'muted small' }, network.sources.length ? `Via ${network.sources.join(' + ')}` : 'No WAN default route is installed'),
-            h('div', { className: 'ov-internet-title' }, network.online ? 'Connected' : 'Offline'))),
+            h('div', { className: 'muted small' }, connectivityNote(network)),
+            h('div', { className: 'ov-internet-title' }, network.unavailable ? 'Unknown' : network.online ? 'Connected' : 'Offline'))),
         h('div', { className: 'ov-protocols' },
-          protocol('IPv4', network.ipv4),
-          protocol('IPv6', network.ipv6)),
+          protocol('IPv4', network.ipv4, network.unavailable),
+          protocol('IPv6', network.ipv6, network.unavailable)),
         h('div', { className: 'ov-internet-foot muted small' },
           h('div', { className: 'ov-dns-row' }, icon('hdd-network', 14),
-            h('b', {}, 'IPv4 DNS'), h('span', { className: 'mono' }, dnsText(network.dns4, network.inactiveDns4))),
+            h('b', {}, 'IPv4 DNS'), h('span', { className: 'mono' }, dnsText(network, 4))),
           h('div', { className: 'ov-dns-row' },
             h('span', { className: 'ov-dns-icon-spacer' }), h('b', {}, 'IPv6 DNS'),
-            h('span', { className: 'mono' }, dnsText(network.dns6, network.inactiveDns6)))
+            h('span', { className: 'mono' }, dnsText(network, 6)))
         )
       )
     );
@@ -80,7 +80,7 @@ export default {
     const prefix = h('section', { className: 'ov-prefix' },
       h('div', { className: 'ov-section-head' }, icon('diagram-3'), h('h2', {}, 'IPv6 delegation')),
       h('div', {},
-        network.prefix ? [
+        network.prefix && !network.unavailable ? [
           h('div', { className: 'ov-protocol ov-prefix-provider' },
             h('div', { className: 'ov-protocol-head' }, h('b', {}, 'Provider prefix'),
               badge('received', 'success')),
@@ -91,8 +91,9 @@ export default {
             ...(network.prefix.assigned.length
               ? network.prefix.assigned.map(a => h('div', { className: 'ov-assignment' },
                 h('b', {}, a.name), h('span', { className: 'mono' }, `${a.address}/${a.mask}`)))
-              : [h('div', { className: 'muted small' }, 'No LAN prefix assignment reported')])),
-        ] : h('div', { className: 'ov-prefix-empty' }, icon('diagram-3', 28), 'No global IPv6 prefix is currently delegated.')));
+              : [h('div', { className: 'muted small' }, 'None: no part of this prefix is delegated to the router\'s networks.')])),
+        ] : h('div', { className: 'ov-prefix-empty' }, icon('diagram-3', 28),
+          network.unavailable ? 'Delegation data is unavailable.' : 'The provider has not delegated an IPv6 prefix.')));
 
     return [
       h('div', { className: 'card ov-hero' },
@@ -206,17 +207,32 @@ function storageRow(fs) {
       h('span', { className: 'mono' }, fs.device + (fs.deviceSize ? ` · ${fmtBytes(fs.deviceSize)}` : ''))));
 }
 
-function protocol(label, wan) {
-  return h('div', { className: `ov-protocol ${wan ? 'active' : ''}` },
-    h('div', { className: 'ov-protocol-head' }, h('b', {}, label), badge(wan ? 'received' : 'unavailable', wan ? 'success' : '')),
-    wan ? [
-      h('div', { className: 'mono ov-address' }, `${wan.address ?? 'no address'}${wan.mask != null ? `/${wan.mask}` : ''}`),
-      h('div', { className: 'muted small' }, `${wan.name} · ${wan.proto}${wan.gateway ? ` · via ${wan.gateway}` : ''}`),
-    ] : h('div', { className: 'muted' }, 'No default route'));
+// The line above the headline: which WAN carries traffic, or why there is none.
+function connectivityNote(network) {
+  if (network.unavailable) return 'Connection data is unavailable';
+  if (network.online) return `Via ${network.sources.join(' + ')}`;
+  return network.sources.length ? `${network.sources.join(' + ')} has no usable address` : 'No WAN default route is installed';
 }
 
-function dnsText(active, inactive) {
+// One address family: its address (flagged when private), or why the family is not available.
+function protocol(label, wan, unknown) {
+  const state = unknown ? ['unknown', ''] : !wan ? ['unavailable', ''] : wan.address ? ['received', 'success'] : ['no address', 'warning'];
+  return h('div', { className: `ov-protocol ${wan ? 'active' : ''}` },
+    h('div', { className: 'ov-protocol-head' }, h('b', {}, label), badge(...state)),
+    unknown ? h('div', { className: 'muted' }, 'Not reported')
+      : wan ? [
+        h('div', { className: 'mono ov-address' }, wan.address ? `${wan.address}${wan.mask != null ? `/${wan.mask}` : ''}` : 'no address'),
+        h('div', { className: 'muted small' }, `${wan.name} · ${wan.proto}${wan.private ? ' · private address' : ''}${wan.gateway ? ` · via ${wan.gateway}` : ''}`),
+      ] : h('div', { className: 'muted' }, `No ${label} default route`));
+}
+
+// The DNS servers of one family, or why there are none.
+function dnsText(network, family) {
+  const wan = family === 4 ? network.ipv4 : network.ipv6;
+  const active = family === 4 ? network.dns4 : network.dns6;
+  const inactive = family === 4 ? network.inactiveDns4 : network.inactiveDns6;
+  if (network.unavailable) return 'unknown';
   if (active.length) return active.join(' · ');
   if (inactive.length) return `${inactive.join(' · ')} — received, inactive because netifd is using another DNS data source`;
-  return 'not received from provider';
+  return wan ? 'not received from provider' : `no IPv${family} connection`;
 }

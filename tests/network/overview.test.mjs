@@ -39,6 +39,26 @@ assert.deepEqual(result.dns6, ['2001:4860:4860::8888']);
 assert.deepEqual(result.inactiveDns4, []);
 assert.equal(readOverviewNetwork({ interface: [{ interface: 'wan', up: true, route: [] }] }).state, 'Offline');
 
+// No connectivity at all: only a LAN, no default route anywhere.
+const none = readOverviewNetwork({ interface: [{ interface: 'loopback', up: true }, { interface: 'lan', up: true }] });
+assert.deepEqual([none.state, none.online, none.ipv4, none.ipv6, none.prefix, none.sources, none.unavailable], ['Offline', false, null, null, null, [], false]);
+// A failed or refused dump is "unavailable", never "Offline".
+for (const bad of [null, undefined, {}, { interface: 'x' }])
+  assert.deepEqual([readOverviewNetwork(bad).state, readOverviewNetwork(bad).unavailable], ['Unavailable', true]);
+// IPv4 only: IPv6 and the delegation are simply absent.
+const v4only = readOverviewNetwork({ interface: [dump.interface[1]] });
+assert.deepEqual([v4only.online, v4only.ipv6, v4only.prefix, v4only.dns6], [true, null, null, []]);
+// IPv6 without a delegated prefix, and a prefix that is not handed to any LAN.
+const v6 = dump.interface[2];
+assert.equal(readOverviewNetwork({ interface: [{ ...v6, 'ipv6-prefix': [] }] }).prefix, null);
+assert.deepEqual(readOverviewNetwork({ interface: [{ ...v6, 'ipv6-prefix': [{ address: '2a01:200::', mask: 56 }] }] }).prefix.assigned, []);
+// A router behind a modem or CGNAT has a private WAN address and is still online.
+const natted = readOverviewNetwork({ interface: [{ ...dump.interface[1], 'ipv4-address': [{ address: '192.168.100.2', mask: 24 }] }] });
+assert.deepEqual([natted.online, natted.ipv4.address, natted.ipv4.private], [true, '192.168.100.2', true]);
+// A default route without any address yet is not online.
+const bare = readOverviewNetwork({ interface: [{ ...dump.interface[1], 'ipv4-address': [] }] });
+assert.deepEqual([bare.online, bare.state, bare.ipv4.address, bare.sources], [false, 'WAN up', null, ['wan']]);
+
 const overviewDir = new URL('../../www/js/pages/overview/', import.meta.url);
 for (const name of await readdir(overviewDir)) {
   if (!name.endsWith('.js')) continue;

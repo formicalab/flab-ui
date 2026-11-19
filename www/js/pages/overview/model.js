@@ -26,7 +26,9 @@ function wanOf(ifaces, family) {
     .map(i => {
       const route = routeOf(i, family);
       const key = family === 4 ? 'ipv4-address' : 'ipv6-address';
-      const address = addressOf(i, key, family === 4 ? isGlobalV4 : isGlobalV6);
+      // IPv4: prefer a public address, but accept a private one (router behind a modem, CGNAT): the link is still
+      // the path to the Internet. IPv6 needs a global address; link-local and ULA do not reach it.
+      const address = addressOf(i, key, family === 4 ? isGlobalV4 : isGlobalV6) ?? (family === 4 ? (i[key] ?? [])[0] : null);
       return route ? {
         name: i.interface,
         device: i.l3_device || i.device,
@@ -34,6 +36,7 @@ function wanOf(ifaces, family) {
         uptime: i.uptime,
         address: address?.address ?? null,
         mask: address?.mask ?? null,
+        private: Boolean(address) && family === 4 && !isGlobalV4(address.address),
         gateway: route.gateway,
         metric: route.metric,
         dns: i['dns-server'] ?? [],
@@ -66,7 +69,9 @@ function prefixStatus(ifaces) {
 }
 
 export function readOverviewNetwork(dump) {
-  const ifaces = dump?.interface ?? [];
+  // No dump at all (call failed or not permitted) is not the same as "no WAN": say so instead of claiming Offline.
+  const unavailable = !Array.isArray(dump?.interface);
+  const ifaces = unavailable ? [] : dump.interface;
   const ipv4 = wanOf(ifaces, 4);
   const ipv6 = wanOf(ifaces, 6);
   const prefix = prefixStatus(ifaces);
@@ -74,8 +79,9 @@ export function readOverviewNetwork(dump) {
   const online = Boolean(ipv4?.address || ipv6?.address);
 
   return {
+    unavailable,
     online,
-    state: online ? 'Online' : sources.length ? 'WAN up' : 'Offline',
+    state: unavailable ? 'Unavailable' : online ? 'Online' : sources.length ? 'WAN up' : 'Offline',
     ipv4,
     ipv6,
     prefix,

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.13 - 2026-11-19
 
 ### Overview
 
@@ -9,6 +9,9 @@
   tile's tooltip says so.
 - Drop the redundant Network card header and stack Internet connectivity and IPv6 delegation below 1800 px so long
   IPv6 addresses never overflow.
+- Say plainly when there is no Internet, no IPv6, no delegated prefix or a prefix delegated to no LAN. A refused or
+  failed interface call now reads "Unknown / data is unavailable" instead of "Offline"; a router behind a modem or
+  CGNAT (private WAN address) is shown as connected; a WAN route without an address is flagged "no address".
 
 ### Sign-in
 

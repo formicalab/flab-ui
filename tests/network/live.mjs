@@ -22,6 +22,8 @@ let failed = 0;
 const check = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}${cond ? '' : '  -> ' + extra}`); if (!cond) failed++; };
 
 const mock = { network: null, radio: null, mesh: null, wireguard: null, firewall: null, logs: null };   // null = pass through to the real router
+// undefined = pass the netifd interface dump through; an object answers it; null makes the call fail like a refused ACL.
+let dumpMock;
 let tick = null;                                // optional per-poll mutation, used to simulate traffic and airtime
 // The cable-test answers by port (the harness results), or null; the ports a test was asked for; and any test that would have reached
 // the real router (a test can drop the link, so one must never get there).
@@ -50,6 +52,9 @@ const handleUbus = async route => {
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [0, result] }) });
   }
   const plugin = PLUGINS[body?.params?.[1]] ?? null;
+  if (dumpMock !== undefined && body?.params?.[1] === 'network.interface' && body.params[2] === 'dump')
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(dumpMock === null
+      ? { jsonrpc: '2.0', id: body.id, result: [6] } : { jsonrpc: '2.0', id: body.id, result: [0, dumpMock] }) });
   if (plugin && mock[plugin]) {
     if (tick) tick(plugin, mock[plugin]);
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [0, mock[plugin]] }) });
@@ -110,6 +115,38 @@ check(await page.locator('.ov-network').count() === 1 && await page.locator('.ov
 check(await page.locator('.ov-hero .ov-kpi').count() === 5 && await page.locator('.ov-hero').evaluate(e => e === e.parentElement.firstElementChild), 'Overview opens with one hero card: identity plus five vital KPIs, no separate tiles');
 check(await page.locator('.ov-fs').count() > 0 && /^\//.test(await page.locator('.ov-fs-mount').first().innerText()) && await page.locator('.ov-fs .chips').count() > 0, 'Storage lists every mount point with its backing hardware');
 check(await page.locator('.ov-disk').count() > 0 && /Capacity/.test(await page.locator('.ov-disk').first().innerText()) && await page.locator('.ov-parts .chip').count() > 0, 'Storage describes the physical disk: capacity, wear and partitions');
+// Overview WAN states, driven through a mocked netifd dump. Each one must render a clear statement, never an error.
+{
+  const lan = { interface: 'lan', up: true, proto: 'static' };
+  const wan = { interface: 'wan', up: true, proto: 'pppoe', l3_device: 'pppoe-wan', 'ipv4-address': [{ address: '203.0.113.8', mask: 32 }],
+    route: [{ target: '0.0.0.0', mask: 0, nexthop: '203.0.113.1', metric: 10 }], 'dns-server': ['9.9.9.9'] };
+  const wan6 = { interface: 'wan6', up: true, proto: 'dhcpv6', l3_device: 'pppoe-wan', 'ipv6-address': [{ address: '2a01:100::1', mask: 64 }],
+    route: [{ target: '::', mask: 0, nexthop: 'fe80::1', metric: 512 }], 'dns-server': ['2001:4860:4860::8888'] };
+  const withPrefix = assigned => ({ ...wan6, 'ipv6-prefix': [{ address: '2a01:200::', mask: 56, valid: 3600, assigned }] });
+  const scenarios = [
+    ['no Internet at all', { interface: [lan] }, /Offline/, /No WAN default route is installed/, /no IPv4 connection/, /no IPv6 connection/, /has not delegated an IPv6 prefix/],
+    ['IPv4 only, no IPv6', { interface: [lan, wan] }, /Connected/, /No IPv6 default route/, /9\.9\.9\.9/, /no IPv6 connection/, /has not delegated an IPv6 prefix/],
+    ['IPv6 without a delegated prefix', { interface: [lan, wan, wan6] }, /Connected/, /2a01:100::1\/64/, /has not delegated an IPv6 prefix/],
+    ['a prefix delegated to no LAN', { interface: [lan, wan, withPrefix({})] }, /Provider prefix/, /2a01:200::\/56/, /None: no part of this prefix is delegated/],
+    ['a prefix delegated to a LAN', { interface: [lan, wan, withPrefix({ lan: { address: '2a01:200::', mask: 60 } })] }, /Delegated to router networks/, /2a01:200::\/60/],
+    ['a private WAN address behind a modem', { interface: [lan, { ...wan, 'ipv4-address': [{ address: '192.168.100.2', mask: 24 }] }] }, /Connected/, /192\.168\.100\.2\/24/, /private address/],
+    ['a WAN route without an address', { interface: [lan, { ...wan, 'ipv4-address': [] }] }, /Offline/, /wan has no usable address/, /no address/],
+    ['the interface dump being refused', null, /Unknown/, /Connection data is unavailable/, /Delegation data is unavailable/, /Not reported/],
+  ];
+  for (const [name, dump, ...patterns] of scenarios) {
+    dumpMock = dump;
+    const before = errors.length;
+    await page.reload();
+    await page.waitForSelector('.ov-network');
+    const body = await page.locator('.ov-network').innerText();
+    const missing = patterns.filter(p => !p.test(body)).map(String);
+    check(missing.length === 0 && errors.length === before,
+      `Overview says it plainly when there is ${name}`, `${missing.join(' ')} | ${errors.slice(before).join(' | ')} | ${body.replace(/\s+/g, ' ')}`);
+  }
+  dumpMock = undefined;
+  await page.reload();
+  await page.waitForSelector('.ov-network');
+}
 //#region Ethernet ports page
 await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');
