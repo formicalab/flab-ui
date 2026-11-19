@@ -113,7 +113,7 @@ pwsh -File tools/package.ps1 -Action Deploy -Router root@192.168.1.1   # build, 
 pwsh -File tools/package.ps1 -Action Build                             # only build the apk (no router needed)
 pwsh -File tools/package.ps1 -Action Remove -Router root@192.168.1.1   # purge every package and verify no files or objects remain
 pwsh -File tools/package.ps1 -Action Check -Router root@192.168.1.1    # do Makefile, tag, hash, changelog, release and router agree?
-pwsh -File tools/package.ps1 -Action Release -Version <version> -Router root@192.168.1.1 -Amend -NotesFile CHANGELOG.md
+pwsh -File tools/package.ps1 -Action Release -Version <version> -Amend -NotesFile CHANGELOG.md
 ```
 
 `Build` and `Deploy` do the "from a local checkout" build described above.
@@ -153,27 +153,39 @@ pwsh -File tools/package.ps1 -Action Release -Version <version> -Router root@192
 ## Releasing
 
 The tag and the package Makefile have to name the same version. The feed definition lives in the packages fork,
-separately from this source: the release tarball is finalized before its hash is recorded in the feed. `-Action Release` keeps them aligned,
-so a release is one command and the version is chosen only there:
+separately from this source: the release tarball is finalized before its hash is recorded in the feed. A GitHub-hosted
+workflow owns that sequence, so releases are reproducible and do not require a local WSL SDK:
 
 ```powershell
-pwsh -File tools/package.ps1 -Action Release -Version <version> -Router root@192.168.1.1 -PackagesDir ../packages -Amend -NotesFile CHANGELOG.md
+pwsh -File tools/package.ps1 -Action Release -Version <version> -Amend -NotesFile CHANGELOG.md
 ```
 
-It checks that this repository is on a clean, pushed `main`, tags `v<Version>`, downloads the tag's tarball, writes
-`PKG_VERSION`, `PKG_HASH` and `PKG_RELEASE:=1` into `admin/flab-ui/Makefile` of the packages checkout, builds the apk
-from that tarball (so the SDK checks the hash), installs it on the router as a check (`-SkipInstallCheck` to skip),
-commits and pushes the Makefile to the fork (`-Remote`, default `fork`), and creates the GitHub release with the apk and
-its SHA-256 file (`-Draft` makes it a draft). `-PackagesDir` is the checkout of the feed branch (default: the
-`FLAB_PACKAGES` environment variable, else a `packages` folder next to this repository). `-Amend` folds the Makefile
-change into the single package commit while the package is not merged; without it the script adds a commit
-`flab-ui: update to <Version>`. Choose an unused version; the example is not a version pin.
-`-NotesFile` is required and must contain the actual changes for this release. Installation and checksum instructions
-are appended automatically; the notes are validated before any Git state changes.
-Before the packages branch is published, failure recovery restores its recorded branch HEAD, Makefile index and
-working bytes, but refuses to overwrite a branch moved by another process. A pushed or possibly published tag is
-kept whenever deleting it could invalidate remote package work. This is not a transaction across Git, GitHub and the
-router: a package already installed on the router is not reverted. It needs `git` and an authenticated `gh`.
+The local command checks that `main` is clean and matches `origin/main`, validates the tracked notes file and unused
+tag, dispatches `.github/workflows/release.yml`, and waits for the hosted workflow.
+
+The workflow:
+
+1. Creates and pushes `v<version>`.
+2. Downloads that tag's source tarball and calculates the hash that the feed Makefile will verify.
+3. Updates `PKG_VERSION`, `PKG_RELEASE`, `PKG_HASH`, the license files and copied ACL integration files in the
+   `flab-ui` branch of `formicalab/packages`.
+4. Builds all thirteen APKs with a pinned OpenWrt 25.12.6 SDK from the immutable tag tarball.
+5. Uploads the APK set and a combined SHA-256 file as workflow artifacts.
+6. Pushes the package branch and creates the GitHub release with the APKs and checksums. `-Draft` creates a draft
+   release.
+
+`-Amend` folds the feed update into the existing single package commit and force-pushes with an explicit lease.
+Without it, the workflow adds `flab-ui: update to <version>`.
+Use `-DryRun` to run the complete hosted APK build without creating a tag, changing the package branch or publishing a
+release. Choose an unused version; these examples are placeholders.
+
+The repository secret `PACKAGES_TOKEN` must be a fine-grained GitHub token limited to `formicalab/packages` with
+**Contents: Read and write**. The workflow's normal `GITHUB_TOKEN` can tag and release `formicalab/flab-ui`, but it
+cannot write the separate packages repository. The token is never passed to build scripts or release assets.
+
+Router installation is intentionally a separate post-release check. Download the release APKs and install them with
+the normal package commands, or use a trusted self-hosted workflow. A failed hosted build does not publish the package
+branch, and a failed GitHub-release step can be retried from the retained tag and package commit.
 
 ## Preparing the feed pull request
 

@@ -1,0 +1,291 @@
+name: Hosted release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without a leading v
+        required: true
+        type: string
+      notes_file:
+        description: Tracked changelog file
+        required: true
+        default: CHANGELOG.md
+        type: string
+      amend:
+        description: Amend the package-feed commit
+        required: true
+        default: true
+        type: boolean
+      draft:
+        description: Create a draft GitHub release
+        required: true
+        default: false
+        type: boolean
+      dry_run:
+        description: Build the APK set without tags, pushes, or a release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  SDK_URL: https://downloads.openwrt.org/releases/25.12.6/targets/x86/64/openwrt-sdk-25.12.6-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+  SDK_SHA256: 1864152619092e781fa36a401960c8e9ae42d6a364c44ee5f0b197ca5f3c0fcc
+  PACKAGE_BRANCH: flab-ui
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout package definition
+        uses: actions/checkout@v4
+        with:
+          repository: formicalab/packages
+          ref: ${{ env.PACKAGE_BRANCH }}
+          path: packages
+          token: ${{ secrets.PACKAGES_TOKEN || github.token }}
+          fetch-depth: 0
+
+      - name: Validate release inputs
+        env:
+          VERSION: ${{ inputs.version }}
+          NOTES_FILE: ${{ inputs.notes_file }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: |
+          set -eu
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Version must be x.y.z: $VERSION" >&2
+            exit 1
+          }
+          case "$NOTES_FILE" in
+            /*|../*|*/../*|.. ) echo "Notes file must be inside this repository." >&2; exit 1 ;;
+          esac
+          git ls-files --error-unmatch "$NOTES_FILE" >/dev/null
+          test -s "$NOTES_FILE"
+          if [ "$DRY_RUN" != true ]; then
+            test -n "$PACKAGES_TOKEN" || {
+              echo "Repository secret PACKAGES_TOKEN needs contents:write access to formicalab/packages." >&2
+              exit 1
+            }
+            git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null && {
+              echo "Tag v$VERSION already exists on the source repository." >&2
+              exit 1
+            } || test "$?" -eq 2
+          fi
+        shell: bash
+
+      - name: Tag source and calculate its immutable hash
+        id: source
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -eu
+          tag="v$VERSION"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$tag" -m "flab-ui $VERSION"
+          git push origin "refs/tags/$tag"
+          curl --fail --location --retry 5 \
+            "https://codeload.github.com/formicalab/flab-ui/tar.gz/$tag" \
+            --output "$RUNNER_TEMP/flab-ui-$VERSION.tar.gz"
+          hash=$(sha256sum "$RUNNER_TEMP/flab-ui-$VERSION.tar.gz" | cut -d' ' -f1)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Update package definition
+        id: package
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_HASH: ${{ steps.source.outputs.hash }}
+          AMEND: ${{ inputs.amend }}
+        working-directory: packages
+        run: |
+          set -eu
+          baseline=$(git rev-parse HEAD)
+          python3 - "$VERSION" "$SOURCE_HASH" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          version, source_hash = sys.argv[1:]
+          path = Path("admin/flab-ui/Makefile")
+          text = path.read_text()
+          values = {
+              "PKG_VERSION": version,
+              "PKG_RELEASE": "1",
+              "PKG_HASH": source_hash,
+              "PKG_LICENSE_FILES": "LICENSE www/LICENSE",
+          }
+          for name, value in values.items():
+              text, count = re.subn(
+                  rf"^{re.escape(name)}:=.*$",
+                  f"{name}:={value}",
+                  text,
+                  count=1,
+                  flags=re.MULTILINE,
+              )
+              if count != 1:
+                  raise SystemExit(f"{name} must be set exactly once")
+          path.write_text(text)
+          PY
+          find admin/flab-ui/files/usr/share/rpcd/acl.d -maxdepth 1 -type f -name 'flab-*.json' -delete
+          mkdir -p admin/flab-ui/files/usr/share/rpcd/acl.d
+          cp ../rpcd/acl.d/flab-*.json admin/flab-ui/files/usr/share/rpcd/acl.d/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin/flab-ui/Makefile admin/flab-ui/files/usr/share/rpcd/acl.d
+          if [ "$AMEND" = true ]; then
+            git commit --amend --no-edit
+          else
+            git commit --signoff -m "flab-ui: update to $VERSION"
+          fi
+          echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Download and verify SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y zstd
+          curl --fail --location --retry 3 "$SDK_URL" --output "$RUNNER_TEMP/openwrt-sdk.tar.zst"
+          echo "$SDK_SHA256  $RUNNER_TEMP/openwrt-sdk.tar.zst" | sha256sum --check
+          tar --zstd -xf "$RUNNER_TEMP/openwrt-sdk.tar.zst" -C "$RUNNER_TEMP"
+          sdk=$(find "$RUNNER_TEMP" -maxdepth 1 -type d -name 'openwrt-sdk-*' -print -quit)
+          test -n "$sdk"
+          echo "SDK=$sdk" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: Prepare SDK package
+        env:
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -eu
+          mkdir -p "$SDK/package"
+          if [ "$DRY_RUN" = true ]; then
+            bash tools/stage-source.sh packages/admin/flab-ui "$SDK/package/flab-ui" "$GITHUB_WORKSPACE" 1
+            sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$VERSION/" "$SDK/package/flab-ui/Makefile"
+          else
+            cp -a packages/admin/flab-ui "$SDK/package/flab-ui"
+          fi
+          printf 'CONFIG_PACKAGE_flab-ui=m\n' >> "$SDK/.config"
+          make -C "$SDK" defconfig
+        shell: bash
+
+      - name: Build APK set
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -eu
+          make -C "$SDK" -j"$(nproc)" package/flab-ui/compile
+          mkdir -p "$RUNNER_TEMP/release"
+          find "$SDK/bin/packages" -type f -name "flab-ui*-$VERSION-r1.apk" \
+            -exec cp {} "$RUNNER_TEMP/release/" \;
+          mapfile -t apks < <(find "$RUNNER_TEMP/release" -maxdepth 1 -type f -name '*.apk' | sort)
+          test "${#apks[@]}" -eq 13 || {
+            echo "Expected 13 APKs, found ${#apks[@]}." >&2
+            printf '%s\n' "${apks[@]}" >&2
+            exit 1
+          }
+          test -f "$RUNNER_TEMP/release/flab-ui-$VERSION-r1.apk"
+          (
+            cd "$RUNNER_TEMP/release"
+            sha256sum *.apk > "flab-ui-$VERSION-r1.apk.sha256"
+          )
+        shell: bash
+
+      - name: Upload APK set
+        uses: actions/upload-artifact@v4
+        with:
+          name: flab-ui-${{ inputs.version }}-apks
+          path: ${{ runner.temp }}/release/*
+
+      - name: Push package definition
+        if: ${{ !inputs.dry_run }}
+        env:
+          AMEND: ${{ inputs.amend }}
+          BASELINE: ${{ steps.package.outputs.baseline }}
+        working-directory: packages
+        run: |
+          if [ "$AMEND" = true ]; then
+            git push "origin" --force-with-lease="refs/heads/$PACKAGE_BRANCH:$BASELINE" \
+              "HEAD:refs/heads/$PACKAGE_BRANCH"
+          else
+            git push origin "HEAD:refs/heads/$PACKAGE_BRANCH"
+          fi
+        shell: bash
+
+      - name: Publish GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          NOTES_FILE: ${{ inputs.notes_file }}
+          SOURCE_HASH: ${{ steps.source.outputs.hash }}
+          DRAFT: ${{ inputs.draft }}
+        run: |
+          set -eu
+          metapackage="$RUNNER_TEMP/release/flab-ui-$VERSION-r1.apk"
+          apk_hash=$(sha256sum "$metapackage" | cut -d' ' -f1)
+          {
+            echo "flab-ui $VERSION"
+            echo
+            cat "$NOTES_FILE"
+            cat <<EOF
+
+          Architecture-independent APKs for apk-based OpenWrt. The \`flab-ui\` APK is the full-install
+          metapackage; \`flab-ui-base\` plus selected \`flab-ui-mod-*\` packages can also be installed.
+
+          \`\`\`sh
+          scp -O flab-ui*-$VERSION-r1.apk root@<router>:/tmp/
+          ssh root@<router> 'apk add --allow-untrusted /tmp/flab-ui-*.apk'
+          \`\`\`
+
+          Then open \`https://<router>/flab/\` and sign in as root. APKs are unsigned, so installation requires
+          \`--allow-untrusted\`.
+
+          SHA-256 of the full metapackage: \`$apk_hash\`. The checksum asset covers every APK.
+          Built by the OpenWrt SDK from tag \`v$VERSION\` (source tarball SHA-256 \`$SOURCE_HASH\`).
+          EOF
+          } > "$RUNNER_TEMP/release-notes.md"
+          args=(release create "v$VERSION" "$RUNNER_TEMP"/release/* --verify-tag
+            --title "flab-ui $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md")
+          if [ "$DRAFT" = true ]; then
+            args+=(--draft)
+          fi
+          gh "${args[@]}"
+        shell: bash
+
+      - name: Summarize
+        env:
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "## Hosted release"
+            echo
+            echo "- Version: \`$VERSION\`"
+            echo "- APK count: 13"
+            if [ "$DRY_RUN" = true ]; then
+              echo "- Publish: dry run only"
+            else
+              echo "- Publish: tag, package feed, and GitHub release"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+        shell: bash

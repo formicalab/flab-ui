@@ -96,8 +96,8 @@ Details are in the [security model](docs/architecture.md#security-model).
   in about a second for quick tests; `-Action Build` builds the apk from the working tree with an OpenWrt SDK (on Linux
   or in WSL on Windows), `-Action Deploy` installs it on a router and `-Action Remove` removes it. `-Action Check`
   verifies that the Makefile, the tag, the changelog, the GitHub release and the installed apk agree, and
-  `-Action Release` tags the source, updates the package Makefile to the same version and hash, builds the apk from
-  the tag and creates the GitHub release. See
+  `-Action Release` dispatches a GitHub-hosted workflow that tags the source, updates the package Makefile, builds all
+  APKs from the immutable tag tarball and creates the GitHub release. Local release commands do not need WSL or an SDK. See
   [Package script](docs/package.md#package-script) and [Releasing](docs/package.md#releasing).
 - Tests live in `tests/` and need Node.js, PowerShell 7 and, for most suites, ssh access to a test router. They use
   fixtures and mocks and do not change the router's configuration; `-Browser` also drives a browser. See
