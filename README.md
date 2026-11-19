@@ -58,11 +58,16 @@ uhttpd header configuration should additionally send the policy and the other se
 [frontend documentation](docs/frontend.md).
 
 Installing restarts `rpcd`, so no reboot is needed. Then open `https://<router>/flab/` and sign in as `root` with the
-router's root password. Do not install or remove the package during a configuration apply. To remove it:
+router's root password. Do not install or remove the package during a configuration apply. To remove the complete
+modular installation, including selective module installs:
 
-```sh
-apk del flab-ui
+```powershell
+pwsh -File tools/package.ps1 -Action Remove -Router root@192.168.1.1
 ```
+
+The script removes the metapackage, base, all installed modules and flab-owned files, then verifies the result. Direct
+package removal must name every installed `flab-ui-base` and `flab-ui-mod-*` package; `apk del flab-ui` alone leaves
+those dependencies installed.
 
 ## Safety
 

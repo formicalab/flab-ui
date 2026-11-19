@@ -13,7 +13,7 @@ Sync      the fast loop for editing: copies www/ to /www/flab on the router with
           also rpcd/ and restarts rpcd). Browsers pick the new files up when the page is reloaded.
 Check     reports whether the Makefile version/release, the Git tag, PKG_HASH, CHANGELOG.md, the GitHub release's apk
           and the router's installed apk agree. Fails on any mismatch.
-Remove    runs apk del on the router and checks that no flab.* object is left.
+Remove    removes every installed flab-ui package, cleans flab-owned files and checks for package, file and rpcd residue.
 Release   tags the source, updates the package Makefile to match, builds the apk from the tag and publishes it:
             1. checks that this repository is on main, clean and pushed, that the tag does not exist, and that the packages
                checkout (-PackagesDir, a checkout of the openwrt/packages feed branch that holds admin/flab-ui) is clean;
@@ -341,6 +341,78 @@ function Wait-Objects {
         Start-Sleep -Seconds 1
     } while ((Get-Date) -lt $deadline)
     throw "ubus objects differ after $TimeoutSeconds s ('<=' expected but missing, '=>' present but unexpected): $(($diff | ForEach-Object { $_.SideIndicator + ' ' + $_.InputObject }) -join ', ')"
+}
+
+function Get-InstalledFlabPackages {
+    <#
+    .SYNOPSIS
+    Returns the installed flab-ui package names.
+    .DESCRIPTION
+    Reads apk's installed package names and accepts only the metapackage, base package and feature-module names.
+    .OUTPUTS
+    Installed flab-ui package names without versions.
+    #>
+    $names = @(Invoke-Remote "apk info 2>/dev/null | grep -E '^flab-ui($|-(base|mod-[A-Za-z0-9-]+)$)' || true" |
+        Where-Object { $_ } |
+        Sort-Object -Unique)
+    foreach ($name in $names) {
+        if ($name -notmatch '^flab-ui(?:-base|-mod-[A-Za-z0-9-]+)?$') {
+            throw "Router returned an invalid installed package name: '$name'."
+        }
+    }
+    return $names
+}
+
+function Test-FlabRemoved {
+    <#
+    .SYNOPSIS
+    Verifies that flab-ui packages, runtime objects and owned files are absent from the router.
+    .DESCRIPTION
+    Checks the package database, waits for rpcd object removal and rejects any remaining web, backend, ACL or
+    temporary package files.
+    #>
+    $packages = @(Get-InstalledFlabPackages)
+    if ($packages) { throw "flab-ui packages remain installed: $($packages -join ', ')" }
+
+    Wait-Objects
+
+    $leftovers = @(Invoke-Remote @'
+for path in /www/flab /usr/share/ucode/flab; do
+  [ ! -e "$path" ] || printf '%s\n' "$path"
+done
+[ ! -d /usr/share/rpcd/ucode ] || find /usr/share/rpcd/ucode -maxdepth 1 -type f -name 'flab.*.uc' -print
+[ ! -d /usr/share/rpcd/acl.d ] || find /usr/share/rpcd/acl.d -maxdepth 1 -type f -name 'flab-*.json' -print
+find /tmp -maxdepth 1 -type f \( -name 'flab-ui-*.apk' -o -name 'flab-ui-*.apk.sha256' \) -print 2>/dev/null
+'@ | Where-Object { $_ })
+    if ($leftovers) { throw "flab-ui files remain on the router: $($leftovers -join ', ')" }
+}
+
+function Remove-FlabPackages {
+    <#
+    .SYNOPSIS
+    Completely removes flab-ui from the router.
+    .DESCRIPTION
+    Removes the metapackage and every independently installed base or feature package, cleans flab-owned paths left
+    by development syncs, restarts rpcd and verifies the complete removal.
+    #>
+    $packages = @(Get-InstalledFlabPackages)
+    $remove = if ($packages) { "apk del $($packages -join ' ')" } else { ':' }
+    Invoke-Remote @"
+set -e
+$remove
+rm -rf /www/flab /usr/share/ucode/flab
+[ ! -d /usr/share/rpcd/ucode ] || find /usr/share/rpcd/ucode -maxdepth 1 -type f -name 'flab.*.uc' -exec rm -f {} +
+[ ! -d /usr/share/rpcd/acl.d ] || find /usr/share/rpcd/acl.d -maxdepth 1 -type f -name 'flab-*.json' -exec rm -f {} +
+rm -f /tmp/flab-ui-*.apk /tmp/flab-ui-*.apk.sha256
+/etc/init.d/rpcd restart
+"@ | Write-Host
+    Test-FlabRemoved
+    if ($packages) {
+        Write-Host "Removed $($packages -join ', '); no flab-ui package, file or ubus object is left."
+    }
+    else {
+        Write-Host 'flab-ui was not installed; cleanup is complete and no flab.* ubus object is left.'
+    }
 }
 
 function Set-MakeVariable {
@@ -870,11 +942,7 @@ switch ($Action) {
     }
     'Sync' { Sync-Router }
     'Check' { Test-Consistency }
-    'Remove' {
-        Invoke-Remote 'if apk info -e flab-ui >/dev/null 2>&1; then apk del flab-ui; else echo "flab-ui is not installed."; fi' | Write-Host
-        Wait-Objects
-        Write-Host 'Removed; no flab.* ubus object is left.'
-    }
+    'Remove' { Remove-FlabPackages }
     'Release' { Publish-Release }
 }
 #endregion

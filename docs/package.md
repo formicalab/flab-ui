@@ -110,7 +110,7 @@ pwsh -File tools/package.ps1 -Action Sync -Router root@192.168.1.1     # fast lo
 pwsh -File tools/package.ps1 -Action Sync -Backend -Router root@192.168.1.1   # also copy rpcd/ and reload rpcd
 pwsh -File tools/package.ps1 -Action Deploy -Router root@192.168.1.1   # build, replace the installed flab-ui, check
 pwsh -File tools/package.ps1 -Action Build                             # only build the apk (no router needed)
-pwsh -File tools/package.ps1 -Action Remove -Router root@192.168.1.1   # apk del flab-ui and check that no flab.* object is left
+pwsh -File tools/package.ps1 -Action Remove -Router root@192.168.1.1   # remove every flab-ui package and verify no files or objects remain
 pwsh -File tools/package.ps1 -Action Check -Router root@192.168.1.1    # do Makefile, tag, hash, changelog, release and router agree?
 pwsh -File tools/package.ps1 -Action Release -Version 0.1.4 -Router root@192.168.1.1 -Amend -NotesFile CHANGELOG.md
 ```
@@ -139,6 +139,10 @@ pwsh -File tools/package.ps1 -Action Release -Version 0.1.4 -Router root@192.168
 - **Router.** `-Router` defaults to the `FLAB_ROUTER` environment variable, else `root@192.168.1.1`. The router must run
   an apk-based OpenWrt.
 - **Output.** `-OutDir` (default: `artifacts/packages` in the checkout, ignored by Git) receives the apk.
+- **Removal.** `Remove` discovers and purges the metapackage, base package and every independently installed
+  `flab-ui-mod-*` package in one apk transaction. It also cleans flab-owned web/backend files left by development
+  syncs, removes copied apk files from `/tmp`, restarts rpcd, and verifies that no matching package, ubus object or
+  installed artifact remains. It is safe to run when flab-ui is already absent.
 - **What Deploy does.** It builds, copies the apk to the router, removes the installed package and adds the new one,
   then waits until rpcd serves one `flab.*` object per plugin in `rpcd/ucode/` and the page answers over HTTPS. Open
   `https://<router>/flab/` and sign in as root with the router's root password.

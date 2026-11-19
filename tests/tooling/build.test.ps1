@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 $workspace = Join-Path $PSScriptRoot ('.build-work-' + [guid]::NewGuid().ToString('N'))
 $work = ConvertTo-BuildPath $workspace
 $repository = ConvertTo-BuildPath $root
+$fixtureVersion = '99.0.0'
 New-Item -ItemType Directory $workspace | Out-Null
 $setup = @'
 set -eu
@@ -27,7 +28,7 @@ all:
 	@test -f CMakeLists.txt
 MAKE
 cat > "$WORK/feed/Makefile" <<'MAKE'
-PKG_VERSION:=0.1.4
+PKG_VERSION:=@@VERSION@@
 PKG_RELEASE:=1
 all:
 	@test "$$(cat "$(USE_SOURCE_DIR)/www/index.html")" = "current tree"
@@ -44,13 +45,14 @@ package/flab-ui/compile:
 	@$(MAKE) --no-print-directory -C dependency
 	@$(MAKE) --no-print-directory -C package/feeds/test/flab-ui
 	@mkdir -p bin/packages/x86_64/test
-	@printf 'current tree artifact\n' > bin/packages/x86_64/test/flab-ui-0.1.4-r202611151530.apk
-	@cp bin/packages/x86_64/test/flab-ui-0.1.4-r202611151530.apk bin/packages/x86_64/test/flab-ui-base-0.1.4-r202611151530.apk
+	@printf 'current tree artifact\n' > bin/packages/x86_64/test/flab-ui-@@VERSION@@-r202611151530.apk
+	@cp bin/packages/x86_64/test/flab-ui-@@VERSION@@-r202611151530.apk bin/packages/x86_64/test/flab-ui-base-@@VERSION@@-r202611151530.apk
 MAKE
 # Keep Windows native stdin's final CRLF out of the heredoc delimiter.
 '@
 try {
-    $null = Invoke-Bash ($setup.Replace('@@WORK@@', $work).Replace('@@REPOSITORY@@', $repository))
+    $setup = $setup.Replace('@@WORK@@', $work).Replace('@@REPOSITORY@@', $repository).Replace('@@VERSION@@', $fixtureVersion)
+    $null = Invoke-Bash $setup
     # Execute the production build template unchanged, including its SDK-entry redirection and EXIT recovery.
     foreach ($fail in @($false, $true)) {
         $toggle = if ($fail) { "touch '$work/sdk/fail'" } else { "rm -f '$work/sdk/fail'" }
@@ -75,7 +77,7 @@ test "$(cat "$WORK/sdk/dependency/CMakeLists.txt")" = "dependency source"
         if ($fail) {
             if (Test-Path (Join-Path $workspace 'out')) { throw 'Failed build returned a stale package.' }
         }
-        elseif ([IO.File]::ReadAllText((Join-Path $workspace 'out\flab-ui-0.1.4-r202611151530.apk')).Trim() -ne 'current tree artifact') {
+        elseif ([IO.File]::ReadAllText((Join-Path $workspace "out\flab-ui-$fixtureVersion-r202611151530.apk")).Trim() -ne 'current tree artifact') {
             throw 'The output package did not come from the working source.'
         }
         Write-Host "PASS developer build: current source, isolated dependencies, unchanged feed, SDK restoration (failure=$fail)"

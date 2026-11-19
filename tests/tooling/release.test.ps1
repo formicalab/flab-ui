@@ -6,6 +6,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\..\tools\package.ps1') -Action Release
 $realNative = ${function:Invoke-Native}
 $workspace = Join-Path $PSScriptRoot ('.work-' + [guid]::NewGuid().ToString('N'))
+$fixtureVersion = '99.0.0'
+$previousFixtureVersion = '98.0.0'
 
 function Test-Git {
     <#
@@ -135,7 +137,7 @@ try {
             $writer = Join-Path $case 'writer'
             $OutDir = Join-Path $case 'out'
             $NotesFile = Join-Path $case 'notes.txt'
-            $Version = '0.1.4'
+            $Version = $fixtureVersion
             $Remote = 'fork'
             $SkipInstallCheck = $true
             $Draft = $false
@@ -152,7 +154,7 @@ try {
                 if ($repo -eq $PackagesDir) {
                     $directory = Join-Path $repo 'admin\flab-ui'
                     New-Item -ItemType Directory $directory | Out-Null
-                    [IO.File]::WriteAllText((Join-Path $directory 'Makefile'), "PKG_VERSION:=0.1.3`nPKG_RELEASE:=2`nPKG_HASH:=old`nPKG_LICENSE_FILES:=LICENSE`n")
+                    [IO.File]::WriteAllText((Join-Path $directory 'Makefile'), "PKG_VERSION:=$previousFixtureVersion`nPKG_RELEASE:=2`nPKG_HASH:=old`nPKG_LICENSE_FILES:=LICENSE`n")
                     $aclDirectory = Join-Path $directory 'files\usr\share\rpcd\acl.d'
                     New-Item -ItemType Directory $aclDirectory -Force | Out-Null
                     [IO.File]::WriteAllText((Join-Path $aclDirectory 'flab-base.json'), '{"from":"old-feed"}')
@@ -206,7 +208,7 @@ try {
             elseif ($failure -in @('build', 'commit', 'push')) {
                 Assert-Release ($remoteNow -eq $baseline) 'Recovery changed the remote branch.'
             }
-            Assert-Release ([bool](Test-Git --git-dir $sourceRemote tag --list v0.1.4)) 'A published source tag was deleted.'
+            Assert-Release ([bool](Test-Git --git-dir $sourceRemote tag --list "v$fixtureVersion")) 'A published source tag was deleted.'
             if ($failure -in @('release', 'none')) {
                 Assert-Release ((Test-Git -C $PackagesDir rev-parse HEAD) -eq $remoteNow) 'Published package tip was not retained.'
                 Assert-Release ($capturedNotes -match 'Fix bounded RPC execution and lazy navigation') 'Actual changelog missing.'
@@ -214,7 +216,7 @@ try {
                 $publishedMetadata = (Test-Git --git-dir $packageRemote show "${remoteNow}:admin/flab-ui/Makefile") -join "`n"
                 $expectedLicense = if ($hasWebLicense) { 'LICENSE www/LICENSE' } else { 'LICENSE' }
                 Assert-Release ($publishedMetadata -match "(?m)^PKG_LICENSE_FILES:=$([regex]::Escape($expectedLicense))$") 'Published license metadata does not match the source.'
-                Assert-Release ($publishedMetadata -match '(?m)^PKG_VERSION:=0\.1\.4$' -and $publishedMetadata -match '(?m)^PKG_RELEASE:=1$') 'Version and license metadata were not published together.'
+                Assert-Release ($publishedMetadata -match "(?m)^PKG_VERSION:=$([regex]::Escape($fixtureVersion))$" -and $publishedMetadata -match '(?m)^PKG_RELEASE:=1$') 'Version and license metadata were not published together.'
                 $publishedAcl = (Test-Git --git-dir $packageRemote show "${remoteNow}:admin/flab-ui/files/usr/share/rpcd/acl.d/flab-base.json") -join "`n"
                 Assert-Release ($publishedAcl.Trim() -eq '{"from":"source"}') 'Published package ACL copy does not match the source.'
             }

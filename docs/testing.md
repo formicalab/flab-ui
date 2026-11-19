@@ -33,6 +33,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Pure/syntax aggregate | `node tests/run-pure.mjs` | All pure regression files, JavaScript syntax, ACL JSON, the lazy application-shell tests and the browser-cache refresh (`tests/shell/freshness.test.mjs`: unchanged build, changed build, first run, failed download, unusable reply) |
 | Native execution | `node tests/execution/run.mjs [root@router]` | Disposable chroot/private ubus, not the installed rpcd: deferred workers, timer responsiveness, error statuses, deadlines, saturation, command and diagnostic-output limits, and that `safe_ifname()` / `one_line()` refuse a value with a line break |
 | Release recovery | `pwsh -File tests/tooling/release.test.ps1` | Failure injection with disposable local Git remotes, recovery after commit/push failure and release-note validation |
+| Package removal | `pwsh -File tests/tooling/remove.test.ps1` | Complete metapackage, selective-module and already-removed cleanup, with residual-file rejection |
 | Local source isolation | `wsl -d Ubuntu-26.04 -- bash tests/tooling/source.test.sh` | Verify that a working-tree SDK source override applies only to flab-ui, not its dependencies, and that the working-tree release number replaces only `PKG_RELEASE` in the SDK's copy |
 | Local SDK entry recovery | `pwsh -File tests/tooling/build.test.ps1` | Verify that working-tree build preparation leaves the feed definition intact and restores the SDK package entry after success or failure |
 
