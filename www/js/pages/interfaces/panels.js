@@ -8,7 +8,8 @@
 //                               device that exists on the router without a section (a port, a bridge the config does not hold)
 //   globalsPanel(ctx)           the panel of the network-wide settings (the `globals` section), same shape
 //   openWizard(ctx, onDone)     opens the "New network" dialog; `onDone({ iface, device })` gets the draft ids it added
-// `title` and `subtitle` are strings, `body` is a node, `footer` is an array of nodes (or empty).
+//   portSettings(ctx, name)     the device settings form of the Ethernet port `name`, a node the Ethernet ports page puts under the port's row
+// `title` and `subtitle` are strings, `body` is a node, `footer` is an array of nodes (or empty); portSettings returns only a node.
 //
 // The words follow the OpenWrt documentation (/docs/guide-user/network/network_configuration): a network DEVICE (a NIC or a switch port) or a
 // bridge device carries frames; an INTERFACE (a "logical network") holds the IP configuration and sits on one device; a firewall zone groups

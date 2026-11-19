@@ -31,7 +31,7 @@ def posix_rule(zone_file: pathlib.Path) -> str:
 def build() -> str:
     """The text of zones.js for the installed tzdata."""
     root = pathlib.Path(str(importlib.resources.files('tzdata') / 'zoneinfo'))
-    names = [line.split('\t')[2] for line in (root / 'zone.tab').read_text().splitlines() if line and not line.startswith('#')]
+    names = [line.split('\t')[2] for line in (root / 'zone.tab').read_text(encoding='utf-8').splitlines() if line and not line.startswith('#')]
     names = sorted(set(names + EXTRA))
     version = importlib.metadata.version('tzdata')
     rows = [f"  '{n}': '{posix_rule(root / n)}'," for n in names]

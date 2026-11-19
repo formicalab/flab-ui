@@ -4,6 +4,7 @@
 //   ubus call flab.system cpu    CPU statistics as JSON
 //   ubus call flab.system build  identifier and file list of the installed web files (browser cache refresh)
 //   ubus call flab.system modules installed optional frontend module manifests
+//   ubus call flab.system storage disks, flash and mounted filesystems (the Overview page)
 //   ubus call flab.system backup_create
 //   ubus call flab.system backup_begin '{"size":1234}'
 //   ubus call flab.system backup_upload '{"id":"...","from":0,"data":"<base64>"}'
@@ -14,14 +15,15 @@
 // Returns the kernel's cumulative CPU time counters (/proc/stat), the load average and the task counts.
 // Utilization is a rate, so it is derived from the difference between two successive calls (the UI does
 // this); the counters are not converted here, which keeps the call instantaneous and rpcd unblocked.
-// `cpu` reads procfs only; `build` only lists and stats the files under /www/flab. Backup methods additionally use
-// fixed `sysupgrade`, `gzip`, and `tar` commands on validated temporary paths.
+// `cpu` reads procfs only; `build` only lists and stats the files under /www/flab. `storage` reads sysfs, `df`, /proc/mounts and
+// the kernel log (for the NAND chip).
+// Backup methods additionally use fixed `sysupgrade`, `gzip`, and `tar` commands on validated temporary paths.
 
 'use strict';
 import { deferred } from 'flab.worker';
 import { command_result } from 'flab.util';
 
-import { mkdir, open, readfile, writefile, lsdir, stat } from 'fs';
+import { mkdir, open, readfile, writefile, lsdir, stat, chmod } from 'fs';
 
 // Order of the columns on a "cpu" line in /proc/stat (guest times are already part of user/nice).
 const FIELDS = ['user', 'nice', 'system', 'idle', 'iowait', 'irq', 'softirq', 'steal'];
@@ -186,10 +188,10 @@ function disks(block) {
 		let eol = attribute(name, dev + 'pre_eol_info');
 		if (eol != '')
 			disk.eol = { '0x01': 'normal', '0x02': 'warning', '0x03': 'urgent' }[eol] ?? eol;
-		let stat = split(trim(attribute(name, 'stat')), /[ ]+/);
-		if (length(stat) >= 7) {
-			disk.read = +stat[2] * 512;
-			disk.written = +stat[6] * 512;
+		let counters = split(trim(attribute(name, 'stat')), /[ ]+/);
+		if (length(counters) >= 7) {
+			disk.read = +counters[2] * 512;
+			disk.written = +counters[6] * 512;
 			// A loop device on this disk (the f2fs overlay) turns its discards into zero-fill writes that the disk
 			// counts as written data. They are not data written by the system, so they are reported separately.
 			let discarded = 0;
@@ -374,12 +376,18 @@ function storage() {
 
 
 
+// Configuration backups live in per-id directories below BACKUP_ROOT (tmpfs). They hold every secret of the router, so the
+// directories are private to root. BACKUP_CHUNK is the bytes of a download piece and the size the page uploads in (bytes),
+// BACKUP_MAX the largest restore archive (bytes), BACKUP_FILES the most entries an archive may list, BACKUP_KEEP_SECONDS how long
+// a backup directory may sit untouched before the next backup request removes it.
 const BACKUP_ROOT = '/tmp/flab-backup';
 const BACKUP_ID = /^[0-9a-f]{12}$/;
 const BACKUP_CHUNK = 32768;
 const BACKUP_MAX = 16 * 1024 * 1024;
 const BACKUP_FILES = 5000;
 const BACKUP_KEEP_SECONDS = 900;
+// The most backup directories kept; creating one beyond it removes the oldest.
+const BACKUP_DIRS = 4;
 
 function backup_id(id) {
 	return type(id) == 'string' && match(id, BACKUP_ID) ? id : null;
@@ -390,23 +398,26 @@ function backup_dir(id) {
 	return valid ? `${BACKUP_ROOT}/${valid}` : null;
 }
 
+// Removes expired backup directories, and the oldest ones while more than BACKUP_DIRS exist.
 function clean_backups() {
 	let current = sort(map(filter(lsdir(BACKUP_ROOT) ?? [], backup_id), (id) => ({
 		id,
 		mtime: stat(`${BACKUP_ROOT}/${id}`)?.mtime ?? 0,
 	})), (a, b) => a.mtime - b.mtime);
-	while (length(current) > 4 || (current.length && time() - current[0].mtime > BACKUP_KEEP_SECONDS)) {
+	while (length(current) > BACKUP_DIRS || (length(current) > 0 && time() - current[0].mtime > BACKUP_KEEP_SECONDS)) {
 		let old = shift(current);
 		command_result(`rm -rf ${BACKUP_ROOT}/${old.id}`);
 	}
 }
 
+// Creates a private directory with a random id; { id, dir } with dir null when none could be created.
 function new_backup_dir() {
-	mkdir(BACKUP_ROOT);
+	mkdir(BACKUP_ROOT, 0700);
+	chmod(BACKUP_ROOT, 0700);
 	let id = '', dir = null;
 	for (let i = 0; i < 5 && dir == null; i++) {
 		id = hexenc(readfile('/dev/urandom', 6) ?? '');
-		dir = backup_id(id) && mkdir(`${BACKUP_ROOT}/${id}`) ? `${BACKUP_ROOT}/${id}` : null;
+		dir = backup_id(id) && mkdir(`${BACKUP_ROOT}/${id}`, 0700) ? `${BACKUP_ROOT}/${id}` : null;
 	}
 	clean_backups();
 	return { id, dir };

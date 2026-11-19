@@ -6,19 +6,26 @@
 //   3. If it needs server-side data that rpcd's own objects (uci, system, service, ...) do not give, add
 //      rpcd/ucode/flab.<name>.uc; the package installs every file in that folder automatically.
 //
-// Page contract (id, label, icon, interval, load and view are required; the rest is optional):
+// A page object (the default export of its module) holds only behavior; its navigation metadata is the registry
+// entry below or in a module manifest (www/modules/*.json), so the two can never disagree.
+//
+// Registry entry (basePages, or a manifest entry; id, label, icon and the module are required):
 //   id        route name, used as the URL hash (#id)
 //   label     navigation and command-bar text
 //   title?    command-bar heading override
 //   icon      icon name from core/icons.js
-//   nav       'bottom' places the link below the spacer, next to Sign out; 'hidden' keeps a compatibility route without a link
+//   nav       'bottom' places the link below the spacer, next to Sign out; 'hidden' keeps a route without a link
+//   navId?    the entry whose link is highlighted for a hidden route
+//   tab?      (manifest entries) a tab of the page module to open: the module's openTab(tab) is called on activation
+//   activation?  'toolbox': hands a pending openTool request to the page module on activation
+//
+// Page object (interval, load and view are required; the rest is optional):
 //   interval  auto-refresh period in ms, or a function that returns it (read again before each poll, for a page whose views poll at different rates)
 //   load()    async; returns the page data (usually one ubus call)
 //   view(data, rerender)  returns an array of nodes; rerender() redraws from cached data
 //   controls({ rerender, reload })  returns { nodes, update?(data) } for persistent command-bar controls
 //   isPaused()  return true to suspend auto-refresh
 //   css       stylesheet (or array of stylesheets) loaded the first time the page opens
-//   activate?(module)  (an entry of `pages`, not of the page object) called by the shell once the page module is imported and the route is still current
 
 let pendingTool = null;
 
@@ -53,7 +60,7 @@ export function installedPages(manifests = []) {
     for (const entry of manifest.entries) {
       if (!entry || typeof entry.id !== 'string' || !/^[a-z0-9-]+$/.test(entry.id)
         || typeof entry.label !== 'string' || typeof entry.icon !== 'string'
-        || typeof entry.module !== 'string' || !entry.module.startsWith('./')
+        || typeof entry.module !== 'string' || !/^\.\/[a-z0-9-]+\/index\.js$/.test(entry.module)
         || ids.has(entry.id) || !Number.isFinite(entry.order)) continue;
       ids.add(entry.id);
       installed.push({
@@ -71,9 +78,6 @@ export function installedPages(manifests = []) {
     ...basePages.filter(p => p.nav === 'bottom'),
   ];
 }
-
-// Compatibility export for code that imports the uninstalled registry before sign-in.
-export const pages = basePages;
 
 // Routes that were pages once and now open another page: #bridges is part of the Devices and Interfaces board, #wifi and #mesh are part of the Wi-Fi radios page.
 export const aliases = { bridges: 'interfaces', wifi: 'radios', mesh: 'radios' };

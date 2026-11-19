@@ -29,7 +29,8 @@
 'use strict';
 import { deferred } from 'flab.worker';
 
-import { run, uci_all, sysfs, sysfs_raw, safe_ifname, num, as_list, fixture_time } from 'flab.util';
+import { readfile } from 'fs';
+import { run, uci_all, sysfs, sysfs_raw, safe_ifname, num, as_list, fixture, fixture_time } from 'flab.util';
 
 // A WireGuard session is rekeyed every 120 s while traffic flows and is rejected after 180 s without a
 // handshake, so a peer whose last handshake is older than this is not currently connected.
@@ -180,15 +181,28 @@ function interface_view(all, fw, ifname, running, now) {
 	return view;
 }
 
-// The remote address of a hex address from /proc/net/tcp (IPv4, 8 hex digits, bytes in reverse order) or
-// /proc/net/tcp6 (IPv6, 32 hex digits as four reversed 32-bit words); an IPv4-mapped address becomes dotted
-// IPv4. Returns null for anything else.
+// Whether the router's CPU is big-endian, from the ELF header of this very process (byte 5 is 1 for little-endian, 2
+// for big-endian). /proc/net/tcp prints addresses as host-order words, so the byte order depends on it. Cached; the
+// replay seam is always little-endian, like the router the fixtures come from.
+let big_endian = null;
+function is_big_endian() {
+	if (big_endian == null) {
+		let head = fixture('files.json') != null ? null : readfile('/proc/self/exe', 6);
+		big_endian = head != null && ord(head, 5) == 2;
+	}
+	return big_endian;
+}
+
+// The remote address of a hex address from /proc/net/tcp (IPv4, 8 hex digits) or /proc/net/tcp6 (IPv6, 32 hex digits
+// as four 32-bit words); each word is the bytes in reverse order on a little-endian CPU and in network order on a
+// big-endian one. An IPv4-mapped address becomes dotted IPv4. Returns null for anything else.
 function proc_address(text) {
 	let bytes = [];
 	if (length(text) == 8 || length(text) == 32) {
+		let be = is_big_endian();
 		for (let w = 0; w < length(text); w += 8)
-			for (let b = 3; b >= 0; b--)
-				push(bytes, hex(substr(text, w + b * 2, 2)));
+			for (let b = 0; b < 4; b++)
+				push(bytes, hex(substr(text, w + (be ? b : 3 - b) * 2, 2)));
 	} else
 		return null;
 	if (length(bytes) == 4)

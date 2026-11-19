@@ -39,10 +39,6 @@ function summary(net) {
 
 // Page object registered in pages/index.js (contract documented there).
 export default {
-  id: 'network',
-  label: 'Ethernet ports',
-  title: 'Ethernet ports',
-  icon: 'ethernet',
   // The ports' rates are counted between polls, so the page is read often.
   interval: 3000,
   css: ['css/forms.css', 'css/netedit.css', 'css/network.css'],

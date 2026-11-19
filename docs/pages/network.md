@@ -5,7 +5,7 @@ The Ethernet ports as hardware, to read and to change: a page of its own (`netwo
   totals since boot): only totals no row shows. The switch is described by the line above the table and the link changes by
   each row and the banner, so neither has a tile. Like the [Wi-Fi radios](radios.md) page, the page shows each device's live
   state and keeps everything configured in one **Settings** fold (the same fold, `.wf-block` in `forms.css`, built with `disclosure()` of `core/fold.js`), so nothing is shown twice. The banner appears only when something changed or needs attention:
-  a downshifted link (negotiated speed below what both ends support), link flaps and new errors since the page was opened,
+  a downshifted link (negotiated speed below what both ends support), link flaps and new errors since the browser page was loaded,
   an optical module alarm or a CPU link above 90% used. There is no "all healthy" banner: old error counters do not
   trigger a finding, so such a message would contradict the errors tile and the rows.
 - **Ports** (`ports.js`): one table with a row per port, and nothing else. There is deliberately no wiring diagram and no
@@ -19,7 +19,7 @@ The Ethernet ports as hardware, to read and to change: a page of its own (`netwo
     collapsible **Settings** section under every front-panel port (its summary says whether the port has a device section). The section holds the port's device settings (`portSettings` in `interfaces/panels.js`, the same controls as the board's panels), headed "Device section" (or "Defaults" for a port without one): link speed, duplex, auto-negotiation, pause, EEE, MTU, MAC and the advanced options of the port's device section, and a button that resets the port to its defaults by deleting the section (**Reset to defaults**, or **Drop the new settings** for a section not saved yet; a note above it says what it does); a port without a section (which is normal) shows the same form with the defaults, and the first change adds the section: there is no separate step to start. A login that may not change the configuration gets no Settings sections. The form is part of the page's table, so it follows the 3 second refresh only while nothing in it holds the focus or an unsaved edit (ditor.paused('.ne-form')). The internal CPU link has no section.
   - **Hardware**, **Link** (state, speed and duplex; under it what the link negotiated, shown only when it is not the normal
     case or when the port reports it: a forced speed, a downshift, the EEE state, and the speed both ends support with the pause
-    frames; how many times the link changed state and how many since the page was opened, an optical alarm, the cable-test
+    frames; how many times the link changed state and how many since the browser page was loaded, an optical alarm, the cable-test
     button). Whether auto-negotiation, pause or EEE are configured is in the port's Settings, not repeated here.
   - **Throughput**: the live rate in each direction, a graph of the recent rates and the totals; a port without counters of
     its own (swconfig) says so instead of drawing an empty graph.
@@ -48,7 +48,7 @@ The Ethernet ports as hardware, to read and to change: a page of its own (`netwo
 - **Error breakdown**: a port with errors or drops gets a Details button that opens a panel under it (it
   stays open across refreshes): the non-zero kernel counters with an explanation of each, the driver's own
   error counters (`ethtool -S`, error-like names only), recent system-log lines that mention the port, and
-  whether anything is new since the page was opened. The backend only computes this for ports that have
+  whether anything is new since the browser page was loaded. The backend only computes this for ports that have
   errors or drops.
 - **EEE**: ports with Energy-Efficient Ethernet show a badge (active, idle or off) next to the negotiation, from
   `ethtool --show-eee`; a port that answers without it is not asked again.

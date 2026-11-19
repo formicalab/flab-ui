@@ -138,9 +138,11 @@ export function one_line(s) {
 	return type(s) == 'string' && index(s, '\n') < 0 && index(s, '\r') < 0;
 };
 
-// Interface names reach shell command lines, so restrict them to a safe alphabet.
+// Interface names reach shell command lines and sysfs paths, so restrict them to a safe alphabet. A leading "-" (an option to
+// the command) and the path components "." and ".." are refused too.
 export function safe_ifname(name) {
-	return one_line(name) && length(name) > 0 && match(name, /^[A-Za-z0-9_.:-]+$/) != null;
+	return one_line(name) && length(name) > 0 && match(name, /^[A-Za-z0-9_.:-]+$/) != null &&
+		substr(name, 0, 1) != '-' && name != '.' && name != '..';
 };
 
 // Return a lowercase colon-separated MAC from any common spelling, or null.

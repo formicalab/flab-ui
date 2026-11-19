@@ -1,5 +1,5 @@
 # Devices and Interfaces (route `#interfaces`)
-The network as a **board**: how it is built, from the cable up, on one screen, and the one place where the network configuration is edited. The bridges are part of it (the old
+The network as a **board**: how it is built, from the cable up, on one screen, and the one place where the network configuration is edited. The bridges are part of it (the
 `#bridges` route opens this page: `aliases` in `pages/index.js`). The page has two views, chosen with the **Board | Connected devices** tabs in the command bar: the board (this document) and the [Connected devices](connected.md) (the Wi-Fi clients). The ports and the radios are not edited here: their cards open the [Ethernet ports](network.md) and the [Wi-Fi radios](radios.md) pages, which read and change that hardware (the route `#network` is the Ethernet ports page again). The board is refreshed every 5 s. `boardmodel.js` is the pure model, `board.js` draws it. Data: `flab.network` (status and,
 for editing, `config`), netifd's interface dump, `flab.radio` and `flab.mesh` (both optional: without them the page shows the wired layers, and a bridge shows no mesh peers).
 OpenWrt builds a network in layers, and the board has one lane for each, left to right:

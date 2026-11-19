@@ -166,9 +166,6 @@ function servicesCard(rows, writable) {
 }
 
 export default {
-  id: 'services',
-  label: 'Services',
-  icon: 'hdd-stack',
   interval: 5000,
   css: ['css/forms.css', 'css/services.css'],
   load,

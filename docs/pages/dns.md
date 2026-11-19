@@ -1,4 +1,4 @@
-# DNS (route `#dns`, with the `#ddns` compatibility route)
+# DNS (route `#dns`; `#ddns` opens its Dynamic DNS tab)
 The DNS navigation entry combines two tabs: **DNS resolver** and **Dynamic DNS**. The latter is the ddns-scripts
 configuration and runtime described in [Dynamic DNS](ddns.md).
 

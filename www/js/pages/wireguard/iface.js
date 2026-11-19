@@ -71,7 +71,7 @@ const stateBadge = p => ({
   down: badge('not loaded', 'danger', 'Configured, but the kernel does not have this peer'),
 })[p.state];
 
-// Card header: state dot, name, state, firewall zone and total traffic of the interface. A new interface (`i` is null) has only its name.
+// Card header: state dot, name, state, firewall zone and total traffic of the interface. A new interface (`item.data` is null) has only its name.
 function header(item) {
   const i = item.data;
   if (!i) return h('div', { className: 'wg-head' }, icon('key', 20), h('strong', { className: 'name' }, item.name.trim() || 'New interface'), badge('new', 'info', 'Not saved yet'));

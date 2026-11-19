@@ -189,9 +189,6 @@ export const isDirty = (data, draft) => changesOf(data, draft).length > 0;
 
 //#region Validation
 
-// The words that say why a field is required: what the provider's update address needs.
-const NEEDS_TAG = { DOMAIN: 'domain', USERNAME: 'username', PASSWORD: 'password' };
-
 // Which of DOMAIN, USERNAME and PASSWORD a service's update requires: what the provider's update address contains, or the
 // tags of a custom update address. A provider that is a script reads the options itself, so nothing is known about it (null).
 function requiredTags(data, v) {

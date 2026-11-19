@@ -132,9 +132,8 @@ function zoneRows(items, state, engine, edit, act, draw) {
 }
 
 // The filter box and the table. The filter redraws only the table, so the text box keeps its focus while typing. The Add zone
-// button is on the toolbar, at the end of the line of the filter box.
-function zoneList(data, state, engine, edit, act, add) {
-  const items = forwarderItems(data, edit.getDraft());
+// button is on the toolbar, at the end of the line of the filter box. `items` are the rows (forwarderItems of the draft).
+function zoneList(data, state, engine, items, edit, act, add) {
   const note = noDefaultNote(data, engine);
   const holder = h('div', {});
   // Redraws the table rows for the current filter.
@@ -178,7 +177,7 @@ export function zonesCard(data, state, edit) {
     data.engine === 'unbound' && data.engines?.unbound?.control === false
       ? legend(['unbound-control is not available, so the running forwarders come from Unbound\'s generated configuration and may not be what the running process uses.']) : null,
     h('div', { className: 'dns-pad' }, wanBlock(data)),
-    h('div', { className: 'dns-top' }, zoneList(data, state, engine, edit, act, () => dialogFor(null))),
+    h('div', { className: 'dns-top' }, zoneList(data, state, engine, items, edit, act, () => dialogFor(null))),
   ];
   const sub = `${engineName(engine)} · ${fmtNum(items.length)} zone${items.length === 1 ? '' : 's'} · ${fmtNum(domains)} domain${domains === 1 ? '' : 's'}${data.truncated?.forwards ? ' (cut)' : ''}${wan ? ` · ${wan}` : ''}`;
   return foldCard(state, 'zones', [icon('list-ul'), 'Zones', h('span', { className: 'sub' }, sub)], h('div', {}, body));

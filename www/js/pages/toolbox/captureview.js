@@ -10,7 +10,8 @@ import { stat } from './diagviews.js';
 import { captureNotes, parseCapture } from './capturemodel.js';
 import { banner, findingList } from './parts.js';
 
-// The packets drawn in the table (the plugin sends at most this many lines anyway).
+// The packets drawn in the table. The plugin sends the first 1000 packet lines (CAPTURE_SHOWN) and the figures above count
+// all of them; the table stops earlier to keep the redraw every half second cheap.
 const MAX_ROWS = 500;
 
 // The color of a protocol's badge: connections and reliable transport in blue, datagrams and names in green, diagnostics in
@@ -28,7 +29,8 @@ const pad = n => String(n).padStart(2, '0');
 // The name of the capture file offered for download: the interface and the start time.
 const fileName = job => {
   const t = new Date(job.t0);
-  return `capture-${job.cap?.iface ?? 'any'}-${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}-${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.pcap`;
+  const iface = (job.cap?.iface ?? 'any').replace(/[^\w.-]/g, '_');
+  return `capture-${iface}-${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}-${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.pcap`;
 };
 
 // Fetches the capture file in pieces (the plugin returns it as base64, a few hundred kilobytes at a time) and hands it to the

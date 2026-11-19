@@ -37,9 +37,9 @@ function newTest(n, d) {
 // One `interval` event as a point of the series, or null for the closing sliver.
 function intervalOf(d) {
   const s = d.sum ?? d.streams?.[0];
-  if (!s || !(s.seconds >= MIN_INTERVAL)) return null;
+  if (!s || !(s.seconds >= MIN_INTERVAL) || num(s.start) == null || num(s.end) == null) return null;
   return {
-    t0: s.start, t1: s.end, bps: s.bits_per_second ?? 0, retransmits: num(s.retransmits), jitter: num(s.jitter_ms),
+    t0: num(s.start), t1: num(s.end), bps: num(s.bits_per_second) ?? 0, retransmits: num(s.retransmits), jitter: num(s.jitter_ms),
     lost: num(s.lost_packets), packets: num(s.packets), lostPct: num(s.lost_percent),
   };
 }
@@ -126,15 +126,12 @@ export function clientCommand(address, { reverse = false, udp = false, streams =
   return parts.join(' ');
 }
 
-// A short sentence about a finished test for the history: "Upload, 3 streams, 941 Mbit/s, 0 retransmits".
+// The test's heading for the page and the history: "Upload · TCP · 3 streams" (the streams only when there are several).
 export function describeTest(t) {
   const parts = [t.direction === 'download' ? 'Download' : 'Upload', t.protocol];
   if (t.streams > 1) parts.push(`${t.streams} streams`);
   return parts.join(' · ');
 }
-
-// The 0-to-100 position of a value on a scale that ends at `max` (a chart's vertical placement), clamped.
-export const share = (v, max) => (max > 0 ? Math.min(100, Math.max(0, v / max * 100)) : 0);
 
 // The seconds left of a server that was started for `limit` seconds, `elapsed` seconds ago (never below zero).
 export const remaining = (limit, elapsed) => Math.max(0, Math.round(limit - elapsed));

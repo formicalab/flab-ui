@@ -200,6 +200,7 @@ export function openWizard(ctx, onDone) {
     if (previewChoice(c.base, c.draft, choice).errors.length) { refresh(); return; }
     const ids = applyChoice(c.base, c.draft, choice);
     finished = { ids, lines: summaryLines(choice), proto: choice.proto };
+    choice.password = '';
     c.touched();
     c.redraw();
     render();

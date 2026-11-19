@@ -14,7 +14,8 @@
 //   secret     a write-only value: the router never sends it to the page, which only shows whether one is stored
 //   dynamic    the list the page fills the options from: 'devices' (any device a logical interface may use), 'parents' (a device a VLAN
 //              device may sit on)
-//   units      text shown after the value in the hint's label, for a number
+//   defaultFor, hintFor   (interface) a default or a hint per protocol that replaces the field's own (see ifaceField)
+//   show       (values) => whether the control is shown for these form values, for an interface field
 
 //#region Protocols and device types
 
@@ -53,7 +54,7 @@ export const DEVICE_TYPES = [
 
 //#region Interface groups and fields
 
-// The groups of an interface card, in order: id, title, an explanation, and whether the group starts open.
+// The groups of an interface card, in order: id, title and an explanation (legend).
 export const IFACE_GROUPS = [
   { id: 'general', title: 'Interface', legend: 'The protocol, the device the interface is bound to and whether it comes up at boot.' },
   { id: 'ipv4', title: 'IPv4 address', legend: 'The addresses of a static interface. An address may carry its prefix length (192.168.1.1/24); the netmask below completes the ones that do not.' },

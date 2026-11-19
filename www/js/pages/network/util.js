@@ -1,11 +1,11 @@
-// Shared helpers of the wired-network pages (Ethernet, Devices and Interfaces): rate
+// Shared helpers of the wired-network pages (Ethernet ports, Devices and Interfaces, and the Traffic live view): rate
 // tracking, formatting and the live "what changed" findings.
 import { createTracker, latest } from '../../core/rates.js';
 
 // One tracker for all pages, fed by record() on every poll.
 const tracker = createTracker();
 
-// What the page has seen since it was opened, so changes (link flaps, new errors) can be called out.
+// What has been seen since the first poll of each device after the browser page loaded (not reset by visiting another route), so changes (link flaps, new errors) can be called out.
 const baseline = new Map();
 
 // Cumulative byte counters of a device, the input of the rate tracker.
@@ -39,7 +39,7 @@ export function traffic(name) {
   return { rx, tx, rxNow: latest(rx), txNow: latest(tx) };
 }
 
-// Link changes and new errors since the page was opened.
+// Link changes and new errors since the baseline was taken (the first poll of the device after the browser page loaded).
 export const newFlaps = d => Math.max(0, (d.carrier_changes ?? 0) - (baseline.get(d.name)?.flaps ?? d.carrier_changes ?? 0));
 // Errors accumulated since the baseline was taken.
 export const newErrors = d => Math.max(0, errorsOf(d) - (baseline.get(d.name)?.errors ?? errorsOf(d)));
@@ -66,6 +66,7 @@ function cpuLink(net, sw) {
   const capacity = (sw.cpu_ports ?? []).reduce((sum, c) => sum + (c.speed ?? byName.get(c.conduit)?.speed ?? 0), 0);
   if (!capacity) return null;
   let rx = null, tx = null;
+  // The conduits' rates are bytes/s; the capacity is Mbit/s.
   for (const c of conduits) {
     const t = traffic(c.name);
     if (t.rxNow != null) rx = (rx ?? 0) + t.rxNow * 8 / 1e6;

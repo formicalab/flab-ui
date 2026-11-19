@@ -55,10 +55,6 @@ function summary(data) {
 
 // Page object registered in pages/index.js (contract documented there).
 export default {
-  id: 'ipsec',
-  label: 'IPsec VPN',
-  title: 'IPsec VPN · strongSwan',
-  icon: 'shield-lock',
   interval: 5000,
   css: 'css/ipsec.css',
   isPaused: () => state.paused,

@@ -46,17 +46,19 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Checkout package definition
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: formicalab/packages
           ref: ${{ env.PACKAGE_BRANCH }}
           path: packages
           token: ${{ secrets.PACKAGES_TOKEN || github.token }}
+          # The token is handed to the push step only, so the SDK download and the build never see it.
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Validate release inputs
@@ -211,7 +213,7 @@ jobs:
         shell: bash
 
       - name: Upload APK set
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: flab-ui-${{ inputs.version }}-apks
           path: ${{ runner.temp }}/release/*
@@ -221,13 +223,18 @@ jobs:
         env:
           AMEND: ${{ inputs.amend }}
           BASELINE: ${{ steps.package.outputs.baseline }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
         working-directory: packages
         run: |
+          set -eu
+          auth=$(printf 'x-access-token:%s' "$PACKAGES_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          push() { git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push "$@"; }
           if [ "$AMEND" = true ]; then
-            git push "origin" --force-with-lease="refs/heads/$PACKAGE_BRANCH:$BASELINE" \
+            push origin --force-with-lease="refs/heads/$PACKAGE_BRANCH:$BASELINE" \
               "HEAD:refs/heads/$PACKAGE_BRANCH"
           else
-            git push origin "HEAD:refs/heads/$PACKAGE_BRANCH"
+            push origin "HEAD:refs/heads/$PACKAGE_BRANCH"
           fi
         shell: bash
 

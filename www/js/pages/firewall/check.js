@@ -21,7 +21,7 @@ export function portError(v) {
   return null;
 }
 
-// Whether `text` is one address (the family of it is 4 or 6), or null.
+// The address family of `text` (4 or 6), or null when it is not an address.
 const family = text => parseAddress(text)?.family ?? null;
 
 // The error of a subnet in fw4's forms (an address, address/prefix, address/mask, a range a-b, or the name of an interface), or null.

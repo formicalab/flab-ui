@@ -21,8 +21,8 @@ import { defaultRoutes, findings, interfaceNames, isKernelRule, routeKey, tableL
 
 const state = {
   tab: 'routes', paused: false,
-  // BGP tab: routes filter text, selected peer, best paths only, routes table sort.
-  q: '', peer: 'all', best: false, sort: { key: 'prefix', dir: 1 },
+  // BGP tab: routes filter text, selected peer, best paths only, routes table sort, whether every path is drawn.
+  q: '', peer: 'all', best: false, sort: { key: 'prefix', dir: 1 }, bgpAll: false,
   // Routes tab: route filter text, address family ('all', '4', '6'), table ('all' or a name), route list sort,
   // whether the whole list is drawn, the lookup form, the active lookup query and the form's error.
   rq: '', family: 'all', table: 'all', rsort: { key: 'prefix', dir: 1 }, all: false,
@@ -119,10 +119,6 @@ function routesView(data) {
 
 // Page object registered in pages/index.js (contract documented there).
 export default {
-  id: 'routing',
-  label: 'Routing',
-  title: 'Routing',
-  icon: 'globe2',
   interval: 5000,
   css: ['css/forms.css', 'css/bgp.css', 'css/routing.css'],
   // Polling stops while the lookup form is being typed in, because the redraw would take the focus away, and while the
@@ -137,7 +133,7 @@ export default {
     const routesNodes = [], bgpNodes = [];
     // Shows the controls of the active tab and hides those of the other.
     const show = () => { routesNodes.forEach(n => { n.hidden = state.tab !== 'routes'; }); bgpNodes.forEach(n => { n.hidden = state.tab !== 'bgp'; }); };
-    const tabs = tabsControl(state, 'tab', () => { state.all = false; show(); reload(); });
+    const tabs = tabsControl(state, 'tab', () => { state.all = false; state.bgpAll = false; show(); reload(); });
     const family = selectControl(state, 'family', rerender, 'Address family');
     family.setOptions([['all', 'IPv4 and IPv6'], ['4', 'IPv4 only'], ['6', 'IPv6 only']]);
     const table = selectControl(state, 'table', rerender, 'Routing table');

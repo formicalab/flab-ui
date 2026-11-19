@@ -459,8 +459,8 @@ export function periodOptions(periods, current = null) {
     ...(periods ?? []).filter(p => p !== current).map(p => [p, `Period from ${p}`])];
 }
 
-// The words for an accounting window as { title, detail, ongoing }: "2026-11-01 to now · 12 days" with the end of the period
-// underneath for the running one, "2026-10-01 to 2026-11-01 · 31 days" for a finished one. `w` is the plugin's window
+// The words for an accounting window as { ongoing, title, days, detail }: "2026-11-01 to now" with "12 days" and, for the running
+// one, when it ends; "2026-10-01 to 2026-11-01" with "31 days" for a finished one. `w` is the plugin's window
 // ({ start, end, today, ongoing, days }), or null when it could not be worked out.
 export function describePeriod(w) {
   if (!w) return null;

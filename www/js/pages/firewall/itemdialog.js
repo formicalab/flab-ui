@@ -43,7 +43,7 @@ export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
   let touchedOnce = !isNew;
   let dialog = null;
 
-  const errorsBox = h('div', { className: 'set-notes' });
+  const errorsBox = h('div', { className: 'set-notes fw-dialog-notes' });
   const words = h('div', { className: 'fw-words' });
   const save = button(isNew ? 'Add to the changes' : 'Update the changes', 'check2', () => { onSave(values, links); dialog.close(); }, 'btn-brand');
   const cancel = button('Cancel', 'x-lg', () => dialog.close());
@@ -184,8 +184,6 @@ export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
     onClose,
   });
   dialog = shown.dialog;
-  // The messages take a row of their own above the buttons.
-  errorsBox.style.flex = '1 0 100%';
   render();
   return shown;
 }

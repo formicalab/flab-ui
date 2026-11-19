@@ -23,7 +23,7 @@ export const isAddress = text => parseAddress(text) != null;
 export function covers(prefix, address) {
   const [net, len] = String(prefix).split('/');
   const n = parseAddress(net), a = parseAddress(address);
-  if (!n || !a || n.family !== a.family) return false;
+  if (!n || !a || n.family !== a.family || (len !== undefined && !/^\d{1,3}$/.test(len))) return false;
   const bits = n.family === 6 ? 128n : 32n;
   const shift = bits - BigInt(len === undefined ? bits : len);
   return shift >= 0n && (n.value >> shift) === (a.value >> shift);

@@ -12,7 +12,7 @@ import { vlanCards } from './vlans.js';
 import { portSettings } from '../interfaces/panels.js';
 
 // Ports whose error breakdown is open, and ports whose settings form is open; kept here so they survive the redraw on every poll.
-export const expanded = new Set();
+const expanded = new Set();
 const settingsOpen = new Set();
 
 // Whether the port settings can be offered (the router gives the network config to this login: the table has Settings buttons) and the editing context of the
@@ -68,7 +68,7 @@ function errorsCell(p) {
 
 // The Link column: link state and speed, what the link negotiated (see negotiation), how often the link changed state (and how many times since the page
 // was opened), an alarm badge when the optical module raises one, and the cable-test button.
-export function linkCell(p) {
+function linkCell(p) {
   const alarms = p.sfp?.alarms ?? [];
   const cable = cableButton(p);
   const neg = negotiation(p);

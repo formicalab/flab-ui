@@ -53,8 +53,8 @@ Build from the source the feed Makefile names (the tag tarball, whose hash the S
 Release only: the version without the leading v, for example 0.1.1.
 
 .PARAMETER PackagesDir
-Check only: checkout of the openwrt/packages feed branch that holds admin/flab-ui. Defaults to the FLAB_PACKAGES
-environment variable, else a folder named packages next to this repository.
+Check only: checkout of the packages repository (the flab-ui branch) that holds admin/flab-ui. Defaults to the
+FLAB_PACKAGES environment variable, else a folder named packages next to this repository.
 
 .PARAMETER Remote
 Check only: remote of the packages checkout to compare with.
@@ -68,7 +68,9 @@ Hosted release only: create the GitHub release as a draft.
 
 .PARAMETER NotesFile
 Release only, required: UTF-8 file containing the actual changelog for this version. Installation instructions and
-asset/source SHA-256 notes are appended automatically. Read and validated before any Git state is changed.
+asset/source SHA-256 notes are appended automatically. Must be a tracked file of this repository; it is read and
+validated before any Git state is changed.
+
 .PARAMETER DryRun
 Hosted release only: build all release APKs on GitHub without tagging or publishing.
 #>
@@ -80,7 +82,7 @@ param(
     [ValidatePattern('^[A-Za-z0-9._/$*~-]+$')][string]$Sdk = '$HOME/sdk/openwrt-sdk-*',
     [string]$OutDir = (Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts\packages'),
     [switch]$UseFeedSource,
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
+    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$Version,
     [string]$PackagesDir = $(if ($env:FLAB_PACKAGES) { $env:FLAB_PACKAGES } else { Join-Path (Split-Path $PSScriptRoot -Parent | Split-Path -Parent) 'packages' }),
     [string]$Remote = 'fork',
     [switch]$Amend,
@@ -96,6 +98,35 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
 #region Helpers
+function Assert-RouterName {
+    <#
+    .SYNOPSIS
+    Rejects a -Router value that ssh or scp could take for an option or that is not a plain destination.
+    .DESCRIPTION
+    The value is passed to ssh and scp as an argument and its host part is used in an https URL. A leading dash would
+    make ssh parse it as an option (for example -oProxyCommand=...), so only user@host forms are accepted.
+    #>
+    if ($Router -notmatch '^[A-Za-z0-9][A-Za-z0-9._@:%\[\]-]*$') {
+        throw "-Router must be a plain ssh destination such as root@192.168.1.1, not '$Router'."
+    }
+}
+
+function Test-FlabPage {
+    <#
+    .SYNOPSIS
+    Checks that the router serves the flab-ui page over HTTPS and returns its host name.
+    .DESCRIPTION
+    The router normally has a self-signed certificate, so the certificate is not validated: this only proves that
+    uhttpd serves /flab/, it does not authenticate the router.
+    .OUTPUTS
+    The host part of -Router.
+    #>
+    $hostName = $Router.Split('@')[-1]
+    $page = Invoke-WebRequest -Uri "https://$hostName/flab/" -SkipCertificateCheck
+    if ($page.StatusCode -ne 200) { throw "The page answered HTTP $($page.StatusCode)." }
+    return $hostName
+}
+
 function Get-ArtifactEntries {
     <#
     .SYNOPSIS
@@ -110,19 +141,17 @@ function Get-ArtifactEntries {
     if (-not $manifest.entries) { throw "The artifact manifest has no entries: $path" }
     $entries = foreach ($entry in $manifest.entries) {
         $glob = $entry.PSObject.Properties['glob']?.Value
-        $exclusive = [bool]$entry.PSObject.Properties['exclusive']?.Value
         $source = Join-Path $root ($entry.source -replace '/', '\')
-        if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "Artifact source directory is missing: $entry.source" }
+        if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "Artifact source directory is missing: $($entry.source)" }
         $files = @(Get-ChildItem -LiteralPath $source -Recurse -File)
         if ($glob) { $files = @($files | Where-Object { $_.Name -like $glob }) }
-        if (-not $files) { throw "Artifact source has no matching files: $entry.source" }
+        if (-not $files) { throw "Artifact source has no matching files: $($entry.source)" }
         foreach ($file in $files) {
             $relative = [IO.Path]::GetRelativePath($source, $file.FullName) -replace '\\', '/'
             [pscustomobject]@{
                 Source = $file.FullName
                 RelativePath = $relative
                 Target = ($entry.target.TrimEnd('/') + '/' + $relative)
-                Exclusive = $exclusive
             }
         }
     }
@@ -185,7 +214,12 @@ function Test-InstalledArtifacts {
     .SYNOPSIS
     Verifies the installed flab-ui file contract on the router.
     .DESCRIPTION
-    Checks every manifest target and rejects extra files under the exclusive web installation directory.
+    Checks every manifest target with sha256sum and rejects extra files under /www/flab and in the plugin, library
+    and ACL directories.
+    .PARAMETER Entries
+    Resolved artifact-manifest entries.
+    .PARAMETER FromFeed
+    Compare against the Git tag form of the files (see Get-InstalledArtifactHash).
     #>
     param([Parameter(Mandatory)]$Entries, [switch]$FromFeed)
 
@@ -199,7 +233,7 @@ function Test-InstalledArtifacts {
         Invoke-Remote @"
 set -eu
 trap 'rm -f $remote /tmp/flab-artifacts.paths /tmp/flab-artifacts.actual /tmp/flab-artifacts.web /tmp/flab-artifacts.group' EXIT
-sha256sum -c $remote >/dev/null
+out=`$(sha256sum -c $remote) || { printf '%s\n' "`$out" | grep -v ': OK`$' >&2; exit 1; }
 awk '{ print `$2 }' $remote > /tmp/flab-artifacts.paths
 find /www/flab -type f | sort > /tmp/flab-artifacts.actual
 grep '^/www/flab/' /tmp/flab-artifacts.paths | sort > /tmp/flab-artifacts.web
@@ -405,26 +439,6 @@ rm -f /tmp/flab-ui-*.apk /tmp/flab-ui-*.apk.sha256
         Write-Host 'flab-ui was not installed; verified no flab-ui package, file or ubus object is present.'
     }
 }
-
-function Set-MakeVariable {
-    <#
-    .SYNOPSIS
-    Sets a PKG_* variable of a Makefile text, keeping its line endings.
-    .PARAMETER Text
-    The Makefile text.
-    .PARAMETER Name
-    The variable, for example PKG_VERSION.
-    .PARAMETER Value
-    The new value.
-    .OUTPUTS
-    The changed text. Throws when the variable is not exactly once in it.
-    #>
-    param([string]$Text, [string]$Name, [string]$Value)
-
-    $pattern = "(?m)^(${Name}:=).*?(\r?)$"
-    if ([regex]::Matches($Text, $pattern).Count -ne 1) { throw "$Name must be set exactly once in the Makefile." }
-    return [regex]::Replace($Text, $pattern, ('${1}' + $Value + '${2}'))
-}
 #endregion
 
 #region Build
@@ -447,6 +461,7 @@ if [ ! -f .config ] || ! grep '^CONFIG_PACKAGE_flab-ui=m' .config > /dev/null ||
   exit 1
 fi
 STAGE="$SDK/tmp/flab-ui-src"
+OVERRIDE="$SDK/.flab-ui-package"
 ORIGINAL="$SDK/.flab-ui-package-original"
 [ ! -e "$ORIGINAL" ] && [ ! -L "$ORIGINAL" ] || {
   echo "An interrupted build left $ORIGINAL; restore the SDK package entry before retrying." >&2; exit 1;
@@ -456,13 +471,12 @@ PACKAGE=$(ls -d package/feeds/*/flab-ui | head -n 1)
 if [ '@@FEED@@' = 1 ]; then
   make package/flab-ui/compile V=s >> "$LOG" 2>&1 || { tail -40 "$LOG" >&2; exit 1; }
 else
-  rm -rf "$STAGE"
+  rm -rf "$STAGE" "$OVERRIDE"
   mkdir -p "$STAGE"
   cp -a "$SRC/www" "$SRC/rpcd" "$SRC/LICENSE" "$STAGE/"
   # Files read from a Windows drive in WSL are rwxrwxrwx; the package must not install them that way.
   find "$STAGE" -type d -exec chmod 0755 {} + -o -type f -exec chmod 0644 {} +
   # Temporarily redirect only the SDK's installed package entry; never edit the feed checkout's Makefile.
-  OVERRIDE="$SDK/.flab-ui-package"
   bash "$SRC/tools/stage-source.sh" "$PACKAGE" "$OVERRIDE" "$STAGE" '@@DEVREL@@'
   mv "$PACKAGE" "$ORIGINAL"
   restore_package() {
@@ -508,7 +522,10 @@ function Build-Package {
     # A working-tree build gets a release number made of the UTC time (for example flab-ui-0.1.4-r202611151530),
     # which sorts after the published -r1 of the same version and can never be mistaken for it.
     $devRelease = [DateTime]::UtcNow.ToString('yyyyMMddHHmm')
-    $script = $buildScript.Replace('@@SRC@@', (ConvertTo-BuildPath $root)).Replace('@@OUT@@', (ConvertTo-BuildPath (Resolve-Path $OutDir).Path)).Replace('@@SDK@@', $Sdk).Replace('@@FEED@@', $feed).Replace('@@DEVREL@@', $devRelease)
+    # The paths go into single-quoted bash strings, so an embedded quote must be closed, escaped and reopened.
+    $srcPath = (ConvertTo-BuildPath $root).Replace("'", "'\''")
+    $outPath = (ConvertTo-BuildPath (Resolve-Path $OutDir).Path).Replace("'", "'\''")
+    $script = $buildScript.Replace('@@SRC@@', $srcPath).Replace('@@OUT@@', $outPath).Replace('@@SDK@@', $Sdk).Replace('@@FEED@@', $feed).Replace('@@DEVREL@@', $devRelease)
     $apk = Join-Path $OutDir @(Invoke-Bash $script)[-1]
     if (-not (Test-Path $apk)) { throw "The built package is missing: $apk" }
     Write-Host "Built $apk"
@@ -540,15 +557,15 @@ function Install-Package {
     if ($apks.Count -lt 2) { throw 'The modular build did not produce a complete apk set.' }
 
     Write-Host "Installing $($apks.Count) modular apks on the router..."
+    # Remove first (also cleans files left by Sync, which apk does not own); it deletes /tmp/flab-ui-*.apk, so the
+    # new apks are copied afterwards.
+    Remove-FlabPackages
     scp -O -q $apks.FullName "${Router}:/tmp/"
     if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
     Invoke-Remote @"
 set -e
-packages=`$(apk info 2>/dev/null | grep '^flab-ui' || true)
-[ -z "`$packages" ] || apk del `$packages
-rm -rf /www/flab
+trap 'rm -f /tmp/flab-ui-*.apk' EXIT
 apk add --allow-untrusted /tmp/flab-ui-*.apk
-rm -f /tmp/flab-ui-*.apk
 "@ | Write-Host
 
     Wait-Objects -Expected $expected
@@ -556,9 +573,7 @@ rm -f /tmp/flab-ui-*.apk
     # The installed version must be the one that was built: the apk file name is name-version-release.apk.
     $installed = (Invoke-Remote 'apk list -I flab-ui 2>/dev/null | head -n 1') -replace '^(\S+).*$', '$1'
     if ($installed -ne [IO.Path]::GetFileNameWithoutExtension($apkName)) { throw "The router reports '$installed', not $apkName." }
-    $hostName = $Router.Split('@')[-1]
-    $page = Invoke-WebRequest -Uri "https://$hostName/flab/" -SkipCertificateCheck
-    if ($page.StatusCode -ne 200) { throw "The page answered HTTP $($page.StatusCode)." }
+    $hostName = Test-FlabPage
     Write-Host "Installed: $($expected.Count) rpcd objects. Open https://$hostName/flab/ and sign in as root."
 }
 #endregion
@@ -581,6 +596,8 @@ function Start-HostedRelease {
     if (-not [IO.File]::ReadAllText($notesPath).Trim()) { throw '-NotesFile must contain a nonempty release changelog.' }
     if ((Invoke-Native git @('-C', $root, 'branch', '--show-current')) -ne 'main') { throw 'Release from the main branch.' }
     if (Invoke-Native git @('-C', $root, 'status', '--porcelain')) { throw 'The working tree is not clean.' }
+    # The hosted workflow reads the notes from its own checkout, so the file must be committed.
+    $null = Invoke-Native git @('-C', $root, 'ls-files', '--error-unmatch', '--', $notesRelative)
     $sourceHead = Invoke-Native git @('-C', $root, 'rev-parse', 'HEAD')
     $null = Invoke-Native git @('-C', $root, 'fetch', '--quiet', 'origin', 'main')
     if ($sourceHead -ne (Invoke-Native git @('-C', $root, 'rev-parse', 'origin/main'))) {
@@ -635,15 +652,6 @@ function Start-HostedRelease {
     Write-Host "Hosted release completed: $url"
 }
 
-function Publish-Release {
-    <#
-    .SYNOPSIS
-    Dispatches the hosted release workflow.
-    .DESCRIPTION
-    Compatibility entry point for scripts that call the former publishing helper directly.
-    #>
-    Start-HostedRelease
-}
 #endregion
 
 #region Sync
@@ -655,8 +663,9 @@ function Sync-Router {
     A fast loop for editing pages. The router's /www/flab is replaced by a copy of www/ (files that no longer exist
     locally disappear). The browser notices the new files by itself the next time the page starts (core/freshness.js).
     With -Backend, rpcd/ is copied to the places the package installs it and rpcd is reloaded; do that only when no
-    configuration apply is waiting for confirmation, because the rollback timer lives in rpcd's memory. Files removed
-    from rpcd/ are not removed on the router. The result is not an installed package version: use Deploy for that.
+    configuration apply is waiting for confirmation, because the rollback timer lives in rpcd's memory. The flab
+    plugins, libraries and ACL files on the router are replaced as a set, so files removed from rpcd/ disappear too.
+    The result is not an installed package version: use Deploy for that.
     #>
     $artifacts = @(Test-ArtifactContract)
     $work = Join-Path ([IO.Path]::GetTempPath()) ("flab-sync-" + [guid]::NewGuid().ToString('N'))
@@ -668,21 +677,30 @@ function Sync-Router {
         if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
         $backendScript = ''
         if ($Backend) {
+            # Stage the manifest's non-web files under their install paths. Only file entries go into the tar: a
+            # Windows tar records every directory as 0777, and extracting such entries could widen the permissions
+            # of the router's existing /usr directories.
             $stage = Join-Path $work 'stage'
-            foreach ($pair in @(@('acl.d', 'usr/share/rpcd/acl.d'), @('ucode', 'usr/share/rpcd/ucode'), @('lib/flab', 'usr/share/ucode/flab'))) {
-                $target = Join-Path $stage $pair[1]
-                New-Item -ItemType Directory $target -Force | Out-Null
-                Copy-Item (Join-Path (Join-Path $root 'rpcd') $pair[0] | Join-Path -ChildPath '*') $target
-            }
-            foreach ($file in Get-ChildItem -LiteralPath (Join-Path $stage 'usr\share\rpcd\acl.d') -Filter 'flab-*.json' -File) {
-                $text = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n").Replace("`r", "`n")
-                [IO.File]::WriteAllText($file.FullName, $text, [Text.UTF8Encoding]::new($false))
+            $staged = foreach ($entry in @($artifacts | Where-Object { $_.Target -notlike '/www/flab/*' })) {
+                $relative = $entry.Target.TrimStart('/')
+                $destination = Join-Path $stage $relative
+                New-Item -ItemType Directory (Split-Path $destination -Parent) -Force | Out-Null
+                if ($entry.Target -like '/usr/share/rpcd/acl.d/flab-*.json') {
+                    # The packages tree keeps ACL copies with LF line endings; do the same here.
+                    $text = [IO.File]::ReadAllText($entry.Source).Replace("`r`n", "`n").Replace("`r", "`n")
+                    [IO.File]::WriteAllText($destination, $text, [Text.UTF8Encoding]::new($false))
+                }
+                else {
+                    Copy-Item -LiteralPath $entry.Source -Destination $destination
+                }
+                $relative
             }
             $backendTar = Join-Path $work 'backend.tar'
-            $null = Invoke-Native tar @('--format', 'ustar', '-cf', $backendTar, '-C', $stage, '.')
+            $null = Invoke-Native tar (@('--format', 'ustar', '-cf', $backendTar, '-C', $stage) + @($staged))
             scp -O -q $backendTar "${Router}:/tmp/flab-backend.tar"
             if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
             $backendScript = @'
+mkdir -p /usr/share/rpcd/ucode /usr/share/ucode/flab /usr/share/rpcd/acl.d
 find /usr/share/rpcd/ucode -maxdepth 1 -type f -name 'flab.*.uc' -exec rm -f {} +
 find /usr/share/ucode/flab -maxdepth 1 -type f -name '*.uc' -exec rm -f {} +
 find /usr/share/rpcd/acl.d -maxdepth 1 -type f -name 'flab-*.json' -exec rm -f {} +
@@ -713,9 +731,7 @@ $backendScript
         Wait-Objects -Expected $expected
         Test-InstalledArtifacts -Entries $artifacts
     }
-    $hostName = $Router.Split('@')[-1]
-    $page = Invoke-WebRequest -Uri "https://$hostName/flab/" -SkipCertificateCheck
-    if ($page.StatusCode -ne 200) { throw "The page answered HTTP $($page.StatusCode)." }
+    $hostName = Test-FlabPage
     Write-Host "Synchronized. Reload https://$hostName/flab/ (the page refreshes its cached files when it starts)."
 }
 #endregion
@@ -807,6 +823,7 @@ function Test-Consistency {
 
 #region Actions
 if ($MyInvocation.InvocationName -eq '.') { return }
+if ($Action -in 'Deploy', 'Sync', 'Check', 'Remove') { Assert-RouterName }
 switch ($Action) {
     'Build' { $null = Build-Package -FromFeed:$UseFeedSource }
     'Deploy' {

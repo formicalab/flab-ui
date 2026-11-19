@@ -23,14 +23,7 @@ import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
 import { readfile } from 'fs';
-import { fixture, record_file, run, command_result, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname as lib_safe_ifname, num, as_list, normalize_mac } from 'flab.util';
-
-// A name that reaches a command line or a path: an interface, port or bus name (the `port` of cable_test comes from the browser). The
-// library check is anchored with ^...$, which ucode matches against the first line of a string, so "lan1\nid" would pass it; a name
-// with a line break is refused first.
-function safe_ifname(name) {
-	return type(name) == 'string' && index(name, '\n') < 0 && index(name, '\r') < 0 && lib_safe_ifname(name);
-}
+import { fixture, record_file, run, command_result, ubus_call, uci_all, sysfs, sysfs_raw, safe_ifname, num, as_list, normalize_mac } from 'flab.util';
 
 // Names of the kernel's bridge port STP states, indexed by the number in brport/state.
 const STP_STATES = [ 'disabled', 'listening', 'learning', 'forwarding', 'blocking' ];
@@ -324,6 +317,7 @@ function ethernet_clients() {
 	let names = ethernet_names(leases);
 	let addresses = ethernet_addresses(leases);
 	let clients = [];
+	let links = {};
 
 	for (let bridge, device in devices) {
 		if (!safe_ifname(bridge) || device.devtype != 'bridge')
@@ -341,7 +335,9 @@ function ethernet_clients() {
 			let port = ports[`${entry.port}`];
 			if (!port || entry.local)
 				continue;
-			let deviceView = device_view(port, devices[port] ?? {});
+			// Every client of a port shares its link, so the sysfs reads of device_view() happen once per port.
+			links[port] ??= device_view(port, devices[port] ?? {});
+			let deviceView = links[port];
 			push(clients, {
 				bridge,
 				port,
@@ -526,8 +522,8 @@ function hardware(name, d) {
 	let node = match(sys(name, 'uevent') ?? '', /OF_FULLNAME=([^\n]+)/);
 	if (!node && d.devtype != 'dsa')
 		node = match(sys(name, 'device/uevent') ?? '', /OF_FULLNAME=([^\n]+)/);
-	// The path reaches `ls` command lines below, so only the characters of device-tree node names are accepted (and no line break: the
-	// anchored pattern would otherwise accept the first line of a longer string).
+	// The path reaches `ls` command lines below, so only the characters of device-tree node names are accepted (a carriage return is
+	// refused explicitly: the capture above stops at a line feed, and the anchored pattern would take the first line of a longer string).
 	if (node && (index(node[1], '\r') >= 0 || !match(node[1], /^(\/[A-Za-z0-9,._+@-]+)+$/)))
 		node = null;
 	if (node) {

@@ -5,7 +5,7 @@
 //
 // Sources:
 //   - swanctl --raw (VICI): configured connections, IKE SAs, child SAs, daemon statistics
-//   - ip xfrm state: kernel SA details; only algorithm names, sizes, replay and encapsulation
+//   - ip -s xfrm state: kernel SA details; only algorithm names, sizes, replay and encapsulation
 //     data are copied. Key material in the dump is never forwarded.
 //   - netifd (network.device status) and UCI: xfrmN interfaces mapped to tunnels by if_id
 //

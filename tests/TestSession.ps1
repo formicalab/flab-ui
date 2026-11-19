@@ -43,7 +43,9 @@ function New-TestSession {
     .PARAMETER Router
     SSH destination of the router.
     #>
-    param([Parameter(Mandatory)][string]$Router)
+    param(
+        [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._@:%\[\]-]*$')][string]$Router
+    )
 
     # Merge every group of every fragment, read and write alike.
     $ubus = @{}
@@ -72,7 +74,8 @@ function New-TestSession {
         }
     }
 
-    $sid = (ssh $Router "ubus call session create '{`"timeout`":1800}' | jsonfilter -e '@.ubus_rpc_session'").Trim()
+    $created = ssh $Router "ubus call session create '{`"timeout`":1800}' | jsonfilter -e '@.ubus_rpc_session'"
+    $sid = "$created".Trim()
     if ($LASTEXITCODE -ne 0 -or $sid -notmatch '^[0-9a-f]{32}$') { throw 'Could not create a test session on the router.' }
 
     # rpcd takes the grants as [object, function] pairs for the ubus scope, [config, access] for the uci scope and
@@ -113,7 +116,10 @@ function Remove-TestSession {
     .PARAMETER Sid
     The session id.
     #>
-    param([Parameter(Mandatory)][string]$Router, [string]$Sid)
+    param(
+        [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._@:%\[\]-]*$')][string]$Router,
+        [ValidatePattern('^([0-9a-f]{32})?$')][string]$Sid
+    )
 
     if ($Sid) { ssh $Router "ubus call session destroy '{`"ubus_rpc_session`":`"$Sid`"}'" 2>$null | Out-Null }
 }

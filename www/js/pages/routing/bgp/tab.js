@@ -9,7 +9,7 @@
 //   routes.js     learned routes table (filter, peer selector, best-only, sort)
 //   announced.js  announcement matrix, export-filter results, local routes
 // The page (../index.js) owns the view state this tab uses: the routes filter text (q), the selected peer
-// ('all' or a protocol name), best-paths-only and the routes table sort.
+// ('all' or a protocol name), best-paths-only, the routes table sort and whether every path is drawn (bgpAll).
 
 import { h } from '../../../core/dom.js';
 import { ubus } from '../../../core/ubus.js';

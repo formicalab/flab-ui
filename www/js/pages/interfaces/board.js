@@ -163,9 +163,12 @@ function menuButton(label, iconName, entries, disabled) {
   // Closes the list and removes the document listeners.
   const close = () => { list.hidden = true; document.removeEventListener('click', outside, true); document.removeEventListener('keydown', onKey, true); };
   // A click outside the menu closes it; once the board has been redrawn, the stale listener removes itself.
-  const outside = e => { if (!wrap.isConnected) close(); else if (!wrap.contains(e.target)) close(); };
-  // Escape closes the menu and keeps the drawer open.
-  const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); close(); toggle.focus(); } };
+  const outside = e => { if (!wrap.isConnected || !wrap.contains(e.target)) close(); };
+  // Escape closes the menu and keeps the drawer open; once the board has been redrawn the stale listener only removes itself and leaves the key alone.
+  const onKey = e => {
+    if (!wrap.isConnected) return close();
+    if (e.key === 'Escape') { e.preventDefault(); close(); toggle.focus(); }
+  };
   for (const e of entries) {
     list.append(h('button', { type: 'button', className: 'nb-menu-item', role: 'menuitem', onclick: () => { close(); e.onclick(); } },
       h('strong', {}, e.label), h('span', { className: 'muted small' }, e.hint)));

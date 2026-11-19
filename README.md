@@ -105,5 +105,5 @@ Details are in the [security model](docs/architecture.md#security-model).
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The bundled Bootstrap 5.3.3 CSS and Bootstrap Icons 1.11.3 paths are also MIT licensed.
-The [distributed notices](www/LICENSE) cover all three and are installed with the web files.
+MIT, see [LICENSE](LICENSE). The bundled Bootstrap 5.3.3 CSS, Bootstrap Icons 1.11.3 paths and qrcode-generator 2.0.4 are
+also MIT licensed. The [distributed notices](www/LICENSE) cover all four and are installed with the web files.

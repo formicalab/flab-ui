@@ -37,10 +37,6 @@ function summary(radios, mesh) {
 
 // Page object registered in pages/index.js (contract documented there).
 export default {
-  id: 'radios',
-  label: 'Wi-Fi radios',
-  title: 'Wi-Fi radios',
-  icon: 'broadcast',
   interval: 5000,
   css: ['css/forms.css', 'css/radios.css', 'css/wifi.css'],
 

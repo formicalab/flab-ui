@@ -29,7 +29,7 @@ export function readSettings(cfg, info, svc) {
   return {
     system: firstSection(cfg, 'system'),
     ntp: firstSection(cfg, 'timeserver'),
-    clock: info?.unixtime != null && info?.localtime != null
+    clock: Number.isFinite(info?.unixtime) && Number.isFinite(info?.localtime)
       ? { unixtime: info.unixtime, localtime: info.localtime, offset: info.localtime - info.unixtime }
       : null,
     // Whether sysntpd runs, and the servers on its command line (the -p arguments), which include DHCP ones.
@@ -48,7 +48,7 @@ export const currentValue = (field, data) => valueOf(field, data[field.section].
 //#region The time zone
 
 // The POSIX TZ rule of an IANA zone name, or undefined for a name that is not in the table.
-export const ruleOf = zonename => ZONES[zonename];
+export const ruleOf = zonename => (Object.hasOwn(ZONES, zonename) ? ZONES[zonename] : undefined);
 
 // Zone names by region for the drop-down: [['Europe', ['Europe/Amsterdam', ...]], ...]; "UTC" is its own group.
 export function zoneGroups() {

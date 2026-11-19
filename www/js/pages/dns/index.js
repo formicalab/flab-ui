@@ -14,10 +14,6 @@ export function openTab(tab) {
 }
 
 export default {
-  id: 'dns',
-  label: 'DNS',
-  title: 'DNS',
-  icon: 'globe2',
   interval: 10000,
   css: ['css/forms.css', 'css/dns.css', 'css/ddns.css'],
   isPaused: () => page().isPaused?.() ?? false,

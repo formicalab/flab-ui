@@ -10,9 +10,11 @@ import { badge, card } from '../../../core/ui.js';
 import { fmtNum } from '../../../core/format.js';
 import { peerClass, peerTitle, isUp, stateKind, isPrivateAs, cmpPrefix } from './util.js';
 
-// SVG namespace for the connector elements, and the cap on announced prefixes listed in the router node.
+// SVG namespace for the connector elements, the cap on announced prefixes listed in the router node, and the cap on the further
+// prefixes its "+N more" tooltip lists (a router can announce thousands).
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAX_ANNOUNCE_CHIPS = 6;
+const MAX_TOOLTIP_PREFIXES = 50;
 // Sum of a per-channel route counter (`imported` or `exported`) over all channels of a peer.
 const sumRoutes = (p, key) => p.channels.reduce((n, c) => n + (c.routes?.[key] ?? 0), 0);
 
@@ -40,7 +42,7 @@ function announcedPrefixes(data) {
 }
 
 // Left node: this router with its local AS number(s), BIRD version, router ID, a sample of announced
-// prefixes (full list in a tooltip) and the number of prefixes learned.
+// prefixes (the next ones in a tooltip) and the number of prefixes learned.
 function routerNode(data) {
   const localAs = [...new Set(data.peers.map(p => p.local_as).filter(v => v != null))];
   const announced = announcedPrefixes(data);
@@ -55,7 +57,7 @@ function routerNode(data) {
     h('div', { className: 'muted small' }, 'Announces'),
     shown.length
       ? h('div', { className: 'chips justify-content-center' }, shown.map(r => h('span', { className: 'alg-chip info mono', title: `${r.protocol} · ${r.kind}` }, r.prefix)),
-        announced.length > shown.length ? h('span', { className: 'muted small', title: announced.slice(shown.length).map(r => r.prefix).join('\n') }, `+${announced.length - shown.length} more`) : null)
+        announced.length > shown.length ? h('span', { className: 'muted small', title: announced.slice(shown.length, shown.length + MAX_TOOLTIP_PREFIXES).map(r => r.prefix).join('\n') + (announced.length > shown.length + MAX_TOOLTIP_PREFIXES ? '\n…' : '') }, `+${announced.length - shown.length} more`) : null)
       : h('span', { className: 'muted small' }, 'nothing'),
     h('div', { className: 'muted small mt-1' }, `Learns ${fmtNum(learned)} prefixes`));
 }

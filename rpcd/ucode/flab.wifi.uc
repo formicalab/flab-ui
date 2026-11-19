@@ -18,13 +18,7 @@ import { deferred } from 'flab.worker';
 import { cursor } from 'uci';
 import { connect } from 'ubus';
 import { readfile } from 'fs';
-import { run, safe_ifname as lib_safe_ifname, normalize_mac, security_label } from 'flab.util';
-
-// A name that reaches a command line: an interface name (the ifname of a wifi-iface section is UCI data). The library check is anchored
-// with ^...$, which ucode matches against the first line of a string, so "wlan0\nid" would pass it; a name with a line break is refused first.
-function safe_ifname(name) {
-	return type(name) == 'string' && index(name, '\n') < 0 && index(name, '\r') < 0 && lib_safe_ifname(name);
-}
+import { run, safe_ifname, normalize_mac, security_label } from 'flab.util';
 
 // IEEE 802.11 AKM suite selectors (OUI-type as hostapd prints them) -> short authentication names.
 const AKM_NAMES = {

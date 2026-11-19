@@ -15,9 +15,19 @@ const state = {
   message: null,
   upload: null,
   open: false,
+  // The progress line of the card on screen, updated in place while a transfer runs.
+  status: null,
 };
 
 export const busy = () => Boolean(state.busy);
+
+// Shows a new progress text during a transfer. The progress line is edited in place because a redraw of the whole page
+// (with its long time zone list) after every 32 KiB chunk would be wasteful.
+function progress(rerender, text) {
+  state.busy = text;
+  if (state.status?.isConnected) state.status.textContent = text;
+  else rerender();
+}
 
 function base64(bytes) {
   let text = '';
@@ -51,14 +61,16 @@ async function download(rerender) {
     let from = 0;
     let part = null;
     do {
-      state.busy = `Downloading backup… ${from.toLocaleString()} / ${backup.size.toLocaleString()} bytes`;
-      rerender();
+      progress(rerender, `Downloading backup… ${from.toLocaleString()} / ${backup.size.toLocaleString()} bytes`);
       part = await ubus('flab.system', 'backup_download', { id: backup.id, from });
       if (!part?.ok) throw new Error(part?.error || 'The backup download failed.');
       if (!(part.length > 0) && !part.done) throw new Error('The backup download stopped making progress.');
-      parts.push(decoded(part.data));
+      const bytes = decoded(part.data);
+      if (bytes.length !== part.length) throw new Error('The router sent a damaged backup chunk.');
+      parts.push(bytes);
       from += part.length;
     } while (!part.done);
+    if (from !== backup.size) throw new Error('The downloaded backup is incomplete.');
     saveFile(backup.name, parts, 'application/gzip');
     await ubus('flab.system', 'backup_cancel', { id: backup.id }).catch(() => {});
     setMessage(rerender, 'ok', `Downloaded ${backup.name}. Keep it encrypted or in protected storage; it can contain passwords and private keys.`);
@@ -91,8 +103,7 @@ async function chooseFile(file, rerender) {
     if (!begun?.ok) throw new Error(begun?.error || 'The router could not start the upload.');
     let from = 0;
     while (from < file.size) {
-      state.busy = `Uploading backup… ${Math.round(from / file.size * 100)}%`;
-      rerender();
+      progress(rerender, `Uploading backup… ${Math.round(from / file.size * 100)}%`);
       const end = Math.min(from + UPLOAD_CHUNK, file.size);
       const bytes = new Uint8Array(await file.slice(from, end).arrayBuffer());
       const reply = await ubus('flab.system', 'backup_upload', {
@@ -105,8 +116,7 @@ async function chooseFile(file, rerender) {
       if (reply.from !== end) throw new Error('The router reported an unexpected upload offset.');
       from = end;
     }
-    state.busy = 'Validating backup…';
-    rerender();
+    progress(rerender, 'Validating backup…');
     const inspected = await ubus('flab.system', 'backup_inspect', { id: begun.id });
     if (!inspected?.ok || !Array.isArray(inspected.files)) throw new Error(inspected?.error || 'The backup is invalid.');
     state.upload = { id: begun.id, name: file.name, size: file.size, files: inspected.files };
@@ -161,7 +171,7 @@ function review(upload) {
     h('div', { className: 'fw-semibold' }, `${upload.name} · ${upload.files.length} files · ${upload.size.toLocaleString()} bytes`),
     h('details', { className: 'mt-2' },
       h('summary', {}, 'Review archive contents'),
-      h('pre', { className: 'small mb-0 mt-2', style: 'max-height:16rem;overflow:auto' }, upload.files.join('\n'))));
+      h('pre', { className: 'small mb-0 mt-2 backup-files' }, upload.files.join('\n'))));
 }
 
 export function backupCard(rerender) {
@@ -183,7 +193,7 @@ export function backupCard(rerender) {
         }))),
     state.busy ? h('div', { className: 'd-flex align-items-center gap-2 mt-3 text-primary', role: 'status', ariaLive: 'polite' },
       h('span', { className: 'spinner-border spinner-border-sm', ariaHidden: 'true' }),
-      h('span', {}, state.busy)) : null,
+      state.status = h('span', {}, state.busy)) : null,
     !allowed ? muted('This login needs the backup permissions added to its rpcd ACL. Sign out and in again after upgrading flab-ui.') : null,
     state.upload ? [
       review(state.upload),

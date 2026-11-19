@@ -2,13 +2,14 @@
 // editable table. Pure functions with no DOM and no network, so they are unit-tested directly (tests/routeedit/model.test.mjs).
 //
 // What netifd reads from a route section (netifd's interface-ip.c): interface, target, netmask, gateway, metric, mtu, valid, table,
-// source, onlink, type, proto and disabled. The page edits the first six, `source`, `onlink`, `type` and `disabled` ("Enabled"), and
-// leaves the others (`valid`, `proto`) alone. `target` may carry a prefix length ("10.0.0.0/8"); a plain address is a host route.
+// source, onlink, type, proto and disabled. The page edits all of them except `valid` and `proto`, which it leaves alone (`netmask`
+// is edited as part of the target, and `disabled` as "Enabled"). `target` may carry a prefix length ("10.0.0.0/8"); a plain address
+// is a host route.
 // Older configs give an IPv4 route's prefix length in `netmask`, so the page shows `target` and `netmask` together as one prefix, and
 // writes the prefix into `target` (and removes `netmask`) only for a route whose target was edited. `source` is a source prefix, not
 // a preferred source address: the route is used only for packets coming from it.
 //
-// Data (readStatic): { available, routes: [{ section, family, values }], interfaces: [{ name, up, v4, v6 }], kernel, tableIds }.
+// Data (readStatic): { available, routes: [{ section, family, values }], interfaces: [{ name, up, v4, v6, ... }], kernel, tableIds, rules }.
 // The draft (draftFrom) is { rows: [{ key, section, family, removed, values }], next }; a row's `values` are the strings of FIELDS
 // (and booleans for `onlink` and `enabled`).
 import { parseAddress } from '../../core/ip.js';

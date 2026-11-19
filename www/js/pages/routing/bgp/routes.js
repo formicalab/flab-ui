@@ -2,8 +2,12 @@
 
 import { h } from '../../../core/dom.js';
 import { icon } from '../../../core/icons.js';
-import { badge, card, muted } from '../../../core/ui.js';
+import { badge, button, card, muted } from '../../../core/ui.js';
+import { fmtNum } from '../../../core/format.js';
 import { peerDot, peerClass, asPath, communityText, prefixKey, firstAddress } from './util.js';
+
+// Paths drawn before "Show all": a router that learns a large table would otherwise draw tens of thousands of rows.
+const ROW_LIMIT = 400;
 
 // Best + installed -> Best (and ECMP when several next hops are installed); installed only -> ECMP; else Backup.
 function status(r) {
@@ -66,9 +70,9 @@ function filterPaths(paths, state) {
   });
 }
 
-// Copy of `paths` ordered by the selected column (state.sort.dir is 1 or -1); an unknown key falls back to
+// The paths sorted by the selected column (state.sort.dir is 1 or -1) into a new array; an unknown key falls back to
 // the first column. Sort keys and prefix keys are computed once per path, not on every comparison.
-function sorted(paths, state, cols) {
+function sortPaths(paths, state, cols) {
   const col = cols.find(c => c.key === state.sort.key) ?? cols[0];
   return paths.map(r => ({ r, x: col.sort(r), p: prefixKey(r.prefix) }))
     .sort((a, b) => {
@@ -79,13 +83,27 @@ function sorted(paths, state, cols) {
     .map(e => e.r);
 }
 
+// The sorted list of the last draw: changing the filter redraws from the same data, and sorting a large table again for each
+// keystroke would be wasted work. Filtering a sorted list gives the same order as sorting the filtered list.
+let sortMemo = { paths: null, key: '', dir: 0, cols: '', list: [] };
+
+// `paths` sorted by the selected column, from the memo when the same list, column set and order were drawn last.
+function sorted(paths, state, cols) {
+  const colKeys = cols.map(c => c.key).join();
+  if (sortMemo.paths !== paths || sortMemo.key !== state.sort.key || sortMemo.dir !== state.sort.dir || sortMemo.cols !== colKeys) {
+    sortMemo = { paths, key: state.sort.key, dir: state.sort.dir, cols: colKeys, list: sortPaths(paths, state, cols) };
+  }
+  return sortMemo.list;
+}
+
 // The learned-routes card. Clicking a header sets the sort in the page's `state` (clicking the active
 // column reverses it) and calls `rerender` to redraw from the cached data.
 export function routesCard(data, state, rerender) {
   const cols = COLS.filter(c => !c.optional || c.optional(data.paths));
   const totalWeight = cols.reduce((n, c) => n + c.w, 0);
-  const shown = sorted(filterPaths(data.paths, state), state, cols);
-  const prefixes = new Set(shown.map(r => r.prefix)).size;
+  const filtered = filterPaths(sorted(data.paths, state, cols), state);
+  const shown = state.bgpAll ? filtered : filtered.slice(0, ROW_LIMIT);
+  const prefixes = new Set(filtered.map(r => r.prefix)).size;
 
   // Clickable column headers; the active sort column shows an arrow for its direction.
   const head = cols.map(col => {
@@ -106,9 +124,13 @@ export function routesCard(data, state, rerender) {
   });
 
   return card([icon('signpost-split'), 'Learned routes',
-    h('span', { className: 'sub' }, `${shown.length} of ${data.paths.length} paths · ${prefixes} prefixes`)],
-  h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover fixed-grid routes-table', style: 'min-width:1200px' },
-    h('colgroup', {}, cols.map(c => h('col', { style: `width:${(c.w / totalWeight * 100).toFixed(2)}%` }))),
-    h('thead', {}, h('tr', {}, head)),
-    h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No routes match the filter'))))));
+    h('span', { className: 'sub' }, `${filtered.length} of ${data.paths.length} paths · ${prefixes} prefixes`)],
+  h('div', {},
+    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover fixed-grid routes-table', style: 'min-width:1200px' },
+      h('colgroup', {}, cols.map(c => h('col', { style: `width:${(c.w / totalWeight * 100).toFixed(2)}%` }))),
+      h('thead', {}, h('tr', {}, head)),
+      h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No routes match the filter'))))),
+    filtered.length > shown.length ? h('div', { className: 'rt-more' },
+      h('span', { className: 'muted' }, `Showing the first ${fmtNum(shown.length)} of ${fmtNum(filtered.length)} paths.`),
+      button(`Show all ${fmtNum(filtered.length)}`, null, () => { state.bgpAll = true; rerender(); })) : null));
 }

@@ -31,8 +31,9 @@ const SEVERITY_ALIASES = { warn: 'warning', error: 'err', panic: 'emerg' };
 const FACILITIES = [ 'kern', 'user', 'mail', 'daemon', 'auth', 'syslog', 'lpr', 'news', 'uucp', 'cron', 'authpriv', 'ftp' ];
 const MONTHS = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
 
-// "name = value" pairs whose name suggests a secret; the value (up to the next space) is blanked.
-const SECRET = /((pass(word|wd|phrase)?|psk|secret|private[_ -]?key|preshared[_ -]?key|token|key)[ ]*[=:][ ]*)[^ ]+/gi;
+// "name = value" pairs whose name suggests a secret; the value is blanked: a quoted value as a whole (it may hold spaces),
+// otherwise up to the next space. A quote between the name and the separator (JSON) is allowed.
+const SECRET = /((pass(word|wd|phrase)?|psk|secret|private[_ -]?key|preshared[_ -]?key|token|key)["']?[ ]*[=:][ ]*)("[^"]*"|'[^']*'|[^ ]+)/gi;
 
 // The message with secret-looking values blanked.
 function redact(message) {
@@ -128,11 +129,17 @@ function parse_kernel(line, boot) {
 }
 
 // The last `n` entries of the kernel log, parsed, with wall-clock times derived from /proc/uptime. `dmesg` has no line limit of its
-// own, so a buffer larger than the output cap is read again through `tail`.
+// own, so a buffer larger than the output cap is read again through `tail -n N`, and again with fewer lines when even those do not fit.
 function read_kernel(n) {
 	let up = num(split(sysfs('/proc/uptime') ?? '', ' ')[0]);
 	let boot = up != null ? int(time() - up) : null;
-	let log = read_log('dmesg -r 2>/dev/null', () => `dmesg -r 2>/dev/null | tail -n ${n}`);
+	let retried = false;
+	let log = read_log('dmesg -r 2>/dev/null', (fewer) => {
+		// `fewer` of the first retry counts the oldest lines, which do not tell how long the newest ones are.
+		let count = retried ? min(fewer, n) : n;
+		retried = true;
+		return `dmesg -r 2>/dev/null | tail -n ${count}`;
+	});
 	return map(tail(log.lines, n), (l) => parse_kernel(l, boot));
 }
 

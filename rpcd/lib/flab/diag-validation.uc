@@ -20,7 +20,7 @@ export function is_address(s) {
 };
 
 export function valid_iface(s) {
-	return safe_ifname(s) && substr(s, 0, 1) != '-';
+	return safe_ifname(s);
 };
 
 export function int_in(v, lo, hi, def) {
@@ -35,12 +35,12 @@ export function valid_job_id(s) {
 };
 
 // One shell word. No line break or NUL is accepted; single quotes are escaped for BusyBox sh.
-export function shell_word(value) {
+function shell_word(value) {
 	let s = '' + value;
 	if (index(s, '\n') >= 0 || index(s, '\r') >= 0 || index(s, '\0') >= 0)
 		return null;
 	return match(s, /^[A-Za-z0-9_./:=+@,-]+$/) ? s : "'" + replace(s, "'", "'\\''") + "'";
-};
+}
 
 // A command assembled from already-validated words. It rejects line breaks and quotes every argument, so a
 // future validator regression cannot turn one argument into shell syntax. Returns null for an invalid word.

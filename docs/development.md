@@ -21,14 +21,15 @@ Example: an `ntp` page.
    import { ubus } from '../core/ubus.js';
    import { card, table } from '../core/ui.js';
    export default {
-     id: 'ntp', label: 'NTP', icon: 'clock', interval: 10000,
+     interval: 10000,
      load: () => ubus('flab.ntp', 'status'),
      view: data => [card('Servers', table(['Server', 'Offset'], data.servers.map(s => [s.name, s.offset])))],
    };
    ```
    Add `css: 'css/ntp.css'` and the file if the page needs its own styles.
-3. **Register.** Add navigation metadata and a dynamic importer to `www/js/pages/index.js`, following its existing
-   entries. Do not statically import page implementations into the registry; array order is navigation order.
+3. **Register.** A base page gets an entry in `basePages` in `www/js/pages/index.js` (a dynamic importer, the id, label and
+   icon); a feature page gets an entry in a `www/modules/<feature>.json` manifest instead (`id`, `label`, `icon`, `order`,
+   `module: "./ntp/index.js"`). Do not statically import page implementations into the registry; the order is the navigation order.
 4. **Icons.** If you need a new icon, paste its `<path>` markup from icons.getbootstrap.com into the
    `PATHS` map in `core/icons.js`.
 5. **Tests.** Add the plugin to `$plugins` in `tests/network/run.ps1`, scenarios to `tests/network/mkfx.mjs`,

@@ -32,8 +32,10 @@ const SOURCE_TEXT = {
 
 // Reads the log selected in the command bar; the router returns the last `lines` entries.
 async function load() {
-  const data = await ubus('flab.logs', 'read', { source: state.source, lines: +state.lines });
-  return { entries: data[state.source] ?? [], source: state.source, limit: data.limit, generated: data.generated };
+  // Read the selection once: the filters can change while the request is on its way.
+  const { source, lines } = state;
+  const data = await ubus('flab.logs', 'read', { source, lines: +lines });
+  return { entries: Array.isArray(data[source]) ? data[source] : [], source, limit: data.limit, generated: data.generated };
 }
 
 // Scrolls the pane to the newest entry and resumes following.
@@ -91,10 +93,6 @@ function legend(source) {
 }
 
 export default {
-  id: 'logs',
-  label: 'Logs',
-  title: 'Logs · system and kernel',
-  icon: 'journal-text',
   interval: 5000,
   css: 'css/logs.css',
   isPaused: () => state.paused,

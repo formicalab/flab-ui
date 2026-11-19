@@ -80,10 +80,6 @@ function addBar(ctx) {
 
 // Page object registered in pages/index.js (contract documented there).
 export default {
-  id: 'wireguard',
-  label: 'WireGuard',
-  title: 'WireGuard · VPN',
-  icon: 'key',
   interval: 5000,
   css: ['css/forms.css', 'css/wireguard.css'],
   isPaused: () => state.paused || state.dialog || editor.paused('.wg-form'),

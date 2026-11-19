@@ -21,8 +21,6 @@ import { APPLY_SECONDS, CONFIG, SETTLE_MS, changesOf, checkApplied, downAfter, d
 const RETRIES = 6;
 const RETRY_MS = 2000;
 
-// Waits `ms` milliseconds.
-
 // Reads what the router holds after a save: the config (through the plugin) and netifd's interfaces. An ask that fails, or a network that is
 // not up yet, is repeated for a while; the last answer is the one that counts.
 async function readAfter() {

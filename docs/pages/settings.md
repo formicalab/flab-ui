@@ -33,7 +33,7 @@ NTP client runs with); the ACL fragment `rpcd/acl.d/flab-settings.json` also gra
   addresses, paths, interface names, enums and the time zone rule are validated; a bad entry is marked, explained
   and blocks saving. An emptied option is deleted from the file instead of being stored empty.
 - **Configuration backup and restore**: Download runs `sysupgrade -b` and streams the gzip archive to the browser
-  in bounded base64 chunks. The archive can contain passwords and private keys and is not encrypted by flab-ui.
+  in bounded base64 chunks and checks each chunk and the total against the reported size. The archive can contain passwords and private keys and is not encrypted by flab-ui.
   Restore accepts a backup up to 16 MiB, uploads it in chunks, verifies gzip integrity and the tar member list,
   requires `/etc/config/system`, rejects absolute and `..` paths, and shows the complete member list for review.
   A separate confirmation explains that restore runs `sysupgrade -r` and reboots, with no automatic rollback. Backup

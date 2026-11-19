@@ -24,7 +24,6 @@
 .ov-dns-row b { color: var(--fl-text); font-weight: 600; }
 .ov-dns-row .mono { overflow-wrap: anywhere; }
 .ov-dns-icon-spacer { width: 14px; flex: none; }
-.ov-prefix-value { font-size: 1.2rem; font-weight: 600; overflow-wrap: anywhere; }
 .ov-prefix-provider { margin-bottom: .75rem; }
 .ov-assignments { display: grid; gap: .45rem; padding-top: .55rem; border-top: 1px solid var(--fl-stroke); }
 .ov-assignment-label { font-weight: 600; }

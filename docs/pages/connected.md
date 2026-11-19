@@ -1,6 +1,6 @@
 # Connected devices (a view of Devices and Interfaces; the tab **Connected devices**)
 
-The devices connected now, for the time being the Wi-Fi clients: they used to be the second half of the old Wi-Fi page and moved here (`connected/index.js`, hosted by `interfaces/index.js`; refreshed every 5 s, the Pause and Refresh buttons are the page's). Data comes from `flab.wifi clients` (the backend is unchanged); without the plugin the view says so. Wired clients and DHCP leases are meant to be listed here too, later.
+The devices connected now, for the time being the Wi-Fi clients (`connected/index.js`, hosted by `interfaces/index.js`; refreshed every 5 s, the Pause and Refresh buttons are the page's). Data comes from `flab.wifi clients`; without the plugin the view says so.
 
 - **Tiles**: the connected clients, the clients of each radio (with its channel and mode), the average signal, how many use WPA3 or OWE, and how many have a security grade of C or D.
 - **Legend** (folded): what the AKM, cipher, SAE group and PMF values and the security score mean.

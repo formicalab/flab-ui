@@ -126,7 +126,8 @@ Status of BIRD 3 (`flab.bgp`). Sections, top to bottom:
 - **Learned routes:** every BGP path grouped by prefix. Status is Best, ECMP (installed in the kernel as an
   equal-cost next hop) or Backup. Columns: peer, next hop, interface, AS path chips (prepending collapses to
   `65520 ×2`), origin, local pref, MED and communities (the last two only appear when some path has them),
-  since. Filter, peer selector, "Best paths only", sortable columns.
+  since. Filter, peer selector, "Best paths only", sortable columns. At most 400 paths are drawn until
+  **Show all** is pressed.
 - **Announced routes:** prefix x peer matrix plus export-filter results per peer (considered, blocked by
   filter, rejected, announced). **Local & connected routes**, **BIRD protocols**, **daemon** and **memory**
   cards close the page.

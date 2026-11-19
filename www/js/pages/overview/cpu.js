@@ -1,9 +1,8 @@
 // CPU utilization for the Overview page.
 //
 // The backend (flab.system cpu) returns cumulative time counters from /proc/stat. Utilization is the share
-// of CPU time spent in each state between two successive samples, so a short history is kept here (like
-// the IPsec throughput history). Samples are cleared when the router uptime shows a gap (the page was
-// paused or not open), because a delta over minutes would be a misleading average.
+// of CPU time spent in each state between two successive samples, so a short history is kept here. Samples are cleared when
+// the router uptime shows a gap (the page was paused or not open), because a delta over minutes would be a misleading average.
 
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
@@ -74,7 +73,7 @@ function series(id, pick) {
 
 //#region presentation
 // Color level for a busy percentage: good below 60 %, fair below 85 %, weak above.
-export const level = busy => busy < 60 ? 'good' : busy < 85 ? 'fair' : 'weak';
+const level = busy => busy < 60 ? 'good' : busy < 85 ? 'fair' : 'weak';
 // Text color class per level.
 export const levelText = { good: 'text-success', fair: 'text-warning', weak: 'text-danger' };
 

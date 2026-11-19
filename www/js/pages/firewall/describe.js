@@ -33,7 +33,7 @@ const addressPhrase = (word, list) => {
 const familyWords = f => (f === 'ipv4' ? 'IPv4 only' : f === 'ipv6' ? 'IPv6 only' : '');
 
 // The schedule of a rule in words, or ''.
-export function scheduleWords(v) {
+function scheduleWords(v) {
   const parts = [];
   if (v.weekdays?.trim()) {
     const inverted = v.weekdays.trim().startsWith('!');

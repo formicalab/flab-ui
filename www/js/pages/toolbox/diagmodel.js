@@ -163,10 +163,12 @@ export function requestOf(form) {
     if (form.resolve === '1') args.resolve = true;
     if (form.asn === '1') args.asn = true;
   } else if (form.tool === 'trace') {
+    if (!DNS_TYPES.includes(form.type)) return { error: 'Choose a record type.' };
     args.type = form.type;
   } else if (form.tool === 'dns') {
     // One server is a plain lookup (the router's own resolver is the default, so "router" sends no server); two or more
     // are a comparison, which the plugin runs as its own tool.
+    if (!DNS_TYPES.includes(form.type)) return { error: 'Choose a record type.' };
     args.type = form.type;
     const servers = [...(form.servers ?? [])];
     const extra = String(form.extraServer ?? '').trim();
@@ -174,6 +176,7 @@ export function requestOf(form) {
     if (extra && !servers.includes(extra)) servers.push(extra);
     if (!servers.length) return { error: 'Choose at least one DNS server.' };
     if (servers.length > MAX_SERVERS) return { error: `Choose at most ${MAX_SERVERS} DNS servers.` };
+    if (!servers.every(s => s === 'router' || isHost(s))) return { error: 'Every DNS server must be a host name or an address.' };
     if (servers.length > 1) {
       args.tool = 'compare';
       args.servers = servers;
@@ -202,6 +205,10 @@ export function requestOf(form) {
 
 //#region Ping
 
+// The largest reply sequence number taken into account: far above any count the plugin allows (a ping is at most 60), so that
+// a bogus `seq=` in the output cannot make the latency chart draw millions of points.
+const MAX_PING_SEQ = 1000;
+
 // What a ping's output says: the target, each reply, an error line, the summary the tool prints at the end and
 // figures derived from the replies (they are available while the ping still runs).
 //   { target: { name, ip } | null, replies: [{ seq, ttl, rtt, from }], dups, error, summary: { sent, received, loss } | null,
@@ -215,7 +222,7 @@ export function parsePing(text) {
     if ((m = line.match(/^PING (\S+) \(([^)]+)\)/))) out.target = { name: m[1], ip: m[2] };
     else if ((m = line.match(/^(\d+) bytes from (\S+?):? seq=(\d+) ttl=(\d+) time=([\d.]+) ms(.*)$/))) {
       if (/DUP!/.test(m[6])) out.dups++;
-      else out.replies.push({ seq: +m[3], ttl: +m[4], rtt: +m[5], from: m[2].replace(/:$/, '') });
+      else if (+m[3] < MAX_PING_SEQ) out.replies.push({ seq: +m[3], ttl: +m[4], rtt: +m[5], from: m[2].replace(/:$/, '') });
     } else if ((m = line.match(/^(\d+) packets transmitted, (\d+) packets received.*?(\d+)% packet loss/))) out.summary = { sent: +m[1], received: +m[2], loss: +m[3] };
     else if (/^ping: /.test(line)) out.error = line.replace(/^ping: /, '').trim();
   }

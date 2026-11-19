@@ -59,3 +59,5 @@
 .fw-more { margin-top: .4rem; max-width: 24rem; }
 .fw-what { padding: .6rem .8rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface-hover); }
 .fw-words { font-size: .875rem; }
+/* The messages of an item dialog take a row of their own above its footer buttons. */
+.fw-dialog-notes { flex: 1 0 100%; }

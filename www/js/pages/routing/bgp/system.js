@@ -89,6 +89,9 @@ export function daemonCard(data) {
   ])), 'h-100');
 }
 
+// A bar width in percent of `max`, clamped to 0..100 so that a malformed number never reaches the style attribute as text.
+const barPercent = (value, max) => Math.min(100, Math.max(0, Number(value) / max * 100)) || 0;
+
 // BIRD memory by pool: stacked bars of effective (used) bytes plus allocator overhead, all scaled to the
 // largest pool so they are comparable; the "Total" row has no bar, only the text.
 export function memoryCard(data) {
@@ -99,7 +102,7 @@ export function memoryCard(data) {
     h('div', { className: 'card-body' }, h('div', { className: 'membars' }, rows.map(m => h('div', { className: `membar ${m.name === 'Total' ? 'total' : ''}` },
       h('div', { className: 'ml' }, m.name),
       h('div', { className: 'track', title: `${fmtBytes(m.effective)} used · ${fmtBytes(m.overhead)} overhead` },
-        m.name === 'Total' ? null : [h('i', { className: 'eff', style: `width:${m.effective / max * 100}%` }), h('i', { className: 'ovh', style: `width:${m.overhead / max * 100}%` })]),
+        m.name === 'Total' ? null : [h('i', { className: 'eff', style: `width:${barPercent(m.effective, max)}%` }), h('i', { className: 'ovh', style: `width:${barPercent(m.overhead, max)}%` })]),
       h('div', { className: 'mv' }, `${fmtBytes(m.effective)} + ${fmtBytes(m.overhead)}`)))),
     h('div', { className: 'muted small mt-2' }, 'Bars show used memory plus allocator overhead.')),
     'h-100');

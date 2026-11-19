@@ -13,7 +13,7 @@
 'use strict';
 
 import { deferred } from 'flab.worker';
-import { run, command_result, sysfs_raw, num, safe_ifname, uci_all } from 'flab.util';
+import { run, command_result, sysfs_raw, num, safe_ifname, one_line, uci_all } from 'flab.util';
 
 // Route types `ip` prints in front of the prefix (a plain unicast route has no type word).
 const TYPES = ['unicast', 'local', 'broadcast', 'multicast', 'anycast', 'blackhole', 'unreachable', 'prohibit', 'throw', 'nat', 'unspec', 'xresolve'];
@@ -220,12 +220,6 @@ function collect() {
 
 //#region lookup
 
-// Whether `text` is a string without a newline. The regular expression engine matches line by line, so "^...$" accepts
-// the first line of a longer text; the newline would then start another command in the shell line built from it.
-function one_line(text) {
-	return type(text) == 'string' && index(text, '\n') < 0;
-}
-
 // Whether `a` is an IPv4 or IPv6 address (only characters an address can hold, so it is safe in a command line).
 function is_address(a) {
 	if (!one_line(a))
@@ -288,7 +282,7 @@ function lookup(args) {
 		return { ...out, ok: false, error: 'Enter an IPv4 or IPv6 address.' };
 	if (src != null && !is_address(src))
 		return { ...out, ok: false, error: 'The source must be an IPv4 or IPv6 address.' };
-	if (iif != null && !(one_line(iif) && safe_ifname(iif)))
+	if (iif != null && !safe_ifname(iif))
 		return { ...out, ok: false, error: 'The interface name is not valid.' };
 
 	let family = index(dst, ':') >= 0 ? 6 : 4;

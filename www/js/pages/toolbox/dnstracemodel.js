@@ -63,7 +63,7 @@ function dsOf(records) {
 function sigsOf(records, type) {
   return records.filter(r => r.type === 'RRSIG' && r.data.split(/\s+/)[0] === type).map(r => {
     const p = r.data.split(/\s+/);
-    return { signer: p[7], tag: +p[6], algorithm: ALGORITHMS[p[1]] ?? `algorithm ${p[1]}`, expires: sigTime(p[4]) };
+    return { signer: p[7] ?? '', tag: +p[6], algorithm: ALGORITHMS[p[1]] ?? `algorithm ${p[1]}`, expires: sigTime(p[4]) };
   });
 }
 
@@ -93,7 +93,7 @@ function nameServersOf(k) {
 // One `step` block as a step of the trace. `signed` says the answer carried signatures (over the records asked for, or over
 // the SOA or NSEC records of a negative answer).
 function stepOf(block, type, lookups) {
-  const [n, address, name, zone] = block.detail.split(/\s+/);
+  const [n, address = '', name = '', zone] = block.detail.split(/\s+/);
   const k = parseKdig(block.output);
   const kind = block.running ? 'running' : kindOf(k, type);
   const looked = lookups.find(l => l.name === name);

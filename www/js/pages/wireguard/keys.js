@@ -47,7 +47,8 @@ function clamp(bytes) {
   return k;
 }
 
-// The X25519 function: the scalar `k` (32 bytes, clamped here) times the point with u-coordinate `u` (32 bytes); returns 32 bytes.
+// X25519 function: the scalar `k` (32 bytes, clamped here) times the point with u-coordinate `u` (32 bytes); returns 32 bytes. BigInt
+// arithmetic is not constant-time, which is acceptable for this fallback only because nothing remote can time it.
 export function x25519(k, u) {
   const scalar = toBig(clamp(k));
   const x1 = toBig(u) & ((1n << 255n) - 1n);

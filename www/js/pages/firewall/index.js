@@ -161,10 +161,6 @@ function readOnlyView(fw) {
 
 // Page object registered in pages/index.js (contract documented there).
 export default {
-  id: 'firewall',
-  label: 'Firewall',
-  title: 'Firewall · zones and rules',
-  icon: 'shield-check',
   interval: 5000,
   css: ['css/forms.css', 'css/firewall.css'],
   isPaused: () => state.paused || state.dialog || editor.paused('.fw-defaults'),

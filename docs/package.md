@@ -4,9 +4,8 @@
 
 The proposed `flab-ui` package (`admin/flab-ui` on the
 [`flab-ui` branch of formicalab/packages](https://github.com/formicalab/packages/tree/flab-ui/admin/flab-ui), not yet
-merged into [openwrt/packages](https://github.com/openwrt/packages)) installs:
-
-The package definition builds one base package, feature modules and a full-install metapackage:
+merged into [openwrt/packages](https://github.com/openwrt/packages)) builds one base package, feature modules and a
+full-install metapackage:
 
 | Package | Purpose |
 |---|---|
@@ -122,7 +121,7 @@ pwsh -File tools/package.ps1 -Action Release -Version <version> -Amend -NotesFil
   and needs no SDK. Reload the browser: the page notices that the router's files changed and downloads them again
   (see [Browser cache](frontend.md#browser-cache)). `-Backend` also copies `rpcd/` to the places the package installs
   it and restarts rpcd; do not use it while a configuration apply is waiting for confirmation, because the rollback
-  timer lives in rpcd's memory. Files deleted from `rpcd/` stay on the router; `Deploy` cleans that up. Use `Deploy`
+  timer lives in rpcd's memory. `Sync -Backend` and `Deploy` both remove flab plugin, library and ACL files that no longer exist in `rpcd/`. Use `Deploy`
   before calling a change done: it exercises the real package (files, permissions, dependencies, scripts).
 - **Versions.** The version of a working-tree apk is the Makefile's `PKG_VERSION`, and its release is the UTC build time
   (for example `flab-ui-<version>-r<UTC timestamp>.apk`), so it is clearly not the published `-r1`, upgrades it, and the
@@ -179,9 +178,12 @@ Without it, the workflow adds `flab-ui: update to <version>`.
 Use `-DryRun` to run the complete hosted APK build without creating a tag, changing the package branch or publishing a
 release. Choose an unused version; these examples are placeholders.
 
+Pinned actions (`actions/checkout`, `actions/upload-artifact`) are referenced by commit SHA with the version in a comment; update them deliberately.
+
 The repository secret `PACKAGES_TOKEN` must be a fine-grained GitHub token limited to `formicalab/packages` with
 **Contents: Read and write**. The workflow's normal `GITHUB_TOKEN` can tag and release `formicalab/flab-ui`, but it
-cannot write the separate packages repository. The token is never passed to build scripts or release assets.
+cannot write the separate packages repository. The packages checkout does not keep the token; only the final push step
+receives it, so the SDK download and the build never see it.
 
 Router installation is intentionally a separate post-release check. Download the release APKs and install them with
 the normal package commands, or use a trusted self-hosted workflow. A failed hosted build does not publish the package
@@ -213,11 +215,11 @@ with `ucode -L '/tmp/*.uc'` through a small script file (inline quoting over ssh
 ## License
 
 flab-ui is MIT licensed (see `LICENSE`). `www/vendor/bootstrap.min.css` is Bootstrap 5.3.3, `www/vendor/qrcode.js` is qrcode-generator 2.0.4 (MIT, Kazuhiko Arase) and the icon paths in
-`www/js/core/icons.js` are Bootstrap Icons 1.11.3; both are MIT licensed (Copyright the Bootstrap Authors).
+`www/js/core/icons.js` are Bootstrap Icons 1.11.3 (Copyright the Bootstrap Authors); all three are MIT licensed.
 `www/LICENSE` carries the application and third-party notices and the MIT permission text; the package's existing
 `www/` install rule includes it at `/www/flab/LICENSE`. Changes made after a published tag require a new release
 before the feed tarball includes them.
-The feed Makefile lists `LICENSE www/LICENSE` in `PKG_LICENSE_FILES`. The package and both bundled Bootstrap assets
-use MIT, so `PKG_LICENSE:=MIT` remains the correct SPDX expression; separate identifiers are not needed for multiple
+The feed Makefile lists `LICENSE www/LICENSE` in `PKG_LICENSE_FILES`. The package and the bundled Bootstrap, Bootstrap Icons
+and qrcode-generator all use MIT, so `PKG_LICENSE:=MIT` remains the correct SPDX expression; separate identifiers are not needed for multiple
 components under the same license. `PKG_LICENSE_FILES` is optional OpenWrt metadata, but retaining the actual notices
 in the distributed files is still required by MIT.

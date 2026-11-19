@@ -15,7 +15,7 @@
 
 import { deferred } from 'flab.worker';
 import { readfile } from 'fs';
-import { run, num } from 'flab.util';
+import { run, num, one_line } from 'flab.util';
 
 // Multipliers from the unit printed by `birdc show memory` to bytes (BIRD uses 1024-based units).
 const MEM_UNITS = { B: 1, kB: 1024, MB: 1048576, GB: 1073741824 };
@@ -31,9 +31,10 @@ function source(name, cmd) {
 	return FIXTURES ? (readfile(`${FIXTURES}/${name}.txt`) ?? '') : run(cmd);
 }
 
-// Protocol names come from birdc output and are interpolated into a shell command, so validate them.
+// Protocol names come from birdc output and are interpolated into a shell command, so validate them (and refuse a leading
+// "-", which birdc would read as an option).
 function safe_name(name) {
-	return name && match(name, /^[A-Za-z0-9_.-]+$/) != null;
+	return one_line(name) && match(name, /^[A-Za-z0-9_.][A-Za-z0-9_.-]*$/) != null;
 }
 
 // Output of `birdc <cmd>` (stderr included so a connection failure is visible); the fixture name is the

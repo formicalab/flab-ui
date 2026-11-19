@@ -10,9 +10,9 @@
 //     (the password or token, or any option whose name says so) is never returned, only whether it is set (`secrets`); the
 //     credentials in a proxy address (user:password@host:port) are masked. The page edits the file through rpcd's own `uci`
 //     object, so it never needs to read a secret back.
-//   - ddns-scripts' own run files in the run directory (`ddns_rundir`, /var/run/ddns): <section>.pid, .ip (the address the
-//     provider has registered, as the last lookup saw it), .update (the uptime in seconds of the last update that was sent)
-//     and .nextcheck (the uptime of the next check), and <section>.log in the log directory, from which the latest problem and
+//   - ddns-scripts' own run files in the run directory (`ddns_rundir`, /var/run/ddns): <section>.ip (the address the
+//     provider has registered, as the last lookup saw it), .update (the uptime in seconds of the last update that was sent),
+//     .nextcheck (the uptime of the next check) and .err (the last update error), and <section>.log in the log directory, from which the latest problem and
 //     the address the updater detected are taken. procd's `service list` says whether the updater runs for each section.
 //   - the address the router has now, for the sources the plugin can read without network traffic: `network` (netifd's
 //     `network.interface dump`) and `interface` (`ip addr`); `web` and `script` use the address in the log.
@@ -50,7 +50,7 @@ const NAME = /^[A-Za-z0-9_]{1,64}$/;
 // An absolute path of plain characters, for the run and log directories read from the config.
 const DIR = /^\/[A-Za-z0-9_.\/-]+$/;
 // Options whose value is a secret: never returned.
-const SECRET_OPTION = /^(password|[a-z_]*(passw|secret|token|apikey|api_key)[a-z_]*)$/i;
+const SECRET_OPTION = /^(password|[a-z0-9_]*(passw|secret|token|apikey|api_key)[a-z0-9_]*)$/i;
 // The most of a log that is returned, in bytes.
 const MAX_LOG = 65536;
 // The most of an update error file that is returned, in characters.
@@ -84,11 +84,6 @@ function dir_option(glob, key, fallback) {
 	return valid_dir(glob.values[key]) ? glob.values[key] : fallback;
 }
 
-// Whether `n` is a network device name that may reach a command line: a plain interface name that does not start with a dash (which a command would read as an option).
-function plain_ifname(n) {
-	return safe_ifname(n) && index(n, '-') != 0;
-}
-
 // An option value as a plain string ('' when absent).
 function text(v) {
 	return v == null ? '' : '' + v;
@@ -111,9 +106,10 @@ function global_section() {
 	return { section: null, values: {} };
 }
 
-// A proxy address with the password of its credentials masked: "user:secret@host:8080" gives "user:***@host:8080".
+// A proxy address with the password of its credentials masked: "user:secret@host:8080" gives "user:***@host:8080". The password
+// runs to the last "@", so one that holds an "@" or a "/" is masked whole.
 function mask_proxy(v) {
-	let m = type(v) == 'string' ? match(v, /^([^@\/:]*):([^@\/]*)@(.*)$/) : null;
+	let m = type(v) == 'string' ? match(v, /^([^@\/:]*):(.*)@([^@]*)$/) : null;
 	return m ? `${m[1]}:***@${m[3]}` : v;
 }
 
@@ -143,7 +139,7 @@ function secret_strings(sec) {
 		if (match(k, SECRET_OPTION) && text(v) != '')
 			push(out, text(v));
 		if (k == 'proxy') {
-			let m = match(text(v), /^[^@\/:]*:([^@\/]*)@/);
+			let m = match(text(v), /^[^@\/:]*:(.*)@[^@]*$/);
 			if (m && m[1] != '')
 				push(out, m[1]);
 		}
@@ -242,7 +238,7 @@ function local_address(sec, dump) {
 		}
 		return null;
 	}
-	if (source == 'interface' && plain_ifname(sec.ip_interface)) {
+	if (source == 'interface' && safe_ifname(sec.ip_interface)) {
 		let out = run(`ip -o -${v6 ? 6 : 4} addr show dev ${sec.ip_interface} scope global 2>/dev/null`);
 		let m = match(out, v6 ? /inet6 ([0-9a-fA-F:]+)\// : /inet ([0-9.]+)\//);
 		return m ? m[1] : null;
@@ -350,9 +346,9 @@ function networks(dump) {
 	return sort(keys(seen));
 }
 
-// The network devices of the router, sorted (a name that is not a plain interface name is left out).
+// The network devices of the router, sorted (a name that is not a safe interface name is left out).
 function devices() {
-	return sort(filter(map(split(run('ls -1 /sys/class/net 2>/dev/null') ?? '', '\n'), (n) => trim(n)), (n) => n != '' && plain_ifname(n)));
+	return sort(filter(map(split(run('ls -1 /sys/class/net 2>/dev/null') ?? '', '\n'), (n) => trim(n)), (n) => n != '' && safe_ifname(n)));
 }
 
 // The download and lookup tools that decide which options work: curl and wget carry the updates, and `host` (bind-host) is

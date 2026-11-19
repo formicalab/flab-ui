@@ -17,13 +17,14 @@
 // rpcd runs plugins in-process, so a call that waited for a ten-second ping (or a traceroute) would hold up every
 // other call, including the page's own polling. `start` therefore launches the tool detached and returns at once
 // with a job id; the tool writes into /tmp/flab-diag/<id>/out, and `read` returns what has been written so far, so
-// the page shows the output as it arrives. `stop` ends a running job. Jobs are removed ten minutes after they end.
+// the page shows the output as it arrives. `stop` ends a running job. A finished job is removed ten minutes after it ended, when a
+// later `start` sweeps the directory (there is no timer).
 // The handlers also run in the deferred workers of flab.worker; `start`, `stop` and `wake` are serialized there.
 //
 // Everything that reaches the shell is validated first, because the request comes from a browser:
 //   - the target is a host name or an address made of letters, digits, ".", ":", "_" and "-", and does not start
 //     with "-" (it could be taken for an option);
-//   - the source is such an address or an interface name; numbers are clamped to fixed ranges;
+//   - the source is such an address or an interface name; numbers are checked against fixed ranges (a value outside is refused);
 //   - the tool, the address family, the traceroute method and the DNS record type come from allow-lists, and the
 //     name-resolution switch must be a real boolean.
 // The tools are fixed (busybox ping and traceroute, mtr, the first of dig, kdig, drill and nslookup that exists, openssl and
@@ -44,7 +45,7 @@ import { download_job, new_job_id, read_job, stop_job, sweep_jobs } from 'flab.d
 
 import { run, command_result, uci_all, ubus_call, as_list } from 'flab.util';
 import { connect } from 'ubus';
-import { mkdir, readfile, writefile, lsdir, stat } from 'fs';
+import { mkdir, readfile, writefile, lsdir } from 'fs';
 
 // Where the jobs live (tmpfs): one directory per job with `out` (the output), `pid` and `rc` (the exit code).
 const ROOT = getenv('FLAB_DIAG_ROOT') ?? '/tmp/flab-diag';
@@ -56,7 +57,8 @@ const KEEP = 600;
 // The most output `read` returns in one reply.
 const MAX_OUTPUT = 65536;
 // The seconds each tool may run before `timeout` ends it. A ping, an mtr run and an iperf3 server have no fixed limit: it
-// follows from the number of pings, the cycles or the minutes asked for.
+// follows from the number of pings, the cycles or the minutes asked for, so the `ping` and `mtr` entries are only reported by
+// `status` and never applied.
 const LIMITS = { ping: 25, traceroute: 60, dns: 15, tls: 25, compare: 60, check: 75, trace: 60, mtr: 15 };
 // The tools `start` accepts.
 const TOOLS = [ 'ping', 'traceroute', 'dns', 'tls', 'compare', 'check', 'trace', 'mtr', 'iperf', 'capture' ];
@@ -299,6 +301,11 @@ function verify_options(name) {
 	return is_address(name) ? `-verify_ip '${name}'` : `-servername '${name}' -verify_hostname '${name}'`;
 }
 
+// The `-connect` argument of s_client: an IPv6 address needs brackets, or openssl calls "host:port" ambiguous.
+function connect_target(host, port) {
+	return is_address(host) && index(host, ':') >= 0 ? `[${host}]:${port}` : `${host}:${port}`;
+}
+
 // The script of the connectivity check: the default routes, the next hop (found the way the kernel would route to
 // 1.1.1.1; a PPP link has no gateway address, so its peer address is used), pings of the gateway and of two public
 // addresses, a lookup through the router's resolver and through a public one, the IPv6 equivalents, and a TLS
@@ -323,7 +330,7 @@ if [ -n "$gw" ]; then run 8 ping -c 2 -W 2 -w 6 "$gw"; else echo "no next hop ad
 	s += block('dns_public', name, 8, dns_argv(tool, name, 'A', '1.1.1.1'));
 	s += block('internet6', '2606:4700:4700::1111', 8, [ 'ping', '-6', '-c', 2, '-W', 2, '-w', 6, '2606:4700:4700::1111' ]);
 	s += block('dns6', name, 8, dns_argv(tool, name, 'AAAA', null));
-	s += `blk tls ${name} ${port}\ncap tls.raw 12 openssl s_client -connect '${name}:${port}' ${verify_options(name)} </dev/null\nrc=$?\ncat tls.raw\nend $rc\n`;
+	s += `blk tls ${name} ${port}\ncap tls.raw 12 openssl s_client -connect '${connect_target(name, port)}' ${verify_options(name)} </dev/null\nrc=$?\ncat tls.raw\nend $rc\n`;
 	return s;
 }
 
@@ -345,7 +352,7 @@ function tls_script(host, port, sni, starttls) {
 	if (starttls != null)
 		extra += ' -starttls ' + starttls;
 	s += `blk tls ${host} ${port}\n`;
-	s += `cap tls.raw 15 openssl s_client -connect '${host}:${port}' ${extra} -showcerts </dev/null\nrc=$?\ncat tls.raw\n`;
+	s += `cap tls.raw 15 openssl s_client -connect '${connect_target(host, port)}' ${extra} -showcerts </dev/null\nrc=$?\ncat tls.raw\n`;
 	s += `awk 'BEGIN{n=0} /-----BEGIN CERTIFICATE-----/{n++; f="cert" n ".pem"} f{print > f} /-----END CERTIFICATE-----/{close(f); f=""}' tls.raw\n`;
 	s += `n=$(ls cert*.pem 2>/dev/null | wc -l); i=1\nwhile [ $i -le $n ]; do echo "### CERT $i"; openssl x509 -in cert$i.pem -noout -serial -fingerprint -sha256 2>&1; openssl x509 -in cert$i.pem -noout -ext subjectAltName,basicConstraints 2>&1; i=$((i + 1)); done\nend $rc\n`;
 	return s;

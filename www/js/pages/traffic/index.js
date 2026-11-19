@@ -81,10 +81,6 @@ async function load() {
 
 // Page object registered in pages/index.js (contract documented there).
 export default {
-  id: 'traffic',
-  label: 'Traffic',
-  title: 'Traffic',
-  icon: 'activity',
   interval: 3000,
   css: ['css/forms.css', 'css/traffic.css'],
   isPaused: () => state.paused || (state.tab === 'settings' && settingsEditor.paused('.nlbw-form')),

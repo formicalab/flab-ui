@@ -175,6 +175,9 @@ test('aliases invalidate the old route; unknown routes retain the default page',
   assert.equal(s.app.children[0].children[0].children.filter(n => n?.href).find(n => n.href === '#dns').className.includes('active'), true);
   await s.navigate('#missing');
   assert.equal(s.calls.at(-1), 'load:overview');
+  await s.navigate('#constructor');
+  assert.equal(s.context.location.hash, '#constructor');
+  assert.equal(s.calls.at(-1), 'load:overview');
 });
 
 test('a late import cannot install controls, CSS or polling after navigation or login', async () => {

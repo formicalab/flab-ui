@@ -54,11 +54,11 @@ export function readWifi(hw, cfg, mesh = null) {
 //#region The form
 
 // The form values of a list of fields from a section's raw options: a boolean, a list or a string ('' = not set).
-export const valuesOf = (fields, raw) => Object.fromEntries(fields.map(f => [f.key, valueOf(f, raw[f.key])]));
+const valuesOf = (fields, raw) => Object.fromEntries(fields.map(f => [f.key, valueOf(f, raw[f.key])]));
 
 // A wireless network's form values: `encryption` 'none' is the same as no encryption option, and is kept as '' (the drop-down's
 // "Open" choice) so the two are not told apart.
-export function ifaceValues(raw) {
+function ifaceValues(raw) {
   const v = valuesOf(IFACE_FIELDS, raw);
   if (v.encryption === 'none') v.encryption = '';
   return v;

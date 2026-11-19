@@ -196,7 +196,7 @@ function switchTable(sw, net, conf, ifs, host) {
 
 // The editable tables of the router, bridges first then swconfig switches, from the flab.network status `net`, the config read by
 // readConfig, netifd's interface list and the host name the page was opened with.
-export function tablesOf(net, conf, ifs, host) {
+function tablesOf(net, conf, ifs, host) {
   return [
     ...(net.bridges ?? []).map(b => bridgeTable(b, net, conf, ifs, host)),
     ...(net.switches ?? []).filter(s => s.kind === 'swconfig').map(s => switchTable(s, net, conf, ifs, host)),

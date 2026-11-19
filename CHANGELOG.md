@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.16 - 2026-11-19
+
+### Security
+
+- Configuration backups are created in directories only root can read, and the 15-minute expiry of old backups now
+  actually runs. Proxy passwords in Dynamic DNS status are masked completely, and interface and BGP peer names that
+  start with `-` are refused. Log redaction covers quoted and JSON values.
+- The WireGuard add-a-device dialog closes when you leave the page and refuses a DNS value that could add lines to the
+  generated client configuration. The wizard forgets its PPPoE password after Finish.
+- Percentages from the router are clamped before they reach style attributes, a manifest can only load
+  `./<folder>/index.js`, and a route such as `#constructor` is no longer resolved through inherited object properties.
+- The release workflow no longer keeps the packages token in the checkout during the SDK download and build, and its
+  actions are pinned to commit SHAs. `tools/package.ps1` refuses a router argument that is an ssh option, and
+  `Sync -Backend` no longer carries directory permissions to the router.
+
+### Fixes and speed
+
+- Toolbox: a redraw during a read no longer starts a second poll that duplicates output; malformed trace, iperf and
+  ping data no longer stall the page. The TLS and connectivity checks accept IPv6 literals.
+- The kernel log is read again with fewer lines instead of failing when it is large. WireGuard administration
+  sessions are read correctly on big-endian boards. The Traffic connections call reads the conntrack table in chunks
+  and never holds a huge one in memory.
+- Routing: the BGP learned-routes table draws 400 paths until "Show all", and the sorted tables are cached while you
+  type a filter. Settings backups redraw one status line instead of the page and check the size of the download.
+- Dead code, stale comments and old-page wording are removed from the sources and the documentation.
+
 ## 0.1.15 - 2026-11-19
 
 ### Overview

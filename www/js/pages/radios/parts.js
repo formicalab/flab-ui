@@ -4,7 +4,7 @@
 // counters (airtime, bytes) are turned into rates here, so what is shown follows channel changes, DFS events and interfaces coming and going.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, meter, sparkline, muted, SECURITY_KIND } from '../../core/ui.js';
+import { badge, meter, sparkline, muted } from '../../core/ui.js';
 import { createTracker, latest } from '../../core/rates.js';
 import { runningBlock } from '../wifi/channels.js';
 
@@ -43,10 +43,8 @@ export const airtime = r => {
   return { busy, busyNow: latest(busy), rxNow: latest(rx), txNow: latest(tx) };
 };
 
-export { SECURITY_KIND };
-
 // The state of a radio as [text, badge kind].
-export const stateOf = r => (!r.enabled ? ['disabled', ''] : r.retry_failed ? ['failed', 'danger'] : r.pending ? ['starting', 'warning'] : r.up ? ['up', 'success'] : ['down', 'danger']);
+const stateOf = r => (!r.enabled ? ['disabled', ''] : r.retry_failed ? ['failed', 'danger'] : r.pending ? ['starting', 'warning'] : r.up ? ['up', 'success'] : ['down', 'danger']);
 
 // Things that look wrong on a radio, as { level, text }: state problems, a channel differing from the configured one (radar avoidance), noise above
 // -80 dBm, channel busy >= 70 %, non-enabled BSSs (DFS), open networks and a country that differs from the active regulatory domain `reg`.
@@ -65,7 +63,7 @@ export function findings(r, reg) {
   if (air.busyNow != null && air.busyNow >= 70) out.push({ level: 'warn', text: `Channel is ${Math.round(air.busyNow)} % busy.` });
   for (const i of r.interfaces) {
     if (i.up && i.bss_status && i.bss_status !== 'ENABLED') out.push({ level: 'info', text: `${i.ssid ?? i.ifname} is ${i.bss_status}${i.bss_status === 'DFS' ? ' (radar channel availability check: clients cannot connect yet)' : ''}.` });
-    if (i.enabled && i.security === 'Open/None' && i.mode === 'ap') out.push({ level: 'warn', text: `${i.ssid} is an open network.` });
+    if (i.enabled && i.security === 'Open/None' && i.mode === 'ap') out.push({ level: 'warn', text: `${i.ssid ?? i.ifname} is an open network.` });
   }
   if (reg && r.config.country && r.config.country !== reg.country) out.push({ level: 'info', text: `Configured country ${r.config.country} differs from the active regulatory domain ${reg.country}.` });
   return out;

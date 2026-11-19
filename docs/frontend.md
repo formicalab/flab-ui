@@ -73,14 +73,12 @@ upgrading from such a version, reload once with Ctrl+F5.
 
 ## Page contract
 
-Every page is a plain object, default-exported from its module (full text in `js/pages/index.js`):
+Every page is a plain object, default-exported from its module (full text in `js/pages/index.js`). Its navigation
+metadata (route `id`, `label`, optional `title`, `icon`, `nav`) is not part of the object: it lives in the registry
+entry in `pages/index.js` (Overview and System settings) or in the feature package's manifest under `www/modules/`.
 
 | Member | Required | Meaning |
 |---|---|---|
-| `id` | yes | Route name / URL hash |
-| `label` | yes | Navigation text (`title` optionally overrides the command-bar heading) |
-| `icon` | yes | Name from `core/icons.js` |
-| `nav` | no | `'bottom'` puts the link below the spacer, next to Sign out (System settings); default is the main list |
 | `interval` | yes | Auto-refresh period in ms, or a function that returns it (read again before each poll: a page whose views poll at different rates can use it) |
 | `load()` | yes | Async; returns the page data, usually one ubus call |
 | `view(data, rerender)` | yes | Returns an array of DOM nodes |
@@ -88,7 +86,7 @@ Every page is a plain object, default-exported from its module (full text in `js
 | `isPaused()` | no | Return true to suspend auto-refresh |
 | `css` | no | Stylesheet (or array of stylesheets) loaded on first visit |
 
-`aliases` (exported next to `pages`) maps a route that was a page once to the page that replaced it (`bridges` → `interfaces`); `core/app.js` replaces the hash, so a bookmark keeps working. An entry of `pages` may also have `activate(module)`, which the shell calls after the page module is imported (Toolbox uses it for `openTool`).
+`aliases` (exported next to `basePages`) maps a route name to the page that serves it (`bridges` → `interfaces`, `wifi` and `mesh` → `radios`); `core/app.js` replaces the hash, so a bookmark keeps working. A manifest entry may carry `tab` (opens that tab of its page module) or `activation: 'toolbox'` (hands over a pending `openTool` request); the shell calls the resulting `activate(module)` once the page module is imported. A manifest's `module` must be `./<folder>/index.js` with a lower-case folder name; anything else is ignored.
 
 **State that must survive refreshes** (filter text, sort order, selected radio, paused flag, scroll
 position) lives in a module-level `state` object in the page, never in the DOM. The controls are created

@@ -26,10 +26,6 @@ export function openTool(tool, host) {
 
 // Page object registered in pages/index.js (contract documented there).
 export default {
-  id: 'toolbox',
-  label: 'Toolbox',
-  title: 'Toolbox',
-  icon: 'tools',
   // The tools the router has hardly ever change; the page only needs to read them again now and then.
   interval: 60000,
   css: ['css/routing.css', 'css/toolbox.css'],

@@ -1,8 +1,8 @@
 // "Add client": the dialog that sets up a client (a phone, a laptop) for an interface. It makes the client's key pair in the browser,
 // adds the client as a peer of the interface in the form (its public key and the next free tunnel address; nothing is saved until
 // "Save and apply"), and shows the client's WireGuard configuration once, as a QR code (for the WireGuard app of a phone) and as text with
-// copy and download buttons. The client's private key
-// exists only in this dialog: the router never receives it.
+// copy and download buttons. The client's private key exists only in this dialog: the router never receives it. The dialog is closed
+// (and its contents dropped) when the route changes.
 import { h } from '../../core/dom.js';
 import { copyButton } from '../../core/clipboard.js';
 import { saveFile } from '../../core/download.js';
@@ -22,7 +22,11 @@ const row = (label, control, hint) => h('div', { className: 'set-field' }, h('la
 // called when the dialog closes, however it was closed.
 export function openClientDialog(ctx, item, onClosed) {
   const plan = clientPlan(ctx.data, ctx.draft, item.id);
-  const dialog = openDialog({ title: `Add a client to ${item.name}`, subtitle: 'A phone, a laptop or any other WireGuard client', body: h('div', {}), footer: [], size: 'xl', staticBackdrop: true, onClose: onClosed });
+  // The dialog lives in <body>, so it would outlive a route change with the private key still shown.
+  const leave = () => dialog.close();
+  addEventListener('hashchange', leave);
+  const dialog = openDialog({ title: `Add a client to ${item.name}`, subtitle: 'A phone, a laptop or any other WireGuard client', body: h('div', {}), footer: [], size: 'xl', staticBackdrop: true,
+    onClose: () => { removeEventListener('hashchange', leave); onClosed(); } });
   // Closes the dialog.
   const close = () => dialog.close();
 
@@ -75,7 +79,7 @@ export function openClientDialog(ctx, item, onClosed) {
     if (ka && (!/^\d+$/.test(ka) || +ka > 65535)) return fail('The keepalive must be a number of seconds, or empty.');
     const allowed = clientAllowedIps(routes.value, plan.tunnels, custom.value);
     if (allowed.error) return fail(allowed.error);
-    if (dns.value.trim() && !/^[A-Za-z0-9.:,\s_-]+$/.test(dns.value)) return fail('The DNS server must be an address or a list of addresses.');
+    if (dns.value.trim() && !/^[A-Za-z0-9.:, _-]+$/.test(dns.value)) return fail('The DNS server must be an address or a list of addresses.');
     return { name: name.value.trim(), host: h2.replace(/^\[(.*)\]$/, '$1'), port: port.value.trim(), allowed: allowed.list, dns: dns.value.trim(), keepalive: ka, psk: usePsk.checked };
   };
 

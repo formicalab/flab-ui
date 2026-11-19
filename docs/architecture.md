@@ -26,7 +26,7 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab)
 rpcd ---- built-in objects:  session, system, network.interface, service, uci (configuration changes)
    |
    '----- ucode plugins (this repo): flab.wifi, flab.radio, flab.mesh, flab.wireguard, flab.firewall,
-                |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.diag, flab.traffic, flab.dns, flab.sensors, flab.system, flab.logs, flab.services
+                |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.diag, flab.traffic, flab.dns, flab.ddns, flab.sensors, flab.system, flab.logs, flab.services
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici, flab.exec, flab.jobs, flab.worker
@@ -64,11 +64,15 @@ flab-ui/
   LICENSE                    MIT license
   docs/                      The documentation (start at docs/README.md); one file per page under docs/pages/
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
-  tools/package.ps1          Builds the OpenWrt package with an SDK (Linux, or WSL on Windows), installs or removes it on the router with apk, and publishes releases (Action Build, Deploy, Remove or Release)
-  tests/                     bgp/, ddns/, dhcp/, dns/, fwedit/, ifedit/, ipsec/, network/ (network, Wi-Fi radios with their mesh points, WireGuard, firewall, logs, helpers), nlbwedit/, routeedit/, routing/, services/, settings/, toolbox/, traffic/, vlanedit/, wgedit/, wifi/, wifiedit/,
+  tools/package.ps1          Builds the OpenWrt package with an SDK (Linux, or WSL on Windows), copies the pages to a router (Sync), installs or removes the package with apk, verifies release consistency (Check) and publishes releases (Action Sync, Build, Deploy, Remove, Check or Release)
+  tools/stage-source.sh      Stages the source tree for an SDK build (shared by the package script and the release workflow)
+  tools/artifact-manifest.json  The source-to-install contract the build and the install check against
+  .github/workflows/release.yml  The hosted release workflow (tag, feed update, APK build, GitHub release)
+  tests/                     bgp/, ddns/, dhcp/, dns/, execution/, fwedit/, ifedit/, ipsec/, netboard/, netpanels/, network/ (network, Wi-Fi radios with their mesh points, WireGuard, firewall, logs, helpers), nlbwedit/, routeedit/, routing/, services/, settings/, shell/ (the application shell), toolbox/, tooling/ (package and release scripts), traffic/, vlanedit/, wgedit/, wifi/, wifiedit/, run-pure.mjs (the pure-test aggregate),
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
   www/                       Static site, installed to /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
+    modules/*.json           One manifest per feature package: the pages it registers (see Package)
     vendor/bootstrap.min.css Bootstrap 5.3.3, vendored so the UI works offline
     vendor/qrcode.js        qrcode-generator 2.0.4 (MIT), the QR encoder; imported by core/qr.js only when a QR code is shown
     css/
@@ -109,7 +113,7 @@ flab-ui/
         index.js             Page registry and the page contract (read this first)
         overview/            index.js, cpu.js, temperatures.js
         network/             The Ethernet ports page: index.js (page: tiles, findings, ports table with the settings of a port under its row, VLAN cards), shared.js, ports.js, diagnostics.js, cable.js (the cable test), vlans.js (VLAN matrices), vlanpage.js (the VLAN editor's wiring), vlanedit.js (the editable VLAN cards), vlanmodel.js (pure: the VLAN sections, tables, draft, validation, UCI operations, check after a save), util.js
-        connected/           The Connected devices view of Devices and Interfaces (hosted by interfaces/index.js): index.js (the Wi-Fi client tables, moved out of the old Wi-Fi page)
+        connected/           The Connected devices view of Devices and Interfaces (hosted by interfaces/index.js): index.js (the Wi-Fi client tables)
         radios/              The Wi-Fi radios page: index.js (page: tiles, the editor wiring, the flab.radio, flab.mesh and flab.network loads), card.js (the radio cards: live figures, findings, picker, networks, radio settings), networks.js (the wireless networks of a card: live part and editor of each access point, client network and mesh point), mesh.js (the live part of a mesh point: peers, paths, parameters, findings, rate recorder), parts.js (the rate tracker, findings, state, key figures, utilization, channel strip), wps.js (the WPS push button of an access point)
         wifi/                The editing of the wireless configuration, used by the radios page: editor.js (the editor), editors.js (the radio settings and the network forms), schema.js (the option tables), model.js (pure: draft, validation, UCI operations,
                              check after a save), channels.js (pure model of the channel change), picker.js (the channel picker)

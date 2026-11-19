@@ -98,6 +98,9 @@ export function openZoneDialog({ data, getDraft, key, onSave, onClose }) {
     validate();
   }
 
+  // The dialog belongs to this page: leaving it (the back button, another tab or page) closes the dialog.
+  const leave = () => shown.close();
+  addEventListener('hashchange', leave);
   const shown = openDialog({
     title: isNew ? 'Add a zone' : `Edit zone ${unbound ? key : ''}`.trim(),
     subtitle: unbound ? 'Unbound' : 'dnsmasq',
@@ -105,7 +108,7 @@ export function openZoneDialog({ data, getDraft, key, onSave, onClose }) {
     staticBackdrop: true,
     body: h('div', {}),
     footer: [errorsBox, cancel, save],
-    onClose,
+    onClose: () => { removeEventListener('hashchange', leave); onClose?.(); },
   });
   dialog = shown.dialog;
   // The errors take a row of their own above the buttons.

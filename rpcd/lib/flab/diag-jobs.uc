@@ -6,7 +6,10 @@ import { access, lsdir, mkdir, open, readfile, stat } from 'fs';
 import { run } from 'flab.util';
 import { int_in, valid_job_id } from 'flab.diag-validation';
 
-export function job_state(root, id) {
+// The state of a job from its files: `rc` (written when the command ends) means finished; otherwise the job runs while its
+// `pid` is alive. Before `pid` exists a job counts as running for its first 3 seconds. `mtime` is that of `out` (the job
+// directory before `out` exists).
+function job_state(root, id) {
 	let dir = `${root}/${id}`;
 	let rc = trim(readfile(`${dir}/rc`) ?? '');
 	let pid = trim(readfile(`${dir}/pid`) ?? '');
@@ -18,8 +21,10 @@ export function job_state(root, id) {
 	if (pid == null)
 		return { running: age < 3, exit: null, pid, mtime: st?.mtime };
 	return { running: access(`/proc/${pid}`) == true, exit: null, pid, mtime: st?.mtime };
-};
+}
 
+// Removes finished jobs older than `keep` seconds, then the oldest finished ones until fewer than `max_jobs` directories are
+// left (room for a new job). Returns how many jobs still run; those are never removed.
 export function sweep_jobs(root, keep, max_jobs) {
 	let running = 0, kept = [];
 	for (let id in filter(lsdir(root) ?? [], valid_job_id)) {

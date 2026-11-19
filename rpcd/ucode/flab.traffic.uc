@@ -13,12 +13,13 @@
 // uses the filesystem functions of ucode (stat, lsdir, realpath, open) and /proc/mounts, never a shell.
 //
 // `status` reports which features exist (conntrack readable, nlbw installed and nlbwmon running, byte accounting on)
-// and the conntrack count and limit. `connections` parses /proc/net/nf_conntrack (at most MAX_PARSE entries), counts
+// and the conntrack count and limit. `connections` reads /proc/net/nf_conntrack in chunks (it keeps at most MAX_PARSE lines and
+// only counts the rest) and parses those entries, counts
 // them per protocol, state and host, and returns the entries that pass the filters, sorted and cut to `limit`.
 // `usage_periods` and `usage` run `nlbw` (nlbwmon's client) for the periods it keeps and the traffic of one period.
 // Everything is read-only. Live throughput per interface is not here: the page takes it from flab.network.
 //
-// Safety: a connections request never reaches a shell (it only reads procfs). The only commands ever run are the
+// Safety: no text of a connections request reaches a shell (the table is read from procfs). The only commands ever run are the
 // fixed `command -v nlbw`, `pidof nlbwmon`, `ls /tmp/hosts`, `ip -6 neigh show` and `nlbw -c list|json`; the group is
 // copied from an allow-list, and a period is used only when it is one of the dates `nlbw -c list` printed, so no
 // text of the request can end up in a command line. Names come from the DHCP/hosts data of the router, never from
@@ -460,6 +461,51 @@ function connection_request(args) {
 	return { q: trim(q), limit, sort: sort_by, proto, scope };
 }
 
+// The first `keep` lines of a file and how many lines it has, read in chunks so that a very large table is never held
+// in memory whole. A last line without a line break counts. Null when the file cannot be opened.
+function read_lines(path, keep) {
+	let f = open(path, 'r');
+	if (!f)
+		return null;
+	let lines = [], total = 0, tail = '';
+	for (let chunk = f.read(65536); chunk != null && length(chunk) > 0; chunk = f.read(65536)) {
+		let parts = split(tail + chunk, '\n');
+		tail = pop(parts);
+		if (total >= keep)
+			total += length(parts);
+		else
+			for (let part in parts) {
+				if (total < keep)
+					push(lines, part);
+				total++;
+			}
+	}
+	f.close();
+	if (length(tail)) {
+		if (total < keep)
+			push(lines, tail);
+		total++;
+	}
+	return { lines, total };
+}
+
+// The lines of the conntrack table and their number. Replay and recording go through sysfs_raw(), which holds the
+// fixture and does the recording; the real file is streamed.
+function conntrack_lines() {
+	if (fixture('files.json') != null || getenv('FLAB_RECORD')) {
+		let raw = sysfs_raw(CT_FILE);
+		if (raw == null || raw == '')
+			return null;
+		let lines = split(raw, '\n');
+		let total = length(lines);
+		if (total && lines[total - 1] == '')
+			total--;
+		return { lines, total };
+	}
+	let table = read_lines(CT_FILE, MAX_PARSE);
+	return table && table.total ? table : null;
+}
+
 // The reply of `connections`; see the header for the request and docs/pages/traffic.md for the shape of the reply.
 function connections(args) {
 	let req = connection_request(args);
@@ -472,14 +518,12 @@ function connections(args) {
 		request: req, total: 0, parsed: 0, truncated: false, matched: 0, entries: [], names: {},
 		aggregates: { protocols: [], states: [], unreplied: 0, nat: 0, sources: {}, destinations: {}, unreplied_sources: [] },
 	};
-	let raw = sysfs_raw(CT_FILE);
-	if (raw == null || raw == '')
+	let table = conntrack_lines();
+	if (table == null)
 		return out;
 
-	let lines = split(raw, '\n');
-	let total = length(lines);
-	if (total && lines[total - 1] == '')
-		total--;
+	let lines = table.lines;
+	let total = table.total;
 	let parsed = total < MAX_PARSE ? total : MAX_PARSE;
 	out.total = total;
 	out.truncated = total > parsed;

@@ -61,13 +61,9 @@ function summary(data) {
 
 //#endregion
 
+// The Dynamic DNS tab of the combined DNS page: dns/index.js owns the route, label, icon, refresh period and stylesheets, and
+// calls load(), controls(), view() and isPaused() of this object (the page contract is documented in pages/index.js).
 export default {
-  id: 'ddns',
-  label: 'Dynamic DNS',
-  title: 'Dynamic DNS · ddns-scripts',
-  icon: 'cloud',
-  interval: 10000,
-  css: ['css/forms.css', 'css/ddns.css'],
   isPaused: () => editor.paused('.ddns-form'),
 
   load,

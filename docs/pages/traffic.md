@@ -134,8 +134,7 @@ table) and `settings-model.js` (pure: draft, validation, effects, the UCI plan, 
 or exec grant. Live throughput is not here: it is the counters `flab.network` already reads.
 - `status`: `conntrack` (the tracker is loaded: its count file exists), `count`, `max`, `acct`, `nlbw` (`command -v nlbw`),
   `nlbwmon_running` (`pidof nlbwmon`). It never reads the table itself.
-- `connections` (`q`, `limit`, `sort`, `proto`, `scope`): parses `/proc/net/nf_conntrack` (read through `sysfs_raw`, so the
-  tests can replay it), at most 20000 lines, and stops earlier when the call has used 3 s (a huge table on a small router must not hold
+- `connections` (`q`, `limit`, `sort`, `proto`, `scope`): parses `/proc/net/nf_conntrack` (streamed in 64 KiB chunks, of which only the first 20000 lines are kept and the rest are counted, so a huge table is never held in memory; the tests replay it through `sysfs_raw`), at most 20000 lines, and stops earlier when the call has used 3 s (a huge table on a small router must not hold
   up rpcd). `total` is the number of lines, `parsed` the entries analyzed, `truncated` says some were not, `matched` how many pass the
   filters, `entries` the first `limit` of them sorted, `names` the names of the addresses the reply mentions and `aggregates` the
   counts per protocol and TCP state, the unanswered and translated entries and the ten busiest sources and destinations by

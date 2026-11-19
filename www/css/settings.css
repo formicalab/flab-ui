@@ -17,3 +17,5 @@
 .set-col .kv { grid-template-columns: minmax(9rem, auto) 1fr; row-gap: .35rem; column-gap: .75rem; align-items: baseline; }
 .set-col .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .set-col .ntp-actions { display: flex; align-items: center; gap: .5rem; margin-top: -.25rem; }
+/* The file list of an uploaded backup, scrolled when long. */
+.backup-files { max-height: 16rem; overflow: auto; }

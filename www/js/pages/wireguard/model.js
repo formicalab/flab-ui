@@ -239,7 +239,8 @@ export const isDirty = (data, draft) => changesOf(data, draft).length > 0;
 
 //#region Validation
 
-// A number of whole seconds or a port in range, as errorsOf() reports it; a plain wrapper that names the control.
+// The errors errorsOf() reports for every field of a section except the write-only keys, each keyed `<keyPrefix>:<field>` (the control's name)
+// and worded `<titlePrefix>: <label> ...`.
 const fieldErrors = (fields, values, keyPrefix, titlePrefix) => fields
   .filter(f => !f.secret)
   .flatMap(f => errorsOf(f, values[f.key], `${titlePrefix}: ${f.label}`).map(e => ({ ...e, key: `${keyPrefix}:${f.key}` })));
@@ -408,7 +409,7 @@ export function problems(data, draft) {
     }
 
     // Changes to a tunnel that carries your own session.
-    if (!item.isNew && changes().some(c => c.key.startsWith(`if:${item.id}`) || c.key.startsWith(`peer:${item.id}:`))) {
+    if (!item.isNew && changes().some(c => c.key.startsWith(`if:${item.id}:`) || c.key.startsWith(`peer:${item.id}:`))) {
       const you = adminSentence(links, item.name);
       if (you) warnings.push(`Applying a change to ${item.name} restarts the tunnel, which briefly interrupts everything that goes through it, including your own connection. ${you}`);
     }

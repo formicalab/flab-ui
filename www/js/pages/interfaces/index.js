@@ -178,10 +178,6 @@ function refreshBoard() {
 }
 
 export default {
-  id: 'interfaces',
-  label: 'Devices and Interfaces',
-  title: 'Devices and Interfaces',
-  icon: 'diagram-3',
   interval: 5000,
   css: ['css/forms.css', 'css/netedit.css', 'css/board.css', 'css/drawer.css', ...connected.css],
   // Board: no polling over unsaved edits, a focused control of the form, a save in progress, an open panel with a form or an open wizard (it adds to the

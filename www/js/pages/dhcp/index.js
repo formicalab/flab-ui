@@ -77,10 +77,6 @@ function summary(data) {
 //#endregion
 
 export default {
-  id: 'dhcp',
-  label: 'DHCP',
-  title: 'DHCP and router advertisements · odhcpd',
-  icon: 'signpost-split',
   interval: 10000,
   css: ['css/forms.css', 'css/dhcp.css'],
   isPaused: () => editor.paused('.dhcp-form'),

@@ -193,9 +193,6 @@ function groupCard(ctx, g) {
 //#endregion
 
 export default {
-  id: 'settings',
-  label: 'System settings',
-  icon: 'gear',
   // Shown at the bottom of the navigation pane, next to Sign out.
   nav: 'bottom',
   interval: 10000,

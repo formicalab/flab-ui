@@ -47,9 +47,10 @@ const WOL_OTHER = '__other';
 let cached = null;
 let cachedAt = 0;
 
-// The state of this tab: the form, the error under it, the current job and its timer and result element, whether a button
-// elsewhere asked for a run (`autorun`), the plugin's last `status`, and whether the result's "Raw output" is open.
-export const newDiag = () => ({ form: blankForm(), formError: null, job: null, timer: null, resultEl: null, autorun: false, status: null, rawOpen: false, defaulted: false });
+// The state of this tab: the form, the error under it, the current job with its poll timer (and whether a read is under way)
+// and result element, whether a button elsewhere asked for a run (`autorun`), the plugin's last `status`, and whether the
+// result's "Raw output" is open.
+export const newDiag = () => ({ form: blankForm(), formError: null, job: null, timer: null, polling: false, resultEl: null, autorun: false, status: null, rawOpen: false, defaulted: false });
 
 // Reads what the router can run (the tools, the DNS tool it would use, its interfaces), reusing the last answer for a
 // minute because it does not change while the page is open.
@@ -69,6 +70,7 @@ const elapsed = job => Math.max(0, Math.round(((job.t1 ?? Date.now()) - job.t0) 
 // Starts a job from the form. A refused request (the plugin checks everything again) becomes the job's error.
 async function start(state) {
   const d = state.diag;
+  if (d.job?.running) return;
   if (d.form.tool === 'wol' && !d.form.wolOther && d.status?.hosts?.length && !hostOf(d.status.hosts, d.form.host)) {
     d.formError = 'Choose a host from the list, or pick "Another MAC address…" and enter one.';
     return state.rerender();
@@ -115,8 +117,14 @@ async function start(state) {
   } catch (e) {
     job.running = false; job.error = failure(e); job.t1 = Date.now();
   }
-  if (job.running) track(state); else state.rerender();
+  if (job.running && d.job !== job) release(job.id);
+  else if (job.running) track(state);
+  else state.rerender();
 }
+
+// Asks the router to end a job nobody follows any more (the page started another one meanwhile); a failure is ignored because
+// the plugin also ends every job at its time limit.
+const release = id => { ubus('flab.diag', 'stop', { id }).catch(() => {}); };
 
 // Asks the router to end the running job; the next read reports it as stopped. The job notes that the user asked, because a
 // server that ends on a TERM (iperf3) reports a clean exit that would otherwise look like a normal end.
@@ -128,16 +136,19 @@ async function stop(state) {
 }
 
 // Reads the job every READ_EVERY ms until it ends, repainting the result each time. It stops by itself when the job
-// ends, and when the page is no longer showing it (the job then keeps its state and resumes on the next view).
+// ends, and when the page is no longer showing it (the job then keeps its state and resumes on the next view). Exported for the
+// polling tests.
 export function track(state) {
   const d = state.diag;
-  if (d.timer) return;
-  // One poll: appends the new output, repaints, and schedules the next poll while the job runs.
+  if (d.timer || d.polling) return;
+  // One poll: appends the new output, repaints, and schedules the next poll while the job runs. `d.polling` covers the read
+  // itself, so a redraw during it (which calls track again) cannot start a second chain that would append the same chunk twice.
   const tick = async () => {
     const job = d.job;
     d.timer = null;
     if (!job?.running || !job.id) return;
     if (!d.resultEl?.isConnected) return;
+    d.polling = true;
     try {
       const r = await ubus('flab.diag', 'read', { id: job.id, from: job.size });
       if (!r.ok) { job.running = false; job.error = r.error; }
@@ -160,7 +171,12 @@ export function track(state) {
       }
     } catch (e) {
       job.running = false; job.error = failure(e);
+    } finally {
+      d.polling = false;
     }
+    // A reply that was overtaken by a new job (discardJob) must not paint or schedule a second polling chain; the new job, if
+    // it is running already, takes over.
+    if (d.job !== job) return track(state);
     if (!job.running) job.t1 = Date.now();
     if (job.running) { paint(state); d.timer = setTimeout(tick, READ_EVERY); }
     else state.rerender();
@@ -427,8 +443,14 @@ function resultNodes(d) {
     iperf: j => iperfBody(j, d.status), wol: j => wolBody(j, d.status, ip => d.openPing(ip)),
   };
   const problem = scriptProblem(job);
-  const body = job.error && !job.text ? banner(job.error)
-    : problem && !parseBlocks(job.text).length ? null : bodies[job.tool](job);
+  // A view that chokes on unexpected output must not stop the polling or leave the page without a result.
+  let body;
+  try {
+    body = job.error && !job.text ? banner(job.error)
+      : problem && !parseBlocks(job.text).length ? null : bodies[job.tool](job);
+  } catch (e) {
+    body = banner(`The result could not be shown: ${e.message}`);
+  }
   const subject = job.tool === 'iperf' ? '' : job.tool === 'capture' ? ` · ${job.cap.iface}${job.cap.filter ? ` · ${job.cap.filter}` : ''}` : ` · ${job.tool === 'tls' || job.tool === 'check' ? job.target : job.host}`;
   return [card([icon('activity'), `${TITLES[job.tool]}${subject}`, job.command ? h('span', { className: 'sub mono' }, job.command) : null, h('span', { className: 'rt-state' }, statusBadge(job))],
     h('div', { className: 'card-body' },

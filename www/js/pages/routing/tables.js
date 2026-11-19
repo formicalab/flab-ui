@@ -167,10 +167,23 @@ function cell(col, r, data, names) {
   }
 }
 
+// The route list sorted by one column, kept from the last draw: typing in the filter box or switching the table redraws the card
+// from the same data, and sorting tens of thousands of routes again for each keystroke would be wasted work. Filtering a sorted
+// list gives the same order as sorting the filtered list, so only the filter runs per draw.
+let sortMemo = { routes: null, key: '', dir: 0, list: [] };
+
+// `routes` sorted by `sort` ({ key, dir }), from the memo when the same list and order were drawn last.
+function sortedRoutes(routes, sort) {
+  if (sortMemo.routes !== routes || sortMemo.key !== sort.key || sortMemo.dir !== sort.dir) {
+    sortMemo = { routes, key: sort.key, dir: sort.dir, list: sortRoutes(routes, sort) };
+  }
+  return sortMemo.list;
+}
+
 // The route list card: the routes that pass the page's filters (family, table, text), sorted by the clicked
 // column. `hitKey` is the key of the route the next-hop lookup matched; that row is highlighted.
 export function routesCard(data, state, rerender, names, hitKey) {
-  const filtered = sortRoutes(filterRoutes(data.routes, { q: state.rq, family: state.family, table: state.table }, names), state.rsort);
+  const filtered = filterRoutes(sortedRoutes(data.routes, state.rsort), { q: state.rq, family: state.family, table: state.table }, names);
   const shown = state.all ? filtered : filtered.slice(0, ROW_LIMIT);
   const total = COLS.reduce((n, c) => n + c.w, 0);
 

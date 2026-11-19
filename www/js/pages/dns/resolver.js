@@ -47,14 +47,9 @@ const editor = createEditor({
   verify: (base, draft, after) => checkApplied(base, after, draft),
 });
 
-// The resolver tab of the combined DNS page (the page contract is documented in pages/index.js).
+// The resolver tab of the combined DNS page. dns/index.js owns the route, label, icon, refresh period and stylesheets, and
+// calls load(), controls(), view() and isPaused() of this object (the page contract is documented in pages/index.js).
 export default {
-  id: 'dns',
-  label: 'DNS',
-  title: 'DNS',
-  icon: 'hdd-network',
-  interval: 10000,
-  css: ['css/forms.css', 'css/dns.css'],
   // A redraw would take the focus away from the filter box or a dialog's form, or throw away unsaved edits.
   isPaused: () => state.dialog != null || editor.paused('.dns-field, .dns-areas'),
 

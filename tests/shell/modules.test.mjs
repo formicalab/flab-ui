@@ -25,5 +25,6 @@ test('invalid and duplicate module entries are ignored and base pages remain', (
     { id: '../bad', label: 'Bad', icon: 'x', order: 1, module: './bad.js' },
     { id: 'overview', label: 'Duplicate', icon: 'x', order: 2, module: './bad.js' },
     { id: 'unsafe', label: 'Unsafe', icon: 'x', order: 3, module: 'https://example.invalid/x.js' },
+    { id: 'escape', label: 'Escape', icon: 'x', order: 4, module: './../../elsewhere/index.js' },
   ] }]).map(p => p.id), basePages.map(p => p.id));
 });

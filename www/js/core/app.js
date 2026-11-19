@@ -61,9 +61,10 @@ async function route() {
     if (!current()) return;
   }
   // A route that moved to another page (see `aliases` in pages/index.js): the hash is replaced, which runs this function again.
-  const alias = aliases[location.hash.slice(1)];
-  if (alias) { location.replace(`#${alias}`); return; }
-  const entry = pages.find(p => p.id === location.hash.slice(1)) ?? pages[0];
+  // hasOwn: a hash such as #constructor must not resolve to an inherited Object property.
+  const wanted = location.hash.slice(1);
+  if (Object.hasOwn(aliases, wanted)) { location.replace(`#${aliases[wanted]}`); return; }
+  const entry = pages.find(p => p.id === wanted) ?? pages[0];
 
   // The board info feeds the navigation header on every page, and is read on every route so a renamed router
   // shows its new hostname; failing to read it is not fatal (the last reply stays).
