@@ -58,10 +58,26 @@ function Invoke-Remote {
     return @()
 }
 
+$fullInstall = @(
+    'flab-ui',
+    'flab-ui-base',
+    'flab-ui-mod-dhcp',
+    'flab-ui-mod-dns',
+    'flab-ui-mod-firewall',
+    'flab-ui-mod-logs',
+    'flab-ui-mod-network',
+    'flab-ui-mod-routing',
+    'flab-ui-mod-services',
+    'flab-ui-mod-toolbox',
+    'flab-ui-mod-traffic',
+    'flab-ui-mod-vpn',
+    'flab-ui-mod-wireless'
+)
+
 foreach ($scenario in @(
     @{
         Name = 'full installation'
-        Installed = @('flab-ui', 'flab-ui-base', 'flab-ui-mod-dns', 'flab-ui-mod-network')
+        Installed = $fullInstall
     },
     @{
         Name = 'partial installation'
@@ -99,12 +115,46 @@ foreach ($scenario in @(
     Write-Host "PASS removal: $($scenario.Name)"
 }
 
+$installed.Add('flab-ui-mod-dns;reboot')
+try {
+    $null = Get-InstalledFlabPackages
+    throw 'Package discovery accepted an unsafe package name.'
+}
+catch {
+    if ($_.Exception.Message -notlike '*invalid installed package name*') { throw }
+}
+$installed.Clear()
+Write-Host 'PASS removal: unsafe package names are rejected'
+
+$installed.Add('flab-ui-base')
+try {
+    Test-FlabRemoved
+    throw 'Removal verification accepted an installed package.'
+}
+catch {
+    if ($_.Exception.Message -notlike '*packages remain installed*') { throw }
+}
+$installed.Clear()
+Write-Host 'PASS removal: residual packages are rejected'
+
 $leftovers.Add('/www/flab/stale.js')
 try {
     Test-FlabRemoved
     throw 'Removal verification accepted a stale flab-ui file.'
 }
 catch {
-    if ($_ -notlike '*flab-ui files remain on the router*') { throw }
+    if ($_.Exception.Message -notlike '*flab-ui files remain on the router*') { throw }
 }
+$leftovers.Clear()
 Write-Host 'PASS removal: stale files are rejected'
+
+$objects.Add('flab.system')
+try {
+    Test-FlabRemoved -ObjectTimeoutSeconds 0
+    throw 'Removal verification accepted a stale ubus object.'
+}
+catch {
+    if ($_.Exception.Message -notlike '*ubus objects differ*') { throw }
+}
+$objects.Clear()
+Write-Host 'PASS removal: stale ubus objects are rejected'

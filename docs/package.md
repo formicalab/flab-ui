@@ -96,8 +96,9 @@ scp -O bin/packages/*/*/flab-ui-*.apk root@<router>:/tmp/
 ssh root@<router> 'apk add --allow-untrusted /tmp/flab-ui-*.apk'
 ```
 
-Installing and removing (`apk del flab-ui`) reload rpcd. apk does not reinstall the version that is already installed,
-so to try a rebuilt package of the same version, remove the installed one first (`Deploy` does).
+Installing or removing the base and backend feature packages reloads rpcd. apk does not reinstall the version that is
+already installed, so to try a rebuilt package of the same version, remove the installed packages first (`Deploy` and
+`Remove` handle all of them). Removing only `flab-ui` deletes the metapackage, not its dependencies.
 
 ## Package script
 
@@ -110,9 +111,9 @@ pwsh -File tools/package.ps1 -Action Sync -Router root@192.168.1.1     # fast lo
 pwsh -File tools/package.ps1 -Action Sync -Backend -Router root@192.168.1.1   # also copy rpcd/ and reload rpcd
 pwsh -File tools/package.ps1 -Action Deploy -Router root@192.168.1.1   # build, replace the installed flab-ui, check
 pwsh -File tools/package.ps1 -Action Build                             # only build the apk (no router needed)
-pwsh -File tools/package.ps1 -Action Remove -Router root@192.168.1.1   # remove every flab-ui package and verify no files or objects remain
+pwsh -File tools/package.ps1 -Action Remove -Router root@192.168.1.1   # purge every package and verify no files or objects remain
 pwsh -File tools/package.ps1 -Action Check -Router root@192.168.1.1    # do Makefile, tag, hash, changelog, release and router agree?
-pwsh -File tools/package.ps1 -Action Release -Version 0.1.4 -Router root@192.168.1.1 -Amend -NotesFile CHANGELOG.md
+pwsh -File tools/package.ps1 -Action Release -Version <version> -Router root@192.168.1.1 -Amend -NotesFile CHANGELOG.md
 ```
 
 `Build` and `Deploy` do the "from a local checkout" build described above.
@@ -124,8 +125,8 @@ pwsh -File tools/package.ps1 -Action Release -Version 0.1.4 -Router root@192.168
   timer lives in rpcd's memory. Files deleted from `rpcd/` stay on the router; `Deploy` cleans that up. Use `Deploy`
   before calling a change done: it exercises the real package (files, permissions, dependencies, scripts).
 - **Versions.** The version of a working-tree apk is the Makefile's `PKG_VERSION`, and its release is the UTC build time
-  (for example `flab-ui-0.1.4-r202611151530.apk`), so it is clearly not the published `-r1`, upgrades it, and the next
-  tagged version still sorts above it. `Deploy` verifies that the router reports exactly the version it built.
+  (for example `flab-ui-<version>-r<UTC timestamp>.apk`), so it is clearly not the published `-r1`, upgrades it, and the
+  next tagged version still sorts above it. `Deploy` verifies that the router reports exactly the version it built.
   The feed's Makefile is never modified by a working-tree build.
 - **Keeping the release in step.** The Makefile (`PKG_VERSION`, `PKG_RELEASE:=1`, `PKG_HASH`), the tag `v<version>`, the
   changelog section and the GitHub release's apk name one version; only `Release` writes them, together. `Check`
@@ -156,7 +157,7 @@ separately from this source: the release tarball is finalized before its hash is
 so a release is one command and the version is chosen only there:
 
 ```powershell
-pwsh -File tools/package.ps1 -Action Release -Version 0.1.4 -Router root@192.168.1.1 -PackagesDir ../packages -Amend -NotesFile CHANGELOG.md
+pwsh -File tools/package.ps1 -Action Release -Version <version> -Router root@192.168.1.1 -PackagesDir ../packages -Amend -NotesFile CHANGELOG.md
 ```
 
 It checks that this repository is on a clean, pushed `main`, tags `v<Version>`, downloads the tag's tarball, writes

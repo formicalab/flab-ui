@@ -356,7 +356,7 @@ function Get-InstalledFlabPackages {
         Where-Object { $_ } |
         Sort-Object -Unique)
     foreach ($name in $names) {
-        if ($name -notmatch '^flab-ui(?:-base|-mod-[A-Za-z0-9-]+)?$') {
+        if ($name -notmatch '^flab-ui(?:-base|-mod-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)?$') {
             throw "Router returned an invalid installed package name: '$name'."
         }
     }
@@ -370,11 +370,15 @@ function Test-FlabRemoved {
     .DESCRIPTION
     Checks the package database, waits for rpcd object removal and rejects any remaining web, backend, ACL or
     temporary package files.
+    .PARAMETER ObjectTimeoutSeconds
+    How long to wait for rpcd's ubus objects to disappear.
     #>
+    param([int]$ObjectTimeoutSeconds = 20)
+
     $packages = @(Get-InstalledFlabPackages)
     if ($packages) { throw "flab-ui packages remain installed: $($packages -join ', ')" }
 
-    Wait-Objects
+    Wait-Objects -TimeoutSeconds $ObjectTimeoutSeconds
 
     $leftovers = @(Invoke-Remote @'
 for path in /www/flab /usr/share/ucode/flab; do
@@ -397,6 +401,7 @@ function Remove-FlabPackages {
     #>
     $packages = @(Get-InstalledFlabPackages)
     $remove = if ($packages) { "apk del $($packages -join ' ')" } else { ':' }
+    # Sync can install files without apk ownership, so removal must clean those paths after the package transaction.
     Invoke-Remote @"
 set -e
 $remove
@@ -411,7 +416,7 @@ rm -f /tmp/flab-ui-*.apk /tmp/flab-ui-*.apk.sha256
         Write-Host "Removed $($packages -join ', '); no flab-ui package, file or ubus object is left."
     }
     else {
-        Write-Host 'flab-ui was not installed; cleanup is complete and no flab.* ubus object is left.'
+        Write-Host 'flab-ui was not installed; verified no flab-ui package, file or ubus object is present.'
     }
 }
 
