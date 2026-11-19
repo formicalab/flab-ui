@@ -34,8 +34,8 @@ export const GROUPS = [
       'NTP keeps the clock right by asking time servers, tried in the order listed; the clock matters for logs, certificates and IPsec. These are the timeserver section: with no server and no DHCP servers the NTP client does not start and the clock is never set automatically.',
     ],
     columns: [
-      { id: 'zone', title: 'Time zone' },
       { id: 'client', title: 'NTP client' },
+      { id: 'zone', title: 'Time zone' },
       { id: 'server', title: 'NTP server for the network' },
     ],
   },

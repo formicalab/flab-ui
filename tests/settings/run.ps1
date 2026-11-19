@@ -9,7 +9,8 @@ Tests the System settings page without changing the router's configuration.
    They need no router.
 2. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1). The page
    first reads the router's own /etc/config/system, and any write it tried would be blocked and fail the test.
-   Then a stateful mock of rpcd's `uci` object, the clock and the NTP client takes over and the editing flow
+   Then a stateful mock of rpcd's `uci` object, the clock, NTP client and backup methods takes over and the editing,
+   backup download, upload review and confirmed restore flow
    (validation, review, save, a change the router does not keep, a late confirmation, an expired session, a login
    without write access) is exercised without touching /etc/config/system.
 

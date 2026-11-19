@@ -134,7 +134,8 @@ flab-ui/
                              settings-schema.js (the nlbwmon option table), settings-model.js (pure: draft, validation, effects, UCI plan, check after a save)
         services/            Services: index.js (page), model.js (pure: rows, actions, confirmations, outcomes)
         logs/                index.js, entries.js (pure helpers)
-        settings/            System settings: index.js, schema.js (the options), model.js (pure: validation, change plan), zones.js (generated)
+        settings/            System settings: index.js, backup.js (configuration archive transfer and restore confirmation),
+                             schema.js (the options), model.js (pure: validation, change plan), zones.js (generated)
   rpcd/
     ucode/flab.<name>.uc     rpcd plugins  -> /usr/share/rpcd/ucode/
     acl.d/flab-<name>.json   ACL fragments -> /usr/share/rpcd/acl.d/
@@ -177,6 +178,10 @@ flab-ui/
 
 System settings, DHCP, DNS, Dynamic DNS, Wi-Fi, Ethernet (VLANs), Devices and Interfaces (which holds the bridges), WireGuard, Firewall, the static routes of Routing and the Traffic settings change the router, and set the pattern every later editing page follows. The signed-in login (root) may write; a login that may not (`can('uci', 'set')` is false) gets the same
 page with every control disabled and a note saying why.
+
+Configuration backup and restore is a separate flow: it streams a `sysupgrade` archive instead of staging UCI
+changes. Restore requires an explicit confirmation and reboot and cannot use rpcd's 30-second UCI rollback window,
+so the UI tells the administrator to keep another way to reach the router and a current backup.
 
 **Flow** (all of it is rpcd's `uci` object, wrapped by `www/js/core/uci.js`; pages call `applyChange()`, not the
 single steps):

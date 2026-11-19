@@ -3,18 +3,20 @@
 // schema.js, taken from the OpenWrt wiki; validation, the change list and the UCI operations are in model.js; the
 // controls and the review banner are shared with the other editing pages (core/forms.js).
 //
-// It reads through rpcd's own `uci` object, so no plugin is needed, and writes through core/uci.js applyChange():
+// It reads through rpcd's own `uci` object and writes through core/uci.js applyChange():
 // stage, apply with the rollback countdown, read the settings back, confirm. The page redraws on every poll, so
-// polling is suspended while there is something to lose: unsaved edits, a focused control or a save in progress.
+// polling is suspended while there is something to lose: unsaved edits, a focused control, a save, or a backup transfer.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { optional, ubus } from '../../core/ubus.js';
-import { badge, card, kv, mono, muted, tile, tiles } from '../../core/ui.js';
+import { chevron } from '../../core/fold.js';
+import { can, optional, ubus } from '../../core/ubus.js';
+import { badge, button, kv, mono, muted, tile, tiles } from '../../core/ui.js';
 import { refreshControl } from '../../core/controls.js';
 import { fieldRow, legend } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
 import { uci } from '../../core/uci.js';
 import { FIELDS, GROUPS } from './schema.js';
+import { backupCard, busy as backupBusy } from './backup.js';
 import { CONFIG, changesOf, checkApplied, currentValue, draftFrom, fmtDate, fmtOffset, fmtTime, isDirty, plan, problems, readSettings, ruleOf, zoneGroups } from './model.js';
 
 // The draft, the review banner, saving and discarding, shared with the other editing pages (core/editpage.js).
@@ -31,33 +33,52 @@ const editor = createEditor({
   },
 });
 const { state } = editor;
+const openCards = new Set();
+const ntpAction = { busy: false, message: null };
+let reloadPage = () => {};
 
 // Reads the config, the clock and the NTP client state, plus how many changes are already staged in this
 // session (applying would commit those too, so the page warns about them).
 async function load() {
-  const [cfg, info, svc] = await Promise.all([uci.get(CONFIG), ubus('system', 'info'), optional(ubus('service', 'list', { name: 'sysntpd' }))]);
-  return editor.withStaged(readSettings(cfg, info, svc));
+  const [cfg, info, svc, dump] = await Promise.all([
+    uci.get(CONFIG),
+    ubus('system', 'info'),
+    optional(ubus('service', 'list', { name: 'sysntpd' })),
+    optional(ubus('network.interface', 'dump')),
+  ]);
+  const data = readSettings(cfg, info, svc);
+  data.interfaces = (dump?.interface ?? [])
+    .map(i => i.interface)
+    .filter(name => typeof name === 'string' && name)
+    .filter((name, index, names) => names.indexOf(name) === index)
+    .sort((a, b) => a.localeCompare(b));
+  return editor.withStaged(data);
 }
 
 //#region Pieces of the page
 
 // The four summary tiles: the router's clock, its name, its time zone and the NTP client.
 function summary(data) {
-  const { clock, ntpd } = data;
+  const { clock } = data;
   const v = data.system.values;
-  const ntpOn = currentValue(FIELDS.find(f => f.key === 'enabled'), data);
-  const ntpSub = !ntpOn ? 'switched off in the configuration' : ntpd ? (ntpd.running ? 'ntpd is running' : 'ntpd is not running') : 'state not available';
   return tiles(
-    tile('Router time', clock ? fmtTime(clock.localtime) : '–', clock ? `${fmtDate(clock.localtime)} · ${fmtOffset(clock.offset)}` : 'the router did not report its clock'),
     tile('Hostname', v.hostname || 'OpenWrt', v.description || 'no description'),
-    tile('Time zone', v.zonename || 'Custom rule', v.timezone || 'no rule set'),
-    tile('NTP client', ntpOn ? 'On' : 'Off', ntpSub, ntpOn && ntpd && !ntpd.running ? 'text-warning' : ''));
+    tile('Router time', clock ? fmtTime(clock.localtime) : '–', clock ? `${fmtDate(clock.localtime)} · ${fmtOffset(clock.offset)}` : 'the router did not report its clock'),
+    tile('Time zone', v.zonename || 'Custom rule', v.timezone || 'no rule set'));
 }
 
 // The control for one schema field, connected to the draft.
 function control(ctx, f) {
   const values = state.draft.values;
-  return fieldRow(f, {
+  const dynamic = f.key === 'interface'
+    ? {
+      ...f,
+      type: 'enum',
+      options: ctx.data.interfaces,
+      blank: 'Every interface',
+    }
+    : f;
+  return fieldRow(dynamic, {
     id: f.key,
     get: () => values[f.key],
     set: v => { values[f.key] = v; },
@@ -99,12 +120,43 @@ function zoneRows(ctx) {
 }
 
 // What the NTP client is doing right now, under the NTP controls.
-function ntpStatus(data) {
+async function syncNtp(ctx) {
+  ntpAction.busy = true;
+  ntpAction.message = null;
+  ctx.rerender();
+  try {
+    const reply = await ubus('flab.system', 'ntp_sync', {});
+    if (!reply?.ok) throw new Error(reply?.error || 'The NTP sync could not be requested.');
+    ntpAction.message = { kind: 'success', text: 'NTP sync requested. sysntpd was restarted with the configured sources.' };
+    await ctx.reload();
+  } catch (err) {
+    ntpAction.message = { kind: 'danger', text: err.message };
+  } finally {
+    ntpAction.busy = false;
+    ctx.rerender();
+  }
+}
+
+// What the NTP client is doing right now, plus a one-click new synchronization attempt.
+function ntpStatus(ctx) {
+  const { data } = ctx;
   const { ntpd } = data;
-  return kv([
-    ['NTP client', ntpd ? badge(ntpd.running ? 'running' : 'not running', ntpd.running ? 'success' : 'warning') : muted('not available')],
-    ['Servers ntpd uses', ntpd?.servers.length ? mono(ntpd.servers.join(', ')) : muted('none')],
-  ]);
+  const enabled = currentValue(FIELDS.find(f => f.key === 'enabled'), data);
+  const allowed = can('flab.system', 'ntp_sync');
+  return h('div', {},
+    kv([
+      ['NTP client', ntpd ? badge(ntpd.running ? 'running' : 'not running', ntpd.running ? 'success' : 'warning') : muted('not available')],
+      ['Servers ntpd uses', ntpd?.servers.length ? mono(ntpd.servers.join(', ')) : muted('none')],
+    ]),
+    h('div', { className: 'ntp-actions' },
+      button(ntpAction.busy ? 'Syncing…' : 'Sync now', 'arrow-clockwise',
+        () => syncNtp(ctx), 'btn-fl', { disabled: ntpAction.busy || !enabled || !allowed,
+          title: !enabled ? 'Enable the NTP client first.' : !allowed ? 'This login cannot control the NTP service.' : 'Restart sysntpd to start a new synchronization attempt.' }),
+      ntpAction.busy ? h('span', { className: 'spinner-border spinner-border-sm', ariaHidden: 'true' }) : null),
+    ntpAction.message ? h('div', { className: `alert alert-${ntpAction.message.kind} alert-dismissible mt-3 mb-0`, role: 'alert' },
+      ntpAction.message.text,
+      h('button', { type: 'button', className: 'btn-close', ariaLabel: 'Dismiss',
+        onclick: () => { ntpAction.message = null; ctx.rerender(); } })) : null);
 }
 
 // One card of the form, from its schema group: its legend on top, then either side-by-side columns (the time card:
@@ -116,9 +168,26 @@ function groupCard(ctx, g) {
     ? h('div', { className: 'card-body set-cols' }, g.columns.map(c => h('section', { className: 'set-col' },
       h('h3', { className: 'set-col-title' }, c.title),
       ...(c.id === 'zone' ? zoneRows(ctx) : fieldsOf(c.id)),
-      c.id === 'client' ? ntpStatus(ctx.data) : null)))
+      c.id === 'client' ? ntpStatus(ctx) : null)))
     : h('div', { className: 'card-body set-fields' }, fieldsOf());
-  return card([icon(g.icon), h('span', {}, g.title)], h('div', {}, legend(g.legend), body));
+  const ntpOn = g.id === 'time' ? currentValue(FIELDS.find(f => f.key === 'enabled'), ctx.data) : null;
+  const ntp = ctx.data.ntpd;
+  const extra = g.id === 'time'
+    ? h('span', { className: 'sub' },
+      'NTP client ',
+      badge(!ntpOn ? 'off' : ntp ? (ntp.running ? 'running' : 'not running') : 'state unknown',
+        !ntpOn ? '' : ntp?.running ? 'success' : 'warning'))
+    : null;
+  return h('details', {
+    className: 'card settings-disclosure',
+    open: openCards.has(g.id),
+    ontoggle: e => {
+      if (e.currentTarget.open) openCards.add(g.id);
+      else openCards.delete(g.id);
+    },
+  },
+    h('summary', { className: 'card-header' }, chevron(), icon(g.icon), h('span', {}, g.title), extra),
+    h('div', {}, legend(g.legend), body));
 }
 
 //#endregion
@@ -131,17 +200,18 @@ export default {
   nav: 'bottom',
   interval: 10000,
   css: ['css/forms.css', 'css/settings.css'],
-  isPaused: () => editor.paused('.settings-form'),
+  isPaused: () => backupBusy() || editor.paused('.settings-form'),
 
   load,
 
   controls({ reload }) {
+    reloadPage = reload;
     return { nodes: [refreshControl(reload), editor.attach(reload)] };
   },
 
   view(data, rerender) {
     const canEdit = editor.begin(data, rerender);
-    const ctx = { data, canEdit, inputs: {}, ruleAfter: null, sync: () => {} };
+    const ctx = { data, canEdit, inputs: {}, ruleAfter: null, sync: () => {}, rerender, reload: reloadPage };
     const cards = GROUPS.map(g => groupCard(ctx, g));
     const form = h('div', { className: 'settings-form' }, h('div', { className: 'settings-grid' }, cards));
 
@@ -152,6 +222,6 @@ export default {
       editor.markErrors(ctx.inputs, canEdit);
     };
     ctx.sync();
-    return [summary(data), ...editor.notes(data), form].filter(Boolean);
+    return [summary(data), ...editor.notes(data), form, backupCard(rerender)].filter(Boolean);
   },
 };

@@ -4,16 +4,24 @@
 //   ubus call flab.system cpu    CPU statistics as JSON
 //   ubus call flab.system build  identifier and file list of the installed web files (browser cache refresh)
 //   ubus call flab.system modules installed optional frontend module manifests
+//   ubus call flab.system backup_create
+//   ubus call flab.system backup_begin '{"size":1234}'
+//   ubus call flab.system backup_upload '{"id":"...","from":0,"data":"<base64>"}'
+//   ubus call flab.system backup_inspect '{"id":"..."}'
+//   ubus call flab.system backup_restore '{"id":"..."}'
+//   ubus call flab.system ntp_sync
 //
 // Returns the kernel's cumulative CPU time counters (/proc/stat), the load average and the task counts.
 // Utilization is a rate, so it is derived from the difference between two successive calls (the UI does
 // this); the counters are not converted here, which keeps the call instantaneous and rpcd unblocked.
-// `cpu` reads procfs only; `build` only lists and stats the files under /www/flab. No other tool is involved.
+// `cpu` reads procfs only; `build` only lists and stats the files under /www/flab. Backup methods additionally use
+// fixed `sysupgrade`, `gzip`, and `tar` commands on validated temporary paths.
 
 'use strict';
 import { deferred } from 'flab.worker';
+import { command_result } from 'flab.util';
 
-import { readfile, lsdir, stat } from 'fs';
+import { mkdir, open, readfile, writefile, lsdir, stat } from 'fs';
 
 // Order of the columns on a "cpu" line in /proc/stat (guest times are already part of user/nice).
 const FIELDS = ['user', 'nice', 'system', 'idle', 'iowait', 'irq', 'softirq', 'steal'];
@@ -125,6 +133,167 @@ function modules() {
 	return { modules: out };
 }
 
+function ntp_sync() {
+	let result = command_result('/etc/init.d/sysntpd restart', { timeout: 15 });
+	if (!result.ok)
+		return { ok: false, error: trim(result.output) || 'The NTP service could not be restarted.' };
+	return { ok: true, restarted: true };
+}
+
+const BACKUP_ROOT = '/tmp/flab-backup';
+const BACKUP_ID = /^[0-9a-f]{12}$/;
+const BACKUP_CHUNK = 32768;
+const BACKUP_MAX = 16 * 1024 * 1024;
+const BACKUP_FILES = 5000;
+const BACKUP_KEEP_SECONDS = 900;
+
+function backup_id(id) {
+	return type(id) == 'string' && match(id, BACKUP_ID) ? id : null;
+}
+
+function backup_dir(id) {
+	let valid = backup_id(id);
+	return valid ? `${BACKUP_ROOT}/${valid}` : null;
+}
+
+function clean_backups() {
+	let current = sort(map(filter(lsdir(BACKUP_ROOT) ?? [], backup_id), (id) => ({
+		id,
+		mtime: stat(`${BACKUP_ROOT}/${id}`)?.mtime ?? 0,
+	})), (a, b) => a.mtime - b.mtime);
+	while (length(current) > 4 || (current.length && time() - current[0].mtime > BACKUP_KEEP_SECONDS)) {
+		let old = shift(current);
+		command_result(`rm -rf ${BACKUP_ROOT}/${old.id}`);
+	}
+}
+
+function new_backup_dir() {
+	mkdir(BACKUP_ROOT);
+	let id = '', dir = null;
+	for (let i = 0; i < 5 && dir == null; i++) {
+		id = hexenc(readfile('/dev/urandom', 6) ?? '');
+		dir = backup_id(id) && mkdir(`${BACKUP_ROOT}/${id}`) ? `${BACKUP_ROOT}/${id}` : null;
+	}
+	clean_backups();
+	return { id, dir };
+}
+
+function backup_create() {
+	let job = new_backup_dir();
+	if (job.dir == null)
+		return { ok: false, error: 'Could not create a temporary backup file.' };
+	let archive = `${job.dir}/backup.tar.gz`;
+	let result = command_result(`sysupgrade -b ${archive}`, { timeout: 20 });
+	let st = stat(archive);
+	if (!result.ok || st == null || st.size == 0)
+		return { ok: false, error: result.output || 'The router could not create a configuration backup.' };
+	let host = trim(readfile('/proc/sys/kernel/hostname') ?? 'openwrt');
+	host = match(host, /^[A-Za-z0-9._-]+$/) ? host : 'openwrt';
+	return { ok: true, id: job.id, size: st.size, name: `flab-backup-${host}-${time()}.tar.gz` };
+}
+
+function backup_download(request) {
+	let dir = backup_dir(request?.args?.id), archive = dir ? `${dir}/backup.tar.gz` : null;
+	let st = archive ? stat(archive) : null;
+	if (st == null)
+		return { ok: false, error: 'This backup is no longer on the router. Create it again.' };
+	let from = +request?.args?.from;
+	if (!(from >= 0) || from > 1000000000)
+		from = 0;
+	let data = '', file = from < st.size ? open(archive, 'r') : null;
+	if (file != null) {
+		file.seek(from);
+		data = file.read(BACKUP_CHUNK) ?? '';
+		file.close();
+	}
+	return { ok: true, from, size: st.size, length: length(data), data: b64enc(data), done: from + length(data) >= st.size };
+}
+
+function backup_begin(request) {
+	let size = +request?.args?.size;
+	if (!(size > 0) || size > BACKUP_MAX)
+		return { ok: false, error: `The backup must be between 1 byte and ${BACKUP_MAX} bytes.` };
+	let job = new_backup_dir();
+	if (job.dir == null)
+		return { ok: false, error: 'Could not reserve temporary upload storage.' };
+	let file = open(`${job.dir}/restore.tar.gz`, 'w');
+	if (file == null)
+		return { ok: false, error: 'Could not create the temporary upload file.' };
+	file.close();
+	writefile(`${job.dir}/size`, '' + size);
+	return { ok: true, id: job.id, size };
+}
+
+function backup_upload(request) {
+	let args = request?.args ?? {}, dir = backup_dir(args.id);
+	let st = dir ? stat(`${dir}/restore.tar.gz`) : null, from = +args.from, total = +args.total;
+	let expected = dir ? +(readfile(`${dir}/size`) ?? 0) : 0;
+	let encoded = type(args.data) == 'string' ? args.data : '';
+	let data = b64dec(encoded);
+	if (st == null || total != expected || !(from >= 0) || from != st.size || !(total >= from) || total > BACKUP_MAX ||
+		length(encoded) > 4 * BACKUP_CHUNK || data == null || length(data) == 0 || from + length(data) > total)
+		return { ok: false, error: 'The upload chunk is invalid or out of sequence.' };
+	let file = open(`${dir}/restore.tar.gz`, 'a');
+	if (file == null || file.write(data) != length(data)) {
+		file?.close();
+		return { ok: false, error: 'The router could not write the uploaded backup.' };
+	}
+	file.close();
+	return { ok: true, from: from + length(data), done: from + length(data) == total };
+}
+
+function inspect_backup(id) {
+	let dir = backup_dir(id), archive = dir ? `${dir}/restore.tar.gz` : null;
+	let st = archive ? stat(archive) : null;
+	if (st == null || st.size == 0)
+		return { ok: false, error: 'The uploaded backup is missing.' };
+	let expected = +(readfile(`${dir}/size`) ?? 0);
+	if (expected != st.size)
+		return { ok: false, error: 'The uploaded backup is incomplete. Upload it again.' };
+	let tested = command_result(`gzip -t ${archive}`, { timeout: 10 });
+	if (!tested.ok)
+		return { ok: false, error: 'The file is not a valid compressed OpenWrt configuration backup.' };
+	let listed = command_result(`tar -tzf ${archive}`, { timeout: 10, max_output: 262144 });
+	if (!listed.ok)
+		return { ok: false, error: 'The backup contents could not be read.' };
+	let files = filter(split(replace(listed.output ?? '', /\r/g, ''), '\n'), (name) => name != '');
+	if (length(files) > BACKUP_FILES)
+		return { ok: false, error: 'The backup contains too many files.' };
+	for (let name in files) {
+		if (match(name, /(^[/]|(^|[/])[.][.]([/]|$))/))
+			return { ok: false, error: 'The backup contains an unsafe file path.' };
+	}
+	if (index(files, 'etc/config/system') < 0 && index(files, './etc/config/system') < 0)
+		return { ok: false, error: 'The backup does not contain /etc/config/system.' };
+	return { ok: true, id, size: st.size, files };
+}
+
+function backup_inspect(request) {
+	return inspect_backup(request?.args?.id);
+}
+
+function backup_restore(request) {
+	let id = backup_id(request?.args?.id), checked = id ? inspect_backup(id) : null;
+	if (!checked?.ok)
+		return checked ?? { ok: false, error: 'Choose a valid backup first.' };
+	let archive = `${BACKUP_ROOT}/${id}/restore.tar.gz`;
+	let launched = command_result(
+		`(sleep 2; sysupgrade -r ${archive} && reboot) >/dev/null 2>&1 &`,
+		{ timeout: 5 }
+	);
+	if (!launched.ok)
+		return { ok: false, error: 'Could not schedule the configuration restore.' };
+	return { ok: true, reboot: true };
+}
+
+function backup_cancel(request) {
+	let id = backup_id(request?.args?.id);
+	if (id == null)
+		return { ok: false, error: 'The backup id is invalid.' };
+	command_result(`rm -rf ${BACKUP_ROOT}/${id}`);
+	return { ok: true };
+}
+
 // rpcd registration: ubus object flab.system.
 return deferred({
 	'flab.system': {
@@ -141,6 +310,52 @@ return deferred({
 		modules: {
 			call: function() {
 				return modules();
+			},
+		},
+		ntp_sync: {
+			call: function() {
+				return ntp_sync();
+			},
+		},
+		backup_create: {
+			call: function() {
+				return backup_create();
+			},
+		},
+		backup_download: {
+			args: { id: '', from: 0 },
+			call: function(request) {
+				return backup_download(request);
+			},
+		},
+		backup_begin: {
+			args: { size: 0 },
+			call: function(request) {
+				return backup_begin(request);
+			},
+		},
+		backup_upload: {
+			args: { id: '', from: 0, total: 0, data: '' },
+			call: function(request) {
+				return backup_upload(request);
+			},
+		},
+		backup_inspect: {
+			args: { id: '' },
+			call: function(request) {
+				return backup_inspect(request);
+			},
+		},
+		backup_restore: {
+			args: { id: '' },
+			call: function(request) {
+				return backup_restore(request);
+			},
+		},
+		backup_cancel: {
+			args: { id: '' },
+			call: function(request) {
+				return backup_cancel(request);
 			},
 		},
 	},

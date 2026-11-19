@@ -9,4 +9,11 @@
 .set-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 .set-col + .set-col { border-left: 1px solid var(--fl-stroke); padding-left: 2rem; }
 .set-col-title { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-muted); }
+.settings-disclosure > summary { cursor: pointer; user-select: none; list-style: none; }
+.settings-disclosure > summary::-webkit-details-marker { display: none; }
+.settings-disclosure > summary .fl-chevron { transform: none; }
+.settings-disclosure[open] > summary .fl-chevron { transform: rotate(90deg); }
 .set-col .kv { margin-top: 0; }
+.set-col .kv { grid-template-columns: minmax(9rem, auto) 1fr; row-gap: .35rem; column-gap: .75rem; align-items: baseline; }
+.set-col .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.set-col .ntp-actions { display: flex; align-items: center; gap: .5rem; margin-top: -.25rem; }

@@ -1,10 +1,11 @@
 # System settings (route `#settings`)
 Changes the router: it shows and edits `/etc/config/system`: every option the OpenWrt wiki
 documents for the `system` section and for its `timeserver` (NTP) section, in four cards that each take the full
-width of the page: General, Time zone and NTP, System log, and Kernel, cron and memory. It is shown at the
-bottom of the navigation pane and refreshes every 10 s. It reads through rpcd's `uci` object (`uci get system`),
-`system info` (the clock) and `service list sysntpd` (what the NTP client runs with); it needs no plugin, only
-the ACL fragment `rpcd/acl.d/flab-settings.json`.
+width of the page: General, Time zone and NTP, System log, and Kernel, cron and memory. A fifth card provides
+configuration backup and restore. It is shown at the bottom of the navigation pane and refreshes every 10 s. It
+reads through rpcd's `uci` object (`uci get system`), `system info` (the clock) and `service list sysntpd` (what the
+NTP client runs with); the ACL fragment `rpcd/acl.d/flab-settings.json` also grants the backup methods of
+`flab.system`.
 - **Tiles**: the router's clock with its UTC offset, the hostname and description, the time zone and its POSIX
   rule, the NTP client (on or off, and whether `ntpd` runs).
 - **The options are data.** `settings/schema.js` lists every field (key, section, card, type, label, hint,
@@ -22,6 +23,8 @@ the ACL fragment `rpcd/acl.d/flab-settings.json`.
   touched. *NTP client* (`timeserver` section): `enabled`, `use_dhcp`, the ordered `server` list,
   `dhcp_interface`, and what `ntpd` is running with. *NTP server for the network*: `enable_server`, `interface`.
   NTP on with no way to find a server is only a warning. A missing `timeserver` section is created, named `ntp`.
+  The client column appears first and includes **Sync now**, which restarts `sysntpd` so it starts a new
+  synchronization attempt with the saved sources.
 - **System log**: `log_size`, `log_buffer_size`, `log_type`, `log_file`, `log_remote`, `log_ip`, `log_port`,
   `log_proto`, `log_hostname`, `log_prefix`, `log_trailer_null`.
 - **Kernel, cron and memory**: `buffersize`, `conloglevel`, `cronloglevel`, `zram_comp_algo`, `zram_size_mb`.
@@ -29,6 +32,12 @@ the ACL fragment `rpcd/acl.d/flab-settings.json`.
   shows "default: ..." or an example in gray italics, never a value-looking placeholder. Numbers, hosts, IP
   addresses, paths, interface names, enums and the time zone rule are validated; a bad entry is marked, explained
   and blocks saving. An emptied option is deleted from the file instead of being stored empty.
+- **Configuration backup and restore**: Download runs `sysupgrade -b` and streams the gzip archive to the browser
+  in bounded base64 chunks. The archive can contain passwords and private keys and is not encrypted by flab-ui.
+  Restore accepts a backup up to 16 MiB, uploads it in chunks, verifies gzip integrity and the tar member list,
+  requires `/etc/config/system`, rejects absolute and `..` paths, and shows the complete member list for review.
+  A separate confirmation explains that restore runs `sysupgrade -r` and reboots, with no automatic rollback. Backup
+  work files live only under `/tmp/flab-backup`, and successful download/cancel actions remove them.
 - **Review banner**: a row at the bottom of the sticky command bar, so Save is always on screen however far the
   form is scrolled. It is hidden while there is nothing to report and appears with the first edit: the number and
   names of the pending changes, Details (the full list of what changes from what to what, and how a save works),

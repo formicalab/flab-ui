@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Configuration backup
+
+- Add configuration backup download, archive upload validation and explicit restore-and-reboot to System settings.
+  Backups use `sysupgrade`, transfer in bounded chunks and remain only in temporary router storage. A full archive
+  restore is explicitly warned as not having automatic rollback.
+- Add one-click NTP resynchronization by restarting `sysntpd` with its configured servers.
+
 ## 0.1.10 - 2026-11-18
 
 ### Connected devices

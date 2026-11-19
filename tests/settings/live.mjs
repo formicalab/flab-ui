@@ -29,7 +29,12 @@ const baseCfg = () => ({
 });
 const OFFSETS = { 'Europe/Rome': 3600, 'Europe/London': 0, 'Asia/Tokyo': 32400, UTC: 0 };
 const WRITES = ['set', 'add', 'delete', 'apply', 'confirm', 'rollback', 'revert', 'commit', 'order', 'rename'];
-const mock = { on: false, cfg: baseCfg(), staged: [], restage: [], snapshot: null, calls: [], dropWrites: false, confirmFails: false, expired: false, unsafe: [] };
+const mock = {
+  on: false, cfg: baseCfg(), staged: [], restage: [], snapshot: null, calls: [],
+  dropWrites: false, confirmFails: false, expired: false, unsafe: [],
+  backup: { created: false, uploaded: 0, restored: false },
+  ntpSynced: false,
+};
 let nextId = 1;
 
 // Applies the staged edits to the mock's config, the way rpcd's uci apply does.
@@ -95,6 +100,7 @@ function answer(body) {
     return ok(uci(method, args));
   }
   if (obj === 'system' && method === 'board') return ok([0, { hostname: mock.cfg.cfg0.hostname || 'OpenWrt', model: 'GL.iNet GL-MT6000' }]);
+  if (obj === 'network.interface' && method === 'dump') return ok([0, { interface: [{ interface: 'lan' }, { interface: 'wan' }] }]);
   if (obj === 'system' && method === 'info') {
     const now = Math.floor(Date.now() / 1000);
     return ok([0, { unixtime: now, localtime: now + (OFFSETS[mock.cfg.cfg0.zonename] ?? 0), uptime: 1000 }]);
@@ -102,6 +108,35 @@ function answer(body) {
   if (obj === 'service' && method === 'list') {
     const servers = mock.cfg.ntp?.server ?? [];
     return ok([0, { sysntpd: { instances: { instance1: { running: mock.cfg.ntp?.enabled !== '0', command: ['/usr/sbin/ntpd', '-n', ...servers.flatMap(s => ['-p', s])] } } } }]);
+  }
+  if (obj === 'flab.system' && method === 'ntp_sync') {
+    mock.calls.push('flab.system.ntp_sync');
+    mock.ntpSynced = true;
+    return ok([0, { ok: true, restarted: true }]);
+  }
+  if (obj === 'flab.system' && method.startsWith('backup_')) {
+    mock.calls.push(`flab.system.${method}`);
+    const id = method === 'backup_create' || method === 'backup_begin' ? '0123456789ab' : args.id;
+    if (method === 'backup_create') {
+      mock.backup.created = true;
+      return ok([0, { ok: true, id, size: 18, name: 'flab-backup-openwrt-1.tar.gz' }]);
+    }
+    if (method === 'backup_download') {
+      return ok([0, { ok: true, from: args.from, size: 18, length: 18, data: Buffer.from('mock-config-backup').toString('base64'), done: true }]);
+    }
+    if (method === 'backup_begin') return ok([0, { ok: true, id, size: args.size }]);
+    if (method === 'backup_upload') {
+      mock.backup.uploaded = args.from + Buffer.from(args.data, 'base64').length;
+      return ok([0, { ok: true, from: mock.backup.uploaded, done: mock.backup.uploaded === args.total }]);
+    }
+    if (method === 'backup_inspect') {
+      return ok([0, { ok: true, id, size: mock.backup.uploaded, files: ['etc/config/network', 'etc/config/system'] }]);
+    }
+    if (method === 'backup_restore') {
+      mock.backup.restored = true;
+      return ok([0, { ok: true, reboot: true }]);
+    }
+    if (method === 'backup_cancel') return ok([0, { ok: true }]);
   }
   return null;
 }
@@ -177,12 +212,16 @@ const real = await page.evaluate(async () => {
   return { board: await call('system', 'board'), cfg: (await call('uci', 'get', { config: 'system' })).values };
 });
 const realSystem = Object.values(real.cfg).find(s => s['.type'] === 'system');
-check(await tile(1) === realSystem.hostname && await tile(1) === real.board.hostname, 'the tiles and the Hostname field show the router\'s own hostname', `${await tile(1)} / ${real.board.hostname}`);
+check(await tile(0) === realSystem.hostname && await tile(0) === real.board.hostname, 'the tiles and the Hostname field show the router\'s own hostname', `${await tile(0)} / ${real.board.hostname}`);
 check(await input('Hostname').inputValue() === realSystem.hostname && await input('Zone').inputValue() === realSystem.zonename, 'the form starts from the router (hostname and zone)');
-check(await page.locator('.card .card-header').allInnerTexts().then(t => t.map(x => x.trim()).filter(x => ['General', 'Time zone and NTP', 'System log', 'Kernel, cron and memory'].includes(x)).join(' | ')) === 'General | Time zone and NTP | System log | Kernel, cron and memory', 'four full-width cards, in order: General, Time zone and NTP, System log, Kernel cron and memory');
+check(await page.locator('.settings-grid > .settings-disclosure > summary').allInnerTexts().then(t => t.map(x => x.trim()).map(x => x.startsWith('Time zone and NTP') ? 'Time zone and NTP' : x).join(' | ')) === 'General | Time zone and NTP | System log | Kernel, cron and memory', 'four full-width settings cards in order');
 check(await page.evaluate(() => { const w = document.querySelector('main').clientWidth; return [...document.querySelectorAll('.settings-grid > .card')].every(c => c.getBoundingClientRect().width > w * 0.9); }), 'every card takes the full width of the page');
-check(await page.locator('.set-col').count() === 3 && await page.evaluate(() => { const c = [...document.querySelectorAll('.set-col')].map(e => e.getBoundingClientRect().top); return c.every(t => Math.abs(t - c[0]) < 2); }), 'the time card has three columns (zone, NTP client, NTP server) side by side');
+const columnTitles = await page.locator('.set-col-title').evaluateAll(nodes => nodes.map(x => x.textContent.trim()));
+const columnAligned = await page.evaluate(() => { const c = [...document.querySelectorAll('.set-col')].map(e => e.getBoundingClientRect().top); return c.every(t => Math.abs(t - c[0]) < 2); });
+check(await page.locator('.set-col').count() === 3 && columnTitles.join(' | ') === 'NTP client | Time zone | NTP server for the network' && columnAligned, 'the time card has NTP client, Time zone and NTP server side by side in operational order', `${columnTitles.join(' | ')} / aligned=${columnAligned}`);
 check(await page.locator('.set-field').count() === 23 && await page.locator('.set-check').count() === 6, 'every option of the wiki is there: 21 fields and 2 for the zone, 6 checkboxes', `${await page.locator('.set-field').count()} / ${await page.locator('.set-check').count()}`);
+check(await page.locator('.settings-disclosure:not([open])').count() === 5, 'all Settings cards start collapsed');
+for (const disclosure of await page.locator('.settings-disclosure').all()) await disclosure.locator(':scope > summary').click();
 check(await input('Hostname').isEnabled() && await saveBtn().isDisabled() && await page.locator('.set-bar').isHidden(), 'the router login may edit; the review banner is hidden and Save disabled until something changes');
 check(!/not allowed/.test(await page.locator('main').innerText()), 'no read-only warning for a login with write access');
 await shot('real');
@@ -192,14 +231,39 @@ await shot('real');
 mock.on = true;
 await page.reload();
 await page.waitForSelector('.settings-form');
+for (const disclosure of await page.locator('.settings-disclosure').all()) await disclosure.locator(':scope > summary').click();
 console.log('\n== reading (mock router) ==');
-check(await tile(1) === 'openwrt' && await tile(2) === 'Europe/Rome' && await tile(3) === 'On' && /ntpd is running/.test(await tileSub(3)), 'tiles: hostname, zone, NTP on and running', `${await tile(1)} ${await tile(2)} ${await tile(3)}`);
-check(/UTC\+01:00/.test(await tileSub(0)) && /^\d\d:\d\d:\d\d$/.test(await tile(0)), 'the router time tile shows the clock and the UTC offset', `${await tile(0)} ${await tileSub(0)}`);
+check(await tile(0) === 'openwrt' && await tile(2) === 'Europe/Rome', 'tiles: hostname and zone', `${await tile(0)} ${await tile(2)}`);
+check(/NTP client\s+running/.test(await page.locator('.settings-disclosure > summary').filter({ hasText: 'Time zone and NTP' }).innerText()), 'NTP state is a badge in the Time zone and NTP panel banner');
+check(/UTC\+01:00/.test(await tileSub(1)) && /^\d\d:\d\d:\d\d$/.test(await tile(1)), 'the router time tile shows the clock and the UTC offset', `${await tile(1)} ${await tileSub(1)}`);
 check(await input('Zone').inputValue() === 'Europe/Rome' && await rows('Time servers').evaluateAll(e => e.map(x => x.value).join()) === 'time.ien.it,ntp.inrim.it,pool.ntp.org', 'the zone and the servers');
 check(await input('Log file buffer (KiB)').inputValue() === '512' && await input('Remote syslog port').getAttribute('placeholder') === 'default: 514', 'a set number is shown, an unset one shows its default as the placeholder');
+check(await input('Serve time only on interface').evaluate(e => e.tagName) === 'SELECT' && await input('Serve time only on interface').locator('option').allTextContents().then(v => v.join(' | ')) === 'Every interface | lan | wan', 'the NTP server interface is selected from the router network interfaces');
 check(!await sw('Require a login on the console').isChecked() && await sw('Synchronize the clock with NTP').isChecked() && !await sw('Also use servers offered by DHCP').isChecked() && await sw('Send logs to a remote server').isChecked(), 'switches show the value, or OpenWrt\'s default when the option is absent');
 check(await field('POSIX rule').getAttribute('hidden') !== null, 'the custom rule input is hidden while a zone is chosen');
+check(await page.locator('.card-header').filter({ hasText: 'Configuration backup & restore' }).count() === 1, 'backup and restore is in the System settings page');
+await page.getByRole('button', { name: 'Sync now' }).click();
+await page.waitForSelector('text=NTP sync requested');
+check(mock.ntpSynced && mock.calls.includes('flab.system.ntp_sync'), 'Sync now restarts the configured NTP service and reports the request');
 await shot('mock-base');
+//#endregion
+
+//#region Backup and restore
+console.log('\n== backup and restore ==');
+const backupDownload = page.waitForEvent('download');
+await page.getByRole('button', { name: 'Create backup' }).click();
+const downloaded = await backupDownload;
+check(downloaded.suggestedFilename() === 'flab-backup-openwrt-1.tar.gz' && mock.backup.created, 'a configuration backup is created and downloaded', downloaded.suggestedFilename());
+const upload = page.locator('input[type=file][accept*="application/gzip"]');
+await upload.setInputFiles({ name: 'router-backup.tar.gz', mimeType: 'application/gzip', buffer: Buffer.from('mock-config-archive') });
+await page.waitForSelector('text=Backup checked: router-backup.tar.gz');
+check(/etc\/config\/system/.test(await page.locator('main').innerText()) && await page.getByRole('button', { name: 'Restore and reboot…' }).isEnabled(), 'an uploaded backup is validated and its archive contents are reviewed');
+await page.getByRole('button', { name: 'Restore and reboot…' }).click();
+check(await page.getByRole('dialog').getByText(/no automatic rollback/).isVisible(), 'restore warns that a full backup has no automatic rollback');
+await page.getByRole('dialog').getByRole('button', { name: 'Restore and reboot' }).click();
+await page.waitForSelector('text=Configuration restore accepted');
+check(mock.backup.restored, 'restore is explicitly requested after confirmation');
+check(mock.calls.includes('flab.system.backup_create') && mock.calls.includes('flab.system.backup_upload') && mock.calls.includes('flab.system.backup_inspect') && mock.calls.includes('flab.system.backup_restore'), 'all backup RPC methods are used');
 //#endregion
 
 //#region Editing and validation
@@ -273,7 +337,7 @@ check(/^uci\.changes( uci\.set)+ uci\.apply uci\.get uci\.confirm/.test(seq), 'c
 const sys = mock.cfg.cfg0, ntp = mock.cfg.ntp;
 check(sys.hostname === 'router2' && sys.description === 'lab router' && sys.zonename === 'Europe/London' && sys.timezone === 'GMT0BST,M3.5.0/1,M10.5.0' && sys.log_ip === '192.168.1.10' && sys.log_type === 'file' && sys.log_file === '/var/log/messages', 'the system options were written, both zone values together', JSON.stringify(sys));
 check(ntp.server[0] === 'time.cloudflare.com' && ntp.server.length === 3 && ntp.use_dhcp === '1' && sys.log_size === '512' && sys.ttylogin === '0', 'the NTP options were written and untouched options kept', JSON.stringify([ntp, sys.log_size]));
-check(await tile(1) === 'router2' && /UTC\+00:00/.test(await tileSub(0)) && await tile(2) === 'Europe/London', 'the tiles show the saved state', `${await tile(1)} ${await tileSub(0)}`);
+check(await tile(0) === 'router2' && /UTC\+00:00/.test(await tileSub(1)) && await tile(2) === 'Europe/London', 'the tiles show the saved state', `${await tile(0)} ${await tileSub(1)}`);
 check((await page.locator('.nav-pane .brand strong').innerText()).trim() === 'router2', 'the new hostname appears in the navigation header');
 check(await saveBtn().isHidden() && await page.locator('button:has-text("Discard edits")').isHidden() && !/null|undefined/.test(await page.locator('.set-bar').innerText()) && /Saved/.test(await page.locator('.set-bar .set-outcome.ok').innerText()), 'the form restarts clean and the banner keeps only the outcome, without Save and Discard buttons');
 await input('Hostname').fill('router3');
@@ -298,7 +362,7 @@ await saveBtn().click();
 const lost = await outcome();
 check(/rolled back/.test(lost) && /Hostname was not saved/.test(lost), 'a change that does not read back is rolled back and reported', lost);
 check(mock.calls.includes('uci.rollback') && !mock.calls.includes('uci.confirm') && mock.calls.lastIndexOf('uci.revert') > mock.calls.indexOf('uci.rollback') && mock.staged.length === 0, 'rollback is called, confirm is not, and the re-staged edits are then discarded', mock.calls.join(' '));
-check(await input('Hostname').inputValue() === 'router9' && await tile(1) === 'router2', 'the edit stays in the form for a retry, and the router is unchanged');
+check(await input('Hostname').inputValue() === 'router9' && await tile(0) === 'router2', 'the edit stays in the form for a retry, and the router is unchanged');
 await shot('mock-rolled-back');
 mock.dropWrites = false;
 
@@ -309,7 +373,7 @@ await saveBtn().click();
 const late = await outcome();
 check(/^Confirmation failed; the outcome is uncertain\./.test(late) && /Rollback could not be confirmed/.test(late) && !/was rolled back/.test(late)
   && mock.calls.filter(c => c === 'uci.confirm').length === 1 && mock.calls.indexOf('uci.rollback') > mock.calls.indexOf('uci.confirm')
-  && mock.calls.lastIndexOf('uci.revert') > mock.calls.indexOf('uci.rollback') && await tile(1) === 'router2',
+  && mock.calls.lastIndexOf('uci.revert') > mock.calls.indexOf('uci.rollback') && await tile(0) === 'router2',
   'a late confirmation is reported as uncertain without retrying it; the mock restored the config and cleanup discards the leftovers', `${late} / ${mock.calls.join(' ')}`);
 mock.confirmFails = false;
 await page.click('button:has-text("Discard edits")');

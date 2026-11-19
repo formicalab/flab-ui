@@ -25,7 +25,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | Services | List, start, stop, restart, enable and disable services. |
 | Toolbox | Ping, traceroute, MTR, DNS, TLS checks, a packet capture with pcap download, an iperf3 server and Wake-on-LAN. |
 | Logs | System and kernel log. |
-| System settings | `/etc/config/system`: general, time zone and NTP, logging, kernel and cron. |
+| System settings | `/etc/config/system`: general, time zone and NTP, logging, kernel and cron; configuration backup download and restore. |
 
 Each page reads from the program it manages (`swanctl`, `birdc`, `wg`, `nft`, `iw`, `nlbw`, `unbound-control` and so
 on). These are optional: install the ones for the pages you use.
