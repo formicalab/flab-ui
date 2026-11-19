@@ -135,14 +135,14 @@ export default {
 function diskPanel(d) {
   const worn = d.wear?.worst;
   const eol = d.eol && d.eol !== 'normal';
-  const health = eol ? [`end of life: ${d.eol}`, 'danger'] : worn?.to != null && worn.to >= 80 ? ['worn', 'warning'] : ['healthy', 'success'];
+  const health = eol ? [`end of life: ${d.eol}`, 'danger'] : worn?.to != null && worn.to >= 80 ? ['wearing out', 'warning'] : ['wear normal', 'success'];
   const fw = d.firmware?.replace(/(?:00)+$/, '');
   return h('div', { className: 'ov-disk' },
     h('div', { className: 'ov-disk-head' },
       h('b', {}, [d.vendor, d.model].filter(Boolean).join(' ') || d.name),
       badge(d.kind, 'info'), d.rotational ? h('span', { className: 'chip' }, 'spinning disk') : null,
       d.readonly ? h('span', { className: 'chip' }, 'read-only') : null,
-      (worn || d.eol) ? badge(health[0], health[1]) : null,
+      (worn || d.eol) ? h('span', { title: 'The device\'s own wear estimate (JEDEC life-time and pre-EOL registers). It does not detect bad blocks, read errors or data corruption.' }, badge(health[0], health[1])) : null,
       h('span', { className: 'muted small mono ov-disk-dev' }, `/dev/${d.name}`)),
     h('div', { className: 'ov-disk-facts' },
       diskFact('Capacity', fmtBytes(d.size)),

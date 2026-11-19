@@ -178,7 +178,10 @@ function disks(block) {
 		let life = split(attribute(name, dev + 'life_time'), ' ');
 		if (length(life) == 2) {
 			disk.wear = { slc: wearBand(life[0]), mlc: wearBand(life[1]) };
-			disk.wear.worst = (disk.wear.slc?.to ?? 101) > (disk.wear.mlc?.to ?? 101) ? disk.wear.slc : disk.wear.mlc;
+			// The more worn of the two areas; many devices report only one of them (the other reads 0x00).
+			for (let band in [disk.wear.slc, disk.wear.mlc])
+				if (band && (!disk.wear.worst || (band.to ?? 101) > (disk.wear.worst.to ?? 101)))
+					disk.wear.worst = band;
 		}
 		let eol = attribute(name, dev + 'pre_eol_info');
 		if (eol != '')

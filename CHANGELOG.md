@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.14 - 2026-11-19
+
+### Overview
+
+- Storage: rename the disk badge from "healthy" to "wear normal" (it reflects only the eMMC's own wear and
+  spare-block registers, with a tooltip saying so), and report the more worn area correctly when a device exposes
+  only one life-time register.
+
 ## 0.1.13 - 2026-11-19
 
 ### Overview
