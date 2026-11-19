@@ -11,7 +11,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 
 | Page | What it does |
 |---|---|
-| Overview | Uptime, CPU, load, memory and temperatures. |
+| Overview | WAN connectivity, IPv6 delegated prefixes, uptime, CPU, load, memory and temperatures. |
 | Ethernet ports | The Ethernet ports as hardware: link, negotiation, traffic, errors, optical modules, cable test; change a port's device settings (MTU, MAC address, speed, flow control); the bridge VLAN tables, which can be edited. |
 | Wi-Fi radios | The radios as hardware, with what runs on them: state, live figures, channel utilization; change the channel, the width, the country, the power and the other radio options; the access points, client networks and 802.11s mesh points on each radio (clients, peers, paths), and edit them. |
 | IPsec VPN | strongSwan connections, tunnels, traffic and a security score (read only). |

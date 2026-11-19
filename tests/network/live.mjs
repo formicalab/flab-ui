@@ -101,8 +101,15 @@ await page.addInitScript(([id, granted]) => {
   sessionStorage.setItem('acls', JSON.stringify(granted));
 }, [sid, acls]);
 await page.goto(baseUrl);
-await page.waitForSelector('.tile');
+await page.waitForSelector('.ov-hero');
 check((await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim()).join(' | ') === ['Overview', 'Ethernet ports', 'Wi-Fi radios', 'Firewall', 'VPN: IPsec', 'VPN: WireGuard', 'Devices and Interfaces', 'DHCP', 'DNS', 'Routing', 'Traffic', 'Services', 'Toolbox', 'Logs', 'System settings'].join(' | '), 'navigation order: hardware pages, Firewall, VPNs, Devices and Interfaces, DHCP, the combined DNS page, Routing, Traffic, Services, Toolbox, Logs, then System settings by Sign out', (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).join(' | '));
+await page.waitForSelector('.ov-internet');
+check(await page.locator('.ov-protocol').count() === 2 && /IPv4/.test(await page.locator('.ov-protocols').innerText()) && /IPv6/.test(await page.locator('.ov-protocols').innerText()), 'Overview shows compact IPv4 and IPv6 WAN connectivity panels');
+check(/delegat/i.test(await page.locator('.ov-prefix').innerText()), 'Overview shows IPv6 delegated-prefix status');
+check(await page.locator('.ov-network').count() === 1 && await page.locator('.ov-network .ov-internet, .ov-network .ov-prefix').count() === 2, 'Internet and IPv6 delegation share one full-width Network card');
+check(await page.locator('.ov-hero .ov-kpi').count() === 5 && await page.locator('.ov-hero').evaluate(e => e === e.parentElement.firstElementChild), 'Overview opens with one hero card: identity plus five vital KPIs, no separate tiles');
+check(await page.locator('.ov-fs').count() > 0 && /^\//.test(await page.locator('.ov-fs-mount').first().innerText()) && await page.locator('.ov-fs .chips').count() > 0, 'Storage lists every mount point with its backing hardware');
+check(await page.locator('.ov-disk').count() > 0 && /Capacity/.test(await page.locator('.ov-disk').first().innerText()) && await page.locator('.ov-parts .chip').count() > 0, 'Storage describes the physical disk: capacity, wear and partitions');
 //#region Ethernet ports page
 await page.evaluate(() => { location.hash = '#network'; });
 await page.waitForSelector('.port-ic');

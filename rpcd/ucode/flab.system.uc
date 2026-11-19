@@ -140,6 +140,151 @@ function ntp_sync() {
 	return { ok: true, restarted: true };
 }
 
+// JEDEC manufacturer ids seen on eMMC parts.
+const MMC_VENDORS = { '0x000015': 'Samsung', '0x000011': 'Toshiba / Kioxia', '0x000013': 'Micron', '0x00000d': 'Micron',
+	'0x000045': 'SanDisk', '0x000090': 'SK Hynix', '0x000070': 'Kingston', '0x0000fe': 'Micron', '0x000088': 'Foresee' };
+
+// Reads one sysfs attribute of a block device's controller, trimmed; '' when absent.
+function attribute(name, file) {
+	return trim(readfile(`/sys/class/block/${name}/${file}`) ?? '');
+}
+
+// The wear band of an eMMC life-time estimate: 0x01 means 0-10 % of the life used, 0x0b more than 100 %.
+function wearBand(value) {
+	if (!match(value ?? '', /^0x[0-9a-f]+$/))
+		return null;
+	let band = hex(value);
+	return band >= 1 && band <= 11 ? { from: (band - 1) * 10, to: band > 10 ? null : band * 10 } : null;
+}
+
+// Physical disks (eMMC, NVMe, SATA/USB) with the identity, wear, traffic and partition table of each. Everything
+// is optional: a field is omitted when the kernel does not expose it for that device.
+function disks(block) {
+	let list = [];
+	for (let name in sort(keys(block))) {
+		if (!match(name, /^(mmcblk[0-9]+|nvme[0-9]+n[0-9]+|sd[a-z]+)$/) || !(block[name].size > 0))
+			continue;
+		let disk = { name, kind: block[name].kind == 'MMC' ? 'eMMC' : match(name, /^nvme/) ? 'NVMe' : block[name].removable ? 'USB / removable' : 'SATA / SCSI',
+			model: block[name].model, size: block[name].size, readonly: attribute(name, 'ro') == '1',
+			rotational: attribute(name, 'queue/rotational') == '1' };
+		let dev = 'device/';
+		let vendor = lc(attribute(name, dev + 'manfid'));
+		if (vendor)
+			disk.vendor = MMC_VENDORS[vendor] ?? vendor;
+		let files = { date: 'date', firmware: 'fwrev', revision: 'rev', erase: 'preferred_erase_size' };
+		for (let key, file in files)
+			if (attribute(name, dev + file) != '')
+				disk[key] = attribute(name, dev + file);
+		let life = split(attribute(name, dev + 'life_time'), ' ');
+		if (length(life) == 2) {
+			disk.wear = { slc: wearBand(life[0]), mlc: wearBand(life[1]) };
+			disk.wear.worst = (disk.wear.slc?.to ?? 101) > (disk.wear.mlc?.to ?? 101) ? disk.wear.slc : disk.wear.mlc;
+		}
+		let eol = attribute(name, dev + 'pre_eol_info');
+		if (eol != '')
+			disk.eol = { '0x01': 'normal', '0x02': 'warning', '0x03': 'urgent' }[eol] ?? eol;
+		let stat = split(trim(attribute(name, 'stat')), /[ ]+/);
+		if (length(stat) >= 7) {
+			disk.read = +stat[2] * 512;
+			disk.written = +stat[6] * 512;
+		}
+		disk.partitions = [];
+		for (let part in sort(keys(block)))
+			if (index(part, name) == 0 && part != name && match(substr(part, length(name)), /^p?[0-9]+$/)) {
+				let uevent = readfile(`/sys/class/block/${part}/uevent`) ?? '';
+				let label = match(uevent, /PARTNAME=([^\n]*)/);
+				push(disk.partitions, { name: part, label: label ? label[1] : '', size: block[part].size });
+			}
+		push(list, disk);
+	}
+	return list;
+}
+
+function storage() {
+	let mounts = [];
+	let result = command_result("df -kP 2>/dev/null | awk 'NR > 1 { print $1 \"\\t\" $2 \"\\t\" $3 \"\\t\" $4 \"\\t\" $5 \"\\t\" $6 }'",
+		{ timeout: 5, max_output: 65536 });
+	if (!result.ok)
+		return { ok: false, filesystems: [] };
+
+	let byMount = {};
+	for (let line in split(trim(result.output ?? ''), '\n')) {
+		let fields = split(line, '\t');
+		if (length(fields) < 6)
+			continue;
+		let mount = fields[5];
+		byMount[mount] = {
+			device: fields[0], mount,
+			total: +fields[1] * 1024, used: +fields[2] * 1024, available: +fields[3] * 1024,
+			percent: +(replace(fields[4], '%', '')) || 0,
+		};
+	}
+	for (let line in split(readfile('/proc/mounts') ?? '', '\n')) {
+		let fields = split(line, /[ ]+/);
+		if (length(fields) < 4 || !byMount[fields[1]])
+			continue;
+		byMount[fields[1]].fstype = fields[2];
+		byMount[fields[1]].readonly = index(split(fields[3], ','), 'ro') >= 0;
+	}
+	let block = {};
+	for (let name in (lsdir('/sys/class/block') ?? [])) {
+		let model = trim(readfile(`/sys/class/block/${name}/device/name`) ?? '');
+		let kind = trim(readfile(`/sys/class/block/${name}/device/type`) ?? '');
+		let backing = trim(readfile(`/sys/class/block/${name}/loop/backing_file`) ?? '');
+		let removable = trim(readfile(`/sys/class/block/${name}/removable`) ?? '') == '1';
+		let size = +(trim(readfile(`/sys/class/block/${name}/size`) ?? '0')) * 512;
+		block[name] = { name, model, kind, backing, removable, size };
+	}
+	let backingHardware = (device) => {
+		if (device == '/dev/root')
+			return { kind: block.mmcblk0?.kind == 'MMC' ? 'eMMC firmware' : 'Firmware storage', model: block.mmcblk0?.model ?? 'root device' };
+		if (match(device, /^\/dev\/loop/)) {
+			let name = replace(device, /^\/dev\//, '');
+			let backing = block[name]?.backing ?? '';
+			if (match(backing, /^\/?mmcblk/))
+				return { kind: 'eMMC', model: block.mmcblk0?.model ?? 'mmcblk0', partition: backing };
+			if (match(backing, /^\/?nvme/))
+				return { kind: 'NVMe', model: backing };
+			if (match(backing, /^\/?sd/))
+				return { kind: 'USB / disk', model: backing };
+			return backing ? { kind: 'Loop', model: backing } : { kind: 'Loop device', model: name };
+		}
+		let name = replace(device, /^\/dev\//, '');
+		let parent = replace(name, /p?[0-9]+$/, '');
+		let disk = block[parent] ?? block[name];
+		if (match(name, /^mmcblk/))
+			return { kind: disk?.kind == 'MMC' ? 'eMMC' : 'MMC', model: disk?.model ?? parent };
+		if (match(name, /^nvme/))
+			return { kind: 'NVMe', model: disk?.model ?? parent };
+		if (match(name, /^sd/))
+			return { kind: disk?.removable ? 'USB / removable' : 'SATA / SCSI', model: parent };
+		return { kind: 'Block storage', model: device };
+	};
+	for (let mount, item in byMount)
+		if (mount != '/dev' && mount != '/tmp/.ujail' && !match(mount, /^\/sys|^\/proc|^\/dev\//)) {
+			let hardware = null;
+			if (item.fstype == 'tmpfs')
+				hardware = { kind: 'Volatile RAM', model: 'System memory' };
+			else if (item.fstype == 'overlay')
+				hardware = backingHardware('/dev/loop0');
+			else
+				hardware = backingHardware(item.device);
+			item.hardware = hardware;
+			item.deviceSize = item.fstype == 'overlay'
+				? block.mmcblk0?.size ?? block.loop0?.size ?? 0
+				: item.device == '/dev/root' ? block.mmcblk0?.size ?? 0
+				: block[replace(item.device, /^\/dev\//, '')]?.size ?? 0;
+			push(mounts, item);
+		}
+	return { ok: true, disks: disks(block), filesystems: sort(mounts, (a, b) => {
+		let ar = a.mount == '/' ? 0 : a.mount == '/overlay' ? 1 : a.mount == '/tmp' ? 2 : 3;
+		let br = b.mount == '/' ? 0 : b.mount == '/overlay' ? 1 : b.mount == '/tmp' ? 2 : 3;
+		return ar - br || (a.mount == b.mount ? 0 : a.mount < b.mount ? -1 : 1);
+	}) };
+}
+
+
+
 const BACKUP_ROOT = '/tmp/flab-backup';
 const BACKUP_ID = /^[0-9a-f]{12}$/;
 const BACKUP_CHUNK = 32768;
@@ -315,6 +460,11 @@ return deferred({
 		ntp_sync: {
 			call: function() {
 				return ntp_sync();
+			},
+		},
+		storage: {
+			call: function() {
+				return storage();
 			},
 		},
 		backup_create: {

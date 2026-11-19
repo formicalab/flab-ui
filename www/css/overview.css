@@ -1,5 +1,70 @@
 /* Overview page styling (temperature sensors, CPU load). Loaded on demand by core/app.js. */
 
+.ov-network-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(27rem, 1.1fr); gap: 1.25rem; }
+.ov-network .ov-prefix { border-left: 1px solid var(--fl-stroke); padding-left: 1.5rem; }
+.ov-section-head { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+.ov-section-head h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+.ov-section-head .fl-badge { margin-left: auto; }
+.ov-internet, .ov-prefix { min-width: 0; }
+.ov-internet .card-header, .ov-prefix .card-header { justify-content: flex-start; }
+.ov-internet > div:last-child { display: grid; grid-template-columns: minmax(9rem, .45fr) minmax(31rem, 1.8fr); gap: .75rem; align-items: center; }
+.ov-internet-main { display: flex; align-items: center; gap: .9rem; }
+.ov-globe { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 50%; background: var(--fl-ok-bg); color: var(--fl-ok-fg); flex: none; }
+.ov-globe svg { width: 1.65rem; height: 1.65rem; }
+.ov-internet-main.offline .ov-globe { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
+.ov-internet-title { font-size: 1.25rem; font-weight: 600; line-height: 1.2; }
+.ov-protocols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.ov-protocol { min-width: 0; padding: .75rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface-hover); }
+.ov-protocol-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .4rem; }
+.ov-address { font-size: .85rem; white-space: nowrap; overflow-wrap: normal; }
+.ov-internet-foot { grid-column: 1 / -1; display: grid; gap: .2rem; padding-top: .55rem; border-top: 1px solid var(--fl-stroke); overflow-wrap: anywhere; }
+.ov-dns-row { display: grid; grid-template-columns: 14px 5.5rem minmax(0, 1fr); align-items: baseline; gap: .4rem; }
+.ov-dns-row b { color: var(--fl-text); font-weight: 600; }
+.ov-dns-row .mono { overflow-wrap: anywhere; }
+.ov-dns-icon-spacer { width: 14px; flex: none; }
+.ov-prefix-value { font-size: 1.2rem; font-weight: 600; overflow-wrap: anywhere; }
+.ov-prefix-provider { margin-bottom: .75rem; }
+.ov-assignments { display: grid; gap: .45rem; padding-top: .55rem; border-top: 1px solid var(--fl-stroke); }
+.ov-assignment-label { font-weight: 600; }
+.ov-assignment { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: .75rem; align-items: center; }
+.ov-assignment .mono { overflow-wrap: anywhere; }
+.ov-prefix-empty { display: flex; align-items: center; gap: .8rem; min-height: 6rem; color: var(--fl-muted); }
+.ov-storage-body { display: grid; gap: 1rem; }
+.ov-storage { display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); gap: .75rem; }
+.ov-disk { display: grid; gap: .75rem; padding: .75rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface-hover); }
+.ov-disk-head { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.ov-disk-head > b { font-size: 1rem; }
+.ov-disk-dev { margin-left: auto; }
+.ov-disk-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: .6rem; }
+.ov-disk-fact { padding: .4rem .6rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface); }
+.ov-parts { align-items: center; }
+.ov-fs { display: grid; gap: .55rem; align-content: start; }
+.ov-fs-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.ov-fs-mount { font-size: 1rem; font-weight: 600; overflow-wrap: anywhere; }
+.ov-fs-head > span { flex: none; white-space: nowrap; }
+.ov-fs .progress { height: 8px; border-radius: 4px; }
+.ov-fs-meta { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.ov-fs-meta .mono { overflow-wrap: anywhere; }
+
+/* Hero card: device identity on top, a strip of vital KPIs below */
+.ov-hero { padding: 1.1rem 1.25rem; display: grid; gap: 1.1rem; background: linear-gradient(135deg, var(--fl-surface) 55%, var(--fl-surface-hover)); }
+.ov-hero-id { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.ov-hero-logo { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 12px; background: var(--fl-info-bg); color: var(--fl-brand); flex: none; }
+.ov-hero-logo svg { width: 1.65rem; height: 1.65rem; }
+.ov-hero-name { min-width: 0; margin-right: auto; }
+.ov-hero-name h2 { margin: 0; font-size: 1.25rem; font-weight: 600; line-height: 1.2; }
+.ov-hero-facts { display: flex; flex-wrap: wrap; gap: .6rem; }
+.ov-fact { padding: .4rem .75rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface); }
+.ov-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; padding-top: 1rem; border-top: 1px solid var(--fl-stroke); }
+.ov-kpi { display: flex; align-items: flex-start; gap: .75rem; min-width: 0; }
+.ov-kpi-icon { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 8px; background: var(--fl-neutral-bg); color: var(--fl-brand); flex: none; }
+.ov-kpi > div:last-child { min-width: 0; flex: 1; display: grid; gap: .15rem; }
+.ov-kpi-value { font-size: 1.5rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+
+/* One data font everywhere on this page: monospaced, same size */
+.ov-hero .mono, .ov-network .mono, .ov-storage-body .mono { font-size: .85rem; }
+.ov-fs .ov-fs-mount { font-size: 1rem; }
+
 /* ── Temperature sensors: one tile per sensor with a temperature, gauge and thresholds ── */
 .sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
 .sensor { display: grid; gap: .45rem; padding: .9rem 1rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }
@@ -59,7 +124,20 @@
 .cpu-keys .key.busy { background: var(--fl-brand); }
 .cpu-keys .key.irq { background: var(--fl-warn-fg); }
 
+/* Below a wide desktop the Network card stacks its two halves */
+@media (max-width: 1499.98px) {
+  .ov-network-grid { grid-template-columns: 1fr; }
+  .ov-network .ov-prefix { border-left: 0; border-top: 1px solid var(--fl-stroke); padding: 1.25rem 0 0; }
+  .ov-address { white-space: normal; overflow-wrap: anywhere; }
+}
+
 /* Narrow screens: single-column CPU card */
 @media (max-width: 991.98px) {
   .cpu-grid { grid-template-columns: 1fr; }
+  .ov-internet > div:last-child { grid-template-columns: 1fr; }
+  .ov-internet-foot { grid-column: auto; }
+}
+
+@media (max-width: 575.98px) {
+  .ov-protocols { grid-template-columns: 1fr; }
 }

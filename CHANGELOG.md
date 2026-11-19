@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Overview
+
+- Replace the sparse tile-only Overview with a hero card (identity, uptime, load, memory, free storage, CPU temperature), one
+  Network card (WAN connectivity with IPv4/IPv6 addresses, gateways and DNS, plus the delegated IPv6 prefix and
+  per-interface assignments) and a full-width Storage card listing every mount point with its backing hardware
+  (e.g. eMMC model and partition), filesystem, device and usage. Redundant tiles and the system table are gone.
+- Add the `flab.system storage` call (base ACL) behind the Storage card. It also reports the physical disks (eMMC,
+  NVMe, SATA/USB): vendor, model, firmware, wear estimate, traffic since boot and partitions.
+
 ### Configuration backup
 
 - Add configuration backup download, archive upload validation and explicit restore-and-reboot to System settings.

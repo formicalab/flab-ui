@@ -74,8 +74,7 @@ export function showLogin(onSuccess, message) {
   const hero = h('div', { className: 'login-hero' },
     svgBox('login-logo', LOGO),
     h('h2', {}, 'OpenWrt'),
-    h('div', { className: 'login-host' }, icon('hdd-stack', 14), location.hostname || 'this router'),
-    h('p', {}, 'Live status of every layer, from the ports up.'));
+    h('div', { className: 'login-host' }, icon('hdd-stack', 14), location.hostname || 'this router'));
 
   byId('app').replaceChildren(h('div', { className: 'login' },
     svgBox('login-motif', MOTIF),
