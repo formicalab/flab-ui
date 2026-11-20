@@ -8,6 +8,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { fmtSpan } from '../../core/format.js';
 import { badge, button, card, mono, muted } from '../../core/ui.js';
+import { openTool, toolboxAvailable } from '../index.js';
 import { HOST_FIELDS } from './schema.js';
 import { clientList, hostNorm, newHost, problems, staticFrom } from './model.js';
 import { inputBox, rowClass } from './rows.js';
@@ -95,10 +96,23 @@ function states(c) {
     row?.removed ? badge('to be removed', 'danger') : null);
 }
 
-// The buttons of a row: edit and remove (or undo) for a static lease, Make static for a dynamic client.
+// The Toolbox buttons of a client (the Toolbox is an optional package): Ping when it holds an IPv4 address, and Wake for a saved
+// static lease with a MAC address that holds no lease now.
+function toolButtons(c) {
+  if (!toolboxAvailable()) return [];
+  const address = c.v4[0]?.address;
+  const mac = c.row && c.row.section != null && !c.row.removed && !c.v4.length && !c.v6.length ? c.macs[0] : null;
+  return [
+    address ? button('', 'activity', () => openTool('ping', address), 'btn-outline-secondary', { title: `Ping ${address} in the Toolbox`, ariaLabel: `Ping ${address}` }) : null,
+    mac ? button('', 'lightning-charge-fill', () => openTool('wol', mac), 'btn-outline-secondary', { title: 'Send a Wake-on-LAN packet to this client in the Toolbox', ariaLabel: 'Wake this client' }) : null,
+  ];
+}
+
+// The buttons of a row: the Toolbox ones, then edit and remove (or undo) for a static lease, Make static for a dynamic client.
 function actions(ctx, c, open, make) {
   const row = c.row;
-  if (!row) return ctx.canEdit ? button('Make static', 'pin-angle-fill', () => make(c), 'btn-outline-secondary', { title: 'Keep this client\'s address and name with a static lease' }) : '';
+  const tools = toolButtons(c);
+  if (!row) return h('span', { className: 'dhcp-badges dhcp-actions' }, ...tools, ctx.canEdit ? button('Make static', 'pin-angle-fill', () => make(c), 'btn-outline-secondary', { title: 'Keep this client\'s address and name with a static lease' }) : null);
   if (row.removed) return button('Undo', 'arrow-counterclockwise', () => { row.removed = false; ctx.redraw(); });
   const toggle = row.section == null ? null : button('', open ? 'chevron-up' : 'pencil', () => {
     if (editing.has(row.key)) editing.delete(row.key); else editing.add(row.key);
@@ -110,7 +124,7 @@ function actions(ctx, c, open, make) {
     editing.delete(row.key);
     ctx.redraw();
   }, 'btn-outline-secondary', { title: 'Remove this static lease', ariaLabel: 'Remove this static lease', disabled: !ctx.canEdit });
-  return h('span', { className: 'dhcp-badges' }, toggle, remove);
+  return h('span', { className: 'dhcp-badges dhcp-actions' }, ...tools, toggle, remove);
 }
 
 // The editor under a static lease: a labelled box for every option of the host section.

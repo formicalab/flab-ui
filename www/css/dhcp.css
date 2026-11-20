@@ -3,6 +3,7 @@
 
 /* Badges next to each other in a lease row. */
 .dhcp-badges { display: inline-flex; gap: .35rem; flex-wrap: wrap; }
+.dhcp-actions { justify-content: flex-end; flex-wrap: nowrap; }
 
 /* The prefix table and the clients table: tighter cells, and text columns may wrap, so the tables fit the page instead of
    scrolling sideways. Addresses stay whole. */

@@ -1,4 +1,4 @@
-// The Toolbox tools: a connectivity check, ping, traceroute, MTR, DNS lookups (one server, or several to compare), a DNS
+// The Toolbox tools: a connectivity check, ping, traceroute / MTR (one tab, two methods), DNS lookups (one server, or several to compare), a DNS
 // trace, a certificate check, a packet capture, an iperf3 server and Wake-on-LAN. Each runs on the router with its output
 // streaming in as it is produced, shown as statistics, a hop table, the answers, a certificate chain or a checklist (the
 // views of the richer tools are in diagviews.js and the files next to it).
@@ -30,16 +30,23 @@ const READ_EVERY = 500;
 const STATUS_TTL = 60000;
 
 // The tools offered, with their labels: [id, label]. The label is also the heading of the tool's result.
-const TOOLS = [['check', 'Connectivity check'], ['ping', 'Ping'], ['traceroute', 'Traceroute'], ['mtr', 'MTR'], ['dns', 'DNS lookup'], ['trace', 'DNS trace'], ['tls', 'TLS certificate'], ['capture', 'Packet capture'], ['iperf', 'iperf3 server'], ['wol', 'Wake-on-LAN']];
+const TOOLS = [['check', 'Connectivity check'], ['ping', 'Ping'], ['traceroute', 'Traceroute / MTR'], ['dns', 'DNS'], ['tls', 'TLS certificate'], ['capture', 'Packet capture'], ['iperf', 'iperf3 server'], ['wol', 'Wake-on-LAN']];
 
-// The heading of a result for each job (a DNS lookup of two or more servers runs as the plugin's `compare` tool).
-const TITLES = { ...Object.fromEntries(TOOLS), compare: 'DNS lookup' };
+// The heading of a result for each job. The DNS tab runs three jobs: a lookup of one server (`dns`), of several (the plugin's`n// `compare` tool) and a trace from the root servers (`trace`, chosen with the tab's Method).
+const TITLES = { ...Object.fromEntries(TOOLS), traceroute: 'Traceroute', mtr: 'MTR', dns: 'DNS lookup', compare: 'DNS lookup', trace: 'DNS trace' };
+
+// The tab that holds a tool that has none of its own: the Traceroute / MTR tab runs either, the DNS tab a lookup or a trace.
+const TAB_OF = { mtr: 'traceroute', trace: 'dns' };
 
 // Whether the router has what `tool` needs (`status` is the plugin's answer).
 const available = (status, tool) => {
   const t = status.tools ?? {};
-  return { ping: t.ping, traceroute: t.traceroute, mtr: t.mtr, dns: Boolean(status.dns_tool), trace: t.kdig, check: t.ping && Boolean(status.dns_tool), tls: t.openssl, capture: Boolean(status.capture), iperf: Boolean(status.iperf), wol: Boolean(status.wol) }[tool];
+  return { ping: t.ping, traceroute: t.traceroute || t.mtr, mtr: t.mtr, dns: Boolean(status.dns_tool), trace: t.kdig, check: t.ping && Boolean(status.dns_tool), tls: t.openssl, capture: Boolean(status.capture), iperf: Boolean(status.iperf), wol: Boolean(status.wol) }[tool];
 };
+
+// The tools whose host the page remembers and suggests, and how many recent hosts it keeps.
+const HOST_TOOLS = ['check', 'ping', 'traceroute', 'mtr', 'tls', 'capture'];
+const RECENT_HOSTS = 8;
 
 // The select value of "Another MAC address…" in the Wake-on-LAN host list.
 const WOL_OTHER = '__other';
@@ -48,9 +55,10 @@ let cached = null;
 let cachedAt = 0;
 
 // The state of this tab: the form, the error under it, the current job with its poll timer (and whether a read is under way)
-// and result element, whether a button elsewhere asked for a run (`autorun`), the plugin's last `status`, and whether the
-// result's "Raw output" is open.
-export const newDiag = () => ({ form: blankForm(), formError: null, job: null, timer: null, polling: false, resultEl: null, autorun: false, status: null, rawOpen: false });
+// and result element, whether a button elsewhere asked for a run (`autorun`), the plugin's last `status`, whether the
+// result's "Raw output" is open, what each tool's form and last result looked like when another tool was chosen (`saved`, so a tool
+// comes back as it was left), and the hosts run before (`recent`, newest first).
+export const newDiag = () => ({ form: blankForm(), formError: null, job: null, timer: null, polling: false, resultEl: null, autorun: false, status: null, rawOpen: false, saved: {}, recent: [] });
 
 // Reads what the router can run (the tools, the DNS tool it would use, its interfaces), reusing the last answer for a
 // minute because it does not change while the page is open.
@@ -78,6 +86,7 @@ async function start(state) {
   const req = requestOf(d.form);
   if (req.error) { d.formError = req.error; return state.rerender(); }
   d.formError = null;
+  if (req.args.host && HOST_TOOLS.includes(req.args.tool)) d.recent = [req.args.host, ...d.recent.filter(x => x !== req.args.host)].slice(0, RECENT_HOSTS);
   const job = {
     tool: req.args.tool, host: req.args.tool === 'iperf' || req.args.tool === 'capture' ? '' : req.args.host ?? req.args.mac ?? cached?.check_host ?? 'example.com', id: null, command: '', text: '', size: 0, running: true, exit: null, stopped: false, stopRequested: false, timedOut: false, error: null, limit: null, t0: Date.now(), t1: null,
     name: req.args.sni ?? (isAddress(req.args.host) ? null : req.args.host), target: req.args.port ? `${req.args.host}:${req.args.port}` : req.args.host, total: req.args.servers?.length ?? null,
@@ -194,13 +203,21 @@ function paint(state) {
 
 //#region The form
 
-// A segmented control: options are [value, label]; a click picks one.
+// The tools of each button group of the tool selector, in order; a group with no available tool is left out.
+const GROUPS = [['check', 'ping', 'traceroute'], ['dns', 'tls'], ['capture', 'iperf'], ['wol']];
+
+// The tool selector: groups of tabs (reachability, names and certificates, traffic, Wake-on-LAN). Options are [value, label]; a click picks one.
 function segment(options, value, onpick, disabled) {
-  return h('div', { className: 'btn-group btn-group-sm seg rt-seg', role: 'tablist', ariaLabel: 'Tool' }, options.map(([v, label]) => h('button', {
+  const tab = ([v, label]) => h('button', {
     type: 'button', role: 'tab', ariaSelected: String(v === value), className: `btn btn-outline-secondary seg-tab ${v === value ? 'active' : ''}`, disabled, onclick: () => { if (v !== value) onpick(v); },
-  }, label)));
+  }, label);
+  const groups = GROUPS.map(ids => options.filter(([v]) => ids.includes(v))).filter(g => g.length);
+  return h('div', { className: 'btn-toolbar gap-2 rt-seg', role: 'tablist', ariaLabel: 'Tool' },
+    groups.map(g => h('div', { className: 'btn-group btn-group-sm', role: 'presentation' }, g.map(tab))));
 }
 
+// A collapsed explanation of the tool under the form (the warnings that matter stay visible as notes).
+const about = (...kids) => h('details', { className: 'rt-about' }, h('summary', {}, icon('info-circle'), 'About this tool'), h('div', { className: 'rt-about-body muted' }, ...kids));
 // One labeled input or select of the form (`control` is the element; `title` is the hint shown on hover).
 function field(label, title, control, className = '') {
   return h('label', { className: `rt-field ${className}`, title }, h('span', {}, label), control);
@@ -282,6 +299,41 @@ function wolPicker(state, status, disabled) {
   return [select, f.wolOther ? input : null];
 }
 
+// The host suggestions of a tool, as [value, hint] pairs: the hosts run before, then the names and addresses of the clients the router
+// knows. A capture takes addresses only.
+function hostChoices(d, status, tool) {
+  if (!HOST_TOOLS.includes(tool)) return [];
+  const seen = new Set();
+  const out = [];
+  const add = (value, hint) => { if (value && !seen.has(value)) { seen.add(value); out.push([value, hint]); } };
+  if (tool !== 'capture') for (const x of d.recent) add(x, 'recent');
+  for (const x of status.hosts ?? []) {
+    if (tool !== 'capture') add(x.name, x.ip ?? '');
+    add(x.ip, x.name ?? '');
+  }
+  return out.slice(0, 60);
+}
+
+// Chooses the tool  in the tool selector: the form and result of the tool being left are kept, and the ones of  come back as they
+// were left (a tool seen for the first time starts from the current form, with an empty result).
+function pickTool(state, tab, v) {
+  const d = state.diag;
+  const f = d.form;
+  d.saved[tab] = { form: { ...f, servers: [...f.servers] }, job: d.job };
+  const kept = d.saved[v];
+  if (kept) {
+    Object.assign(f, kept.form, { servers: [...kept.form.servers] });
+    d.job = kept.job;
+  } else {
+    f.tool = v === 'traceroute' && d.status?.tools?.mtr ? 'mtr' : v;
+    d.job = null;
+    if (v === 'wol' && !isMac(f.host)) f.host = '';
+    if (v === 'capture' && !isAddress(f.host)) f.host = '';
+  }
+  d.formError = null;
+  state.rerender();
+}
+
 // The form card: the tool, the host and the options that tool has, and Run / Stop.
 function formCard(state, status) {
   const d = state.diag;
@@ -289,11 +341,25 @@ function formCard(state, status) {
   const running = Boolean(d.job?.running);
   const allowed = can('flab.diag', f.tool === 'wol' ? 'wake' : 'start');
   const tools = TOOLS.filter(([t]) => available(status, t));
-  if (!tools.some(([t]) => t === f.tool) && tools.length) f.tool = tools[0][0];
+  if (f.tool === 'trace' && !available(status, 'trace')) f.tool = 'dns';
+  if (f.tool === 'mtr' && !status.tools?.mtr) f.tool = 'traceroute';
+  if (f.tool === 'traceroute' && !status.tools?.traceroute && status.tools?.mtr) f.tool = 'mtr';
+  const tab = TAB_OF[f.tool] ?? f.tool;
+  if (!tools.some(([t]) => t === tab) && tools.length) f.tool = tools[0][0];
   // A capture starts on the LAN bridge when the router has one, otherwise on every interface.
   if (f.tool === 'capture' && !f.capIface) f.capIface = (status.devices ?? []).includes('br-lan') ? 'br-lan' : 'any';
   // The address family field, shared by the tools that resolve names.
   const family = () => field('Address family', 'Force IPv4 or IPv6 name resolution', selectInput(state, 'family', [['', 'automatic'], ['4', 'IPv4'], ['6', 'IPv6']], running));
+  // The DNS tab's method: ask servers (lookup and comparison), or follow the delegations from the root servers (trace, which needs kdig).
+  const method = () => available(status, 'trace') ? field('Method', 'Ask one or more servers for the answer, or trace it from the root servers down to the zone\'s own server, step by step', h('select', {
+    className: 'form-select form-select-sm', disabled: running,
+    onchange: e => { f.tool = e.target.value; if (f.tool === 'trace' && f.type === 'PTR') f.type = 'A'; d.formError = null; state.rerender(); },
+  }, [['dns', 'ask servers'], ['trace', 'trace from the root']].map(([value, label]) => h('option', { value, selected: f.tool === value }, label)))) : null;
+  // The Traceroute / MTR tab's method: MTR (repeated rounds, with loss and delay per hop) or a single traceroute pass, when the router has both.
+  const routeMethod = () => status.tools?.mtr && status.tools?.traceroute ? field('Method', 'MTR probes every hop for several rounds and shows its loss and delay, which tells a router that limits its replies from a real fault; traceroute makes one pass and lists every router of a load-balanced hop', h('select', {
+    className: 'form-select form-select-sm', disabled: running,
+    onchange: e => { f.tool = e.target.value; d.formError = null; state.rerender(); },
+  }, [['mtr', 'MTR (rounds)'], ['traceroute', 'Traceroute (one pass)']].map(([value, label]) => h('option', { value, selected: f.tool === value }, label)))) : null;
   // The optional source field (the interface the probes leave from), shared by ping and traceroute.
   const source = () => field('From', 'The interface the probes leave from; automatic lets the routing table decide', sourceInput(state, status, running));
 
@@ -302,15 +368,17 @@ function formCard(state, status) {
     field('Size (bytes)', 'The payload size (0 to 1400)', textInput(state, 'size', { type: 'number', disabled: running })),
     family(), source(),
   ] : f.tool === 'traceroute' ? [
+    routeMethod(),
     field('Max hops', 'The most routers to trace (1 to 30)', textInput(state, 'hops', { type: 'number', disabled: running })),
     field('Probes per hop', 'How many probes each router gets (1 to 3)', textInput(state, 'probes', { type: 'number', disabled: running })),
-    field('Method', 'UDP probes are the traditional kind; ICMP passes some firewalls that block UDP', selectInput(state, 'method', [['udp', 'UDP'], ['icmp', 'ICMP echo']], running)),
+    field('Probe type', 'UDP probes are the traditional kind; ICMP passes some firewalls that block UDP', selectInput(state, 'method', [['udp', 'UDP'], ['icmp', 'ICMP echo']], running)),
     field('Host names', 'Look up the name of every router that answers. It shows who runs each hop, but is slower when the resolver has no reverse records', selectInput(state, 'resolve', [['', 'addresses only'], ['1', 'look up names']], running)),
     status.asn ? field('Networks (AS)', 'Look up which network (autonomous system) and organization each router that answered belongs to, from Team Cymru\'s DNS service, asked through the router\'s resolver', selectInput(state, 'asn', [['1', 'look up'], ['', 'off']], running)) : null,
     family(), source(),
   ] : f.tool === 'mtr' ? [
+    routeMethod(),
     field('Rounds', `How many probes each hop gets, one a second (${status.mtr_cycles?.[0] ?? 3} to ${status.mtr_cycles?.[1] ?? 60})`, textInput(state, 'cycles', { type: 'number', disabled: running })),
-    field('Method', 'ICMP echo is what mtr sends by default; UDP passes some firewalls that block ICMP; TCP SYN passes a firewall that only lets web traffic through (to the port you give)', selectInput(state, 'mtrMethod', [['icmp', 'ICMP echo'], ['udp', 'UDP'], ['tcp', 'TCP SYN']], running)),
+    field('Probe type', 'ICMP echo is what mtr sends by default; UDP passes some firewalls that block ICMP; TCP SYN passes a firewall that only lets web traffic through (to the port you give)', selectInput(state, 'mtrMethod', [['icmp', 'ICMP echo'], ['udp', 'UDP'], ['tcp', 'TCP SYN']], running)),
     f.mtrMethod !== 'icmp' ? field('Port', f.mtrMethod === 'tcp' ? 'The TCP port to connect to (80 when empty)' : 'The UDP destination port; empty lets mtr pick one per probe', textInput(state, 'mtrPort', { type: 'number', placeholder: f.mtrMethod === 'tcp' ? '80' : 'automatic', disabled: running })) : null,
     f.mtrMethod !== 'tcp' ? field('Size (bytes)', 'The packet size with its headers (28 to 1400); empty uses the 64 bytes mtr sends by default', textInput(state, 'mtrSize', { type: 'number', placeholder: '64', disabled: running })) : null,
     field('Host names', 'Look up the name of every router that answers. It shows who runs each hop, but is slower when the resolver has no reverse records', selectInput(state, 'resolve', [['', 'addresses only'], ['1', 'look up names']], running)),
@@ -319,8 +387,10 @@ function formCard(state, status) {
   ] : f.tool === 'check' ? [
     field('Port', 'The port of the last step. 443 (the default) is a TLS handshake; another port is a TCP connection, which is also judged as TLS when the service speaks it', textInput(state, 'checkPort', { type: 'number', placeholder: '443', disabled: running })),
   ] : f.tool === 'dns' ? [
+    method(),
     field('Record type', 'The kind of DNS record to ask for', selectInput(state, 'type', DNS_TYPES.map(t => [t, t]), running)),
   ] : f.tool === 'trace' ? [
+    method(),
     field('Record type', 'The kind of DNS record to look up', selectInput(state, 'type', DNS_TYPES.filter(t => t !== 'PTR').map(t => [t, t]), running)),
     field('Address family', 'Ask the servers over IPv4 or IPv6', selectInput(state, 'family', [['', 'IPv4'], ['6', 'IPv6']], running)),
   ] : f.tool === 'tls' ? [
@@ -347,12 +417,16 @@ function formCard(state, status) {
   const hostLabel = f.tool === 'check' ? 'Host to test (optional)' : f.tool === 'capture' ? 'Host to filter on (optional)' : f.tool === 'dns' ? 'Name to look up' : f.tool === 'trace' ? 'Name to trace' : f.tool === 'wol' ? 'Host to wake' : 'Host or address';
   const hostHint = f.tool === 'check' ? `The name used for the DNS and TLS steps (${status.check_host ?? 'example.com'} by default)` : f.tool === 'capture' ? 'Only packets to or from this IP address (an address, not a name)' : f.tool === 'dns' ? 'The name every server is asked about (an address for a PTR lookup)' : f.tool === 'trace' ? 'The name whose path from the root servers is traced' : f.tool === 'wol' ? 'A host the router knows: its DHCP reservations first, then the other hosts it has seen. Or enter another MAC address' : 'The name or address to probe';
   const hostHolder = f.tool === 'check' ? (status.check_host ?? 'example.com') : f.tool === 'capture' ? 'e.g. 192.168.1.50' : f.tool === 'wol' ? 'aa:bb:cc:dd:ee:ff' : f.tool === 'trace' ? 'e.g. www.example.com' : 'e.g. example.com or 1.1.1.1';
-  const hostControl = f.tool === 'wol' ? wolPicker(state, status, running) : textInput(state, 'host', { placeholder: hostHolder, mono: true, disabled: running });
+  const choices = hostChoices(d, status, f.tool);
+  const hostInput = textInput(state, 'host', { placeholder: hostHolder, mono: true, disabled: running });
+  if (choices.length) hostInput.setAttribute('list', 'rt-host-list');
+  const hostControl = f.tool === 'wol' ? wolPicker(state, status, running)
+    : choices.length ? [hostInput, h('datalist', { id: 'rt-host-list' }, choices.map(([value, label]) => h('option', { value, label })))] : hostInput;
   const serving = f.tool === 'iperf';
   const capturing = f.tool === 'capture';
   return card([icon('activity'), 'Diagnostics', h('span', { className: 'sub' }, 'Run a tool on the router and watch its output as it arrives')],
     h('div', { className: 'card-body rt-diag' },
-      segment(tools, f.tool, v => { f.tool = v; if (v === 'wol' && !isMac(f.host)) f.host = ''; if (v === 'capture' && !isAddress(f.host)) f.host = ''; d.formError = null; state.rerender(); }, running),
+      segment(tools, tab, v => pickTool(state, tab, v), running),
       h('div', { className: 'rt-diagform' },
         serving ? null : field(hostLabel, hostHint, hostControl, 'rt-host'),
         ...options,
@@ -364,14 +438,17 @@ function formCard(state, status) {
       !allowed ? banner('This login is not allowed to run diagnostics.') : null,
       weak ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `This router only has busybox nslookup, which cannot show ${f.type} records in full. Installing bind-dig, knot-dig or ldns-drill gives complete answers.`) : null,
       ['dns', 'check'].includes(f.tool) && status.dns_tool && status.dns_tool !== 'nslookup' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Using ${status.dns_tool}.`) : null,
-      f.tool === 'check' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Walks down the stack: default route, next hop, internet, DNS (through the router and a public resolver), IPv6 and a connection to the host (a secure one on port 443; with another port, a plain TCP connection unless the service speaks TLS). About 15 seconds.') : null,
-      f.tool === 'trace' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Asks a root server, then the servers it points to, down to the one that answers: the way a resolver finds a name. It shows who answered, how long each step took and the DNSSEC records on the way, and ends with what the router\'s own resolver says.') : null,
-      f.tool === 'traceroute' && status.tools?.mtr ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'MTR sends the same probes for several rounds and shows the loss and delay of every hop, which tells a router that merely limits its replies from a real fault.',
-        button('Use MTR', null, () => { f.tool = 'mtr'; d.formError = null; state.rerender(); }, 'btn-link', { disabled: running })) : null,
-      f.tool === 'mtr' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Probes every hop once a second for the chosen number of rounds and keeps its loss and delay up to date, like ping and traceroute in one. Loss that does not reach the last hop is a router limiting its own replies, not a fault. It follows one path per run, so it does not show the alternatives of a load-balanced hop; Traceroute does.') : null,
-      serving ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Starts an iperf3 server on the router that stops by itself. From a computer in the network run the command shown once it listens; the test measures the path to the router (and the router\'s CPU), not to the internet.') : null,
-      capturing ? h('div', { className: 'rt-note muted' }, icon('info-circle'), 'Records the packets that cross the chosen interface with tcpdump and lists them as they arrive. It sees everyone\'s traffic, including what is not encrypted, so keep the filter narrow and the capture short. The capture stops by itself at the time or the packet count, is kept in the router\'s memory (the newest only, for ten minutes after it ends) and can be downloaded as a .pcap file for Wireshark. Traffic between two devices on the same switch port does not pass the router and is not seen; the page\'s own connection to the router is, when you capture its address.') : null,
-      f.tool === 'wol' ? h('div', { className: 'rt-note muted' }, icon('info-circle'), `Sends one magic packet${status.wol === 'etherwake' ? ' as an Ethernet frame (etherwake)' : ' as a UDP broadcast to port 9 (socat)'}. The host has to be switched off but connected, with Wake-on-LAN enabled in its firmware and operating system, and on the same network as the chosen interface.`) : null));
+      f.tool === 'ping' ? about('Sends echo requests to a host and shows how many were answered, the fastest, average and slowest round trip and the jitter, updating as it runs, with a chart of every ping. A gap in the sequence numbers is a lost packet. Use it to see whether a host is reachable and how fast; the interface in "From" chooses where the packets leave, and the address family forces IPv4 or IPv6.') : null,
+      f.tool === 'traceroute' ? about('Lists the routers a packet crosses on its way to a host, one row per hop as it arrives, with the round-trip time of each probe (* is a lost probe) and the routers that answered. A hop that says "no reply" is a router that does not answer such probes, not necessarily a fault. "Networks (AS)" adds which network and organization each public router belongs to.') : null,
+      f.tool === 'dns' ? about('Asks the DNS servers you tick for a record of a name (an address for a PTR lookup) and shows how it went: the answers, the server that replied and its own output. Tick two or more servers to compare them, with a chart of their response times and whether each validated the answer with DNSSEC. Different answers are normal for names served by a CDN. The Method "trace from the root" follows the delegations instead.') : null,
+      f.tool === 'tls' ? about('Connects to a host and port and shows the TLS session (protocol, cipher, key exchange) and the certificates exactly as the server sent them, with a picture of the chain and when each certificate expires. Use the server name when it differs from the host, and STARTTLS for mail and FTP servers that begin in plain text.') : null,
+      f.tool === 'check' ? about('Walks down the stack: default route, next hop, internet, DNS (through the router and a public resolver), IPv6 and a connection to the host (a secure one on port 443; with another port, a plain TCP connection unless the service speaks TLS). About 15 seconds.') : null,
+      f.tool === 'trace' ? about('Asks a root server, then the servers it points to, down to the one that answers: the way a resolver finds a name. It shows who answered, how long each step took and the DNSSEC records on the way, and ends with what the router\'s own resolver says.') : null,
+      f.tool === 'mtr' ? about('Probes every hop once a second for the chosen number of rounds and keeps its loss and delay up to date, like ping and traceroute in one. Loss that does not reach the last hop is a router limiting its own replies, not a fault. It follows one path per run, so it does not show the alternatives of a load-balanced hop; Traceroute does.') : null,
+      serving ? about('Starts an iperf3 server on the router that stops by itself. From a computer in the network run the command shown once it listens; the test measures the path to the router (and the router\'s CPU), not to the internet.') : null,
+      capturing ? h('div', { className: 'rt-note muted' }, icon('exclamation-triangle'), 'A capture sees everyone\'s traffic, including what is not encrypted, so keep the filter narrow and the capture short.') : null,
+      capturing ? about('Records the packets that cross the chosen interface with tcpdump and lists them as they arrive. The capture stops by itself at the time or the packet count, is kept in the router\'s memory (the newest only, for ten minutes after it ends) and can be downloaded as a .pcap file for Wireshark. Traffic between two devices on the same switch port does not pass the router and is not seen; the page\'s own connection to the router is, when you capture its address.') : null,
+      f.tool === 'wol' ? about(`Sends one magic packet${status.wol === 'etherwake' ? ' as an Ethernet frame (etherwake)' : ' as a UDP broadcast to port 9 (socat)'}. The host has to be switched off but connected, with Wake-on-LAN enabled in its firmware and operating system, and on the same network as the chosen interface.`) : null));
 }
 
 //#endregion

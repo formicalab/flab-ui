@@ -28,11 +28,18 @@
 //   css       stylesheet (or array of stylesheets) loaded the first time the page opens
 
 let pendingTool = null;
+// Whether the Toolbox module is installed (it is an optional package); set when the installed modules are read.
+let toolboxInstalled = false;
+
+// Whether links into the Toolbox can be offered: a page shows its Ping, Traceroute or Wake buttons only when this is true.
+export const toolboxAvailable = () => toolboxInstalled;
 
 // Lightweight deep-link bridge: importing this from another page must not fetch Toolbox's implementation.
 export function openTool(tool, host) {
+  if (!toolboxInstalled) return false;
   pendingTool = { tool, host };
   location.hash = '#toolbox';
+  return true;
 }
 
 // Called by the shell only after the Toolbox import completes and this navigation is still current.
@@ -72,6 +79,7 @@ export function installedPages(manifests = []) {
       });
     }
   }
+  toolboxInstalled = installed.some(p => p.id === 'toolbox');
   return [
     ...basePages.filter(p => p.nav !== 'bottom'),
     ...installed.sort((a, b) => a.order - b.order),

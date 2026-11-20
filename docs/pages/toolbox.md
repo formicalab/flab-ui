@@ -1,13 +1,13 @@
 # Toolbox (route `#toolbox`)
-Diagnostic tools that run on the router and show their output as it arrives: a connectivity check, ping, traceroute, MTR,
-DNS lookups (of one server, or of several to compare), a DNS trace, a TLS certificate check, a packet capture, an iperf3 server and Wake-on-LAN. The form has a tool
+Diagnostic tools that run on the router and show their output as it arrives: a connectivity check, ping, traceroute / MTR (one tab),
+DNS (lookups of one server, or of several to compare, or a trace from the root servers), a TLS certificate check, a packet capture, an iperf3 server and Wake-on-LAN. The form has a tool
 selector, the host, and the options of the tool:
 for ping the count
 (1 to 60), the packet size (0 to 1400), the address family and the interface to send from (a dropdown of the router's
 interfaces, "automatic" by default; the plugin also accepts an address); for traceroute the maximum hops (1 to 30), the probes per hop (1 to 3), UDP or ICMP
-probes, whether to look up host names and networks, family and source; for MTR the rounds (3 to 60), ICMP, UDP or TCP, a port, a
+probes, whether to look up host names and networks, family and source; for MTR (the other method of the same tab, offered when the router has `mtr`) the rounds (3 to 60), ICMP, UDP or TCP, a port, a
 packet size, whether to look up host names and networks, family and source; for
-DNS the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and the servers to ask (the router's resolver by default); for the DNS trace the record type and the address family; for
+DNS the method (ask servers, or trace from the root when the router has `kdig`), the record type (A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA) and the servers to ask (the router's resolver by default); for the trace the record type and the address family; for
 the certificate check the port, a server name and a STARTTLS
 protocol; for the connectivity check the port of its last step; for the packet capture the interface, a protocol, an address, a port, an advanced filter, the duration, the number of packets and how much of each to keep; for the iperf3 server the time to run, the port and the address to listen on. A tool is offered only when the router has what it needs (the certificate check needs `openssl`,
 MTR needs `mtr`, the DNS trace needs `kdig`, the packet capture needs `tcpdump`, the iperf3 server needs `iperf3`, the DNS tools
@@ -48,7 +48,7 @@ again. The form remembers its values while the page is open; Run is disabled for
   addresses of a job; `nc` is needed) and shown as "not announced · NETNAME · country", with the registered range in the
   tooltip; a range RIPE does not manage, or an answer that does not come, leaves "no AS data". The addresses leave the
   router only inside those DNS queries and the whois queries.
-- **MTR:** `mtr --raw` against the host for the chosen rounds (one probe a second per hop). Traceroute offers a "Use MTR" button that keeps the host. Besides the rounds the
+- **MTR:** `mtr --raw` against the host for the chosen rounds (one probe a second per hop). It is the *MTR (rounds)* method of the Traceroute / MTR tab, which opens on it when the router has `mtr` and switches to the single traceroute pass with the Method selector, keeping the host; the selector is not shown when the router has only one of the two. The probe type (ICMP, UDP or TCP for MTR; UDP or ICMP for traceroute) is the separate "Probe type" field. Besides the rounds the
   form has the method (ICMP, UDP or TCP SYN, which gets through a firewall that only lets web traffic in), a port (TCP and
   UDP; empty is 80 for TCP), a packet size (28 to 1400 bytes with the headers, empty is mtr's 64; not for TCP, whose SYN
   packets carry none), "Host names" (off by default; on, mtr resolves each router and the page shows the name above the
@@ -71,7 +71,7 @@ again. The form remembers its values while the page is open; Run is disabled for
   path is fine; shown in green, not as a fault), a destination that never answered, and a jump in delay between two hops. A probe
   still in flight is not counted as lost while the run goes on. mtr follows one path per run, so a hop served by several
   routers shows only one of them (Traceroute lists them all); the `-I` option needs mtr 0.94 or newer.
-- **DNS lookup:** asks the same question of one server or of up to six. The server list offers the router's own resolver
+- **DNS (method *ask servers*, the default):** asks the same question of one server or of up to six. The server list offers the router's own resolver
   (the default), the upstream resolvers the router was given (read from `resolv.conf.auto`, loopback left out), Cloudflare,
   Google and Quad9, and a field for one more of your choice. With **one server** the result shows how it went (the number
   of answers, NXDOMAIN, SERVFAIL, REFUSED, timeout, or no answer), the server that answered, and the tool's own output. The
@@ -83,7 +83,7 @@ again. The form remembers its values while the page is open; Run is disabled for
   time the tool reports and the fastest server. Differing answers are highlighted, with the note that a CDN gives each
   resolver its own, correct set; a server that does not answer shows "No reply". A lookup of one server is sent to the
   plugin as its `dns` tool and one of several as its `compare` tool.
-- **DNS trace:** the way a resolver finds a name, step by step, as a script that needs `kdig`. It asks a root server
+- **DNS (method *trace from the root*):** the way a resolver finds a name, step by step, as a script that needs `kdig`. It asks a root server
   (a, c, f or m), then the servers each answer points to, down to the zone's own server, with `+norecurse +dnssec`, one block
   per step (`step <n> <address> <name> <zone>`), and ends by asking the router's resolver the same question. A name server
   that came without an address in the referral is looked up through the router's resolver first (`lookup` block); an alias

@@ -3,8 +3,16 @@
 
 /* ── The form and the results of ping, traceroute and DNS ── */
 .rt-seg { margin-bottom: 1rem; }
-.rt-diagform { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .75rem 1rem; align-items: end; }
+.rt-diagform { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .75rem 1rem; align-items: start; }
 .rt-diagform .rt-host { grid-column: span 2; }
+/* Every control is as tall as a small Bootstrap one, so the labels above them line up; Run and Clear sit level with the controls. */
+.rt-diagform .form-control, .rt-diagform .form-select { min-height: 2rem; }
+.rt-diagform .rt-actions { align-self: end; }
+/* The collapsed explanation of a tool. */
+.rt-about { margin-top: .9rem; font-size: .8rem; }
+.rt-about > summary { display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; color: var(--fl-muted); user-select: none; }
+.rt-about > summary:hover { color: inherit; }
+.rt-about-body { margin-top: .4rem; max-width: 70rem; }
 .rt-note { display: flex; align-items: center; gap: .5rem; margin-top: .9rem; font-size: .8rem; }
 .rt-error.warn { color: var(--fl-warn-fg); }
 .rt-result-slot { display: grid; gap: 1.25rem; }

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.19 - 2026-11-20
+
+### Toolbox
+
+- The tools are grouped (reachability, names and certificates, traffic, Wake-on-LAN) in a Bootstrap button group, and the
+  page opens on the connectivity check. DNS lookup and DNS trace are one **DNS** tab with a Method selector, and
+  traceroute and MTR are one **Traceroute / MTR** tab; the method selector is hidden when the router has only one of
+  them.
+- Every tool has a collapsed "About this tool" help, the host box suggests recent hosts and the clients the router
+  knows, each tool keeps its form and last result when you switch tabs, and the form labels line up. The page has no
+  Refresh button any more, since it has nothing to refresh.
+- Ping and Traceroute buttons in the Routing lookup and Ping and Wake buttons on DHCP clients open the Toolbox, and are
+  offered only when the optional Toolbox package is installed.
+
+### Interface
+
+- When Refresh is the only control it sits at the bottom right of the summary tiles; with tabs, filters or Pause it stays
+  in that button row.
+
 ## 0.1.18 - 2026-11-20
 
 ### DHCP

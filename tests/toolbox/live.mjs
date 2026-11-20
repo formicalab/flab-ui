@@ -249,6 +249,9 @@ const tool = name => page.locator('.rt-seg .seg-tab', { hasText: name });
 const host = () => page.locator('.rt-host input');
 // The form field (diagnostic options or DNS servers) labeled `label`.
 const fieldOf = label => page.locator(`.rt-diagform label:has(span:text-is("${label}")), .rt-servers label:has(span:text-is("${label}"))`);
+// Chooses the DNS tab's method ('dns' asks servers, 'trace' traces from the root); routers without kdig have no such choice.
+const routeMethod = v => dnsMethod(v);
+const dnsMethod = async v => { const sel = fieldOf('Method').locator('select'); if (await sel.count()) await sel.selectOption(v); };
 // The Run button.
 const runBtn = () => page.locator('.rt-diag button:has-text("Run")');
 // The Stop button.
@@ -275,14 +278,32 @@ console.log('== the page and the form ==');
 check((await page.locator('.nav-pane a.active').innerText()).trim() === 'Toolbox' && (await page.locator('.cmdbar h1').innerText()).trim() === 'Toolbox' && await page.locator('.cmdbar .seg-tab').count() === 0, 'the Toolbox is its own page, with no tabs');
 const navItems = (await page.locator('.nav-pane a.nav-link-fl').allInnerTexts()).map(t => t.trim());
 check(navItems.indexOf('Toolbox') === navItems.indexOf('Logs') - 1 && navItems.indexOf('Toolbox') > 0, 'it sits just above Logs in the navigation', navItems.join(' | '));
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,TLS certificate,Packet capture,iperf3 server,Wake-on-LAN', 'the Toolbox offers the connectivity check, ping, traceroute, one DNS lookup (also for comparing servers), the certificate check and Wake-on-LAN');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute / MTR,DNS,TLS certificate,Packet capture,iperf3 server,Wake-on-LAN', 'the Toolbox offers the connectivity check, ping, one traceroute / MTR tab (a single pass or repeated rounds), one DNS tab (a lookup, also for comparing servers, or a trace), the certificate check and Wake-on-LAN');
 check(await tool('Connectivity check').getAttribute('class').then(c => c.includes('active')) && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'the page opens on the connectivity check, and nothing is shown before the first run');
-await tool('MTR').click();
-check(await tool('MTR').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Rounds').locator('input').inputValue() === '10' && await runBtn().isEnabled(), 'MTR has its defaults');
+await tool('Traceroute').click();
+check(await tool('Traceroute').getAttribute('class').then(c => c.includes('active')) && await fieldOf('Method').locator('select').inputValue() === 'mtr' && await host().inputValue() === '' && await fieldOf('Rounds').locator('input').inputValue() === '10' && await runBtn().isEnabled(), 'the Traceroute / MTR tab opens on MTR, with its defaults');
 await tool('Ping').click();
 check(await tool('Ping').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '' && await fieldOf('Pings').locator('input').inputValue() === '4' && await fieldOf('Size (bytes)').locator('input').inputValue() === '56' && await runBtn().isEnabled() && await page.locator('.rt-result-slot > *').count() === 0, 'ping has its defaults');
 check((await fieldOf('From').locator('option').evaluateAll(o => o.map(x => x.value))).join() === ',br-lan,lo,wan' && await fieldOf('From').locator('select').inputValue() === '', 'the router\'s interfaces are offered as sources in a dropdown, automatic being the default');
 await shot('empty');
+check(await page.locator('.rt-seg .btn-group').count() === 4 && (await page.locator('.rt-seg .btn-group').evaluateAll(g => g.map(x => x.querySelectorAll('.seg-tab').length))).join() === '3,2,2,1', 'the tools are in four groups: reachability, names and certificates, traffic and Wake-on-LAN');
+check(await page.locator('#rt-host-list option').count() > 0 && await host().getAttribute('list') === 'rt-host-list', 'the host box suggests the clients the router knows');
+await host().fill('9.9.9.9'); await fieldOf('Pings').locator('input').fill('7');
+await tool('TLS certificate').click();
+check(await host().inputValue() === '9.9.9.9', 'a tool seen for the first time starts from the current host');
+await host().fill('two.example');
+await tool('Ping').click();
+check(await host().inputValue() === '9.9.9.9' && await fieldOf('Pings').locator('input').inputValue() === '7', 'going back to a tool brings its form back as it was left');
+await tool('TLS certificate').click();
+check(await host().inputValue() === 'two.example', 'and so does the other one');
+const noHelp = [];
+for (const name of ['Connectivity check', 'Ping', 'Traceroute / MTR', 'DNS', 'TLS certificate', 'Packet capture', 'iperf3 server', 'Wake-on-LAN']) {
+  await tool(name).click();
+  if (await page.locator('.rt-about summary').count() !== 1) noHelp.push(name);
+}
+check(noHelp.length === 0, 'every tool has its collapsed "About this tool" help', noHelp.join());
+await tool('Ping').click();
+await host().fill(''); await fieldOf('Pings').locator('input').fill('4');
 
 console.log('\n== the form refuses bad input before asking the router ==');
 await runBtn().click();
@@ -350,9 +371,9 @@ const rs = mock.reads; await page.waitForTimeout(1200);
 check(mock.reads === rs, 'no more reads after a stop');
 
 console.log('\n== traceroute ==');
-await tool('Traceroute').click(); await host().fill('1.1.1.1');
-check(await fieldOf('Max hops').locator('input').inputValue() === '20' && await fieldOf('Probes per hop').locator('input').inputValue() === '2' && await fieldOf('Method').locator('select').inputValue() === 'udp' && await fieldOf('Pings').count() === 0, 'a traceroute has its own options and defaults');
-await fieldOf('Max hops').locator('input').fill('8'); await fieldOf('Method').locator('select').selectOption('icmp');
+await tool('Traceroute').click(); await routeMethod('traceroute'); await host().fill('1.1.1.1');
+check(await fieldOf('Max hops').locator('input').inputValue() === '20' && await fieldOf('Probes per hop').locator('input').inputValue() === '2' && await fieldOf('Probe type').locator('select').inputValue() === 'udp' && await fieldOf('Pings').count() === 0, 'a traceroute has its own options and defaults');
+await fieldOf('Max hops').locator('input').fill('8'); await fieldOf('Probe type').locator('select').selectOption('icmp');
 await runBtn().click();
 let sawPartial = false;
 for (let i = 0; i < 60 && !(await page.locator('.rt-state .fl-badge').count()); i++) { if (await page.locator('.rt-trace tbody tr').count() > 0 && await page.locator('.rt-running').count()) sawPartial = true; await page.waitForTimeout(100); }
@@ -372,7 +393,7 @@ check(v6.length === 5 && /^4 2a01:8d0:90e:a:1::a 2001:7f8:10::3:722 27 ms 5\.4 m
 console.log('\n== traceroute with host names ==');
 check(await fieldOf('Host names').locator('select').inputValue() === '' && (await fieldOf('Host names').locator('option').allInnerTexts()).join() === 'addresses only,look up names', 'host names are off by default (addresses only), with the option to look them up');
 check(await page.locator('.rt-rname').count() === 0, 'a numeric trace shows no names');
-await tool('Traceroute').click(); await host().fill('1.1.1.1');
+await tool('Traceroute').click(); await routeMethod('traceroute'); await host().fill('1.1.1.1');
 await fieldOf('Host names').locator('select').selectOption('1');
 await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'traceroute', host: '1.1.1.1', hops: 8, probes: 2, method: 'icmp', resolve: true, asn: true }), 'asking for names sends resolve: true', j(mock.starts.at(-1)));
@@ -385,8 +406,8 @@ check(await page.locator('.rt-rname').allInnerTexts().then(t => t.join()) === 'v
 await fieldOf('Host names').locator('select').selectOption('');
 
 console.log('\n== DNS lookup ==');
-await tool('DNS lookup').click(); await host().fill('example.com');
-check(await fieldOf('Record type').locator('select').inputValue() === 'A' && (await fieldOf('Record type').locator('option').allInnerTexts()).join() === 'A,AAAA,MX,TXT,NS,CNAME,SOA,PTR,SRV,CAA' && await fieldOf('From').count() === 0 && await fieldOf('DNS server (optional)').count() === 0 && await page.locator('.rt-check input:checked').count() === 1 && /Using kdig\./.test(await page.locator('.rt-note').innerText()), 'a lookup has a record type and the server choices (the router\'s resolver to begin with); the tool in use is named');
+await tool('DNS').click(); await dnsMethod('dns'); await host().fill('example.com');
+check(await fieldOf('Method').locator('select').inputValue() === 'dns' && await fieldOf('Address family').count() === 0 && await fieldOf('Record type').locator('select').inputValue() === 'A' && (await fieldOf('Record type').locator('option').allInnerTexts()).join() === 'A,AAAA,MX,TXT,NS,CNAME,SOA,PTR,SRV,CAA' && await fieldOf('From').count() === 0 && await fieldOf('DNS server (optional)').count() === 0 && await page.locator('.rt-check input:checked').count() === 1 && /Using kdig\./.test(await page.locator('.rt-note').innerText()), 'a lookup has a record type and the server choices (the router\'s resolver to begin with); the tool in use is named');
 await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'dns', host: 'example.com', type: 'A' }), 'a lookup asks for the host and the type only', j(mock.starts.at(-1)));
 check(/2 answers/.test(await page.locator('.rt-dnshead').innerText()) && /answered by 127\.0\.0\.1/.test(await page.locator('.rt-dnshead').innerText()) && /ANSWER SECTION/.test(await page.locator('.rt-raw-out').innerText()), 'the answer count and the server, then the tool\'s own output');
@@ -401,7 +422,7 @@ await fieldOf('One more (optional)').locator('input').fill(''); await page.locat
 
 console.log('\n== the connectivity check ==');
 await tool('Connectivity check').click(); await host().fill('');
-check(await fieldOf('Host to test (optional)').count() === 1 && await fieldOf('Port').locator('input').getAttribute('placeholder') === '443' && /Walks down the stack/.test(await page.locator('.rt-note').last().innerText()) && await page.locator('.rt-diagform label').count() === 2, 'the check asks for an optional host and an optional port');
+check(await fieldOf('Host to test (optional)').count() === 1 && await fieldOf('Port').locator('input').getAttribute('placeholder') === '443' && /Walks down the stack/.test(await page.locator('.rt-about').textContent()) && await page.locator('.rt-diagform label').count() === 2, 'the check asks for an optional host and an optional port');
 await runBtn().click();
 let stepsSeen = false;
 for (let i = 0; i < 80 && !(await page.locator('.rt-state .fl-badge').count()); i++) {
@@ -436,7 +457,7 @@ await fieldOf('Port').locator('input').fill('');
 await host().fill('');
 
 console.log('\n== the DNS lookup of several servers (a comparison) ==');
-await tool('DNS lookup').click(); await host().fill('example.com');
+await tool('DNS').click(); await dnsMethod('dns'); await host().fill('example.com');
 check(await page.locator('.rt-check').allInnerTexts().then(t => t.map(x => x.trim()).join('|')) === 'The router\'s resolver|2a01:8d0:601:5002:91:80:35:166 (upstream)|1.1.1.1 (Cloudflare)|8.8.8.8 (Google)|9.9.9.9 (Quad9)', 'the choices: the router, its upstream resolver (public ones are not repeated), and three public resolvers');
 check(await page.locator('.rt-check input:checked').count() === 1 && await fieldOf('One more (optional)').count() === 1, 'only the router\'s resolver is chosen to begin with');
 await page.locator('.rt-check input').evaluateAll(b => b.forEach(x => x.checked && x.click()));
@@ -505,7 +526,7 @@ console.log('\n== Wake-on-LAN ==');
 // The Wake-on-LAN host picker.
 const wolSelect = () => page.locator('.rt-host select');
 await tool('Wake-on-LAN').click();
-check(await fieldOf('Host to wake').count() === 1 && (await fieldOf('Interface').locator('option').allInnerTexts()).join() === 'automatic,br-lan,lo,wan' && /Sends one magic packet as an Ethernet frame \(etherwake\)/.test(await page.locator('.rt-note').innerText()) && await fieldOf('Pings').count() === 0, 'the form asks for a host and an interface, and says how the packet is sent');
+check(await fieldOf('Host to wake').count() === 1 && (await fieldOf('Interface').locator('option').allInnerTexts()).join() === 'automatic,br-lan,lo,wan' && /Sends one magic packet as an Ethernet frame \(etherwake\)/.test(await page.locator('.rt-about').textContent()) && await fieldOf('Pings').count() === 0, 'the form asks for a host and an interface, and says how the packet is sent');
 check((await page.locator('.rt-host optgroup').evaluateAll(g => g.map(x => `${x.label}: ${[...x.querySelectorAll('option')].map(o => o.textContent).join(' / ')}`))).join(' | ') === 'Reservations: H7c · 192.168.1.7 · 34:c6:dd:35:4d:db / Epson · 192.168.1.21 · dc:cd:2f:a8:b1:7a | Seen on the network: Tablet · 192.168.1.50 · a4:5e:60:00:00:01 / unnamed · 02:11:22:33:44:55', 'the list offers the DHCP reservations first, then the other hosts the router has seen, by name, address and MAC');
 check((await wolSelect().locator('> option').allInnerTexts()).join('|') === 'Choose a host…|Another MAC address…' && await host().count() === 0 && await wolSelect().inputValue() === '', 'it starts with nothing chosen, and no text field for a MAC');
 await runBtn().click();
@@ -535,7 +556,7 @@ check(/The interface must be a network device of this router\./.test(await page.
 mock.wol = 'socat';
 page = await open();
 await tool('Wake-on-LAN').click();
-check(/UDP broadcast to port 9 \(socat\)/.test(await page.locator('.rt-note').innerText()), 'with only socat the note says the packet is a UDP broadcast');
+check(/UDP broadcast to port 9 \(socat\)/.test(await page.locator('.rt-about').textContent()), 'with only socat the note says the packet is a UDP broadcast');
 await wolSelect().selectOption('34:c6:dd:35:4d:db'); await runBtn().click(); await waitDone();
 check(/UDP broadcast to 255\.255\.255\.255:9 on br-lan \(socat\)/.test(await page.locator('.rt-result-slot .card-header').innerText()) && /as a UDP broadcast to port 9 \(socat\)/.test(await resultText()), 'the result names the UDP broadcast');
 mock.wol = 'etherwake';
@@ -550,7 +571,7 @@ console.log('\n== ping chart, compare chart, certificate diagram ==');
 await runFor('Ping', 'lossy.example');
 check(await page.locator('.rt-chart').count() === 1 && await page.locator('.rt-chart .rt-ch-line').count() === 1 && await page.locator('.rt-chart .rt-ch-avg').count() === 1, 'the ping chart is a line through the replies with the average marked');
 await shot('ping-chart');
-await tool('DNS lookup').click(); await host().fill('example.com');
+await tool('DNS').click(); await dnsMethod('dns'); await host().fill('example.com');
 if (await page.locator('.rt-check input:checked').count() < 2) await page.locator('.rt-check', { hasText: '1.1.1.1' }).locator('input').click();
 await runBtn().click(); await waitDone();
 check(await page.locator('.rt-hchart .rt-hrow').count() >= 2 && await page.locator('.rt-hchart .rt-hbar.best').count() === 1 && await page.locator('.rt-hchart .rt-hval').count() >= 2, 'the comparison draws a bar per server with its time, the fastest marked');
@@ -566,7 +587,7 @@ check(await page.locator('.rt-cd-node.missing').count() >= 1, 'a certificate the
 await shot('tls-gap');
 
 console.log('\n== traceroute with the networks of the hops ==');
-await tool('Traceroute').click(); await host().fill('asn.example');
+await tool('Traceroute').click(); await routeMethod('traceroute'); await host().fill('asn.example');
 check(await fieldOf('Networks (AS)').locator('select').inputValue() === '1', 'looking up the networks is on by default');
 await runBtn().click(); await waitDone();
 const asnRows = await page.locator('.rt-trace tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
@@ -582,8 +603,8 @@ check(!('asn' in mock.starts.at(-1)) && await page.locator('.rt-asn').count() ==
 await fieldOf('Networks (AS)').locator('select').selectOption('1');
 
 console.log('\n== mtr ==');
-await tool('MTR').click(); await host().fill('1.1.1.1');
-check(await fieldOf('Rounds').locator('input').inputValue() === '10' && await fieldOf('Method').locator('select').inputValue() === 'icmp', 'mtr offers the number of rounds (10) and ICMP by default');
+await tool('Traceroute').click(); await routeMethod('mtr'); await host().fill('1.1.1.1');
+check(await fieldOf('Rounds').locator('input').inputValue() === '10' && await fieldOf('Probe type').locator('select').inputValue() === 'icmp', 'mtr offers the number of rounds (10) and ICMP by default');
 check(await fieldOf('Port').count() === 0 && await fieldOf('Size (bytes)').locator('input').inputValue() === '' && await fieldOf('Host names').locator('select').inputValue() === '' && await fieldOf('Networks (AS)').locator('select').inputValue() === '1' && await fieldOf('From').locator('select').inputValue() === '' && await fieldOf('Address family').count() === 1, 'with ICMP there is no port; the size is empty, names are off, the networks are looked up, and the family and the source are offered');
 await fieldOf('Networks (AS)').locator('select').selectOption('');
 await runBtn().click(); await waitDone();
@@ -611,31 +632,33 @@ await fieldOf('Host names').locator('select').selectOption('1'); await runBtn().
 const mnames = await page.locator('.rt-mtrtable tbody tr').allInnerTexts().then(t => t.map(x => x.replace(/\s+/g, ' ').trim()));
 check(mock.starts.at(-1).resolve === true && /^1 gw\.example\.net 37\.179\.98\.1 /.test(mnames[0]) && /^7 one\.one\.one\.one 1\.1\.1\.1 /.test(mnames[6]) && /^4 185\.210\.48\.76 /.test(mnames[3]), 'with names asked for, a hop mtr could name shows the name above its address', mnames.join(' | '));
 await fieldOf('Host names').locator('select').selectOption('');
-await fieldOf('Method').locator('select').selectOption('tcp');
+await fieldOf('Probe type').locator('select').selectOption('tcp');
 check(await fieldOf('Port').locator('input').getAttribute('placeholder') === '80' && await fieldOf('Size (bytes)').count() === 0, 'TCP offers a port (80 by default) and no packet size');
 await fieldOf('Port').locator('input').fill('443'); await fieldOf('From').locator('select').selectOption('lo'); await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'mtr', host: 'asn.example', cycles: 10, method: 'tcp', port: 443, source: 'lo' }) && /mtr --raw -n -c 10 -i 1 -G 2 -T -P 443 -I lo asn\.example$/.test(await page.locator('.rt-result-slot .card-header .sub').innerText()), 'TCP sends the port and the interface as the source', j(mock.starts.at(-1)));
 await fieldOf('Port').locator('input').fill('70000'); await runBtn().click();
 check(/port must be a whole number from 1 to 65535/.test(await page.locator('.rt-error').innerText()), 'a port outside 1 to 65535 is refused', await page.locator('.rt-error').innerText());
 await fieldOf('Port').locator('input').fill('');
-await fieldOf('Method').locator('select').selectOption('udp');
+await fieldOf('Probe type').locator('select').selectOption('udp');
 await fieldOf('Size (bytes)').locator('input').fill('27'); await runBtn().click();
 check(/packet size must be a whole number from 28 to 1400/.test(await page.locator('.rt-error').innerText()), 'a packet size outside 28 to 1400 is refused', await page.locator('.rt-error').innerText());
 await fieldOf('Size (bytes)').locator('input').fill('100'); await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'mtr', host: 'asn.example', cycles: 10, method: 'udp', size: 100, source: 'lo' }), 'UDP sends the size and no port when it is empty', j(mock.starts.at(-1)));
-await fieldOf('Method').locator('select').selectOption('icmp');
+await fieldOf('Probe type').locator('select').selectOption('icmp');
 await fieldOf('Size (bytes)').locator('input').fill(''); await fieldOf('From').locator('select').selectOption('');
 await fieldOf('Networks (AS)').locator('select').selectOption('1');
 
-console.log('\n== the hint under traceroute ==');
+console.log('\n== the method of the Traceroute / MTR tab ==');
 await tool('Traceroute').click();
-check(/MTR sends the same probes for several rounds/.test(await page.locator('.rt-diag .rt-note').innerText()), 'traceroute points to MTR when the router has it');
+check((await fieldOf('Method').locator('option').allInnerTexts()).join() === 'MTR (rounds),Traceroute (one pass)' && await page.locator('.rt-note button:has-text("Use MTR")').count() === 0, 'the tab offers MTR and a single traceroute pass as its two methods');
 await host().fill('1.1.1.1');
-await page.locator('.rt-note button:has-text("Use MTR")').click();
-check(await tool('MTR').getAttribute('class').then(c => c.includes('active')) && await host().inputValue() === '1.1.1.1', 'a click on it switches to MTR and keeps the host');
-
+await routeMethod('traceroute');
+check(await fieldOf('Max hops').count() === 1 && await fieldOf('Rounds').count() === 0 && await host().inputValue() === '1.1.1.1' && await page.locator('.rt-seg .seg-tab.active').innerText() === 'Traceroute / MTR', 'the single pass has its hops and probes, keeps the host and stays on the same tab');
+await routeMethod('mtr');
+check(await fieldOf('Rounds').count() === 1 && await fieldOf('Max hops').count() === 0, 'and MTR has its rounds');
 console.log('\n== DNS trace ==');
-await tool('DNS trace').click(); await host().fill('www.example.com');
+await tool('DNS').click(); await dnsMethod('trace'); await host().fill('www.example.com');
+check((await fieldOf('Method').locator('option').allInnerTexts()).join() === 'ask servers,trace from the root' && await fieldOf('Method').locator('select').inputValue() === 'trace' && await page.locator('.rt-seg .seg-tab.active').innerText() === 'DNS' && await fieldOf('Address family').count() === 1 && await page.locator('.rt-servers').count() === 0, 'the DNS tab offers its two methods; the trace has the address family and no server list, and the tab stays on DNS');
 await runBtn().click(); await waitDone();
 check(j(mock.starts.at(-1)) === j({ tool: 'trace', host: 'www.example.com', type: 'A' }), 'the trace asks for the name and the type', j(mock.starts.at(-1)));
 check(await page.locator('.rt-hop').count() === 3 && (await page.locator('.rt-zone').allInnerTexts()).join() === '. (root),com,example.com' && await page.locator('.rt-tseg').count() === 3 && await page.locator('.rt-resolver').count() === 1, 'three servers are asked in turn (root, .com, the zone itself), with a time bar and the router\'s resolver at the end', (await page.locator('.rt-zone').allInnerTexts()).join());
@@ -733,7 +756,7 @@ await host().fill('');
 console.log('\n== tools the router does not have ==');
 mock.mtr = false; mock.kdig = false; mock.iperf3 = false; mock.capture = false;
 page = await open();
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,DNS lookup,TLS certificate,Wake-on-LAN', 'mtr, the DNS trace, the packet capture and the iperf3 server are not offered without mtr, kdig, tcpdump and iperf3');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute / MTR,DNS,TLS certificate,Wake-on-LAN', 'the DNS trace, the packet capture and the iperf3 server are not offered without mtr, kdig, tcpdump and iperf3');
 mock.mtr = true; mock.kdig = true; mock.iperf3 = true; mock.capture = true;
 page = await open();
 
@@ -756,12 +779,9 @@ const back = mock.reads; const barsBefore = await page.locator('.rt-pt').count()
 await page.waitForFunction(n => document.querySelectorAll('.rt-pt').length > n, barsBefore, { timeout: 10000 });
 check(mock.reads > back && /Ping · slow\.example/.test(await resultText()) && await host().inputValue() === 'slow.example' && await stopBtn().isVisible(), 'the job and the form are still there, and the reading resumes');
 
-console.log('\n== a redraw in the middle of a job ==');
-await page.click('button:has-text("Refresh")');
+console.log('\n== a job in the middle of the page ==');
 await page.waitForTimeout(600);
-const mid = await page.locator('.rt-pt').count();
-check(await page.locator('.rt-running').count() === 1 && await stopBtn().isVisible(), 'Refresh redraws the page and the job carries on');
-await page.waitForFunction(n => document.querySelectorAll('.rt-pt').length > n, mid, { timeout: 10000 });
+check(await page.locator('.rt-running').count() === 1 && await stopBtn().isVisible() && await page.locator('.cmdbar .cmd-refresh').count() === 0, 'the Toolbox has no Refresh button, and the job carries on');
 await stopBtn().click(); await waitDone(/Stopped/);
 
 console.log('\n== a login that may not run diagnostics ==');
@@ -782,18 +802,18 @@ await p3.close();
 console.log('\n== a router without openssl ==');
 mock.openssl = false;
 page = await open();
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,Packet capture,iperf3 server,Wake-on-LAN', 'the certificate check is not offered without openssl');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute / MTR,DNS,Packet capture,iperf3 server,Wake-on-LAN', 'the certificate check is not offered without openssl');
 mock.openssl = true;
 mock.wol = '';
 page = await open();
-check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute,MTR,DNS lookup,DNS trace,TLS certificate,Packet capture,iperf3 server', 'Wake-on-LAN is not offered on a router that has neither etherwake nor socat');
+check((await page.locator('.rt-seg .seg-tab').allInnerTexts()).join() === 'Connectivity check,Ping,Traceroute / MTR,DNS,TLS certificate,Packet capture,iperf3 server', 'Wake-on-LAN is not offered on a router that has neither etherwake nor socat');
 mock.wol = 'etherwake';
 mock.openssl = true;
 
 console.log('\n== busybox nslookup only ==');
 mock.dnsTool = 'nslookup';
 page = await open();
-await tool('DNS lookup').click();
+await tool('DNS').click(); await dnsMethod('dns');
 check(await page.locator('.rt-note').count() === 0, 'no note for a record type nslookup can show (A)');
 await fieldOf('Record type').locator('select').selectOption('MX');
 check(/only has busybox nslookup, which cannot show MX records in full/.test(await page.locator('.rt-note').innerText()), 'for MX the page explains the limit and how to fix it');
@@ -807,8 +827,8 @@ await page.emulateMedia({ colorScheme: 'dark' });
 await page.waitForTimeout(300);
 await shot('dark');
 await runFor('Ping', 'lossy.example'); await shot('dark-ping');
-await tool('DNS trace').click(); await host().fill('www.example.com'); await runBtn().click(); await waitDone(); await shot('dark-dnstrace');
-await tool('MTR').click(); await host().fill('1.1.1.1'); await runBtn().click(); await waitDone(); await shot('dark-mtr');
+await tool('DNS').click(); await dnsMethod('trace'); await host().fill('www.example.com'); await runBtn().click(); await waitDone(); await shot('dark-dnstrace');
+await tool('Traceroute').click(); await routeMethod('mtr'); await host().fill('1.1.1.1'); await runBtn().click(); await waitDone(); await shot('dark-mtr');
 await tool('TLS certificate').click(); await host().fill('example.com'); await runBtn().click(); await waitDone(); await shot('dark-tls');
 await tool('iperf3 server').click(); await page.locator('.rt-diag button:has-text("Start server")').click(); await page.waitForFunction(() => document.querySelectorAll('.rt-iperf-history tbody tr').length >= 3, null, { timeout: 20000 }); await shot('dark-iperf');
 await page.locator('.rt-diag button:has-text("Stop server")').click(); await waitDone(/Stopped/);
