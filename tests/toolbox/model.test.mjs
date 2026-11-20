@@ -17,7 +17,7 @@ import { CHECK_OK, COMPARE, COMPARE_NX, TLS_EXAMPLE, TLS_EXPIRED, TLS_GAP, TLS_L
 
 console.log('== the form and its request ==');
 // A blank form aimed at 1.1.1.1, with `over` applied on top.
-const form = over => ({ ...m.blankForm(), host: '1.1.1.1', ...over });
+const form = over => ({ ...m.blankForm(), tool: 'ping', host: '1.1.1.1', ...over });
 let r = m.requestOf(form());
 check(j(r.args) === j({ tool: 'ping', host: '1.1.1.1', count: 4, size: 56 }), 'a ping asks for the host, the count and the size', j(r));
 r = m.requestOf(form({ host: '  example.com ', count: '10', size: '1400', family: '6', source: 'br-lan' }));

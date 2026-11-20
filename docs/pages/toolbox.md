@@ -48,8 +48,7 @@ again. The form remembers its values while the page is open; Run is disabled for
   addresses of a job; `nc` is needed) and shown as "not announced · NETNAME · country", with the registered range in the
   tooltip; a range RIPE does not manage, or an answer that does not come, leaves "no AS data". The addresses leave the
   router only inside those DNS queries and the whois queries.
-- **MTR:** `mtr --raw` against the host for the chosen rounds (one probe a second per hop). The page opens on MTR when the
-  router has it (otherwise on Ping), and Traceroute offers a "Use MTR" button that keeps the host. Besides the rounds the
+- **MTR:** `mtr --raw` against the host for the chosen rounds (one probe a second per hop). Traceroute offers a "Use MTR" button that keeps the host. Besides the rounds the
   form has the method (ICMP, UDP or TCP SYN, which gets through a firewall that only lets web traffic in), a port (TCP and
   UDP; empty is 80 for TCP), a packet size (28 to 1400 bytes with the headers, empty is mtr's 64; not for TCP, whose SYN
   packets carry none), "Host names" (off by default; on, mtr resolves each router and the page shows the name above the

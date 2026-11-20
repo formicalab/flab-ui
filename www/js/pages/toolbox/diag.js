@@ -50,7 +50,7 @@ let cachedAt = 0;
 // The state of this tab: the form, the error under it, the current job with its poll timer (and whether a read is under way)
 // and result element, whether a button elsewhere asked for a run (`autorun`), the plugin's last `status`, and whether the
 // result's "Raw output" is open.
-export const newDiag = () => ({ form: blankForm(), formError: null, job: null, timer: null, polling: false, resultEl: null, autorun: false, status: null, rawOpen: false, defaulted: false });
+export const newDiag = () => ({ form: blankForm(), formError: null, job: null, timer: null, polling: false, resultEl: null, autorun: false, status: null, rawOpen: false });
 
 // Reads what the router can run (the tools, the DNS tool it would use, its interfaces), reusing the last answer for a
 // minute because it does not change while the page is open.
@@ -196,8 +196,8 @@ function paint(state) {
 
 // A segmented control: options are [value, label]; a click picks one.
 function segment(options, value, onpick, disabled) {
-  return h('div', { className: 'seg rt-seg', role: 'tablist' }, options.map(([v, label]) => h('button', {
-    type: 'button', role: 'tab', className: `seg-tab ${v === value ? 'active' : ''}`, disabled, onclick: () => { if (v !== value) onpick(v); },
+  return h('div', { className: 'btn-group btn-group-sm seg rt-seg', role: 'tablist', ariaLabel: 'Tool' }, options.map(([v, label]) => h('button', {
+    type: 'button', role: 'tab', ariaSelected: String(v === value), className: `btn btn-outline-secondary seg-tab ${v === value ? 'active' : ''}`, disabled, onclick: () => { if (v !== value) onpick(v); },
   }, label)));
 }
 
@@ -467,12 +467,6 @@ function resultNodes(d) {
 export function diagView(data, state) {
   const d = state.diag;
   d.status = data.status;
-  // The page opens on MTR when the router has it (it does what ping and traceroute do, with loss per hop), unless a tool was
-  // asked for by a button elsewhere (the Routing page, Wake-on-LAN).
-  if (!d.defaulted) {
-    d.defaulted = true;
-    if (!d.autorun && !d.job && d.form.tool === 'ping' && data.status.tools?.mtr) d.form.tool = 'mtr';
-  }
   const result = h('div', { className: 'rt-result-slot' }, ...resultNodes(d));
   d.resultEl = result;
   // The Wake-on-LAN result offers a ping of the host it woke: fill the form in and run it.

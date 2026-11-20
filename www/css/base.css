@@ -105,6 +105,10 @@ small, .small { font-size: .8rem; }
 .fl-summary-slot { display: contents; }
 .cmdbar .form-control, .cmdbar .form-select { width: auto; min-width: 11rem; }
 .cmdbar .fl-summary { order: 1; flex: 1 0 100%; margin-top: .25rem; }
+/* When Refresh is the only control, it sits at the bottom right of the tiles, level with their lower edge. With any other
+   control (tabs, filters, Pause) it stays in that button row, at its right end. */
+.cmdbar:has(.fl-summary):not(:has(> :not(h1, .fl-summary-slot, .cmd-refresh, .set-bar, .muted.small))) .fl-summary { flex: 1 1 calc(100% - 8rem); min-width: 0; }
+.cmdbar:has(.fl-summary):not(:has(> :not(h1, .fl-summary-slot, .cmd-refresh, .set-bar, .muted.small))) .cmd-refresh { order: 1; align-self: flex-end; }
 .cmdbar .seg { order: 2; }
 .cmdbar .search, .cmdbar .form-select { order: 2; }
 .cmdbar .search { width: auto; min-width: 16rem; flex: 0 1 24rem; }

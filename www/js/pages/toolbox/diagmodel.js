@@ -54,7 +54,7 @@ export const CAPTURE = {
 
 // The empty form: the values each tool starts with.
 export const blankForm = () => ({
-  tool: 'ping', host: '', family: '', source: '',
+  tool: 'check', host: '', family: '', source: '',
   count: String(LIMITS.count[2]), size: String(LIMITS.size[2]),
   hops: String(LIMITS.hops[2]), probes: String(LIMITS.probes[2]), method: 'udp', resolve: '', asn: '1',
   cycles: String(LIMITS.cycles[2]), mtrMethod: 'icmp', mtrSize: '', mtrPort: '',
