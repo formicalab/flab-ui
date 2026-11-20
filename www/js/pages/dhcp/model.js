@@ -66,6 +66,16 @@ export function macOf(raw) {
   return hex.length === 12 && /^[0-9a-fA-F:.-]+$/.test(String(raw)) ? hex.match(/../g).join(':') : String(raw).toLowerCase();
 }
 
+// The Ethernet MAC embedded in DUID-LLT (type 1) and DUID-LL (type 3), or an empty string for a DUID type that
+// does not carry the link-layer address. This lets a DHCPv6-only row be matched to a known DHCPv4 client.
+export function macFromDuid(raw) {
+  const duid = String(raw ?? '').toLowerCase();
+  if (!/^[0-9a-f]+$/.test(duid)) return '';
+  if (duid.length === 28 && duid.startsWith('00010001')) return macOf(duid.slice(-12));
+  if (duid.length === 20 && duid.startsWith('00030001')) return macOf(duid.slice(-12));
+  return '';
+}
+
 //#endregion
 
 //#region Reading
@@ -132,14 +142,24 @@ export function readDhcp(cfg, v4, v6, ra, dump, svc, dns = {}, network = null) {
   const leases4 = server === 'dnsmasq' ? dnsmasqLeases(dns.leases, dns.now ?? Date.now() / 1000, interfaces, hosts)
     : Object.entries(v4?.device ?? {}).flatMap(([device, d]) => (d.leases ?? []).map(l => ({
       device, iface: ifaceOf(device), address: l.address, mac: macOf(l.mac ?? ''), hostname: l.hostname ?? '',
-      flags: l.flags ?? [], static: (l.flags ?? []).includes('static'), valid: l.valid ?? null,
+      duid: l.duid ?? '', flags: l.flags ?? [], static: (l.flags ?? []).includes('static'), valid: l.valid ?? null,
     })));
-  const leases6 = Object.entries(v6?.device ?? {}).flatMap(([device, d]) => (d.leases ?? []).map(l => ({
-    device, iface: ifaceOf(device), duid: l.duid ?? '', iaid: l.iaid ?? null, hostname: l.hostname ?? '',
-    flags: l.flags ?? [], static: (l.flags ?? []).includes('static'), valid: l.valid ?? null,
-    addresses: (l['ipv6-addr'] ?? []).map(a => ({ address: a.address, preferred: a['preferred-lifetime'] ?? null, valid: a['valid-lifetime'] ?? null })),
-    prefixes: (l['ipv6-prefix'] ?? []).map(p => ({ address: p.address, length: p['prefix-length'] ?? null, preferred: p['preferred-lifetime'] ?? null, valid: p['valid-lifetime'] ?? null })),
-  })));
+  const v4ByDuid = new Map(leases4.filter(l => l.duid).map(l => [l.duid, l]));
+  const v4ByMac = new Map(leases4.filter(l => l.mac).map(l => [l.mac, l]));
+  const v4ByHostname = new Map(leases4.filter(l => l.hostname).map(l => [l.hostname.toLowerCase(), l]));
+  const leases6 = Object.entries(v6?.device ?? {}).flatMap(([device, d]) => (d.leases ?? []).map(l => {
+    const duid = l.duid ?? '';
+    const hostname = l.hostname ?? '';
+    const embeddedMac = macFromDuid(duid);
+    const client = v4ByDuid.get(duid) ?? (embeddedMac ? v4ByMac.get(embeddedMac) : null) ?? v4ByHostname.get(hostname.toLowerCase()) ?? null;
+    return {
+      device, iface: ifaceOf(device), duid, iaid: l.iaid ?? null, hostname: hostname || client?.hostname || '',
+      mac: client?.mac ?? embeddedMac,
+      flags: l.flags ?? [], static: (l.flags ?? []).includes('static'), valid: l.valid ?? null,
+      addresses: (l['ipv6-addr'] ?? []).map(a => ({ address: a.address, preferred: a['preferred-lifetime'] ?? null, valid: a['valid-lifetime'] ?? null })),
+      prefixes: (l['ipv6-prefix'] ?? []).map(p => ({ address: p.address, length: p['prefix-length'] ?? null, preferred: p['preferred-lifetime'] ?? null, valid: p['valid-lifetime'] ?? null })),
+    };
+  }));
   const announced = Object.entries(ra?.interfaces ?? {}).map(([device, prefixes]) => ({
     device, iface: ifaceOf(device), prefixes: prefixes.map(p => ({ prefix: p.prefix, length: p.length, stale: Boolean(p.stale) })),
   }));

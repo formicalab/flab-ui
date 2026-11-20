@@ -65,12 +65,13 @@ function summary(data) {
   const running = data.daemonRunning;
   const reserved4 = data.leases4.filter(l => l.static).length;
   const reserved6 = data.leases6.filter(l => l.static).length;
+  const prefixClients = data.leases6.filter(l => l.prefixes.length).length;
   const by = data.server === 'dnsmasq' ? ' · from dnsmasq' : '';
   return tiles(
     tile('odhcpd', running == null ? 'Unknown' : running ? 'Running' : 'Stopped',
       data.server === 'odhcpd' ? 'the main DHCPv4 server' : data.server === 'dnsmasq' ? 'DHCPv6 and router advertisements; dnsmasq serves DHCPv4' : 'DHCPv4 is left to another server', running === false ? 'text-danger' : ''),
     tile('DHCPv4 leases', String(data.leases4.length), `${reserved4} reserved · ${data.leases4.length - reserved4} dynamic${by}`),
-    tile('DHCPv6 leases', String(data.leases6.length), `${reserved6} reserved · ${data.leases6.length - reserved6} dynamic`),
+    tile('DHCPv6 leases', String(data.leases6.length), `${reserved6} reserved · ${data.leases6.length - reserved6} dynamic · ${prefixClients} with IA_PD`),
     tile('Reservations', String(data.hosts.length), `${reserved4} with a lease now`));
 }
 

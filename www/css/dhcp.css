@@ -12,6 +12,9 @@
 /* DHCPv6 leases: a DUID is long, so it is cut with the full value in the tooltip; addresses stack. */
 .dhcp-duid { display: inline-block; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .dhcp-addrs { display: flex; flex-direction: column; gap: .15rem; }
+.dhcp-client-id { display: flex; flex-direction: column; gap: .15rem; }
+.dhcp-prefix { display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; }
+.dhcp-prefix-size { color: var(--fl-muted); font-size: .85em; white-space: nowrap; }
 
 /* The reservations table: an input in every cell, as narrow as still shows an address; changed rows are tinted.
    The state column wraps its badge and address, so the table fits the page down to a laptop screen. */

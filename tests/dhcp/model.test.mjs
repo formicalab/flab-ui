@@ -78,6 +78,7 @@ check(r.last === '192.168.1.254' && r.clamped && r.count === 55, 'a pool that is
 check(m.poolRange('192.168.1.1', 24, 300, 10).outside === true && m.poolRange('10.1.2.3', 8, 100, 150).first === '10.0.0.100' && m.poolRange('x', 24, 1, 1) === null && m.poolRange('192.168.1.1', 31, 1, 1) === null, 'a start beyond the subnet is outside; other subnet sizes work; bad input gives none');
 check(m.inSubnet('192.168.1.200', '192.168.1.1', 24) && !m.inSubnet('192.168.2.1', '192.168.1.1', 24) && m.inSubnet('10.9.9.9', '10.0.0.1', 8), 'subnet membership');
 check(m.macOf('88AEDD661605') === '88:ae:dd:66:16:05' && m.macOf('88-AE-DD-66-16-05') === '88:ae:dd:66:16:05' && m.macOf('88:AE:DD:66:16:05') === '88:ae:dd:66:16:05' && m.macOf('nonsense') === 'nonsense', 'MACs in one spelling');
+check(m.macFromDuid('0001000130b378f788aedd661605') === '88:ae:dd:66:16:05' && m.macFromDuid('00030001aed3314dc32f') === 'ae:d3:31:4d:c3:2f' && m.macFromDuid('00020000ab11e99a4ef83f664cfe') === '', 'DUID-LLT and DUID-LL expose their MAC; DUID-EN does not');
 
 console.log('== reading ==');
 let d = data();
@@ -85,6 +86,9 @@ check(d.pools.length === 2 && d.pools[0].iface === 'lan' && d.pools[0].info.v4.a
 check(d.daemonRunning === true && m.readDhcp(cfg(), null, null, null, null, null).daemonRunning === null && m.readDhcp(cfg(), null, null, null, null, { odhcpd: { instances: {} } }).daemonRunning === false, 'the daemon state: running, unknown, stopped');
 check(d.leases4.length === 3 && d.leases4[0].iface === 'lan' && d.leases4[0].mac === '88:ae:dd:66:16:05' && d.leases4[0].static && !d.leases4[1].static && d.leases4[2].flags.includes('broken-hostname'), 'IPv4 leases: interface from the device, MAC spelled out, reserved or dynamic', j(d.leases4[0]));
 check(d.leases6.length === 1 && d.leases6[0].addresses[0].address === '2a01:827::2' && d.leases6[0].prefixes[0].length === 64 && d.leases6[0].static, 'IPv6 leases keep their addresses and delegated prefixes');
+const anonymous6 = { device: { 'br-lan': { leases: [{ ...v6.device['br-lan'].leases[0], hostname: '' }] } } };
+const correlated = m.readDhcp(cfg(), v4, anonymous6, ra, dump, svc).leases6[0];
+check(correlated.hostname === 'flabn01' && correlated.mac === '88:ae:dd:66:16:05', 'a DHCPv6 lease with a link-layer DUID is named from the matching DHCPv4 client');
 check(d.ra[0].iface === 'lan' && d.ra[0].prefixes.length === 2 && d.ra[0].prefixes[1].stale === true, 'announced prefixes per interface');
 const empty = m.readDhcp({}, null, null, null, null, null);
 check(empty.pools.length === 0 && empty.hosts.length === 0 && empty.daemon.section === null && empty.leases4.length === 0, 'nothing known: everything empty, no error');

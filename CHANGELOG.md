@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.17 - 2026-11-20
+
+### DHCP
+
+- DHCPv6 lease rows now distinguish address associations (IA_NA) from delegated prefixes (IA_PD), identify clients by
+  matching link-layer DUID or DHCPv4 identity, and show how many `/64` networks fit in each delegated prefix.
+- The DHCPv6 summary reports how many active clients hold an IA_PD lease, and the lease filter searches the new
+  client identity and association details.
+
 ## 0.1.16 - 2026-11-19
 
 ### Security

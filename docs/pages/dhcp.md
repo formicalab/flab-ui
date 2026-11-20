@@ -36,8 +36,9 @@ advertised prefixes, the leases and last the reservations.
     nothing in the file is hidden.
 - **Leases**: the IPv6 prefixes advertised to clients in router advertisements (a stale one is flagged), DHCPv4 (address, MAC, hostname,
   reserved or dynamic, time left) with a *Reserve* button on every dynamic lease that adds a reservation to the
-  form, and DHCPv6 (DUID, addresses, delegated prefixes). The command bar filters all three by text and by
-  interface.
+  form, and DHCPv6 (DUID, matched client MAC/hostname, IA_NA addresses, IA_PD delegated prefixes and how many
+  `/64` subnets each prefix contains). Link-layer DUIDs and matching DHCPv4 DUIDs/hostnames are used to identify
+  otherwise anonymous DHCPv6 clients. The command bar filters all three by text and by interface.
 - **Reservations** (`config host`): one editable row each with name, IPv4 address, MAC address(es), DUID(s), IPv6
   host ID and lease time, and whether the client holds a lease now. A reservation with only a name and a MAC
   keeps the address dynamic. Rows can be added, removed (shown struck through, with Undo) and edited. New

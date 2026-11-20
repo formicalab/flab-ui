@@ -23,8 +23,19 @@ function typeBadges(lease) {
     lease.flags.includes('broken-hostname') ? badge('bad hostname', 'warning', 'the client sent a hostname that odhcpd could not use') : null);
 }
 
+// A DHCPv6 client may ask for an address (IA_NA), delegated prefixes (IA_PD), or both.
+const associationBadges = lease => h('span', { className: 'dhcp-badges' },
+  badge(lease.static ? 'reserved' : 'dynamic', lease.static ? 'success' : 'info'),
+  lease.addresses.length ? badge('IA_NA', 'info', 'the client has an IPv6 address association') : null,
+  lease.prefixes.length ? badge('IA_PD', 'info', 'the client requested and received delegated IPv6 prefixes') : null);
+
 // How long a lease or lifetime still lasts.
 const expires = seconds => (seconds == null ? muted('–') : fmtSpan(Math.max(0, seconds)));
+
+// How many ordinary /64 LAN prefixes fit in a delegated prefix. Very large legacy allocations are left unlabelled.
+const prefixSize = length => Number.isInteger(length) && length >= 48 && length <= 64
+  ? `${2 ** (64 - length)} × /64`
+  : '';
 
 // The DHCPv4 leases card. `reservedMacs` is the set of MACs that already have a reservation (in the draft), and
 // `reserve(lease)` turns a dynamic lease into a new reservation; it is offered only when `canReserve`. The header
@@ -44,17 +55,21 @@ export function leases4Card(data, filter, { reservedMacs, canReserve, reserve })
 // The DHCPv6 leases card: one row per client (DUID) with its addresses and delegated prefixes.
 export function leases6Card(data, filter) {
   const rows = data.leases6
-    .filter(l => passes(filter, l.iface, [l.iface, l.duid, l.hostname, ...l.addresses.map(a => a.address), ...l.prefixes.map(p => `${p.address}/${p.length}`), l.static ? 'reserved' : 'dynamic']))
+    .filter(l => passes(filter, l.iface, [l.iface, l.duid, l.mac, l.hostname, l.addresses.length ? 'IA_NA' : '', l.prefixes.length ? 'IA_PD' : '', ...l.addresses.map(a => a.address), ...l.prefixes.map(p => `${p.address}/${p.length}`), l.static ? 'reserved' : 'dynamic']))
     .sort((a, b) => a.iface.localeCompare(b.iface) || a.hostname.localeCompare(b.hostname));
   // The preferred and valid lifetimes of an address or prefix, as a readable line.
   const lifetimes = x => `preferred ${x.preferred == null ? '–' : fmtSpan(Math.max(0, x.preferred))}, valid ${x.valid == null ? '–' : fmtSpan(Math.max(0, x.valid))}`;
   return card(
     [icon('list-ul'), h('span', {}, 'DHCPv6 leases'), h('span', { className: 'sub' }, `${rows.length} of ${data.leases6.length}`)],
-    table(['Interface', 'Hostname', 'DUID', 'Addresses', 'Delegated prefixes', 'Type', 'Expires in'], rows.map(l => [
-      l.iface, l.hostname || muted('none'), h('span', { className: 'mono dhcp-duid', title: l.duid }, l.duid),
+    table(['Interface', 'Hostname', 'Client ID', 'Addresses (IA_NA)', 'Delegated prefixes (IA_PD)', 'Type', 'Expires in'], rows.map(l => [
+      l.iface, l.hostname || muted('none'),
+      h('div', { className: 'dhcp-client-id' },
+        h('span', { className: 'mono dhcp-duid', title: l.duid }, l.duid),
+        l.mac ? h('span', { className: 'mono', title: 'MAC address matched from the DHCPv6 DUID or another lease' }, l.mac) : null),
       h('div', { className: 'dhcp-addrs' }, l.addresses.length ? l.addresses.map(a => h('div', { title: lifetimes(a) }, mono(a.address))) : muted('none')),
-      h('div', { className: 'dhcp-addrs' }, l.prefixes.length ? l.prefixes.map(p => h('div', { title: lifetimes(p) }, mono(`${p.address}/${p.length}`))) : muted('none')),
-      typeBadges(l), expires(l.valid),
+      h('div', { className: 'dhcp-addrs' }, l.prefixes.length ? l.prefixes.map(p => h('div', { className: 'dhcp-prefix', title: lifetimes(p) },
+        mono(`${p.address}/${p.length}`), prefixSize(p.length) ? h('span', { className: 'dhcp-prefix-size' }, prefixSize(p.length)) : null)) : muted('none')),
+      associationBadges(l), expires(l.valid),
     ])), 'dhcp-tbl');
 }
 

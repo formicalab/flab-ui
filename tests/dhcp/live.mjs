@@ -50,7 +50,7 @@ const LEASES6 = { device: { 'br-lan': { leases: [
   { duid: '000100011ee0f1ed4cbad7bba6ae', iaid: 7, hostname: 'soundbar', flags: ['bound', 'static'], valid: 4544,
     'ipv6-addr': [{ address: '2a01:827::11', 'preferred-lifetime': 1844, 'valid-lifetime': 4544 }, { address: 'fd92::11', 'preferred-lifetime': 1844, 'valid-lifetime': 4544 }],
     'ipv6-prefix': [{ address: 'fd00:1:2:3::', 'prefix-length': 64, 'preferred-lifetime': 10, 'valid-lifetime': 20 }] },
-  { duid: '0001000130abb6f2e8c82991c733', iaid: 9, hostname: 'laptop', flags: ['bound'], valid: 3000, 'ipv6-addr': [{ address: '2a01:827::596', 'preferred-lifetime': 1000, 'valid-lifetime': 3000 }] },
+  { duid: '00030001aabbccddeeff', iaid: 9, hostname: '', flags: ['bound'], valid: 3000, 'ipv6-addr': [{ address: '2a01:827::596', 'preferred-lifetime': 1000, 'valid-lifetime': 3000 }] },
 ] } } };
 const RA = { interfaces: { 'br-lan': [{ prefix: '2a01:827::1', length: 60, stale: false }, { prefix: 'fd92::1', length: 60, stale: true }] } };
 
@@ -245,7 +245,8 @@ const v4 = await bodyRows('DHCPv4 leases').allInnerTexts();
 check(v4.length === 4 && /lan\s+192\.168\.1\.2\s+88:ae:dd:66:16:05\s+flabn01\s+reserved/.test(v4[0].replace(/\n/g, ' ').replace(/\t+/g, ' ')) && /lan100/.test(v4[3]), 'DHCPv4 leases are sorted by interface and address, MACs spelled out, reserved or dynamic', v4.join(' / '));
 check(/bad hostname/.test(v4[1]) && /dynamic/.test(v4[2]) && await bodyRows('DHCPv4 leases').nth(0).locator('button:has-text("Reserve")').count() === 0 && await bodyRows('DHCPv4 leases').nth(2).locator('button:has-text("Reserve")').count() === 1, 'a bad hostname is flagged; only dynamic leases have a Reserve button');
 const v6 = await bodyRows('DHCPv6 leases').allInnerTexts();
-check(v6.length === 2 && /2a01:827::11/.test(v6[1]) && /fd00:1:2:3::\/64/.test(v6[1]) && /reserved/.test(v6[1]), 'DHCPv6 leases show addresses and delegated prefixes', v6.join(' / '));
+check(v6.length === 2 && /2a01:827::11/.test(v6[1]) && /fd00:1:2:3::\/64/.test(v6[1]) && /reserved/.test(v6[1]) && /IA_NA/.test(v6[1]) && /IA_PD/.test(v6[1]) && /1 × \/64/.test(v6[1]), 'DHCPv6 leases show association types, delegated prefixes and their /64 size', v6.join(' / '));
+check(/laptop/.test(v6[0]) && /aa:bb:cc:dd:ee:ff/.test(v6[0]), 'a link-layer DUID identifies the matching DHCPv4 client');
 check(await bodyRows('IPv6 prefixes advertised').count() === 2 && /stale/.test(await bodyRows('IPv6 prefixes advertised').nth(1).innerText()), 'advertised prefixes, one of them stale');
 check(await hostRows().count() === 4 && await hostInput(hostRow('flabn01'), 'IPv4 address').inputValue() === '192.168.1.2' && /leased/.test(await hostRow('flabn01').innerText()) && /no lease now/.test(await hostRow('SkyQ-L2-Mesh').innerText()), 'reservations show their values and whether they hold a lease now');
 check(await hostInput(hostRow('homeassistant'), 'MAC address(es)').inputValue() === '02:F0:F4:50:6B:7D 02:F0:F4:50:6B:7E', 'two MACs of one reservation are shown in one box');
