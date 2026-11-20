@@ -6,7 +6,7 @@ import { badge, button } from '../../core/ui.js';
 
 // A small icon-only button with its name as the tooltip and accessible label.
 export const iconButton = (name, label, onclick, disabled = false) =>
-  button('', name, onclick, 'btn-fl fw-act', { title: label, ariaLabel: label, disabled });
+  button('', name, onclick, 'btn-outline-secondary fw-act', { title: label, ariaLabel: label, disabled });
 
 // A fold of a group of fields (the card of the global settings, a section of a dialog): the legend, then the fields. `opened` maps the
 // group's `id` to whether it is open, so the choice survives a redraw; `open` is the state of a group that was never toggled.
@@ -17,7 +17,7 @@ export const fieldGroup = (opened, id, { title, legend, open }, fields) => discl
 
 // The button that adds an item to a list, at the right of a card's header; disabled for a login that may not write.
 export const addButton = (label, onclick, canEdit) =>
-  h('span', { className: 'fw-card-actions' }, button(label, 'plus-lg', onclick, 'btn-fl', { disabled: !canEdit }));
+  h('span', { className: 'fw-card-actions' }, button(label, 'plus-lg', onclick, 'btn-outline-secondary', { disabled: !canEdit }));
 
 // The badge of an item that was changed in the form and not saved yet ('new', 'edited' or 'removed'); nothing for an item as the router has it.
 export function pendingBadge(item) {

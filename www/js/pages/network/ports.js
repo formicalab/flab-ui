@@ -63,7 +63,7 @@ function errorsCell(p) {
     p.diagnostics ? h('div', {}, button(open ? 'Hide details' : 'Details', open ? 'chevron-up' : 'chevron-down', () => {
       if (expanded.has(p.name)) expanded.delete(p.name); else expanded.add(p.name);
       rerender();
-    }, 'btn-fl diag-btn')) : null);
+    }, 'btn-outline-secondary diag-btn')) : null);
 }
 
 // The Link column: link state and speed, what the link negotiated (see negotiation), how often the link changed state (and how many times since the page
@@ -200,7 +200,7 @@ function details(net) {
     `the last row${rest.length === 1 ? ' is' : 's are'} the internal CPU link${rest.length === 1 ? '' : 's'} to the switch, not a port`) : null],
     h('div', {},
       ...lines.map(l => h('div', { className: `cpu-link small ${l.busy ? 'text-danger' : 'muted'}` }, l.text)),
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table port-table' },
+      h('div', { className: 'table-responsive' }, h('table', { className: 'table port-table' },
         h('thead', {}, h('tr', {}, HEAD.map(c => h('th', {}, c)))),
         h('tbody', {}, ordered.length || rest.length
           ? [...ordered, ...rest].flatMap(row)

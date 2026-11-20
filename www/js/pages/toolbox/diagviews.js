@@ -6,7 +6,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { copyButton } from '../../core/clipboard.js';
 import { disclosure } from '../../core/fold.js';
-import { badge, button, mono, muted } from '../../core/ui.js';
+import { badge, button, mono, muted, spinner } from '../../core/ui.js';
 import { PUBLIC_RESOLVERS, fmtMs, hostOf, parseCheck, parseCompare, parseTls } from './diagmodel.js';
 import { LEVEL_ICON, banner, day, timeBar, working } from './parts.js';
 import { chainDiagram, expiryTimeline } from './tlsdiagram.js';
@@ -25,7 +25,7 @@ function stepRow(s) {
   const row = h('div', { className: `rt-step ${s.state}` });
   const [name, cls] = STATE_ICON[s.state] ?? [];
   row.append(
-    s.state === 'running' ? h('span', { className: 'spinner-border spinner-border-sm rt-step-icon' }) : h('span', { className: `rt-step-icon ${cls}` }, icon(name)),
+    s.state === 'running' ? spinner('Diagnostic step running', 'rt-step-icon') : h('span', { className: `rt-step-icon ${cls}` }, icon(name)),
     h('div', { className: 'rt-step-main' }, h('div', { className: 'rt-step-title' }, s.title), h('div', { className: 'rt-step-text' }, s.text || (s.state === 'pending' ? 'Waiting…' : s.state === 'running' ? 'Running…' : ''))));
   return row;
 }
@@ -105,7 +105,7 @@ export function compareBody(job, status) {
     : null;
   return h('div', {},
     responseChart(c.rows, c.fastest, upstream),
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-compare' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover rt-compare' },
       h('thead', {}, h('tr', {}, ['Server', 'Result', 'Answers', 'Time', ''].map((t, i) => h('th', { className: i === 3 ? 'num' : '' }, t)))),
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 5, className: 'muted' }, 'Waiting for the first answer…'))))),
     summary);

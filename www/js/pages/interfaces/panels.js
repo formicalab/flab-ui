@@ -63,7 +63,7 @@ const usedSection = (num, rows, empty) => section(num, 'Used by', null, rows.fil
 
 // A footer button that removes (or discards) the item; `warn` is a sentence shown above it when other things depend on the item.
 function removeFooter(ctx, label, tip, onRemove, warn) {
-  const b = button(label, 'trash', onRemove, 'btn-fl np-remove', { disabled: !ctx.canEdit, title: tip });
+  const b = button(label, 'trash', onRemove, 'btn-outline-secondary np-remove', { disabled: !ctx.canEdit, title: tip });
   return [warn ? h('div', { className: 'np-foot-note small' }, warn) : null, b].filter(Boolean);
 }
 
@@ -121,7 +121,7 @@ function readOnlyInterface(ctx, s) {
     title: s.name, subtitle: `Interface · ${protoLabel(proto)}`,
     body: panelBody(
       section(null, protoLabel(proto), `${otherProtoText(proto)}. This page does not edit this protocol: its options are shown as they are in the file, and it cannot be removed here.`,
-        owner ? h('div', {}, h('a', { href: owner.href, className: 'btn btn-sm btn-fl' }, icon('arrow-right'), owner.label)) : null),
+        owner ? h('div', {}, h('a', { href: owner.href, className: 'btn btn-sm btn-outline-secondary' }, icon('arrow-right'), owner.label)) : null),
       section(null, 'State', null, infoList(liveRows(s, { proto }, live))),
       section(null, 'Options in the file', null, rows.length ? kv(rows) : muted('No options.')),
       uses.section ?? null),
@@ -302,7 +302,7 @@ function livePanel(ctx, name) {
     ctx.draft.devAdded.find(a => a.id === id).name = name;
     ctx.touched();
     ctx.redraw();
-  }, 'btn-fl', { disabled: !ctx.canEdit });
+  }, 'btn-outline-secondary', { disabled: !ctx.canEdit });
   const liveBox = h('div', { className: 'np-live' });
   if (bridge) addBridgeLive(ctx, name, liveBox);
   return {

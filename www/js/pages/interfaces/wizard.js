@@ -119,7 +119,7 @@ export function openWizard(ctx, onDone) {
     if (choice.proto === 'static') {
       const suggestion = suggestSubnet(cur().base, cur().draft);
       const addr = textBox('iface:ipaddr', () => choice.address, v => { choice.address = v; }, { placeholder: '192.168.10.1/24' });
-      const use = button('Use the suggestion', null, () => { choice.address = suggestion?.address ?? ''; addr.value = choice.address; refresh(); }, 'btn-fl', { disabled: !suggestion });
+      const use = button('Use the suggestion', null, () => { choice.address = suggestion?.address ?? ''; addr.value = choice.address; refresh(); }, 'btn-outline-secondary', { disabled: !suggestion });
       fields.push(field('Address of the router, with prefix length', addr,
         suggestion ? `${suggestion.network} overlaps none of your networks, so ${suggestion.address} is suggested. Clients get addresses from the DHCP server you set up on the DHCP page.` : 'Every private /24 range is taken; type the address yourself.'),
       field('Gateway (optional)', textBox('iface:gateway', () => choice.gateway, v => { choice.gateway = v; }, { placeholder: 'none' }),
@@ -128,7 +128,7 @@ export function openWizard(ctx, onDone) {
     } else if (choice.proto === 'pppoe') {
       const pw = h('input', { className: 'form-control form-control-sm', type: 'password', value: choice.password, placeholder: 'not set', spellcheck: false, autocomplete: 'new-password', oninput: e => { choice.password = e.target.value; refresh(); } });
       const reveal = button(null, 'eye', () => { const show = pw.type === 'password'; pw.type = show ? 'text' : 'password'; reveal.replaceChildren(icon(show ? 'eye-slash' : 'eye')); },
-        'btn-fl', { title: 'Show or hide what you typed', ariaLabel: 'Show or hide what you typed' });
+        'btn-outline-secondary', { title: 'Show or hide what you typed', ariaLabel: 'Show or hide what you typed' });
       fields.push(field('PAP/CHAP username', textBox('iface:username', () => choice.username, v => { choice.username = v; }), 'The user name of the PPPoE account your provider gave you.'),
         field('PAP/CHAP password', h('div', { className: 'set-row' }, pw, reveal), 'Stored in the file but never shown again: the page only ever says whether one is stored.'));
     }
@@ -172,7 +172,7 @@ export function openWizard(ctx, onDone) {
     nextBtn = null;
     if (finished) {
       dlg.setBody(donePage());
-      dlg.setFooter([button('Close', 'check2', () => dlg.close(), 'btn-brand')]);
+      dlg.setFooter([button('Close', 'check2', () => dlg.close(), 'btn-primary')]);
       return;
     }
     const stepper = h('ol', { className: 'np-steps' }, STEPS.map((t, i) => h('li', { className: i + 1 === step ? 'on' : i + 1 < step ? 'done' : '' }, h('span', { className: 'np-num' }, String(i + 1)), h('span', {}, t))));
@@ -187,8 +187,8 @@ export function openWizard(ctx, onDone) {
       page = section(null, STEPS[2], `The network ${choice.name.trim() || 'you are adding'} will sit on ${deviceNameOf(choice) || 'the device you chose'}.`,
         ...detailsForm(), h('div', { className: 'np-summary' }, h('h4', {}, 'What Finish adds to the draft'), summaryBox));
     }
-    const back = button('Back', null, () => { step--; render(); }, 'btn-fl', { disabled: step === 1 });
-    nextBtn = step === 3 ? button('Finish', 'check2', finish, 'btn-brand') : button('Next', 'arrow-right', () => { step++; render(); }, 'btn-brand');
+    const back = button('Back', null, () => { step--; render(); }, 'btn-outline-secondary', { disabled: step === 1 });
+    nextBtn = step === 3 ? button('Finish', 'check2', finish, 'btn-primary') : button('Next', 'arrow-right', () => { step++; render(); }, 'btn-primary');
     dlg.setBody(h('div', { className: 'np-wizard' }, stepper, page, problemsBox));
     dlg.setFooter([button('Cancel', 'x-lg', () => dlg.close()), step > 1 ? back : null, nextBtn].filter(Boolean));
     refresh();

@@ -157,10 +157,14 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
 
 This is the one place that says how shared UI looks and behaves; the other docs and the page docs refer to it.
 
-- **Buttons.** Build them with `button(label, iconName, onclick, cls = 'btn-fl', props = {})` from `core/ui.js`, not by hand.
-  `cls` picks the variant (`btn-fl` neutral, `btn-brand` the primary action) and may add page classes; `props` sets other
+- **Buttons.** Build them with `button(label, iconName, onclick, cls = 'btn-outline-secondary', props = {})` from
+  `core/ui.js`, not by hand. `cls` is a native Bootstrap button variant (`btn-primary` for the primary action) and may
+  add page classes; `props` sets other
   element properties (`title`, `disabled`, `ariaLabel`). An icon-only button (empty label) needs a `title` and an `ariaLabel`.
   Labels and headers are sentence case, American English.
+- **Feedback and progress.** Use Bootstrap `alert-*` classes for status feedback, `.table-responsive` for wide tables,
+  `.progress` with `role="progressbar"` and complete ARIA values for measurable bars, and the shared `spinner()` helper
+  from `core/ui.js` for loading states. Theme colors override Bootstrap's component variables in `base.css`.
 - **Icon vocabulary.** A concept uses the same icon on every page (names are the `PATHS` keys of `core/icons.js`):
 
   | Concept | Icon |

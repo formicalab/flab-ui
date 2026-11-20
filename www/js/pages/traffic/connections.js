@@ -38,7 +38,7 @@ function hostList(caption, list, names, acct, pick) {
     acct ? h('td', { className: 'tr-num' }, fmtBytes(x.bytes)) : null));
   return h('div', { className: 'col-12 col-lg-6' },
     h('h3', { className: 'tr-caption' }, caption),
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover tr-hosts' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover tr-hosts' },
       h('thead', {}, h('tr', {}, h('th', {}, 'Host'), h('th', { className: 'tr-num' }, 'Connections'), acct ? h('th', { className: 'tr-num' }, 'Traffic') : null)),
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: acct ? 3 : 2, className: 'muted' }, 'Nothing to show'))))));
 }
@@ -96,7 +96,7 @@ function entriesCard(data, state, rerender) {
         'One row per tracked connection. ', h('strong', {}, 'Original'), ' is what the sender used (↑ is the direction of the first packet, ↓ the replies); ',
         h('strong', {}, 'Translated'), ' appears when the router rewrote an address or port: SNAT is the masquerade of the LAN behind the WAN address, DNAT a port forward from outside. ',
         h('strong', {}, 'UNREPLIED'), ' marks connections that never got an answer. The remaining life is the kernel timeout; a flow in the flow table is offloaded and has none.']]),
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover tr-conns' },
+      h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover tr-conns' },
         h('thead', {}, h('tr', {}, ['Protocol', 'Original', 'Translated (NAT)', 'State', 'Time left', data.acct === false ? 'Size (counters off)' : 'Size'].map(c => h('th', {}, c)))),
         h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 6, className: 'muted' }, state.q || state.proto !== 'all' || state.scope !== 'all' ? 'No connection matches the filter' : 'The table is empty'))))),
       data.entries.length > shown.length ? h('div', { className: 'tr-more' },

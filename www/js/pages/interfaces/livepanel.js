@@ -11,7 +11,7 @@ import { poolText } from './panelmodel.js';
 const POLICY = { ACCEPT: 'accepted', REJECT: 'rejected, with an error reply', DROP: 'dropped silently' };
 
 // A link button to another page.
-const pageLink = (href, label) => h('a', { href, className: 'btn btn-sm btn-fl' }, label);
+const pageLink = (href, label) => h('a', { href, className: 'btn btn-sm btn-outline-secondary' }, label);
 
 // A list of values as monospace lines, or "none".
 const lines = list => (list.length ? h('div', {}, list.map(v => h('div', { className: 'mono' }, v))) : muted('none'));

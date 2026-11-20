@@ -5,18 +5,18 @@ its DHCPv4 server too; it is configured in
 `ipv6leases`, `ipv6ra`), `network.interface dump` (which device belongs to which interface and its subnet),
 `service list odhcpd` and `service list dnsmasq` and rpcd's `uci` object; it needs no plugin, only the ACL fragment
 `rpcd/acl.d/flab-dhcp.json`. Leases are keyed by device (`br-lan`) in the ubus replies and shown under their
-logical interface (`lan`). Top to bottom the page shows the tiles, then the settings (daemon, pools), then the
-advertised prefixes, the leases and last the reservations.
+logical interface (`lan`). Top to bottom the page shows the tiles (they stay on top, in the command bar), the
+daemon settings, the pool settings and network boot (the configuration), then the clients (leases and static leases in one list) and the advertised prefixes (what is happening now).
 - **Who serves DHCPv4** is detected: odhcpd when `odhcpd.maindhcp` is on, otherwise dnsmasq when its procd service
   runs (the usual split of dnsmasq for IPv4 and an IPv6-only odhcpd). In the dnsmasq case odhcpd has no
   `ipv4leases`, so the page reads dnsmasq's lease file (the `leasefile` option of `config dnsmasq`, default
   `/tmp/dhcp.leases`, through rpcd's `file` object, which the ACL fragment limits to `/tmp/*.leases`) and parses its
   `expiry MAC address hostname client-id` lines. A lease gets its interface from the subnet it falls in, counts as
-  reserved when a reservation has its MAC or address, and shows the time left (0 means it never expires; the time
+  static when a static lease has its MAC or address, and shows the time left (0 means it never expires; the time
   is counted with the browser's clock). The tiles and the leases card say "from dnsmasq"; a lease file that cannot
   be read is reported instead of being shown as no leases.
-- **Tiles**: whether odhcpd runs (and who serves DHCPv4), DHCPv4 leases (reserved and dynamic), DHCPv6 leases,
-  reservations (how many hold a lease now).
+- **Tiles**: whether odhcpd runs (and who serves DHCPv4), DHCPv4 leases (static and dynamic), DHCPv6 leases (with
+  how many hold delegated prefixes), static leases (how many hold a lease now).
 - **Daemon** (`config odhcpd`): main DHCPv4 server switch, log level, lease file, trigger script, hosts directory,
   and so on, and the **server DUID** (`dhcp_default_duid`), which odhcpd reads from the `globals` section of
   `/etc/config/network` (the only part of that config the page reads, because the rest holds secrets; the ACL
@@ -34,26 +34,46 @@ advertised prefixes, the leases and last the reservations.
   - **Other options** a section holds that no table describes (options of other programs that read the same file,
     such as `dhcp_option` or `force`, and `dhcpv6_raw`) are listed read only at the bottom of the card, so
     nothing in the file is hidden.
-- **Leases**: the IPv6 prefixes advertised to clients in router advertisements (a stale one is flagged), DHCPv4 (address, MAC, hostname,
-  reserved or dynamic, time left) with a *Reserve* button on every dynamic lease that adds a reservation to the
-  form, and DHCPv6 (DUID, matched client MAC/hostname, IA_NA addresses, IA_PD delegated prefixes and how many
-  `/64` subnets each prefix contains). Link-layer DUIDs and matching DHCPv4 DUIDs/hostnames are used to identify
-  otherwise anonymous DHCPv6 clients. The command bar filters all three by text and by interface.
-- **Reservations** (`config host`): one editable row each with name, IPv4 address, MAC address(es), DUID(s), IPv6
-  host ID and lease time, and whether the client holds a lease now. A reservation with only a name and a MAC
-  keeps the address dynamic. Rows can be added, removed (shown struck through, with Undo) and edited. New
-  sections get their names from uci, so a saved reservation is recognized by its content.
-- **Network boot (PXE)** (`config boot6`): one editable row each with the boot file address (`tftp://[fd11::1]/pxe.efi`)
+- **Clients** (the *Leases* section): one list, one row per client, that joins the live leases to the static leases
+  (`config host`) of the configuration. A row shows the name and below it the MAC address (or the DUID of a client
+  known only from DHCPv6), the interface, the DHCPv4 address, the DHCPv6 addresses (IA_NA) and delegated prefixes
+  (IA_PD, with how many `/64` subnets each contains), a state (*static* or *dynamic*, *no lease now* for a static lease
+  that holds none, IA_NA/IA_PD badges, a warning for a hostname odhcpd could not use) and the time left. A lease
+  belongs to a static lease when it has one of its MACs or its address (DHCPv4), or one of its DUIDs or a MAC that
+  matches (DHCPv6); the DHCPv6 lease of a client is joined to its DHCPv4 lease through the MAC embedded in a
+  link-layer DUID, a matching DHCPv4 DUID or the hostname, so a client with both is one row. Rows are sorted by
+  interface and address; new static leases come first. One filter (text, interface, and type: all, static, dynamic
+  or static with no lease now) sits above the list, so it is next to what it filters, and it keeps its focus while
+  the list redraws.
+  - **Make static** (dynamic clients) adds a static lease to the form with the client's name, DHCPv4 address and MAC
+    (or its DUID when no MAC is known); the client stays one row, now marked *new*.
+  - **Static leases**: *Edit* opens a panel under the row with a labelled, explained box for every option odhcpd reads
+    in a `host` section: name, IPv4 address (or `ignore`), MAC address(es), DUID(s) (`DUID` or `DUID%IAID`), IPv6
+    host ID and lease time. A static lease with only a name and a MAC keeps the address dynamic. A new one and a
+    one with an error are always open; the others close with *Done*. *Add static lease* adds an empty one;
+    *Remove* marks one for removal (with Undo) or drops it when it is new. New sections get their names from uci, so a
+    saved static lease is recognized by its content.
+- **Advertised prefixes** (*Router advertisements*): the IPv6 prefixes announced in router advertisements, with a
+  stale one flagged.- **Network boot (PXE)** (`config boot6`): one editable row each with the boot file address (`tftp://[fd11::1]/pxe.efi`)
   and the optional architecture code (7 is EFI x64; an entry without one is the default). Added, removed and
-  verified like the reservations. Two entries for the same architecture warn.
-- **Validation**: field checks come from `core/fields.js`; on top of them an address or MAC reserved twice
+  verified like the static leases. Two entries for the same architecture warn.
+- **Validation**: field checks come from `core/fields.js`; on top of them an address or MAC used by two static leases
   (both rows are marked), the router's own address and a pool that starts beyond its subnet are errors. Warnings
   (they do not block Save): an address outside every served subnet, a pool longer than its subnet, DHCPv4 on an
   interface with no IPv4 address, odhcpd no longer the main DHCPv4 server, a removed pool, advertisement intervals out of
   proportion, the RA flag `none` combined with others, and `managed-config` with DHCPv6 disabled. Every
-  reservation needs a MAC or a DUID and every boot entry an address. A value already invalid in the router's file is reported the same way and
+  static lease needs a MAC or a DUID and every boot entry an address. A value already invalid in the router's file is reported the same way and
   blocks Save until fixed.
 - **Not offered**: the pool's `interface` (it binds the pool to its interface and is shown in the header).
+- **Against the OpenWrt documentation**: the page edits what odhcpd reads (its `config.c` and the
+  [odhcpd techref](https://openwrt.org/docs/techref/odhcpd)), and the defaults it shows are odhcpd's own (log level 4,
+  router lifetime three times the longest advertisement interval, smallest delegated prefix `/62`). Options that the
+  [DHCP and DNS configuration](https://openwrt.org/docs/guide-user/base-system/dhcp) page lists for dnsmasq only are
+  not odhcpd's and have no control here: `dhcp_option`, `force`, `ignore`, `tag`, `instance` and the like in pools;
+  `enable`, `dns`, `broadcast`, `match_tag` in static leases; the `dnsmasq`, `boot`, `domain`, `mac`, `vendorclass`,
+  `userclass`, `ipset` and `relay` sections. They are kept untouched when present (pools list them read only).
+  Options that older documentation lists for odhcpd but that current odhcpd no longer reads (`legacy`,
+  `preferred_lifetime`, `ra_management`, `ra_useleasetime`, `ndproxy_static`) are not offered either.
 - Saving uses the same flow and review banner as System settings (see
   [Configuration changes](../architecture.md#configuration-changes)); a change that includes the DUID stages both configs in one
   apply and the check after the save reads both back, so a change the router did not keep in either is rolled

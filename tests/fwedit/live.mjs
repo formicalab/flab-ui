@@ -258,7 +258,7 @@ const dgroup = async title => {
 // The messages under the dialog's form.
 const dnotes = () => dlg().locator('.set-notes .set-note').allInnerTexts().then(t => t.join(' | '));
 // The accept button of the dialog.
-const dsave = () => dlg().locator('.modal-footer button.btn-brand');
+const dsave = () => dlg().locator('.modal-footer button.btn-primary');
 // The banner at the top and its save button.
 const bar = () => page.locator('.set-bar');
 const saveBtn = () => page.locator('button:has-text("Save and apply")');

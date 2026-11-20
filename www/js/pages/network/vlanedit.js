@@ -54,9 +54,9 @@ function matrix(ctx, table, d) {
       ? h('td', {}, h('input', { className: 'form-check-input', type: 'checkbox', checked: row.local, disabled: !ctx.canEdit, title: 'The router itself is a member of this VLAN (option local)',
         ariaLabel: `The router in VLAN ${row.vid}`, onchange: e => { row.local = e.target.checked; ctx.touched(); } }))
       : cpu.map(c => cellSelect(ctx, table, row, c)),
-    h('td', {}, button('', 'x-lg', () => { removeRow(ctx.draft, table.key, row.key); ctx.touched(); ctx.redraw(); }, 'btn-fl',
+    h('td', {}, button('', 'x-lg', () => { removeRow(ctx.draft, table.key, row.key); ctx.touched(); ctx.redraw(); }, 'btn-outline-secondary',
       { title: `Remove VLAN ${table.kind === 'switch' ? switchVid(row) : row.vid}`, ariaLabel: `Remove VLAN ${table.kind === 'switch' ? switchVid(row) : row.vid}`, disabled: !ctx.canEdit }))));
-  return h('div', { className: 'grid-wrap' }, h('table', { className: 'table vlan-table vlan-edit-table' }, h('thead', {}, head), h('tbody', {}, body)));
+  return h('div', { className: 'table-responsive' }, h('table', { className: 'table vlan-table vlan-edit-table' }, h('thead', {}, head), h('tbody', {}, body)));
 }
 
 // The box that adds a VLAN to a table.
@@ -71,7 +71,7 @@ function addBar(ctx, table) {
     ctx.redraw();
   };
   input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
-  const go = button('Add VLAN', 'plus-lg', add, 'btn-fl', { disabled: !ctx.canEdit });
+  const go = button('Add VLAN', 'plus-lg', add, 'btn-outline-secondary', { disabled: !ctx.canEdit });
   return h('div', { className: 'vlan-add' }, input, go, s.error ? h('span', { className: 'vlan-add-error' }, s.error) : null);
 }
 

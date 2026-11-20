@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.18 - 2026-11-20
+
+### DHCP
+
+- The page is rebuilt around one client list: the DHCPv4 and DHCPv6 leases a client holds are joined to its static
+  lease in one row, with a single filter (text, interface, type), **Make static** for dynamic clients and an editor
+  with every `host` option under each static lease. "Reservations" are now called static leases.
+- Settings (daemon, pools, network boot) come before the client list and the advertised prefixes, and the icons of the
+  page were made consistent. Corrected the defaults shown for the log level (4) and the router lifetime (1800).
+
+### Interface
+
+- Bootstrap 5.3.9 and native components throughout: alerts, progress bars, spinners, input groups, button groups and
+  responsive tables replace custom CSS. The summary tiles of every page stay on top of the command bar, expanders use
+  one chevron icon, and typing in a filter no longer loses focus when the page redraws.
+
 ## 0.1.17 - 2026-11-20
 
 ### DHCP

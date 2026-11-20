@@ -64,7 +64,7 @@ function form(state, devices) {
     field('dst', 'Destination', 'e.g. 1.1.1.1 or 2606:4700:4700::1111', 'The address a packet is sent to'),
     field('src', 'From (optional)', 'source address', 'The source address of the packet; policy rules can depend on it'),
     h('label', { className: 'rt-field', title: 'The interface the packet arrives on, to simulate forwarded traffic' }, h('span', {}, 'Arrives on (optional)'), iif),
-    h('div', { className: 'rt-actions' }, button('Look up', 'search', () => submit(state), 'btn-brand'), state.query ? button('Clear', 'x-lg', () => clear(state)) : null),
+    h('div', { className: 'rt-actions' }, button('Look up', 'search', () => submit(state), 'btn-primary'), state.query ? button('Clear', 'x-lg', () => clear(state)) : null),
     state.formError ? h('div', { className: 'rt-error' }, icon('x-circle'), state.formError) : null);
 }
 

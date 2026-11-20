@@ -64,7 +64,7 @@ export function zonesCard(fw, ctx = null) {
       h('div', { className: 'muted small fw-legend fw-zones-legend' },
         h('p', {}, h('b', {}, 'accept'), ' lets everything through by default. ', h('b', {}, 'reject'), ' and ', h('b', {}, 'drop'), ' refuse everything by default except what a specific rule or forwarding allows (reject answers the sender with an error, drop silently discards); replies to connections that were allowed are always let back in.'),
         h('p', {}, h('b', {}, 'Input'), ' = zone to the router itself · ', h('b', {}, 'Output'), ' = router to the zone · ', h('b', {}, 'Forward'), ' = between interfaces of the same zone only; reaching other zones is the "May forward to" column. So a wan input of reject means: nothing from the Internet reaches the router except what the traffic rules and port forwards below allow.')),
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table fw-table' },
+      h('div', { className: 'table-responsive' }, h('table', { className: 'table fw-table' },
         h('thead', {}, h('tr', {}, cols.map(([label, title]) => h('th', { title: title ?? '' }, label)))),
         h('tbody', {}, rows.length ? rows.map(z => zoneRow(z, ctx)) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No zones are configured.')))))));
 }

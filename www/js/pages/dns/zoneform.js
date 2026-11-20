@@ -35,7 +35,7 @@ export function openZoneDialog({ data, getDraft, key, onSave, onClose }) {
   let dialog = null;
 
   const errorsBox = h('div', { className: 'set-notes' });
-  const save = button(isNew ? 'Add to the changes' : 'Update the changes', 'check2', () => { onSave(form); dialog.close(); }, 'btn-brand');
+  const save = button(isNew ? 'Add to the changes' : 'Update the changes', 'check2', () => { onSave(form); dialog.close(); }, 'btn-primary');
   const cancel = button('Cancel', null, () => dialog.close());
 
   // Checks the form: the buttons follow, and the messages and the marked inputs show once the user has started typing.

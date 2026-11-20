@@ -6,7 +6,7 @@ import { icon } from './icons.js';
 import { ubus, hasSession, logout, clearSession, AuthError } from './ubus.js';
 import { showLogin } from './login.js';
 import { ensureCurrent } from './freshness.js';
-import { button, card } from './ui.js';
+import { button, card, spinner } from './ui.js';
 import { basePages, installedPages, aliases } from '../pages/index.js';
 
 // Module-level state: the refresh interval of the open page, a function that refreshes the open page (for the
@@ -90,7 +90,7 @@ async function route() {
     ...pages.filter(p => p.nav === 'bottom').map(link),
     h('button', { type: 'button', className: 'nav-link-fl', onclick: signOut }, icon('box-arrow-right'), 'Sign out'));
 
-  const results = h('main', { id: 'page-content' }, h('div', { className: 'text-center muted p-5' }, h('div', { className: 'spinner-border spinner-border-sm' })));
+  const results = h('main', { id: 'page-content' }, h('div', { className: 'text-center muted p-5' }, spinner('Loading page…')));
   const stamp = h('span', { className: 'muted small' });
   const cmdbar = h('header', { className: 'cmdbar' }, h('h1', {}, entry.title ?? entry.label), stamp);
   byId('app').replaceChildren(h('div', { className: 'shell' }, nav, h('div', { className: 'content' }, cmdbar, results)));
@@ -112,11 +112,30 @@ async function route() {
   ensureCss(page.css);
   let data = null;
 
-  // Redraws the page from the last data without polling; controls call it so filter changes apply instantly.
-  const rerender = () => { if (current() && data) results.replaceChildren(...page.view(data, rerender)); };
   const ctl = page.controls ? page.controls({ rerender, reload: () => load() }) : { nodes: [] };
   if (ctl.nodes.some(node => node?.role === 'tablist')) results.setAttribute('role', 'tabpanel');
-  cmdbar.replaceChildren(h('h1', {}, entry.title ?? entry.label), ...ctl.nodes, stamp);
+  const heading = h('h1', {}, entry.title ?? entry.label);
+  const summarySlot = h('div', { className: 'fl-summary-slot' });
+  // Summary tiles sit above command controls on every page; individual pages keep only their detailed content.
+  cmdbar.replaceChildren(heading, stamp, summarySlot, ...ctl.nodes);
+  const drawSummaries = (summaries = []) => summarySlot.replaceChildren(...summaries);
+  // Redraws the page from the last data without polling; controls call it so filter changes apply instantly.
+  function rerender() {
+    if (!current() || !data) return;
+    const active = document.activeElement;
+    const selection = active && typeof active.selectionStart === 'number'
+      ? { start: active.selectionStart, end: active.selectionEnd, direction: active.selectionDirection }
+      : null;
+    const nodes = [page.view(data, rerender)].flat(Infinity).filter(Boolean);
+    const summaries = nodes.filter(node => node?.classList?.contains('fl-summary'));
+    drawSummaries(summaries);
+    results.replaceChildren(...nodes.filter(node => !node?.classList?.contains('fl-summary')));
+    if (active?.isConnected) {
+      active.focus({ preventScroll: true });
+      if (selection && typeof active.setSelectionRange === 'function')
+        active.setSelectionRange(selection.start, selection.end, selection.direction);
+    }
+  }
 
   // Polls the page once and redraws it. A failed poll shows the error in place of the content; an expired session
   // returns to the login form. Only the newest request counts: an older reply that arrives late (a slow router, an
@@ -143,6 +162,7 @@ async function route() {
       if (!current() || n !== requests) return;
       if (e instanceof AuthError) return expire();
       if (polled && page.isPaused?.()) return;
+      drawSummaries();
       results.replaceChildren(card(null, h('div', { className: 'card-body text-danger' }, e.message)));
     } finally {
       if (n === requests) loading = false;

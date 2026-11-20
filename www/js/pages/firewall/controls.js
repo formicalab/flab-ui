@@ -37,7 +37,7 @@ export function checkField(f, io, items, { free = false } = {}) {
       io.redraw();
     };
     input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
-    more = h('div', { className: 'set-row fw-more' }, input, button('Add', 'plus-lg', add, 'btn-fl', { disabled: io.disabled }));
+    more = h('div', { className: 'set-row fw-more' }, input, button('Add', 'plus-lg', add, 'btn-outline-secondary', { disabled: io.disabled }));
   }
   return h('div', { className: 'set-field full' }, h('label', { className: 'form-label' }, f.label), group, more, f.hint ? h('div', { className: 'muted small set-hint' }, f.hint) : null);
 }

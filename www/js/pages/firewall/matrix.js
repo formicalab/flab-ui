@@ -59,5 +59,5 @@ export function matrixCard(fw, ctx = null) {
         h('span', { className: 'fwm-key fwm-open' }), ' allowed by policy   ',
         h('span', { className: 'fwm-key fwm-partial' }), ' blocked by policy, opened by specific rules   ',
         h('span', { className: 'fwm-key fwm-closed' }), ' blocked. A zone reaches another zone only through a forwarding, a rule or a port forward; the diagonal is traffic between interfaces of the same zone.'),
-      h('div', { className: 'grid-wrap' }, table)));
+      h('div', { className: 'table-responsive' }, table)));
 }

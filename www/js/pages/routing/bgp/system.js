@@ -69,7 +69,7 @@ export function protocolsCard(data) {
     h('td', {}, channelLines(p, ch => ch.preference ?? '–')),
     h('td', {}, channelLines(p, filterChips))));
   return card([icon('hdd-stack'), 'BIRD protocols', h('span', { className: 'sub' }, `${data.protocols.length} instances`)],
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover' },
       h('thead', {}, h('tr', {}, ['Name', 'Type', 'Table', 'State', 'Since', 'Routes', 'Pref', 'Filters (in · out)'].map(c => h('th', {}, c)))),
       h('tbody', {}, rows))));
 }

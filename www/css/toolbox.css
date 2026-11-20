@@ -190,7 +190,7 @@
 .rt-cap-proto { font-family: var(--fl-mono); font-size: .85rem; }
 .rt-cap-talkers { display: grid; gap: .2rem; font-size: .875rem; }
 .rt-captable td, .rt-captable th { white-space: nowrap; }
-.rt-capture .grid-wrap { max-height: 32rem; overflow: auto; }
+.rt-capture .table-responsive { max-height: 32rem; overflow: auto; }
 .rt-pkt-info { max-width: 38rem; overflow: hidden; text-overflow: ellipsis; font-size: .8rem; }
 .rt-rst td { color: var(--fl-bad-fg); }
 .rt-capfilter { grid-column: span 2; min-width: 0; }

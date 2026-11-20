@@ -26,7 +26,7 @@ function confirmSave(base, draft) {
   if (!risks.length) return Promise.resolve(true);
   return new Promise(resolve => {
     let go = false;
-    const apply = button('Apply the change', 'check2', () => { go = true; dialog.close(); }, 'btn-brand');
+    const apply = button('Apply the change', 'check2', () => { go = true; dialog.close(); }, 'btn-primary');
     const cancel = button('Cancel', 'x-lg', () => dialog.close());
     const dialog = openDialog({
       title: 'This change affects the default route',
@@ -164,7 +164,7 @@ function routeRow(ctx, row, choices) {
       if (row.section == null) ctx.draft.rows.splice(ctx.draft.rows.indexOf(row), 1);
       else row.removed = true;
       ctx.redraw();
-    }, 'btn-fl', { title: 'Remove this route', ariaLabel: 'Remove this route', disabled: !ctx.canEdit });
+    }, 'btn-outline-secondary', { title: 'Remove this route', ariaLabel: 'Remove this route', disabled: !ctx.canEdit });
   const state = h('td', {}, stateBadge(ctx, row));
   ctx.states.set(row, state);
   const reach = h('td', { className: 'rt-s-reach' }, ...reachCell(ctx, row));
@@ -186,7 +186,7 @@ function familyCard(ctx, fam, choices) {
   return card(
     [icon('signpost-split'), h('span', {}, `${fam.label} static routes`), h('span', { className: 'sub' }, `${count} route${count === 1 ? '' : 's'}`)],
     h('div', {},
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-sm align-middle rt-static-table' },
+      h('div', { className: 'table-responsive' }, h('table', { className: 'table table-sm align-middle rt-static-table' },
         h('thead', {}, h('tr', {}, ...FIELDS.map(f => h('th', { title: f.hint }, f.label)), h('th', { title: 'The table the route lands in, and the policy rules that look it up' }, 'Consulted by'), h('th', {}, 'State'), h('th', {}))),
         h('tbody', {}, rows.length ? rows.map(r => routeRow(ctx, r, choices)) : h('tr', {}, h('td', { colSpan: FIELDS.length + 3, className: 'muted' }, `No ${fam.label} static routes.`))))),
       h('div', { className: 'card-body' }, add)));

@@ -85,7 +85,7 @@ function capsBlock(p) {
     return h('tr', { className: l && n ? '' : 'mismatch', title: l && n ? '' : 'Only one side offers this capability, so it is not in use' },
       h('td', {}, h('span', { title: CAP_HELP[name] ?? '' }, name)), capCell(l), capCell(n));
   });
-  return section('Capabilities', h('div', { className: 'grid-wrap' }, h('table', { className: 'table cap-table' },
+  return section('Capabilities', h('div', { className: 'table-responsive' }, h('table', { className: 'table cap-table' },
     h('thead', {}, h('tr', {}, h('th', {}, 'Capability'), h('th', {}, 'This router'), h('th', {}, 'Neighbor'))),
     h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 3, className: 'muted' }, 'No capabilities negotiated'))))));
 }
@@ -99,7 +99,7 @@ const STAT_COLS = [['received', 'received'], ['rejected', 'rejected'], ['filtere
 function statsTable(stats) {
   // One counter cell; a dash when the counter is missing, highlighted when routes were rejected or filtered.
   const cell = (v, col) => h('td', { className: v > 0 && (col === 'rejected' || col === 'filtered') ? 'stat-warn' : '' }, v == null ? '–' : fmtNum(v));
-  return h('div', { className: 'grid-wrap' }, h('table', { className: 'table stats-table' },
+  return h('div', { className: 'table-responsive' }, h('table', { className: 'table stats-table' },
     h('thead', {}, h('tr', {}, h('th', {}, 'Route changes'), STAT_COLS.map(([, l]) => h('th', {}, l)))),
     h('tbody', {}, STAT_ROWS.map(([key, label]) => h('tr', {}, h('td', {}, label), STAT_COLS.map(([col]) => cell(stats?.[key]?.[col], col)))))));
 }

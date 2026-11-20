@@ -16,7 +16,7 @@ function cell(entry) {
 
 // The matrix of `vlans` ([{ vid, ports: [{ name, tagged, pvid }] }]) over the columns `names`.
 function matrix(vlans, names) {
-  return h('div', { className: 'grid-wrap' }, h('table', { className: 'table vlan-table' },
+  return h('div', { className: 'table-responsive' }, h('table', { className: 'table vlan-table' },
     h('thead', {}, h('tr', {}, h('th', {}, 'VLAN'), names.map(n => h('th', {}, n)))),
     h('tbody', {}, vlans.map(v => h('tr', {}, h('td', {}, h('strong', {}, v.vid)), names.map(n => cell(v.ports.find(p => p.name === n))))))));
 }

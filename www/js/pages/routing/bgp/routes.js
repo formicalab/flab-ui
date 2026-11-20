@@ -126,7 +126,7 @@ export function routesCard(data, state, rerender) {
   return card([icon('signpost-split'), 'Learned routes',
     h('span', { className: 'sub' }, `${filtered.length} of ${data.paths.length} paths · ${prefixes} prefixes`)],
   h('div', {},
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover fixed-grid routes-table', style: 'min-width:1200px' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover fixed-grid routes-table', style: 'min-width:1200px' },
       h('colgroup', {}, cols.map(c => h('col', { style: `width:${(c.w / totalWeight * 100).toFixed(2)}%` }))),
       h('thead', {}, h('tr', {}, head)),
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No routes match the filter'))))),

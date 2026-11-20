@@ -73,7 +73,7 @@ function addBar(ctx) {
       ctx.touched();
       ctx.redraw();
     } catch { /* the form says that a key must be pasted */ }
-  }, 'btn-brand', { disabled: !ctx.canEdit });
+  }, 'btn-primary', { disabled: !ctx.canEdit });
   return h('div', { className: 'wg-addbar' }, add,
     h('span', { className: 'muted small' }, 'A new interface gets a key made in this browser. Add its address and port, then peers, and save; put the interface in a firewall zone on the Firewall page afterwards.'));
 }

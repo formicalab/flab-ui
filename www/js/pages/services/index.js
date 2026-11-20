@@ -6,7 +6,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, can, optional, ubus } from '../../core/ubus.js';
-import { badge, button, card, mono, muted, tile, tiles } from '../../core/ui.js';
+import { badge, button, card, mono, muted, spinner, tile, tiles } from '../../core/ui.js';
 import { refreshControl, searchControl } from '../../core/controls.js';
 import { note } from '../../core/forms.js';
 import { fmtNum } from '../../core/format.js';
@@ -86,8 +86,8 @@ function confirmNote() {
       h('strong', {}, risk.title),
       h('p', {}, risk.text)),
     h('div', { className: 'svc-note-actions' },
-      button(`${LABELS[p.action]} ${p.name}`, 'check2', () => perform(p.name, p.action), risk.level === 'danger' ? 'btn-danger' : 'btn-brand', { id: 'svc-confirm-yes', disabled: Boolean(state.busy) }),
-      button('Cancel', 'x-lg', () => { state.pending = null; shell.rerender(); }, 'btn-fl', { id: 'svc-confirm-no' })));
+      button(`${LABELS[p.action]} ${p.name}`, 'check2', () => perform(p.name, p.action), risk.level === 'danger' ? 'btn-danger' : 'btn-primary', { id: 'svc-confirm-yes', disabled: Boolean(state.busy) }),
+      button('Cancel', 'x-lg', () => { state.pending = null; shell.rerender(); }, 'btn-outline-secondary', { id: 'svc-confirm-no' })));
 }
 
 // The outcome of the last call: green when it worked, red with the script's own output when it failed.
@@ -100,13 +100,13 @@ function outcomeNote() {
       h('span', {}, o.text),
       o.output ? h('pre', { className: 'svc-output' }, o.output) : null),
     h('div', { className: 'svc-note-actions' },
-      button('Dismiss', 'x-lg', () => { state.outcome = null; shell.rerender(); }, 'btn-fl', { id: 'svc-outcome-dismiss' })));
+      button('Dismiss', 'x-lg', () => { state.outcome = null; shell.rerender(); }, 'btn-outline-secondary', { id: 'svc-outcome-dismiss' })));
 }
 
 // The State cell: a badge, with the meaning of "no instance" in its tooltip.
 function stateBadge(row) {
   if (state.busy?.name === row.name) {
-    return h('span', { className: 'svc-busy' }, h('span', { className: 'spinner-border spinner-border-sm' }), `${PROGRESS[state.busy.action]}…`);
+    return h('span', { className: 'svc-busy' }, spinner('Service action in progress'), `${PROGRESS[state.busy.action]}…`);
   }
   if (row.state === 'running') return badge('running', 'success');
   if (row.state === 'idle') return badge('idle', '', 'Known to procd, no instance running');
@@ -125,7 +125,7 @@ function actionCell(row) {
   if (row.protected) return muted('boot sequence');
   const titles = { enable: `Start ${row.name} at boot`, disable: `Do not start ${row.name} at boot` };
   return h('div', { className: 'svc-actions' }, actionsFor(row).map(a =>
-    button(LABELS[a.action], ACTION_ICONS[a.action], () => request(row.name, a.action), 'btn-fl', {
+    button(LABELS[a.action], ACTION_ICONS[a.action], () => request(row.name, a.action), 'btn-outline-secondary', {
       id: `svc-${row.name}-${a.action}`,
       disabled: a.disabled || Boolean(state.busy),
       title: titles[a.action] ?? `${LABELS[a.action]} ${row.name}`,
@@ -157,7 +157,7 @@ function servicesCard(rows, writable) {
   const cols = ['Service', 'State', 'Start at boot', 'PID', 'Listening', writable ? 'Actions' : null].filter(Boolean);
   return card('Services', [
     h('p', { className: 'svc-legend muted small' }, STATE_HELP),
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover svc-table' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover svc-table' },
       h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
       h('tbody', {}, rows.length
         ? rows.map(r => row(r, writable))

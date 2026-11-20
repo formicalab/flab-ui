@@ -85,7 +85,7 @@ function sourceNodes(item, engine, edit, act) {
   const where = engine === 'dnsmasq' ? 'A server entry of the dnsmasq section in /etc/config/dhcp.' : `The zone section ${item.name} of /etc/config/unbound.`;
   const can = edit.canEdit && canEditForwarders(edit.getBase());
   // A small icon button for one row action.
-  const act1 = (name, label, onclick, disabled) => button('', name, onclick, 'btn-fl dns-act-btn', { title: label, ariaLabel: label, disabled });
+  const act1 = (name, label, onclick, disabled) => button('', name, onclick, 'btn-outline-secondary dns-act-btn', { title: label, ariaLabel: label, disabled });
   if (item.pending === 'removed') return [badge('UCI', 'info', where), act1('arrow-counterclockwise', 'Keep this zone (undo the removal)', () => act.restore(item.key), !can)];
   const why = item.locked ? ' This zone cannot be changed here: its lists are too long to read completely, or its type is unknown.' : '';
   return [badge('UCI', 'info', where + why), act1('pencil', 'Edit', () => act.edit(item.key), !can || item.locked), act1('x-lg', 'Remove', () => act.remove(item.key), !can || item.locked)];
@@ -111,7 +111,7 @@ function domainsCell(item, state, draw) {
   const chip = z => h('span', { className: 'dns-domain mono' }, z === '.' ? [z, ' ', h('span', { className: 'muted' }, '(every other name)')] : z);
   const more = item.zones.length > DOMAIN_LIMIT
     ? button(open ? 'Show fewer' : `${fmtNum(item.zones.length - DOMAIN_LIMIT)} more`, open ? 'chevron-up' : 'chevron-down',
-      () => { if (open) state.expanded.delete(item.key); else state.expanded.add(item.key); draw(); }, 'btn-fl dns-toggle', { ariaExpanded: String(open) })
+      () => { if (open) state.expanded.delete(item.key); else state.expanded.add(item.key); draw(); }, 'btn-outline-secondary dns-toggle', { ariaExpanded: String(open) })
     : null;
   return h('td', {}, h('div', { className: 'dns-domains' }, shown.map(chip), more), item.zones.length > 1 ? h('div', { className: 'dns-count muted small' }, `${fmtNum(item.zones.length)} domains`) : null);
 }
@@ -126,7 +126,7 @@ function zoneRows(items, state, engine, edit, act, draw) {
     h('td', {}, h('div', { className: 'dns-servers' }, item.servers.map(s => serverChip(s, item.tls, engine))), item.url ? h('div', { className: 'muted small mono' }, item.url) : null),
     h('td', {}, flagBadges(item.flags)),
     h('td', { className: 'dns-src' }, sourceNodes(item, engine, edit, act))));
-  return h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover dns-table' },
+  return h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover dns-table' },
     h('thead', {}, h('tr', {}, h('th', { title: 'The order of the configuration. Which zone answers a query does not depend on it: the zone with the longest matching domain wins.' }, '#'), h('th', {}, engine === 'dnsmasq' ? 'Server entry' : 'Zone'), h('th', {}, 'Domains'), h('th', {}, 'Servers'), h('th', {}, 'Flags'), h('th', {}, 'Defined in'))),
     h('tbody', {}, body)));
 }
@@ -144,7 +144,7 @@ function zoneList(data, state, engine, items, edit, act, add) {
   });
   draw();
   const can = edit.canEdit && canEditForwarders(edit.getBase());
-  const addButton = button('Add zone', 'plus-lg', add, 'btn-fl', { disabled: !can, title: can ? 'Add a zone' : 'Zones cannot be changed with this login' });
+  const addButton = button('Add zone', 'plus-lg', add, 'btn-outline-secondary', { disabled: !can, title: can ? 'Add a zone' : 'Zones cannot be changed with this login' });
   return h('div', { className: 'dns-pad' },
     h('div', { className: 'dns-toolbar dns-field' }, items.length ? h('div', { className: 'search' }, icon('search'), input) : null, addButton),
     note ? h('p', { className: 'muted small' }, note) : null, items.length ? holder : muted('No zones.'));

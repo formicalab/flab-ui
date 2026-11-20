@@ -8,7 +8,7 @@
 //   odhcpd  (one)        the daemon itself                                      DAEMON_FIELDS
 //   globals (one, in /etc/config/network) the server DUID                       GLOBAL_FIELDS
 //   dhcp    (one per interface) DHCPv4, DHCPv6, router advertisements, NDP     POOL_FIELDS, grouped by POOL_GROUPS
-//   host    (many)       static leases, called reservations                    HOST_FIELDS
+//   host    (many)       static leases                                          HOST_FIELDS
 //   boot6   (many)       network boot (PXE) addresses served over DHCPv6        BOOT6_FIELDS
 // A pool can be added for an interface that has none, and removed. Every option odhcpd reads is in these tables;
 // an option in a section that is not (an option of another daemon that shares the file) is shown read only.
@@ -24,7 +24,7 @@ export const GLOBAL_SECTION = 'globals';
 export const DAEMON_FIELDS = [
   { key: 'maindhcp', type: 'bool', default: false, label: 'Use odhcpd as the main DHCPv4 server',
     hint: 'Without it odhcpd leaves DHCPv4 to another server such as dnsmasq. Switching it off here stops DHCPv4 unless that other server is installed.' },
-  { key: 'loglevel', type: 'int', min: 0, max: 7, default: 6, label: 'Log level (0 to 7)',
+  { key: 'loglevel', type: 'int', min: 0, max: 7, default: 4, label: 'Log level (0 to 7)',
     hint: '0 emergency, 1 alert, 2 critical, 3 error, 4 warning, 5 notice, 6 info, 7 debug.' },
   { key: 'enable_tz', type: 'bool', default: true, label: 'Send the time zone to clients',
     hint: 'Options 41 and 42 (RFC 4833) with the zone from the system settings, to clients that ask for them.' },
@@ -70,7 +70,7 @@ export const POOL_FIELDS = [
   { key: 'ndp', group: 'service', type: 'enum', options: ['disabled', 'relay', 'hybrid'], default: 'disabled', label: 'Neighbor discovery proxy (NDP)',
     hint: 'relay: proxy neighbor discovery between the master interface and this one, for routed interfaces that share a prefix. hybrid: relay, and learn routes. disabled: none.' },
   { key: 'dynamicdhcp', group: 'service', type: 'bool', default: true, label: 'Create leases dynamically',
-    hint: 'Off: only the reservations get an address.' },
+    hint: 'Off: only clients with a static lease get an address.' },
   { key: 'master', group: 'service', type: 'bool', default: false, label: 'Master interface for relaying',
     hint: 'The upstream side of a relay.' },
 
@@ -125,7 +125,7 @@ export const POOL_FIELDS = [
   { key: 'ra_dns', group: 'ra', type: 'bool', default: true, label: 'Announce DNS in the advertisements', hint: 'Put the DNS servers and search domains into the router advertisements (RFC 8106), for clients that configure DNS from them.' },
   { key: 'ra_maxinterval', group: 'ra', type: 'int', min: 4, max: 1800, default: 600, label: 'Longest interval (s)', hint: 'Between unsolicited advertisements.' },
   { key: 'ra_mininterval', group: 'ra', type: 'int', min: 3, max: 1350, default: 200, label: 'Shortest interval (s)', hint: 'Between unsolicited advertisements.' },
-  { key: 'ra_lifetime', group: 'ra', type: 'int', min: 0, max: 9000, default: 2700, label: 'Router lifetime (s)', hint: 'Not recommended above 2700 (RFC 9096).' },
+  { key: 'ra_lifetime', group: 'ra', type: 'int', min: 0, max: 9000, default: 1800, label: 'Router lifetime (s)', hint: 'How long clients keep this router as a default gateway; odhcpd\'s default is three times the longest interval. Not recommended above 2700 (RFC 9096).' },
   { key: 'max_preferred_lifetime', group: 'ra', type: 'string', check: 'duration', default: '45m', label: 'Longest preferred prefix lifetime',
     hint: 'Upper limit for how long clients may keep using an address from an advertised prefix for new connections. For example 45m or 2700.' },
   { key: 'max_valid_lifetime', group: 'ra', type: 'string', check: 'duration', default: '90m', label: 'Longest valid prefix lifetime',
@@ -172,7 +172,7 @@ export const BOOT6_FIELDS = [
     hint: 'The client architecture this entry is for (7 is EFI x64). Without one, the entry is the default for clients that have none of their own.' },
 ];
 
-// The options of a host (reservation) section, in the order of the table's columns. `mac` and `duid` may hold
+// The options of a host (static lease) section, in the order of the table's columns. `mac` and `duid` may hold
 // several values; the table edits them as one text separated by spaces. The hints are the column tooltips.
 export const HOST_FIELDS = [
   { key: 'name', type: 'string', check: 'domain', label: 'Name', placeholder: 'hostname', hint: 'The host name of the client.' },

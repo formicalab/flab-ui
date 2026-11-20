@@ -153,7 +153,7 @@ check(ops.length === 0, 'a new reservation that is removed again writes nothing'
 ops = m.plan(d, draftOf(d, x => { host(x, 'cfg3').values.mac = '02:F0:F4:50:6B:7D'; }));
 check(j(ops) === j([{ op: 'set', config: 'dhcp', section: 'cfg3', values: { mac: '02:F0:F4:50:6B:7D' } }]), 'a list cut down to one MAC is written as a single value');
 const rv = m.changesOf(d, draftOf(d, x => { host(x, 'cfg1').values.ip = '192.168.1.20'; host(x, 'cfg2').removed = true; const n = m.newHost(x); n.values.name = 'new'; n.values.mac = 'aa:bb:cc:dd:ee:01'; x.pools.lan.limit = '90'; }));
-check(rv.length === 4 && rv.some(c => c.label === 'Reservation flabn01: IPv4 address' && c.from === '192.168.1.2' && c.to === '192.168.1.20') && rv.some(c => /^Remove reservation SkyQ-L2-Mesh/.test(c.label)) && rv.some(c => /^New reservation new/.test(c.label)) && rv.some(c => c.label === 'lan: Pool size'), 'the review lists each change by what it is', j(rv));
+check(rv.length === 4 && rv.some(c => c.label === 'Static lease flabn01: IPv4 address' && c.from === '192.168.1.2' && c.to === '192.168.1.20') && rv.some(c => /^Remove static lease SkyQ-L2-Mesh/.test(c.label)) && rv.some(c => /^New static lease new/.test(c.label)) && rv.some(c => c.label === 'lan: Pool size'), 'the review lists each change by what it is', j(rv));
 
 console.log('== validation ==');
 // The errors that validating `edit` applied to a draft of `base` reports.
@@ -300,10 +300,33 @@ savedCfg.cfg9 = section('cfg9', 'host', { mac: 'AA:BB:CC:DD:EE:01', name: 'n', i
 // The message of the error that verifying the saved config `after` against `draft` throws, or null if it passes.
 const verdict = (after, draft = want) => { try { m.checkApplied(after, draft); return null; } catch (e) { return e.message; } };
 check(verdict(m.readDhcp(savedCfg, null, null, null, dump, null)) === null, 'matching data passes, a new reservation found by its content under the name uci gave it');
-check(/lan: Pool size/.test(verdict(data())) && /Reservations/.test(verdict(data())), 'options and reservations that did not stick are named', verdict(data()));
+check(/lan: Pool size/.test(verdict(data())) && /Static leases/.test(verdict(data())), 'options and reservations that did not stick are named', verdict(data()));
 const noNew = { ...savedCfg }; delete noNew.cfg9;
-check(/Reservations/.test(verdict(m.readDhcp(noNew, null, null, null, dump, null))) && /Reservations/.test(verdict(m.readDhcp({ ...savedCfg, cfg2: section('cfg2', 'host', { mac: '38:A6:CE:49:BF:D6', name: 'SkyQ-L2-Mesh' }) }, null, null, null, dump, null))), 'a missing new reservation, or one that was not removed, is reported');
+check(/Static leases/.test(verdict(m.readDhcp(noNew, null, null, null, dump, null))) && /Static leases/.test(verdict(m.readDhcp({ ...savedCfg, cfg2: section('cfg2', 'host', { mac: '38:A6:CE:49:BF:D6', name: 'SkyQ-L2-Mesh' }) }, null, null, null, dump, null))), 'a missing new reservation, or one that was not removed, is reported');
 check(m.checkApplied(d, m.draftFrom(d)) === undefined, 'an untouched draft always verifies');
+
+console.log('== the client list ==');
+{
+  const dd = data();
+  const list = m.clientList(dd, m.draftFrom(dd));
+  const by = name => list.find(c => c.name === name);
+  check(list.length === 6, 'four static leases and two dynamic clients make six rows', list.map(c => c.name).join());
+  check(by('flabn01').row?.section === 'cfg1' && by('flabn01').v4.length === 1 && by('flabn01').v6.length === 1 && by('flabn01').iface === 'lan', 'a static lease holds its DHCPv4 lease (by MAC) and its DHCPv6 lease (by the MAC in the DUID)');
+  check(by('laptop').row === null && by('laptop').v4[0].address === '192.168.1.150' && by('soundbar').row && by('soundbar').v4.length === 0 && by('soundbar').v6.length === 0, 'a client without a static lease is dynamic; a static lease without leases stays in the list');
+  check(by('homeassistant').iface === 'lan' && by('SkyQ-L2-Mesh').iface === '', 'a static lease without a lease takes its interface from its address, when it has one');
+  check(list.slice(0, 3).every(c => c.iface === 'lan') && list.findIndex(c => c.name === 'flabn01') < list.findIndex(c => c.name === 'laptop'), 'rows are sorted by interface and address');
+
+  const fresh = m.draftFrom(dd);
+  const row = m.staticFrom(fresh, by('laptop'));
+  check(row.section === null && row.values.name === 'laptop' && row.values.ip === '192.168.1.150' && row.values.mac === 'AA:BB:CC:DD:EE:FF' && row.values.duid === '', 'Make static prefills the name, address and MAC');
+  const after = m.clientList(dd, fresh);
+  check(after[0].row === row && after.length === 6 && after.filter(c => c.v4.some(l => l.address === '192.168.1.150')).length === 1, 'the new static lease takes over the dynamic lease and comes first');
+
+  const v6only = m.readDhcp(cfg(), null, { device: { 'br-lan': { leases: [{ duid: '00040102030405060708090a0b0c0d0e', iaid: 1, hostname: 'pc', flags: ['bound'], valid: 100, 'ipv6-addr': [{ address: '2a01:827::9' }] }] } } }, ra, dump, svc);
+  const lone = m.clientList(v6only, m.draftFrom(v6only)).find(c => c.name === 'pc');
+  const loneRow = m.staticFrom(m.draftFrom(v6only), lone);
+  check(lone.row === null && lone.macs.length === 0 && loneRow.values.duid === '00040102030405060708090a0b0c0d0e' && loneRow.values.mac === '' && loneRow.values.ip === '', 'a client known only by DHCPv6 is made static by its DUID');
+}
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nall DHCP model checks passed');
 process.exit(failed ? 1 : 0);

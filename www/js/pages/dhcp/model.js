@@ -7,7 +7,7 @@
 //   { daemon: { section, values, extra }, daemonRunning,
 //     globals: { section, values },                     the globals section of /etc/config/network (the server DUID)
 //     pools:  [{ section, iface, values, info, extra }], one per dhcp section; `info` is the interface (or null)
-//     hosts:  [{ section, values }],                    the reservations
+//     hosts:  [{ section, values }],                    the static leases
 //     boot6:  [{ section, values }],                    the network boot (PXE) addresses
 //     interfaces: [{ name, device, v4: { address, mask } | null }], sectionNames: every section name of the dhcp config,
 //     leases4: [...], leases6: [...], ra: [...],
@@ -18,7 +18,7 @@
 //     added: [{ section, iface }] (pools to create), removed: { <section>: true } (pools to delete),
 //     hosts: [{ key, section | null, removed, values: { name, ip, mac, duid, hostid, leasetime } }],
 //     boot6: [{ key, section | null, removed, values: { url, arch } }], next, nextBoot }
-//   A new reservation or boot entry has section null. mac and duid are edited as one text separated by spaces.
+//   A new static lease or boot entry has section null. mac and duid are edited as one text separated by spaces.
 import { MAC, asList, differs, errorsOf, flag, hasBlankRows, normalize, sectionsOf, show, uciBool, valueOf } from '../../core/fields.js';
 import { BOOT6_FIELDS, CONFIG, DAEMON_FIELDS, GLOBAL_CONFIG, GLOBAL_FIELDS, GLOBAL_SECTION, HOST_FIELDS, POOL_FIELDS } from './schema.js';
 
@@ -96,7 +96,7 @@ export const dnsmasqLeaseFile = cfg => sectionsOf(cfg, 'dnsmasq')[0]?.values.lea
 
 // The DHCPv4 leases in dnsmasq's lease file ("expiry MAC address hostname client-id" per line; expiry is a Unix
 // time and 0 means never). DHCPv6 lines (the "duid" line and addresses with colons) are skipped. A lease is
-// reserved when a reservation has its MAC or address. `now` is the Unix time the remaining time is counted from.
+// reserved when a static lease has its MAC or address. `now` is the Unix time the remaining time is counted from.
 function dnsmasqLeases(text, now, interfaces, hosts) {
   const reservedMacs = new Set(hosts.flatMap(r => asList(r.values.mac)).map(macOf));
   const reservedIps = new Set(hosts.map(r => r.values.ip).filter(Boolean));
@@ -189,7 +189,7 @@ export function readDhcp(cfg, v4, v6, ra, dump, svc, dns = {}, network = null) {
 // The form values of a list of fields from the raw options of a section.
 const valuesOf = (fields, raw) => Object.fromEntries(fields.map(f => [f.key, valueOf(f, raw[f.key])]));
 
-// A reservation's options as the table edits them: strings, with the lists joined by spaces.
+// A static lease's options as the table edits them: strings, with the lists joined by spaces.
 const hostValues = raw => ({
   name: String(raw.name ?? ''), ip: String(raw.ip ?? ''), mac: asList(raw.mac).join(' '), duid: asList(raw.duid).join(' '),
   hostid: String(raw.hostid ?? ''), leasetime: String(raw.leasetime ?? ''),
@@ -252,7 +252,7 @@ export function restorePool(draft, section) {
   delete draft.removed[section];
 }
 
-// A new, empty reservation row (added to the draft by the page).
+// A new, empty static lease row (added to the draft by the page).
 export function newHost(draft) {
   const row = { key: `h${draft.next++}`, section: null, removed: false, values: hostValues({}) };
   draft.hosts.push(row);
@@ -266,7 +266,7 @@ export function newBoot(draft) {
   return row;
 }
 
-// A reservation's values as they are compared and written: MACs in one spelling, tokens in single spaces.
+// A static lease's values as they are compared and written: MACs in one spelling, tokens in single spaces.
 export function hostNorm(v) {
   return {
     name: v.name.trim(), ip: v.ip.trim().toLowerCase(), mac: tokens(v.mac).map(macOf).join(' '),
@@ -274,13 +274,13 @@ export function hostNorm(v) {
   };
 }
 
-// Whether a new reservation row is still empty (it is ignored, like a blank list row).
+// Whether a new static lease row is still empty (it is ignored, like a blank list row).
 const isBlank = row => row.section == null && HOST_FIELDS.every(f => row.values[f.key].trim() === '');
 
-// What to call a reservation in messages: its name, else its address, else its MAC.
+// What to call a static lease in messages: its name, else its address, else its MAC.
 const hostTitle = v => v.name.trim() || v.ip.trim() || tokens(v.mac)[0] || 'unnamed';
 
-// A reservation in one line for the review list.
+// A static lease in one line for the review list.
 const hostLine = v => [v.name.trim(), v.ip.trim(), tokens(v.mac).join(' '), tokens(v.duid).join(' '), v.hostid.trim() && `id ${v.hostid.trim()}`, v.leasetime.trim() && `lease ${v.leasetime.trim()}`].filter(Boolean).join(' · ') || 'empty';
 
 // Whether a new boot row is still empty.
@@ -321,17 +321,17 @@ export function changesOf(data, draft) {
   for (const row of draft.hosts) {
     if (isBlank(row)) continue;
     if (row.section == null) {
-      if (!row.removed) out.push({ key: `host:${row.key}`, label: `New reservation ${hostTitle(row.values)}`, from: 'none', to: hostLine(hostNorm(row.values)) });
+      if (!row.removed) out.push({ key: `host:${row.key}`, label: `New static lease ${hostTitle(row.values)}`, from: 'none', to: hostLine(hostNorm(row.values)) });
       continue;
     }
     const base = hostValues(baseHosts.get(row.section) ?? {});
     if (row.removed) {
-      out.push({ key: `host:${row.key}`, label: `Remove reservation ${hostTitle(base)}`, from: hostLine(hostNorm(base)), to: 'removed' });
+      out.push({ key: `host:${row.key}`, label: `Remove static lease ${hostTitle(base)}`, from: hostLine(hostNorm(base)), to: 'removed' });
       continue;
     }
     const a = hostNorm(base), b = hostNorm(row.values);
     for (const f of HOST_FIELDS) {
-      if (a[f.key] !== b[f.key]) out.push({ key: `host:${row.key}:${f.key}`, label: `Reservation ${hostTitle(base)}: ${f.label}`, from: a[f.key] || 'not set', to: b[f.key] || 'not set' });
+      if (a[f.key] !== b[f.key]) out.push({ key: `host:${row.key}:${f.key}`, label: `Static lease ${hostTitle(base)}: ${f.label}`, from: a[f.key] || 'not set', to: b[f.key] || 'not set' });
     }
   }
 
@@ -410,14 +410,14 @@ export function problems(data, draft) {
     if (val('ra') !== 'disabled' && Array.isArray(flags) && flags.includes('managed-config') && val('dhcpv6') === 'disabled') warnings.push(`${label}: clients are told to get addresses from DHCPv6, which is disabled on this interface.`);
   }
 
-  // Reservations: every field, an identity, an address, and no repeats.
+  // Static leases: every field, an identity, an address, and no repeats.
   const active = draft.hosts.filter(r => !r.removed && !isBlank(r));
   const ips = new Map(), macs = new Map();
   const served = pools.filter(p => !p.removed && poolValue(draft, p.section, 'dhcpv4') === 'server' && p.info?.v4);
   const routers = new Set(data.interfaces.filter(i => i.v4).map(i => i.v4.address));
   for (const row of active) {
     const v = row.values;
-    const title = `Reservation ${hostTitle(v)}`;
+    const title = `Static lease ${hostTitle(v)}`;
     for (const f of HOST_FIELDS) {
       if (f.key === 'mac' || f.key === 'duid') continue;
       for (const e of errorsOf(f, v[f.key], title)) errors.push({ key: `host:${row.key}:${f.key}`, text: e.text });
@@ -451,6 +451,63 @@ export function problems(data, draft) {
     else archs.set(arch, row);
   }
   return { errors, warnings };
+}
+
+//#endregion
+
+//#region The client list
+
+// The static leases of the draft and the leases handed out right now, as one list with one entry per client:
+//   { key, row, name, iface, macs, duids, ip, v4, v6 }
+// `row` is the draft's static lease (null for a client that only has dynamic leases), `v4` and `v6` are the live DHCPv4 and
+// DHCPv6 leases of the client. A lease belongs to a static lease when it has one of its MACs or its address (DHCPv4),
+// or one of its DUIDs or a matching MAC (DHCPv6). The other leases are grouped by MAC address, so a client that holds a
+// DHCPv4 and a DHCPv6 lease is one entry. New static leases come first, the rest by interface, address and name.
+export function clientList(data, draft) {
+  const claimed = new Set();
+  const ifaceOf = ip => data.interfaces.find(i => i.v4 && inSubnet(ip, i.v4.address, i.v4.mask))?.name ?? '';
+  const nameOf = (v4, v6) => [...v4, ...v6].find(l => l.hostname)?.hostname ?? '';
+
+  const clients = draft.hosts.map(row => {
+    const norm = hostNorm(row.values);
+    const macs = tokens(norm.mac);
+    const duids = tokens(norm.duid).map(d => d.split('%')[0]);
+    const v4 = data.leases4.filter(l => macs.includes(l.mac) || (norm.ip && l.address === norm.ip));
+    const v6 = data.leases6.filter(l => duids.includes(l.duid) || (l.mac && macs.includes(l.mac)));
+    for (const l of [...v4, ...v6]) claimed.add(l);
+    const ip = ipToInt(norm.ip) == null ? '' : norm.ip;
+    return { key: row.key, row, name: norm.name || nameOf(v4, v6), iface: (v4[0] ?? v6[0])?.iface || (ip ? ifaceOf(ip) : ''), macs, duids, ip: norm.ip, v4, v6 };
+  });
+
+  const groups = new Map();
+  const groupOf = id => {
+    if (!groups.has(id)) groups.set(id, { key: `dynamic:${id}`, row: null, name: '', iface: '', macs: [], duids: [], ip: '', v4: [], v6: [] });
+    return groups.get(id);
+  };
+  for (const l of data.leases4) if (!claimed.has(l)) groupOf(l.mac ? `m:${l.mac}` : `a:${l.address}`).v4.push(l);
+  for (const l of data.leases6) if (!claimed.has(l)) groupOf(l.mac ? `m:${l.mac}` : `d:${l.duid}`).v6.push(l);
+  for (const g of groups.values()) {
+    g.name = nameOf(g.v4, g.v6);
+    g.iface = (g.v4[0] ?? g.v6[0]).iface;
+    g.macs = [...new Set([...g.v4, ...g.v6].map(l => l.mac).filter(Boolean))];
+    g.duids = [...new Set(g.v6.map(l => l.duid).filter(Boolean))];
+  }
+
+  const address = c => ipToInt(c.v4[0]?.address ?? c.ip) ?? Infinity;
+  const isNew = c => (c.row && c.row.section == null ? 0 : 1);
+  const byIface = (a, b) => (a.iface === '') - (b.iface === '') || a.iface.localeCompare(b.iface);
+  return [...clients, ...groups.values()].sort((a, b) => isNew(a) - isNew(b) || byIface(a, b) || address(a) - address(b) || a.name.localeCompare(b.name));
+}
+
+// A new static lease for a client of the list, prefilled from what is known of it: its name, its IPv4 address and its MAC
+// address (or, with no MAC, its DUID). Added to the draft.
+export function staticFrom(draft, client) {
+  const row = newHost(draft);
+  row.values.name = client.name;
+  row.values.ip = client.v4[0]?.address ?? '';
+  if (client.macs[0]) row.values.mac = macOf(client.macs[0]).toUpperCase();
+  else row.values.duid = client.duids[0] ?? '';
+  return row;
 }
 
 //#endregion
@@ -501,7 +558,7 @@ export function plan(data, draft) {
     else emit(CONFIG, p.section, sectionChange(POOL_FIELDS, p.values, draft.pools[p.section]), p.values);
   }
 
-  // Reservations: a removed one is deleted, a new one added, a changed one set. mac and duid become a list when
+  // Static leases: a removed one is deleted, a new one added, a changed one set. mac and duid become a list when
   // there are several; MACs are written in capitals, as the router's own entries are.
   const written = v => {
     const n = hostNorm(v);
@@ -557,7 +614,7 @@ export function plan(data, draft) {
   return ops;
 }
 
-// A reservation as a comparable text, ignoring its section name.
+// A static lease as a comparable text, ignoring its section name.
 const hostSignature = v => HOST_FIELDS.map(f => hostNorm(v)[f.key]).join('|');
 
 // A network boot entry as a comparable text, ignoring its section name.
@@ -565,7 +622,7 @@ const bootSignature = v => BOOT6_FIELDS.map(f => v[f.key].trim()).join('|');
 
 // Throws unless the settings `after` (read back once the change is applied) hold what the draft asked for: every
 // option of the daemon, the server DUID and the pools (a new pool by the section name chosen for it, a removed one
-// gone), and the sets of reservations and boot entries (new ones get a section name from uci, so they are compared
+// gone), and the sets of static leases and boot entries (new ones get a section name from uci, so they are compared
 // by content).
 export function checkApplied(after, draft) {
   const left = [];
@@ -586,7 +643,7 @@ export function checkApplied(after, draft) {
 
   const wantHosts = draft.hosts.filter(r => !r.removed && !isBlank(r)).map(r => hostSignature(r.values)).sort();
   const haveHosts = after.hosts.map(h => hostSignature(hostValues(h.values))).sort();
-  if (wantHosts.join('\n') !== haveHosts.join('\n')) left.push('Reservations');
+  if (wantHosts.join('\n') !== haveHosts.join('\n')) left.push('Static leases');
   const wantBoot = draft.boot6.filter(r => !r.removed && !isBlankBoot(r)).map(r => bootSignature(r.values)).sort();
   const haveBoot = after.boot6.map(b => bootSignature(bootValues(b.values))).sort();
   if (wantBoot.join('\n') !== haveBoot.join('\n')) left.push('Network boot entries');

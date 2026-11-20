@@ -63,7 +63,7 @@ export function tablesCard(data, state, rerender) {
     h('td', { className: 'num' }, String(t.v6)));
   });
   return card([icon('list-ul'), 'Routing tables', h('span', { className: 'sub' }, `${rows.length} table${rows.length === 1 ? '' : 's'} · installed + configured entries · click to list`)],
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-tables' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover rt-tables' },
       h('thead', {}, h('tr', {}, ['Table', 'Used for', 'Consulted by', 'IPv4', 'IPv6'].map((c, i) => h('th', { className: i > 2 ? 'num' : '' }, c)))),
       h('tbody', {}, rows))));
 }
@@ -108,7 +108,7 @@ export function rulesCard(data) {
   return card([icon('signpost-split'), 'Policy rules', h('span', { className: 'sub' }, 'Checked in this order; the first rule that matches decides which table is consulted')],
     h('div', {},
       legend(['Static routes are not listed here: they are routes inside the tables named in the Then column, edited in the static routes below.']),
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-rules' },
+      h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover rt-rules' },
         h('thead', {}, h('tr', {}, ['Priority', 'Family', 'Matches', 'Then', 'Added by'].map((c, i) => h('th', { className: i === 0 ? 'num' : '' }, c)))),
         h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 5, className: 'muted' }, 'No policy rules')))))));
 }
@@ -200,7 +200,7 @@ export function routesCard(data, state, rerender, names, hitKey) {
   return card([icon('signpost-split'), 'Routes', h('span', { className: 'sub' }, `${filtered.length} of ${data.routes.length} routes · ${scope}`)],
     h('div', {},
       legend(['Installed routes of every origin, plus configured static routes. Entries labeled disabled, not installed or state unknown are configuration only, not active forwarding entries. The table and family filters also apply to static routes.']),
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover fixed-grid rt-routes', style: 'min-width:1100px' },
+      h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover fixed-grid rt-routes', style: 'min-width:1100px' },
         h('colgroup', {}, COLS.map(c => h('col', { style: `width:${(c.w / total * 100).toFixed(2)}%` }))),
         h('thead', {}, h('tr', {}, head)),
         h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: COLS.length, className: 'muted' }, 'No routes match the filter'))))),

@@ -48,7 +48,7 @@ export function mtrBody(job) {
   return h('div', { className: 'rt-mtr' },
     findingList(notes),
     routeStrip(segments, asn?.pending),
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-trace rt-mtrtable' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover rt-trace rt-mtrtable' },
       h('thead', {}, h('tr', {}, ['Hop', 'Router', 'Loss', 'Sent', 'Last', 'Average', 'Best', 'Worst', 'Spread', 'Delay over time'].map((c, i) => h('th', { className: [0, 3, 4, 5, 6, 7, 8].includes(i) ? 'num' : '' }, c)))),
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 10, className: 'muted' }, job.running ? 'Waiting for the first hop…' : 'No hops'))))),
     !job.running && m.hops.length ? h('div', { className: 'rt-actions rt-mtr-actions' }, copyButton(mtrReport({ host: job.host, command: job.command, when: new Date(job.t0).toLocaleString(), hops: m.hops, asn, segments, notes }), 'Copy report')) : null);

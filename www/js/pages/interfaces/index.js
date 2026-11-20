@@ -11,7 +11,7 @@
 // page redraws on every poll and after every edit; the open panel is rebuilt each time and keeps its scroll position and focus. Polling is paused
 // while a panel for an editable item is open, so the form is never replaced under the user's hands.
 import { h } from '../../core/dom.js';
-import { tile, tiles, healthBanner, button, muted } from '../../core/ui.js';
+import { tile, tiles, healthBanner, button, muted, spinner } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { ubus, optional } from '../../core/ubus.js';
 import { pauseControl, refreshControl, tabsControl } from '../../core/controls.js';
@@ -210,7 +210,7 @@ export default {
   // The connected devices; or the board: summary tiles, the findings banner, the board and, over it, the drawer of the open item.
   view(data, rerender) {
     shell.rerender = rerender;
-    if (data.tab !== state.tab) return [h('div', { className: 'text-center muted p-5' }, h('div', { className: 'spinner-border spinner-border-sm' }))];
+    if (data.tab !== state.tab) return [h('div', { className: 'text-center muted p-5' }, spinner('Loading view…'))];
     if (state.tab === 'connected') return connected.view(data, rerender);
     const before = focusedInput(state.handle, cur.ctx?.inputs ?? {});
     const ctx = editContext(data, rerender, shell);

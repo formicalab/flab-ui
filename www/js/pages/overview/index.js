@@ -189,7 +189,11 @@ function buildTitle(release) {
 }
 
 // A router-reported percentage as a width for a bar: a number clamped to 0-100, so an odd value cannot add CSS declarations to the style string.
-const barWidth = v => `width:${Math.min(100, Math.max(0, Number(v) || 0))}%`;
+const barValue = v => Math.min(100, Math.max(0, Number(v) || 0));
+const barWidth = v => `width:${barValue(v)}%`;
+const progressProps = (label, value) => ({
+  role: 'progressbar', ariaLabel: label, ariaValueMin: '0', ariaValueMax: '100', ariaValueNow: String(Math.round(barValue(value))),
+});
 
 // One KPI of the hero strip: icon, label, value and a caption; an optional bar shows a percentage.
 function kpi(name, label, value, sub, valueClass = '', percent = null) {
@@ -198,7 +202,7 @@ function kpi(name, label, value, sub, valueClass = '', percent = null) {
     h('div', {},
       h('div', { className: 'muted small' }, label),
       h('div', { className: `ov-kpi-value ${valueClass}` }, value),
-      percent != null ? h('div', { className: 'progress' }, h('div', {
+      percent != null ? h('div', { className: 'progress', ...progressProps(`${label}: ${percent}%`, percent) }, h('div', {
         className: `progress-bar${percent >= 90 ? ' bg-danger' : percent >= 75 ? ' bg-warning' : ''}`, style: barWidth(percent) })) : null,
       h('div', { className: 'muted small' }, sub)));
 }
@@ -215,7 +219,7 @@ function storageRow(fs) {
       hw.model ? h('span', { className: 'chip' }, hw.model) : null,
       hw.partition ? h('span', { className: 'chip' }, hw.partition) : null,
       fs.fstype ? h('span', { className: 'chip' }, fs.fstype) : null),
-    h('div', { className: 'progress' }, h('div', {
+    h('div', { className: 'progress', ...progressProps(`Storage usage for ${fs.mount}: ${fs.percent}%`, fs.percent) }, h('div', {
       className: `progress-bar${fs.readonly ? ' bg-secondary' : fs.percent >= 90 ? ' bg-danger' : fs.percent >= 75 ? ' bg-warning' : ''}`,
       style: barWidth(fs.percent),
     })),

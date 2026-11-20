@@ -79,7 +79,7 @@ function redirectRow(r, rows, ctx) {
 
 // Shared table markup: header row from `cols`, the rows (finished <tr> elements, unlike core table(), which builds the cells), or a
 // single "empty" message row.
-const table = (cols, rows, empty) => h('div', { className: 'grid-wrap' }, h('table', { className: 'table fw-table' },
+const table = (cols, rows, empty) => h('div', { className: 'table-responsive' }, h('table', { className: 'table fw-table' },
   h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
   h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, empty)))));
 

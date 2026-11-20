@@ -245,12 +245,12 @@ router's configuration out of reach, so the suite never writes to it.
 Same shape as the Settings suite, with no backend part. `model.test.mjs` covers the option tables (checked against
 odhcpd's own option table: every option edited, none that odhcpd no longer reads), the address
 and range helpers, reading `uci get dhcp` with the lease replies (leases mapped from device to interface),
-validation, the change plan (reservations added, removed and edited, pool and daemon options, pools added and
+validation, the client list (static leases joined to their DHCPv4 and DHCPv6 leases, dynamic clients grouped by MAC, Make static), the change plan (static leases added, removed and edited, pool and daemon options, pools added and
 removed, network boot entries, the server DUID in the network config) and the read-back
 check; `network/uci.test.mjs` covers `applyChange`. The browser pass (`live.mjs`) first shows the router's own
-leases, reservations and pools with every uci write blocked, then switches to a stateful mock of `uci` (two configs),
-the `dhcp` object, the interface dump and `service list` and drives filtering, reservation edits (duplicates, the
-router's own address, bad MACs, Reserve from a lease, Add, Remove and Undo), pool and daemon edits, adding and
+clients, static leases and pools with every uci write blocked, then switches to a stateful mock of `uci` (two configs),
+the `dhcp` object, the interface dump and `service list` and drives filtering (text, interface, type), static lease edits (duplicates, the
+router's own address, bad MACs, Make static on a dynamic client, Add, Remove and Undo), pool and daemon edits, adding and
 removing pools, network boot entries, the server DUID, options without a control, a successful
 save across both configs, a change the router does not keep (also in the network config), a late confirmation, a stopped odhcpd, dnsmasq serving DHCPv4 (leases read
 from its lease file, an unreadable file), a login without write access,

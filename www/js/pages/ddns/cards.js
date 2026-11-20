@@ -5,7 +5,7 @@ import { h, sleep } from '../../core/dom.js';
 import { chevron, disclosure, foldable } from '../../core/fold.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, can, ubus } from '../../core/ubus.js';
-import { badge, button, card, kv, mono, muted } from '../../core/ui.js';
+import { badge, button, card, kv, mono, muted, spinner } from '../../core/ui.js';
 import { fieldRow, legend } from '../../core/forms.js';
 import { GLOBAL_FIELDS, SERVICE_FIELDS, SERVICE_GROUPS } from './schema.js';
 import { addService, ago, currentIp, effective, isNoteworthy, isShown, parseLog, providerLabel, removeService, restoreService, spanWords, timing, verdictOf } from './model.js';
@@ -134,7 +134,7 @@ function statusBlock(ctx, svc) {
   const log = logs.get(svc.section);
   const asked = t.requested !== t.check ? ` (${spanWords(t.requested)} was asked for; see Intervals)` : '';
   // A control button: disabled for a login that may not run actions, a disabled service or a call in progress.
-  const act = (label, iconName, action, title) => button(label, iconName, () => perform(ctx, svc.section, action), 'btn-fl', {
+  const act = (label, iconName, action, title) => button(label, iconName, () => perform(ctx, svc.section, action), 'btn-outline-secondary', {
     disabled: !allowed || !enabled || Boolean(busy),
     title: !allowed ? 'This login is not allowed to run actions on the updater.' : !enabled ? 'The service is disabled.' : title,
   });
@@ -144,7 +144,7 @@ function statusBlock(ctx, svc) {
     s.open = !s.open;
     if (s.open) { s.loading = true; ctx.rerender(); await readLog(ctx, svc.section); }
     ctx.rerender();
-  }, 'btn-fl', { title: 'The updater\'s own log for this service' });
+  }, 'btn-outline-secondary', { title: 'The updater\'s own log for this service' });
   return h('div', { className: 'ddns-status' },
     h('div', { className: `ddns-verdict ${verdict.kind}` }, icon(verdictIcon),
       h('div', {}, h('strong', {}, verdict.text), h('div', { className: 'small' }, verdict.detail))),
@@ -161,7 +161,7 @@ function statusBlock(ctx, svc) {
       act('Check now', 'arrow-clockwise', 'check', 'Restart the updater: it reads the address and updates the provider if it differs from the registered one.'),
       act('Force update', 'upload', 'force', 'Restart the updater and send the address to the provider even if it has not changed.'),
       toggleLog,
-      mine ? h('span', { className: 'ddns-busy' }, h('span', { className: 'spinner-border spinner-border-sm' }), busy.action === 'force' ? 'Sending the update…' : 'Restarting the updater…') : null),
+      mine ? h('span', { className: 'ddns-busy' }, spinner('Updating Dynamic DNS'), busy.action === 'force' ? 'Sending the update…' : 'Restarting the updater…') : null),
     out ? h('div', { className: `ddns-outcome ${out.kind}` }, icon(out.kind === 'ok' ? 'check-circle' : 'x-circle'), out.text) : null,
     log?.open ? logPanel(ctx, svc.section, log) : null);
 }
@@ -243,7 +243,7 @@ export function serviceCard(ctx, svc) {
     ? h('div', { className: 'ddns-service-actions' }, muted(`Service ${svc.name} is removed when you save.`), button('Undo', 'arrow-counterclockwise', () => { restoreService(ctx.draft, svc.id); ctx.touched(); ctx.redraw(); }))
     : h('div', { className: 'ddns-service-actions' },
       muted(svc.isNew ? 'Not saved yet.' : `The ddns section "${svc.section}".`),
-      button(svc.isNew ? 'Discard service' : 'Remove service', 'trash', () => { removeService(ctx.draft, svc.id); ctx.touched(); ctx.redraw(); }, 'btn-fl',
+      button(svc.isNew ? 'Discard service' : 'Remove service', 'trash', () => { removeService(ctx.draft, svc.id); ctx.touched(); ctx.redraw(); }, 'btn-outline-secondary',
         { disabled: !ctx.canEdit, title: `Stop updating ${svc.name} and delete this service` }));
   const state = svc.isNew ? badge('new', 'info', 'not saved yet') : off ? badge('to be removed', 'danger') : badge(verdict.text, VERDICT[verdict.kind][0], verdict.detail);
   const el = card(
@@ -258,7 +258,7 @@ export function serviceCard(ctx, svc) {
 
 // The row below the services for adding one.
 export function addServiceBar(ctx) {
-  const add = button('Add service', 'plus-lg', () => { folds.delete(addService(ctx.data, ctx.draft)); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !ctx.canEdit });
+  const add = button('Add service', 'plus-lg', () => { folds.delete(addService(ctx.data, ctx.draft)); ctx.touched(); ctx.redraw(); }, 'btn-outline-secondary', { disabled: !ctx.canEdit });
   return h('div', { className: 'ddns-addbar' }, add,
     h('span', { className: 'muted small' }, 'One service updates one name at one provider, for IPv4 or for IPv6. To update both families, or several names, add a service for each.'));
 }

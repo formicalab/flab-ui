@@ -103,7 +103,7 @@ function bridgeNote(n, link) {
 function peersTable(n) {
   const peers = n.peers ?? [];
   const cols = ['Peer', 'Link', 'Signal', 'Bit rate', 'Expected', 'Airtime metric', 'Tx retries / failed', 'Traffic now', 'Idle', 'Connected'];
-  return h('div', { className: 'grid-wrap' }, h('table', { className: 'table mesh-table' },
+  return h('div', { className: 'table-responsive' }, h('table', { className: 'table mesh-table' },
     h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
     h('tbody', {}, peers.length ? peers.map(p => peerRow(n, p)) : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'No peers heard on this interface.')))));
 }
@@ -135,7 +135,7 @@ function pathsTable(n) {
   const peers = new Set((n.peers ?? []).map(p => p.mac));
   const paths = n.paths ?? [];
   const cols = ['Destination', 'Next hop', 'Hops', 'Metric', 'Expires', 'State'];
-  return h('div', { className: 'grid-wrap' }, h('table', { className: 'table mesh-table' },
+  return h('div', { className: 'table-responsive' }, h('table', { className: 'table mesh-table' },
     h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
     h('tbody', {}, paths.length ? paths.map(p => h('tr', {},
       h('td', {}, mono(p.dest), peers.has(p.dest) ? badge('peer', 'info') : null),

@@ -45,7 +45,7 @@ export function openItemDialog({ key, id, data, getDraft, onSave, onClose }) {
 
   const errorsBox = h('div', { className: 'set-notes fw-dialog-notes' });
   const words = h('div', { className: 'fw-words' });
-  const save = button(isNew ? 'Add to the changes' : 'Update the changes', 'check2', () => { onSave(values, links); dialog.close(); }, 'btn-brand');
+  const save = button(isNew ? 'Add to the changes' : 'Update the changes', 'check2', () => { onSave(values, links); dialog.close(); }, 'btn-primary');
   const cancel = button('Cancel', 'x-lg', () => dialog.close());
   // The wrappers of the controls (field key to element) and of the groups, to show and hide them as the values change.
   let wrappers = {};

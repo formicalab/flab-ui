@@ -10,7 +10,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { chevron } from '../../core/fold.js';
 import { can, optional, ubus } from '../../core/ubus.js';
-import { badge, button, kv, mono, muted, tile, tiles } from '../../core/ui.js';
+import { badge, button, kv, mono, muted, spinner, tile, tiles } from '../../core/ui.js';
 import { refreshControl } from '../../core/controls.js';
 import { fieldRow, legend } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
@@ -150,9 +150,9 @@ function ntpStatus(ctx) {
     ]),
     h('div', { className: 'ntp-actions' },
       button(ntpAction.busy ? 'Syncing…' : 'Sync now', 'arrow-clockwise',
-        () => syncNtp(ctx), 'btn-fl', { disabled: ntpAction.busy || !enabled || !allowed,
+        () => syncNtp(ctx), 'btn-outline-secondary', { disabled: ntpAction.busy || !enabled || !allowed,
           title: !enabled ? 'Enable the NTP client first.' : !allowed ? 'This login cannot control the NTP service.' : 'Restart sysntpd to start a new synchronization attempt.' }),
-      ntpAction.busy ? h('span', { className: 'spinner-border spinner-border-sm', ariaHidden: 'true' }) : null),
+      ntpAction.busy ? spinner('Synchronizing the router clock') : null),
     ntpAction.message ? h('div', { className: `alert alert-${ntpAction.message.kind} alert-dismissible mt-3 mb-0`, role: 'alert' },
       ntpAction.message.text,
       h('button', { type: 'button', className: 'btn-close', ariaLabel: 'Dismiss',

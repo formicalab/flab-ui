@@ -139,7 +139,7 @@ function activityRow(r) {
 }
 
 // A counters table with its header.
-const activityTable = (head, rows) => h('div', { className: 'grid-wrap' }, h('table', { className: 'table dns-act' },
+const activityTable = (head, rows) => h('div', { className: 'table-responsive' }, h('table', { className: 'table dns-act' },
   h('thead', {}, h('tr', {}, h('th', {}, head), h('th', { className: 'dns-num' }, 'Count'), h('th', {}, 'Share'))),
   h('tbody', {}, rows.map(activityRow))));
 

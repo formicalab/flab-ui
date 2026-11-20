@@ -125,7 +125,7 @@
   padding-top: .75rem;
 }
 .cc-client-details > summary { padding: .3rem .1rem; }
-.cc-client-details .grid-wrap { margin-top: .65rem; }
+.cc-client-details .table-responsive { margin-top: .65rem; }
 .cc-wifi-card .cc-access-point {
   background: color-mix(in srgb, var(--fl-brand) 7%, var(--fl-surface));
 }

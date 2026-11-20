@@ -1,7 +1,7 @@
 // DHCP page (route #dhcp): odhcpd, the router's DHCPv6 and router-advertisement server, and its DHCPv4 server when it
 // is the main one (otherwise dnsmasq serves DHCPv4 and the page shows dnsmasq's leases). It shows the leases
-// handed out right now, the reservations (static leases) and the IPv6 prefixes announced, and edits the config
-// behind them: the reservations, the network boot entries, every option of each interface pool (pools can be added and
+// handed out right now, the static leases and the IPv6 prefixes announced, and edits the config
+// behind them: the static leases, the network boot entries, every option of each interface pool (pools can be added and
 // removed) and of the daemon, and the server DUID (the option tables are in
 // schema.js, taken from the odhcpd source; validation, the change list and the UCI operations in model.js).
 //
@@ -19,15 +19,15 @@ import { note } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
 import { reveal } from '../../core/fold.js';
 import { uci } from '../../core/uci.js';
-import { announcedCard, leases4Card, leases6Card } from './leases.js';
+import { announcedCard } from './prefixes.js';
 import { addPoolBar, daemonCard, poolCard } from './pools.js';
 import { bootCard } from './boot6.js';
-import { reservationsCard, reserveFrom } from './reservations.js';
-import { CONFIG, changesOf, checkApplied, dhcpv4Server, dnsmasqLeaseFile, draftFrom, hostNorm, isDirty, plan, poolList, problems, readDhcp } from './model.js';
+import { CLIENT_TYPES, clientsCard } from './clients.js';
+import { CONFIG, changesOf, checkApplied, clientList, dhcpv4Server, dnsmasqLeaseFile, draftFrom, isDirty, plan, poolList, problems, readDhcp } from './model.js';
 import { GLOBAL_CONFIG, GLOBAL_SECTION } from './schema.js';
 
 // The draft, the review banner, saving and discarding, shared with the other editing pages (core/editpage.js). The
-// page writes two configs: the pools and reservations in dhcp, the server DUID in network. Only that one section of
+// page writes two configs: the pools and static leases in dhcp, the server DUID in network. Only that one section of
 // the network config is ever read (the rest holds secrets), so the check after a save reads just what it needs.
 const editor = createEditor({
   config: [CONFIG, GLOBAL_CONFIG],
@@ -38,8 +38,10 @@ const editor = createEditor({
 });
 const { state } = editor;
 
-// The lease filter of the command bar.
-const filter = { q: '', iface: 'all' };
+// The filter of the clients list (text, interface and type). The controls survive redraws, and the state survives the page's
+// polling.
+const filter = { q: '', iface: 'all', type: 'all' };
+let clientControls = null;
 
 // Reads the config, the leases and announcements, the interfaces and the daemons' state, plus how many changes
 // are already staged in this session (applying would commit those too, so the page warns about them). The ubus
@@ -60,19 +62,20 @@ async function load() {
 
 //#region Pieces of the page
 
-// The four summary tiles: the daemon, the two kinds of lease and the reservations.
+// The four summary tiles: the daemon, the two kinds of lease and the static leases.
 function summary(data) {
   const running = data.daemonRunning;
-  const reserved4 = data.leases4.filter(l => l.static).length;
-  const reserved6 = data.leases6.filter(l => l.static).length;
+  const static4 = data.leases4.filter(l => l.static).length;
+  const static6 = data.leases6.filter(l => l.static).length;
   const prefixClients = data.leases6.filter(l => l.prefixes.length).length;
+  const active = clientList(data, draftFrom(data)).filter(c => c.row && c.v4.length + c.v6.length > 0).length;
   const by = data.server === 'dnsmasq' ? ' · from dnsmasq' : '';
   return tiles(
     tile('odhcpd', running == null ? 'Unknown' : running ? 'Running' : 'Stopped',
       data.server === 'odhcpd' ? 'the main DHCPv4 server' : data.server === 'dnsmasq' ? 'DHCPv6 and router advertisements; dnsmasq serves DHCPv4' : 'DHCPv4 is left to another server', running === false ? 'text-danger' : ''),
-    tile('DHCPv4 leases', String(data.leases4.length), `${reserved4} reserved · ${data.leases4.length - reserved4} dynamic${by}`),
-    tile('DHCPv6 leases', String(data.leases6.length), `${reserved6} reserved · ${data.leases6.length - reserved6} dynamic · ${prefixClients} with IA_PD`),
-    tile('Reservations', String(data.hosts.length), `${reserved4} with a lease now`));
+    tile('DHCPv4 leases', String(data.leases4.length), `${static4} static · ${data.leases4.length - static4} dynamic${by}`),
+    tile('DHCPv6 leases', String(data.leases6.length), `${static6} static · ${data.leases6.length - static6} dynamic · ${prefixClients} with IA_PD`),
+    tile('Static leases', String(data.hosts.length), `${active} with a lease now`));
 }
 
 //#endregion
@@ -85,14 +88,16 @@ export default {
   load,
 
   controls({ rerender, reload }) {
-    const iface = selectControl(filter, 'iface', rerender, 'Show one interface only');
+    const iface = selectControl(filter, 'iface', rerender, 'Show the clients of one interface');
     iface.setOptions([['all', 'All interfaces']]);
+    const type = selectControl(filter, 'type', rerender, 'Show static or dynamic leases');
+    type.setOptions(CLIENT_TYPES);
+    clientControls = { search: searchControl(filter, 'q', rerender, 'Filter clients…'), iface, type };
     return {
-      nodes: [searchControl(filter, 'q', rerender, 'Filter leases…'), iface.node, refreshControl(reload), editor.attach(reload)],
-      // The interfaces that have a pool or a lease.
+      nodes: [refreshControl(reload), editor.attach(reload)],
       update(data) {
-        const names = [...new Set([...data.pools.map(p => p.iface), ...data.leases4.map(l => l.iface), ...data.leases6.map(l => l.iface)])].sort();
-        iface.setOptions([['all', 'All interfaces'], ...names.map(n => [n, n])]);
+        const names = [...new Set([...data.pools.map(p => p.iface), ...clientList(data, state.draft ?? draftFrom(data)).map(c => c.iface).filter(Boolean)])].sort();
+        clientControls.iface.setOptions([['all', 'All interfaces'], ...names.map(n => [n, n])]);
       },
     };
   },
@@ -106,16 +111,14 @@ export default {
     // error must not stay hidden in a folded card or a closed group, so those are opened.
     ctx.sync = () => editor.markErrors(ctx.inputs, canEdit, reveal);
 
-    // The MACs that already have a reservation (in the draft), so a lease is not offered for reserving twice.
-    const reservedMacs = new Set(state.draft.hosts.filter(r => !r.removed).flatMap(r => hostNorm(r.values).mac.split(' ')).filter(Boolean));
-    // Configuration is ordered from service-wide settings to pools and reservations; live leases are last.
+    // Configuration first, from the widest to the narrowest (the daemon, interface pools, network boot), then the live lists.
     // Each editable group is `.dhcp-form`, so it is not polled over while focused.
-    const settings = h('div', { className: 'dhcp-form' }, daemonCard(ctx));
+    const clients = h('div', { className: 'dhcp-form' }, clientsCard(ctx, filter, { controls: clientControls }));
+    const boot = h('div', { className: 'dhcp-form' }, bootCard(ctx));
     const pools = h('div', { className: 'dhcp-form' },
       ...poolList(data, state.draft).map(p => poolCard(ctx, p)), addPoolBar(ctx));
-    const reservations = h('div', { className: 'dhcp-form' }, reservationsCard(ctx), bootCard(ctx));
-    // Turns a lease row into a static reservation draft and redraws.
-    const reserve = l => { reserveFrom(state.draft, l); state.message = null; editor.redraw(); };
+    const settings = h('div', { className: 'dhcp-form' }, daemonCard(ctx));
+    const title = (name, text) => h('h2', { className: 'page-section-title' }, icon(name), text);
     const page = [
       summary(data),
       ...editor.notes(data),
@@ -123,16 +126,16 @@ export default {
         ? 'odhcpd is not running, so DHCPv6 and router advertisements are not served (DHCPv4 comes from dnsmasq). The configuration can still be edited.'
         : 'odhcpd is not running, so there are no leases and no clients are being served. The configuration can still be edited.') : null,
       data.leasesUnreadable ? note('bad', 'dnsmasq serves DHCPv4, but its lease file could not be read, so the DHCPv4 leases are not shown.') : null,
-      h('h2', { className: 'page-section-title' }, icon('gear'), 'DHCP settings'),
+      title('cpu', 'Daemon settings'),
       settings,
-      h('h2', { className: 'page-section-title' }, icon('hdd-network'), 'Pool settings'),
+      title('gear', 'Pool settings'),
       pools,
-      h('h2', { className: 'page-section-title' }, icon('person'), 'Reservations and network boot'),
-      reservations,
-      h('h2', { className: 'page-section-title' }, icon('activity'), 'Current leases'),
-      announcedCard(data, filter),
-      leases4Card(data, filter, { reservedMacs, canReserve: canEdit, reserve }),
-      leases6Card(data, filter),
+      title('hdd-network', 'Network boot'),
+      boot,
+      title('people', 'Leases'),
+      clients,
+      title('broadcast', 'Router advertisements'),
+      announcedCard(data),
     ];
     ctx.sync();
     return page.filter(Boolean);

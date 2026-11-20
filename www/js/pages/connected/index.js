@@ -87,7 +87,7 @@ function clientTable(clients, rerender) {
       },
     }, col.label, active ? (state.sort.dir > 0 ? ' ▲' : ' ▼') : '');
   });
-  return h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover fixed-grid' },
+  return h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover fixed-grid' },
     h('colgroup', {}, COLS.map(col => h('col', { style: `width:${col.w}%` }))),
     h('thead', {}, h('tr', {}, head)),
     h('tbody', {}, clients.length

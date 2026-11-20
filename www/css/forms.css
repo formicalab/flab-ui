@@ -24,6 +24,8 @@ textarea.form-control { resize: vertical; }
 .set-list { display: grid; gap: .4rem; margin-bottom: .5rem; }
 .set-row { display: flex; gap: .4rem; }
 .set-row .form-control { flex: 1; }
+.set-row.input-group { gap: 0; }
+.set-row.input-group .form-control { flex: 1 1 auto; }
 
 /* The review banner: a full-width row at the bottom of the sticky command bar, so Save stays in sight. It scrolls
    inside itself when there are many errors or a long list of changes. It is yellow while edits are pending (red
@@ -44,11 +46,7 @@ textarea.form-control { resize: vertical; }
 
 /* Status lines: errors block saving, warnings only inform, ok and info report the outcome of a save. */
 .set-notes { display: grid; gap: .4rem; }
-.set-note { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .45rem .75rem; border-radius: 6px; font-size: .875rem; margin-top: .4rem; }
-.set-note.bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
-.set-note.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
-.set-note.ok { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
-.set-note.info { background: var(--fl-info-bg); color: var(--fl-info-fg); }
+.set-note { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .45rem .75rem; border-radius: 6px; font-size: .875rem; margin: .4rem 0 0; }
 
 /* The form controls inside a dialog (core/modal.js; the dialog's own styles are in base.css). */
 .fl-dialog .set-fields { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }

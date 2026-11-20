@@ -236,7 +236,7 @@ check(mock.gets.length >= 2 && mock.gets.every(g => g.type) && mock.whole.length
 check(!(await page.locator('.seg-tab').allInnerTexts()).includes('Static routes'), 'static routes are not hidden on a separate tab');
 const order = await page.evaluate(() => ['.rt-how', '.rt-rules', '.rt-static', '.rt-tables', '.rt-routes'].map(s => document.querySelector(s)).map((n, i, all) => i === 0 || Boolean(all[i - 1].compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING)));
 check(order.every(Boolean), 'the view follows the lookup: how it works, policy rules, static routes, routing tables, final list', JSON.stringify(order));
-const topTiles = await page.locator('main .tile .label').allInnerTexts();
+const topTiles = await page.locator('.fl-summary .tile .label').allInnerTexts();
 check(topTiles.includes('Static routes') && topTiles.length >= 7 && await page.locator('.rt-static-section .tile').count() === 0, 'the static-route tile is with the other tiles at the top', topTiles.join('|'));
 check(/Where static routes fit[\s\S]*Consulted by/.test(await page.locator('.rt-how').innerText()) && await page.locator('.rt-static .set-legend').count() === 1, 'the static-route description is part of "How the kernel picks a route"');
 const finalRoutes = await page.locator('.rt-routes tbody').innerText();

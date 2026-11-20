@@ -3,9 +3,14 @@
 // error is visible again. The page remembers what is open or folded (the onToggle / onChange callbacks), so the choice survives the
 // redraws of the poll. The styles are in css/base.css (.fl-disclosure*, .fl-folded, .fl-fold-header, .fl-chevron), which every page has.
 import { h } from './dom.js';
+import { icon } from './icons.js';
 
-// The triangle at the left of a foldable card's header: right when folded, down when open.
-export const chevron = () => h('span', { className: 'fl-chevron' });
+// The Bootstrap Icon at the left of a foldable card's header: right when folded, down when open.
+export const chevron = () => {
+  const el = icon('chevron-right', 14);
+  el.classList.add('fl-chevron');
+  return el;
+};
 
 // Makes the card `el` foldable: its header is the toggle (mouse, Enter or Space). `folded` is whether it starts folded; `onChange(folded)`
 // is told each time the user toggles it, so the page can remember the choice. A click on a control inside the header (a badge, a
@@ -29,12 +34,12 @@ export function foldable(el, folded, onChange) {
   return el;
 }
 
-// A native <details> fold with the shared arrow (css/base.css, .fl-disclosure). `summary` is a node or a list of nodes; `cls` adds
+// A native <details> fold with the shared Bootstrap Icon chevron (css/base.css, .fl-disclosure). `summary` is a node or a list of nodes; `cls` adds
 // classes to the <details> (`fl-disclosure-bar` makes the summary a padded group header); `summaryCls` adds classes to the <summary>.
 // `open` is the initial state; `onToggle(open)` lets the page remember the choice across redraws.
 export const disclosure = ({ cls = '', summary, summaryCls = '', body, open = false, onToggle }) =>
   h('details', { className: `fl-disclosure ${cls}`.trim(), open, ontoggle: e => onToggle?.(e.target.open) },
-    h('summary', { className: summaryCls }, summary), body);
+    h('summary', { className: summaryCls }, chevron(), summary), body);
 
 // Makes sure the control `el` can be seen: opens every closed group around it and unfolds the folded card that holds it. Used for a
 // control that has an error, which must not stay hidden.

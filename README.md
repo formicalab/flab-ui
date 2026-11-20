@@ -17,7 +17,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | IPsec VPN | strongSwan connections, tunnels, traffic and a security score (read only). |
 | WireGuard | Interfaces and peers; edit them. |
 | Firewall | Zones, rules and port forwards with live nftables counters; edit them. |
-| DHCP | odhcpd and dnsmasq leases, reservations and pools; edit them. |
+| DHCP | odhcpd and dnsmasq leases joined to static leases in one client list, prefixes, network boot and pools; edit them. |
 | DNS | Resolver status, options and zones in one tab; ddns-scripts services, status and logs in another tab. |
 | Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. A second view lists the connected Wi-Fi clients. The ports and the radios open their own pages. |
 | Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |

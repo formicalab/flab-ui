@@ -61,7 +61,7 @@ async function download(job, btn) {
 // permission, which a session opened before the plugin offered `download` does not.
 function downloadButton(job) {
   const props = can('flab.diag', 'download') ? {} : { disabled: true, title: 'This login does not hold the download permission. Sign out and in again.' };
-  return button('Download .pcap', 'download', e => download(job, e.currentTarget), 'btn-brand', props);
+  return button('Download .pcap', 'download', e => download(job, e.currentTarget), 'btn-primary', props);
 }
 
 // The capture result. `job.cap` is the request ({ iface, seconds, packets, snaplen, filter }).
@@ -89,7 +89,7 @@ export function captureBody(job) {
     c.protocols.length ? h('div', { className: 'rt-cap-protos' }, h('span', { className: 'muted' }, `Protocols in the first ${c.packets.length}:`), c.protocols.map(([name, n]) => h('span', { className: 'rt-cap-proto' }, badge(name, TONE[name] ?? ''), ` ${n}`))) : null,
     c.conversations.length ? h('div', { className: 'rt-cap-talkers' }, h('div', { className: 'muted' }, 'Busiest conversations'), c.conversations.map(t => h('div', { className: 'rt-cap-talker' }, mono(t.a), h('span', { className: 'muted' }, ' ↔ '), mono(t.b), h('span', { className: 'muted' }, ` · ${t.packets} packet${t.packets === 1 ? '' : 's'}${t.bytes ? ` · ${fmtBytes(t.bytes)}` : ''}`)))) : null,
     !job.running && c.captured > 0 && job.id ? h('div', { className: 'rt-actions rt-mtr-actions' }, downloadButton(job), muted(can('flab.diag', 'download') ? 'Open it in Wireshark. The router keeps it for ten minutes, and only the newest capture.' : 'This session was opened before the download permission existed: sign out and in again to enable it.')) : null,
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-trace rt-captable' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover rt-trace rt-captable' },
       h('thead', {}, h('tr', {}, ['Time (s)', 'Protocol', 'Source', 'Destination', 'Length', 'Info'].map((t, i) => h('th', { className: i === 0 || i === 4 ? 'num' : '' }, t)))),
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 6, className: 'muted' }, job.running ? 'Waiting for the first packet…' : 'No packets'))))),
     c.packets.length > MAX_ROWS ? muted(`Showing the first ${MAX_ROWS} of ${c.packets.length} packets in the table.`) : null);

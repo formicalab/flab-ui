@@ -431,7 +431,7 @@ let r = clone(ub); r.stats.rcodes = { NOERROR: 800, SERVFAIL: 200 }; r.stats.bog
 await show(r);
 b = await banner();
 check(/20% of the answers are SERVFAIL \(200 of 1,000\)/.test(b) && (await bannerClass()).includes('warn'), 'SERVFAIL above 5% is reported', b);
-check(/SERVFAIL/.test(await text(cardOf('Activity'))) && await page.locator('.dns-act .meter .fill').count() > 3, 'and the Activity card shows the code with a bar');
+check(/SERVFAIL/.test(await text(cardOf('Activity'))) && await page.locator('.dns-act .meter .progress-bar').count() > 3, 'and the Activity card shows the code with a bar');
 r = clone(ub); r.dnssec = { supported: true, enabled: false }; r.config.rebind_protection = '0'; r.forwards[0].tls = false; r.stats.bogus = 0; r.stats.ratelimited = 0;
 await show(r);
 b = await banner();
@@ -713,7 +713,7 @@ const azureFirst = zonesReply().forward_uci.find(e => e.section === 'fwd_azure')
 // The open zone dialog.
 const dlg = () => page.locator('dialog.fl-dialog[open]');
 // The Done button of the open dialog.
-const doneBtn = () => dlg().locator('button.btn-brand');
+const doneBtn = () => dlg().locator('button.btn-primary');
 // The list field labeled `label` in the open dialog.
 const listIn = label => dlg().locator('.set-field').filter({ has: page.locator('label.form-label', { hasText: new RegExp(`^${label}$`) }) });
 // The text of the header of the Zones card.

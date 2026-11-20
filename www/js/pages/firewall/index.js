@@ -63,7 +63,7 @@ async function readAfter() {
 function confirmRisks(risks) {
   return new Promise(resolve => {
     let answer = false;
-    const apply = button('Apply anyway', 'check2', () => { answer = true; shown.close(); }, 'btn-brand');
+    const apply = button('Apply anyway', 'check2', () => { answer = true; shown.close(); }, 'btn-primary');
     const shown = openDialog({
       title: 'This change may cut you off',
       subtitle: 'Review the warnings before the router applies it',

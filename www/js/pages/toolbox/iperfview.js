@@ -7,7 +7,7 @@ import { icon } from '../../core/icons.js';
 import { copyButton } from '../../core/clipboard.js';
 import { disclosure } from '../../core/fold.js';
 import { fmtBytes } from '../../core/format.js';
-import { badge, mono, muted, sparkline } from '../../core/ui.js';
+import { badge, mono, muted, sparkline, spinner } from '../../core/ui.js';
 import { stat } from './diagviews.js';
 import { throughputChart } from './charts.js';
 import { clientCommand, describeTest, fmtBitrate, fmtClock, parseIperf, remaining } from './iperfmodel.js';
@@ -98,7 +98,7 @@ function history(tests) {
       h('td', { className: 'muted' }, extra));
   });
   return h('div', { className: 'rt-iperf-history' }, h('h3', {}, 'Earlier tests'),
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-compare' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover rt-compare' },
       h('thead', {}, h('tr', {}, ['#', 'Time', 'Client', 'Test', 'Rate', '', 'Details'].map((c, i) => h('th', { className: i === 0 || i === 4 ? 'num' : '' }, c)))),
       h('tbody', {}, rows))));
 }
@@ -117,6 +117,6 @@ export function iperfBody(job, status) {
     exposed.length && job.running ? banner(`The zone ${exposed.join(', ')} accepts traffic for the router, so while this server runs on every address it can be reached from the internet. Stop it when you are done, or listen on one LAN address only.`, 'warn') : null,
     parsed.errors.map(e => banner(e)),
     job.running ? (job.connectEl ??= connectPanel(info, port, bind)) : null,
-    latest ? latestTest(latest, job.running) : job.running ? h('div', { className: 'rt-text muted rt-waiting' }, h('span', { className: 'spinner-border spinner-border-sm' }), 'Waiting for a client to connect…') : h('div', { className: 'rt-text muted' }, 'No client connected while the server was running.'),
+    latest ? latestTest(latest, job.running) : job.running ? h('div', { className: 'rt-text muted rt-waiting' }, spinner('Waiting for client'), 'Waiting for a client to connect…') : h('div', { className: 'rt-text muted' }, 'No client connected while the server was running.'),
     history(parsed.tests.slice(0, -1)));
 }

@@ -174,7 +174,7 @@ function ifaceEditor(i, edit, live) {
     ? h('div', { className: 'wf-actions' }, muted(`"${title}" is removed when you save.`), button('Undo', 'arrow-counterclockwise', () => { restoreIface(edit.draft, i.id); edit.touched(); edit.redraw(); }))
     : h('div', { className: 'wf-actions' },
       muted(i.isNew ? `Not saved yet. It is added as the section "${i.name}".` : `The wifi-iface section "${i.section}"${i.anonymous ? ' (unnamed)' : ''}.`),
-      button(i.isNew ? `Discard ${what}` : `Remove ${what}`, 'trash', () => { removeIface(edit.draft, i.id); edit.touched(); edit.redraw(); }, 'btn-fl',
+      button(i.isNew ? `Discard ${what}` : `Remove ${what}`, 'trash', () => { removeIface(edit.draft, i.id); edit.touched(); edit.redraw(); }, 'btn-outline-secondary',
         { disabled: !edit.canEdit, title: `Remove the ${what} ${title}` }));
   const id = `if:${i.id}`;
   return disclosure({ cls: `wf-iface${i.isNew ? ' wf-new' : ''}`, open: opened.get(id) ?? i.isNew, onToggle: open => opened.set(id, open),
@@ -190,7 +190,7 @@ export function networksEditor(name, edit, liveOf = () => null) {
   const mine = ifaceList(w, edit.draft).filter(i => i.device === name);
   const others = w.ifaces.filter(i => i.device === name && !i.editable);
   const add = (label, mode) => {
-    return button(label, 'plus-lg', () => { opened.set(`if:${addIface(w, edit.draft, name, mode)}`, true); edit.touched(); edit.redraw(); }, 'btn-fl', { disabled: !edit.canEdit });
+    return button(label, 'plus-lg', () => { opened.set(`if:${addIface(w, edit.draft, name, mode)}`, true); edit.touched(); edit.redraw(); }, 'btn-outline-secondary', { disabled: !edit.canEdit });
   };
   return h('div', { className: 'wf-nets-editor' },
     mine.length ? mine.map(i => ifaceEditor(i, edit, liveOf(i))) : muted('No access point, client network or mesh point is configured on this radio.'),

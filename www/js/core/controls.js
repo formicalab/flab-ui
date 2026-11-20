@@ -11,7 +11,8 @@ export function searchControl(state, key, onchange, placeholder = 'Filter…') {
     className: 'form-control form-control-sm', type: 'search', placeholder, value: state[key],
     oninput: e => { state[key] = e.target.value; onchange(); },
   });
-  return h('div', { className: 'search' }, icon('search'), input);
+  return h('div', { className: 'search input-group input-group-sm' },
+    h('span', { className: 'input-group-text' }, icon('search')), input);
 }
 
 // Drop-down bound to state[key]. Returns { node, setOptions(options) } where options are [value, label] pairs.
@@ -43,7 +44,7 @@ export function pauseControl(state) {
 
 // Refresh button that calls `reload` (a fresh poll of the page).
 export const refreshControl = reload => {
-  const btn = button('Refresh', 'arrow-clockwise', reload, 'btn-brand');
+  const btn = button('Refresh', 'arrow-clockwise', reload, 'btn-primary');
   btn.classList.add('cmd-refresh');
   return btn;
 };
@@ -52,7 +53,7 @@ export const refreshControl = reload => {
 // onchange(value). Returns { node, setOptions(options) } so a page can offer only the tabs that make sense
 // (the selection falls back to the first tab when its own disappears; the strip is hidden below two tabs).
 export function tabsControl(state, key, onchange) {
-  const node = h('div', { className: 'seg', role: 'tablist', ariaLabel: 'Views' });
+  const node = h('div', { className: 'btn-group btn-group-sm seg', role: 'tablist', ariaLabel: 'Views' });
   let options = [];
   const choose = (index, focus = false) => {
     const next = options[index]?.[0];
@@ -66,7 +67,7 @@ export function tabsControl(state, key, onchange) {
   const draw = () => {
     node.hidden = options.length < 2;
     node.replaceChildren(...options.map(([value, label], index) => h('button', {
-      type: 'button', role: 'tab', className: `seg-tab ${state[key] === value ? 'active' : ''}`,
+      type: 'button', role: 'tab', className: `btn btn-outline-secondary seg-tab ${state[key] === value ? 'active' : ''}`,
       ariaSelected: String(state[key] === value), ariaControls: 'page-content', tabIndex: state[key] === value ? 0 : -1,
       onclick: () => choose(index),
       onkeydown: event => {

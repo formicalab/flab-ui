@@ -77,11 +77,11 @@ export function poolCard(ctx, pool) {
     ? h('div', { className: 'dhcp-pool-actions' }, muted(`Pool ${pool.iface} is removed when you save.`), button('Undo', 'arrow-counterclockwise', () => { restorePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); }))
     : h('div', { className: 'dhcp-pool-actions' },
       muted(pool.isNew ? 'Not saved yet.' : `The dhcp section "${pool.section}".`),
-      button(pool.isNew ? 'Discard pool' : 'Remove pool', 'trash', () => { removePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); }, 'btn-fl',
+      button(pool.isNew ? 'Discard pool' : 'Remove pool', 'trash', () => { removePool(ctx.draft, pool.section); ctx.touched(); ctx.redraw(); }, 'btn-outline-secondary',
         { disabled: !ctx.canEdit, title: `Stop serving ${pool.iface} and delete this pool` }));
   const state = pool.isNew ? badge('new', 'info', 'not saved yet') : off ? badge('to be removed', 'danger') : null;
   const el = card(
-    [chevron(), icon('list-ul'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, state, h('span', { className: 'sub' }, describe(ctx, pool))],
+    [chevron(), icon('ethernet'), h('span', {}, `Pool ${pool.iface}`), pool.info?.device ? badge(pool.info.device, '', 'the network device') : null, state, h('span', { className: 'sub' }, describe(ctx, pool))],
     h('div', { className: `card-body dhcp-groups${off ? ' dhcp-removed-pool' : ''}` }, actions, groups, extraOptions(pool.extra, '/etc/config/dhcp')),
     pool.isNew ? 'dhcp-new-pool' : '');
   return foldCard(el, pool.section);
@@ -93,7 +93,7 @@ export function addPoolBar(ctx) {
   const free = freeInterfaces(ctx.data, ctx.draft);
   if (!free.length) return h('p', { className: 'muted small dhcp-addpool' }, 'Every interface already has a pool.');
   const pick = h('select', { className: 'form-select form-select-sm', title: 'The interface to serve', disabled: !ctx.canEdit }, free.map(n => h('option', { value: n }, n)));
-  const add = button('Add pool', 'plus-lg', () => { unfolded.add(addPool(ctx.data, ctx.draft, pick.value)); ctx.touched(); ctx.redraw(); }, 'btn-fl', { disabled: !ctx.canEdit });
+  const add = button('Add pool for this interface', 'plus-lg', () => { unfolded.add(addPool(ctx.data, ctx.draft, pick.value)); ctx.touched(); ctx.redraw(); }, 'btn-outline-secondary', { disabled: !ctx.canEdit });
   return h('div', { className: 'dhcp-addpool' }, pick, add, h('span', { className: 'muted small' }, 'Starts as a server for DHCPv4, DHCPv6 and router advertisements; the options are then edited like the other pools.'));
 }
 
@@ -107,7 +107,7 @@ export function daemonCard(ctx) {
   const running = ctx.data.daemonRunning;
   const d = ctx.draft.daemon;
   const el = card(
-    [chevron(), icon('gear'), h('span', {}, 'odhcpd daemon'),
+    [chevron(), icon('cpu'), h('span', {}, 'odhcpd daemon'),
       running == null ? muted('state not available') : badge(running ? 'running' : 'not running', running ? 'success' : 'danger'),
       h('span', { className: 'sub' }, `${d.maindhcp ? 'main DHCPv4 server' : 'not the main DHCPv4 server'} · log level ${d.loglevel === '' ? `${DAEMON_FIELDS.find(f => f.key === 'loglevel').default} (default)` : d.loglevel}`)],
     h('div', {},

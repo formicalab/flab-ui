@@ -1,16 +1,16 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-Tests the DHCP page (odhcpd leases, reservations and settings) without changing the router's configuration.
+Tests the DHCP page (odhcpd clients, static leases and settings) without changing the router's configuration.
 
 .DESCRIPTION
 1. Unit tests: the page model (option tables, address and range helpers, reading the config and the lease data,
    validation, the change plan and the read-back check) and, from the network suite, the configuration-change
    helpers. They need no router.
 2. With -Browser, opens the deployed UI in Edge with a temporary rpcd session (tests/TestSession.ps1). The page
-   first shows the router's own leases, reservations and pools, and any write it tried would be blocked and fail
+   first shows the router's own clients, static leases and pools, and any write it tried would be blocked and fail
    the test. Then a stateful mock of rpcd's `uci` object, of odhcpd's `dhcp` object and of the interfaces takes
-   over and the editing flow (validation, reserving a lease, editing a pool and the daemon, saving, a change the
+   over and the editing flow (validation, making a lease static, editing a pool and the daemon, saving, a change the
    router does not keep, a stopped odhcpd, a login without write access, an expired session) is exercised without
    touching /etc/config/dhcp.
 

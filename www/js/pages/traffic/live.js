@@ -80,7 +80,7 @@ function interfaceTable(rows, wanSet, state, rerender) {
       legend([['Rates are measured in this browser from the interface counters between polls: ',
         h('span', { className: 'tr-rx' }, '↓ download'), ' and ', h('span', { className: 'tr-tx' }, '↑ upload'), ' as the router sees them on that port. ',
         'Dimmed rows (bridges, VLANs, the CPU port) repeat the traffic of the ports under them and are not added to the totals. The chart covers the last minutes the page was open.']]),
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover tr-live' },
+      h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover tr-live' },
         h('thead', {}, h('tr', {}, ['Interface', 'Link', 'Download', 'Upload', 'History', 'Link load', 'Since boot'].map(c => h('th', {}, c)))),
         h('tbody', {}, body.length ? body : h('tr', {}, h('td', { colSpan: 7, className: 'muted' }, 'The router reports no network devices'))))),
       rows.length > shown.length ? h('div', { className: 'tr-more' },

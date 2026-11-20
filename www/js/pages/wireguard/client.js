@@ -108,10 +108,10 @@ export function openClientDialog(ctx, item, onClosed) {
           qrBox(text, muted('The configuration is too long for a QR code.'), { ecc: 'L', label: `QR code of the configuration of ${s.name}` }),
           h('div', { className: 'muted small' }, 'In the WireGuard app, add a tunnel and scan this QR code.')),
         h('pre', { className: 'wg-conf mono' }, text))));
-    dialog.setFooter([copyButton(text, 'Copy'), button('Download', 'download', () => saveFile(file, text)), button('Close', 'x-lg', close, 'btn-brand')]);
+    dialog.setFooter([copyButton(text, 'Copy'), button('Download', 'download', () => saveFile(file, text)), button('Close', 'x-lg', close, 'btn-primary')]);
   };
 
   dialog.setBody(form);
-  dialog.setFooter([button('Cancel', 'x-lg', close), button('Create the client', 'key', create, 'btn-brand')]);
+  dialog.setFooter([button('Cancel', 'x-lg', close), button('Create the client', 'key', create, 'btn-primary')]);
   name.focus();
 }

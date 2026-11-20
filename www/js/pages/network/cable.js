@@ -6,7 +6,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, can, ubus } from '../../core/ubus.js';
 import { openDialog } from '../../core/modal.js';
-import { badge, button } from '../../core/ui.js';
+import { badge, button, spinner } from '../../core/ui.js';
 import { fmtSpeed } from './util.js';
 
 // What the page hands over: its redraw and its reload (a call that finds the session ended reloads, which shows the sign-in screen).
@@ -59,7 +59,7 @@ function confirm(p) {
       h('p', { className: 'muted small' }, 'Not every PHY driver supports the test; if this one does not, you are told and the button goes away.')),
     footer: [
       button('Cancel', 'x-lg', () => dialog.close()),
-      button('Run the test', 'tools', () => { dialog.close(); run(p); }, 'btn-fl btn-brand'),
+      button('Run the test', 'tools', () => { dialog.close(); run(p); }, 'btn-primary'),
     ],
   });
   return dialog;
@@ -69,7 +69,7 @@ function confirm(p) {
 export function cableButton(p) {
   if (!canTest(p)) return null;
   const busy = tests.get(p.name)?.phase === 'running';
-  return button(busy ? 'Testing…' : 'Cable test', 'tools', () => confirm(p), 'btn-fl cable-btn', { disabled: busy, title: 'Test the cable with the PHY (the link drops for a few seconds)' });
+  return button(busy ? 'Testing…' : 'Cable test', 'tools', () => confirm(p), 'btn-outline-secondary cable-btn', { disabled: busy, title: 'Test the cable with the PHY (the link drops for a few seconds)' });
 }
 
 // What the pairs say, in words.
@@ -93,9 +93,9 @@ function summary(p, pairs) {
 export function cablePanel(p) {
   const t = tests.get(p.name);
   if (!t) return null;
-  const close = button('Close', 'x-lg', () => { tests.delete(p.name); hooks.rerender(); }, 'btn-fl cable-btn');
+  const close = button('Close', 'x-lg', () => { tests.delete(p.name); hooks.rerender(); }, 'btn-outline-secondary cable-btn');
   let body;
-  if (t.phase === 'running') body = h('div', { className: 'muted' }, h('span', { className: 'spinner-border spinner-border-sm me-2' }), 'Testing the cable…');
+  if (t.phase === 'running') body = h('div', { className: 'muted d-flex align-items-center gap-2' }, spinner('Testing cable'), 'Testing the cable…');
   else if (!t.result?.ok) body = h('div', { className: 'text-danger' }, icon('x-circle'), ` ${t.result?.error ?? 'The test failed.'}`);
   else {
     body = h('div', {},

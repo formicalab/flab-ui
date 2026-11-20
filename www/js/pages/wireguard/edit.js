@@ -61,7 +61,7 @@ function keyControl(ctx, f, id, values, stored, label, make) {
     } catch (e) {
       message.textContent = e.message;
     }
-  }, 'btn-fl', { disabled: !ctx.canEdit });
+  }, 'btn-outline-secondary', { disabled: !ctx.canEdit });
   keySupport().then(support => {
     if (support) return;
     generate.disabled = true;

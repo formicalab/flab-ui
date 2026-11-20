@@ -26,7 +26,7 @@ function matrix(data) {
   const rows = [...byPrefix.values()].sort((a, b) => cmpPrefix(a.prefix, b.prefix));
   const labels = peerLabels(data.peers);
 
-  return h('div', { className: 'grid-wrap' }, h('table', { className: 'table' },
+  return h('div', { className: 'table-responsive' }, h('table', { className: 'table' },
     h('thead', {}, h('tr', {}, h('th', {}, 'Prefix'), h('th', {}, 'Origin'),
       data.peers.map(p => h('th', { className: 'text-center', title: peerTitle(p) }, h('span', { className: 'peer-label justify-content-center' }, peerDot(data, p.name), labels.get(p.name))))),
     ),
@@ -43,7 +43,7 @@ const FILTER_COLS = [['received', 'Considered'], ['filtered', 'Blocked by filter
 // BIRD's export statistics are cumulative since the session came up; one row per peer and channel.
 function filterResults(data) {
   const rows = data.peers.flatMap(p => (p.channels.length ? p.channels : [null]).map(ch => ({ p, ch })));
-  return h('div', { className: 'grid-wrap' }, h('table', { className: 'table' },
+  return h('div', { className: 'table-responsive' }, h('table', { className: 'table' },
     h('thead', {}, h('tr', {}, h('th', {}, 'Peer'), h('th', {}, 'Export filter'), FILTER_COLS.map(([, l]) => h('th', { className: 'text-end' }, l)))),
     h('tbody', {}, rows.map(({ p, ch }) => {
       const s = ch?.stats?.export_updates ?? {};
@@ -73,7 +73,7 @@ export function localCard(data) {
     h('td', {}, r.dev ? h('span', { className: 'mono' }, r.dev) : muted('–')),
     h('td', {}, r.in_kernel ? h('span', { className: 'cap-yes', title: 'Installed in the kernel' }, icon('check-circle', 17)) : muted('–'))));
   return card([icon('signpost-split'), 'Local & connected routes', h('span', { className: 'sub' }, `${data.local.length} routes`)],
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover' },
       h('thead', {}, h('tr', {}, ['Prefix', 'Protocol', 'Type', 'Device', 'Kernel'].map(c => h('th', {}, c)))),
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 5, className: 'muted' }, 'No local routes'))))),
     'h-100');

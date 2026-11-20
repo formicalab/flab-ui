@@ -73,7 +73,7 @@ function hostsCard(usage, hosts, state, rerender) {
     h('td', { className: 'tr-num' }, fmtNum(x.conns))));
   return card([icon('hdd-stack'), 'Hosts', h('span', { className: 'sub' }, `${fmtNum(list.length)} of ${fmtNum(hosts.length)} · one row per device, its IPv4 and IPv6 addresses together`)],
     h('div', {},
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover tr-usage' },
+      h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover tr-usage' },
         h('thead', {}, h('tr', {},
           sortHead('Host', 'name', state, rerender, false), h('th', {}, 'Addresses'),
           sortHead('Download', 'download', state, rerender, true), sortHead('Upload', 'upload', state, rerender, true),
@@ -98,7 +98,7 @@ function protocolsCard(l7) {
   return card([icon('diagram-3'), 'Protocols', h('span', { className: 'sub' }, 'what the traffic was, by application protocol')],
     h('div', {},
       legend(['nlbwmon names a flow after its application protocol (HTTPS, DNS, ...) from /usr/share/nlbwmon/protocols; a flow it does not know is listed by transport and port ("TCP 8443").']),
-      h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover tr-usage' },
+      h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover tr-usage' },
         h('thead', {}, h('tr', {}, ['Protocol', 'Download', 'Upload', 'Total', 'Share of the total', 'Connections'].map((c, i) => h('th', { className: i === 1 || i === 2 || i === 3 || i === 5 ? 'tr-num' : '' }, c)))),
         h('tbody', {}, body.length ? body : h('tr', {}, h('td', { colSpan: 6, className: 'muted' }, 'Nothing counted in this period')))))));
 }
@@ -108,7 +108,7 @@ function protocolsCard(l7) {
 export function usageView(data, state, rerender) {
   if (!data.status?.nlbw) return [emptyState(
     'nlbw is not installed on this router, so per-host usage is not available.',
-    h('a', { href: '#services', className: 'btn btn-sm btn-fl' }, 'Open Services'))];
+    h('a', { href: '#services', className: 'btn btn-sm btn-outline-secondary' }, 'Open Services'))];
   const findings = usageFindings(data.status, data.hosts);
   if (!data.periods?.running || !data.hosts?.ok) return [healthBanner(findings, ''), note()];
   const hosts = mergeHosts(data.hosts.rows, data.hosts.names);

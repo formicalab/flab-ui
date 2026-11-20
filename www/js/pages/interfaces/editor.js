@@ -48,7 +48,7 @@ function confirmSave(base, draft) {
   if (!risks.length) return Promise.resolve(true);
   return new Promise(resolve => {
     let go = false;
-    const apply = button('Apply the change', 'check2', () => { go = true; dialog.close(); }, 'btn-brand');
+    const apply = button('Apply the change', 'check2', () => { go = true; dialog.close(); }, 'btn-primary');
     const cancel = button('Cancel', 'x-lg', () => dialog.close());
     const dialog = openDialog({
       title: 'This change can cut your connection',

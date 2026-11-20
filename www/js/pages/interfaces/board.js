@@ -159,7 +159,7 @@ function zoneCard(item) {
 // elsewhere and on Escape.
 function menuButton(label, iconName, entries, disabled) {
   const list = h('div', { className: 'nb-menu', role: 'menu', hidden: true });
-  const toggle = h('button', { type: 'button', className: 'btn btn-sm btn-fl', disabled, ariaHasPopup: 'menu' }, icon(iconName), label, icon('chevron-down', 12));
+  const toggle = h('button', { type: 'button', className: 'btn btn-sm btn-outline-secondary', disabled, ariaHasPopup: 'menu' }, icon(iconName), label, icon('chevron-down', 12));
   // Closes the list and removes the document listeners.
   const close = () => { list.hidden = true; document.removeEventListener('click', outside, true); document.removeEventListener('keydown', onKey, true); };
   // A click outside the menu closes it; once the board has been redrawn, the stale listener removes itself.
@@ -246,7 +246,7 @@ export function boardView({ board, selected = null, onOpen, actions = null }) {
     h('div', { className: 'nb-cards' }, board.lanes.devices.length ? board.lanes.devices.map(d => card(d, 'device', deviceCard(d))) : none('No bridge or VLAN devices: an interface can sit on a port directly.')));
 
   // Lane 3: interfaces.
-  const netAction = actions ? button('Network', 'plus-lg', () => actions.addNetwork(), 'btn-fl', { disabled: !actions.canEdit }) : null;
+  const netAction = actions ? button('Network', 'plus-lg', () => actions.addNetwork(), 'btn-outline-secondary', { disabled: !actions.canEdit }) : null;
   const laneInterfaces = h('section', { className: 'nb-lane nb-lane-interfaces' },
     laneHead('Interfaces', 'IP configuration: a protocol and addresses on one device', netAction),
     h('div', { className: 'nb-cards' }, board.lanes.interfaces.length ? board.lanes.interfaces.map(i => card(i, 'interface', interfaceCard(i))) : none('No interfaces.')));

@@ -5,7 +5,7 @@ import { chevron } from '../../core/fold.js';
 import { saveFile } from '../../core/download.js';
 import { openDialog } from '../../core/modal.js';
 import { can, ubus } from '../../core/ubus.js';
-import { button, muted } from '../../core/ui.js';
+import { button, muted, spinner } from '../../core/ui.js';
 
 const MAX_BACKUP = 16 * 1024 * 1024;
 const UPLOAD_CHUNK = 32768;
@@ -179,10 +179,10 @@ export function backupCard(rerender) {
   const body = h('div', { className: 'card-body' },
     h('p', { className: 'muted' }, 'Backups contain /etc configuration, installed-package selections and other files saved by OpenWrt. The unencrypted archive can contain passwords and private keys.'),
     h('div', { className: 'd-flex flex-wrap gap-2 align-items-center' },
-      button(state.busy ? 'Working…' : 'Create backup', 'download', () => download(rerender), 'btn-brand', {
+      button(state.busy ? 'Working…' : 'Create backup', 'download', () => download(rerender), 'btn-primary', {
         disabled: Boolean(state.busy) || !allowed,
       }),
-      h('label', { className: `btn btn-sm btn-fl${state.busy || !allowed ? ' disabled' : ''}` },
+      h('label', { className: `btn btn-sm btn-outline-secondary${state.busy || !allowed ? ' disabled' : ''}` },
         icon('upload'), ' Choose backup to restore',
         h('input', {
           type: 'file',
@@ -192,7 +192,7 @@ export function backupCard(rerender) {
           onchange: e => chooseFile(e.target.files?.[0], rerender),
         }))),
     state.busy ? h('div', { className: 'd-flex align-items-center gap-2 mt-3 text-primary', role: 'status', ariaLive: 'polite' },
-      h('span', { className: 'spinner-border spinner-border-sm', ariaHidden: 'true' }),
+      spinner('Transferring configuration backup'),
       state.status = h('span', {}, state.busy)) : null,
     !allowed ? muted('This login needs the backup permissions added to its rpcd ACL. Sign out and in again after upgrading flab-ui.') : null,
     state.upload ? [
@@ -206,7 +206,7 @@ export function backupCard(rerender) {
           } catch (err) {
             setMessage(rerender, 'error', err.message);
           }
-        }, 'btn-fl', { disabled: Boolean(state.busy) }),
+        }, 'btn-outline-secondary', { disabled: Boolean(state.busy) }),
         button('Restore and reboot…', 'arrow-counterclockwise', () => confirmRestore(rerender), 'btn-danger', { disabled: Boolean(state.busy) })),
     ] : null,
     state.message ? h('div', {

@@ -3,6 +3,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError } from '../../core/ubus.js';
+import { spinner } from '../../core/ui.js';
 
 // The icon and the extra class of each kind of message line (`rt-error` is the base class: it is the one the page's tests and
 // css/routing.css know).
@@ -18,7 +19,7 @@ export const LEVEL_ICON = { ok: 'check-circle', warn: 'exclamation-triangle', ba
 export const findingList = list => (list.length ? h('div', { className: 'rt-findings' }, list.map(n => h('div', { className: `rt-finding ${n.level}` }, icon(LEVEL_ICON[n.level]), n.text))) : null);
 
 // A spinner with `text`, for a part of a result that is still being worked on.
-export const working = text => h('span', { className: 'rt-running' }, h('span', { className: 'spinner-border spinner-border-sm' }), text);
+export const working = text => h('span', { className: 'rt-running' }, spinner(text), text);
 
 // The words of a failed ubus call: the plugin's own message, or a hint when the session has ended.
 export const failure = e => (e instanceof AuthError ? 'The session has expired. Sign in again.' : e.message);

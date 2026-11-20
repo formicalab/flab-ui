@@ -3,8 +3,9 @@
 import { h } from './dom.js';
 import { icon } from './icons.js';
 
-// Soft pill. kind: '' | success | warning | danger | info
-export const badge = (text, kind = '', title = '') => h('span', { className: `fl-badge ${kind}`, title }, text);
+// Soft pill. kind: '' | success | warning | danger | info. Bootstrap supplies the component sizing and pill shape;
+// the project only overrides the semantic colors to keep the Fluent theme in both color schemes.
+export const badge = (text, kind = '', title = '') => h('span', { className: `badge rounded-pill fl-badge ${kind}`.trim(), title }, text);
 
 // Algorithm / value chip colored by strength level: good | fair | weak | info
 export const chip = (text, lvl = '', title = '') => h('span', { className: `alg-chip ${lvl}`, title }, text);
@@ -14,6 +15,10 @@ export const muted = text => h('span', { className: 'muted' }, text);
 
 // Monospace inline text for addresses, keys, names and other identifiers.
 export const mono = text => h('span', { className: 'mono' }, text);
+
+// Bootstrap loading indicator with a screen-reader label. Visible status text, when present, is supplied by a sibling.
+export const spinner = (text = 'Loading…', extra = '') => h('span', { className: `spinner-border spinner-border-sm ${extra}`.trim(), role: 'status' },
+  h('span', { className: 'visually-hidden' }, text));
 
 // Badge kind for the 0-100 security grades (A+ … D) shown for Wi-Fi clients and IPsec connections.
 export const GRADE_KIND = { 'A+': 'success', A: 'success', B: 'info', C: 'warning', D: 'danger' };
@@ -33,19 +38,23 @@ export const tile = (label, value, sub, valueClass = '') => h('div', { className
     sub ? h('div', { className: 'sub' }, sub) : null)));
 
 // Row of KPI tiles (see tile) in a responsive grid.
-export const tiles = (...t) => h('div', { className: 'row row-cols-2 row-cols-md-3 row-cols-xl-4 row-cols-xxl-6 g-3' }, t);
+export const tiles = (...t) => h('div', { className: 'row fl-summary row-cols-2 row-cols-md-3 row-cols-xl-4 row-cols-xxl-6 g-3' }, t);
 
 // Simple table: cols are labels, rows are arrays of nodes or strings.
-export const table = (cols, rows) => h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover' },
+export const table = (cols, rows) => h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover' },
   h('thead', {}, h('tr', {}, cols.map(c => h('th', {}, c)))),
   h('tbody', {}, rows.length
     ? rows.map(r => h('tr', {}, r.map(c => h('td', {}, c))))
     : h('tr', {}, h('td', { colSpan: cols.length, className: 'muted' }, 'Nothing to show')))));
 
-// Small button with an optional leading icon. `cls` picks the variant (btn-fl, btn-brand, ...) and may add page classes; `props` sets
-// other element properties (title, disabled, ariaLabel). An icon-only button (empty `label`) needs a title or ariaLabel.
-export const button = (label, iconName, onclick, cls = 'btn-fl', props = {}) =>
-  h('button', { type: 'button', ...props, className: `btn btn-sm ${cls}`, onclick }, iconName ? icon(iconName) : null, label || null);
+// Small button with an optional leading icon. `cls` picks a Bootstrap variant and may add page classes; `props` sets
+// other element properties. An icon-only button needs a title or ariaLabel.
+export const button = (label, iconName, onclick, cls = 'btn-outline-secondary', props = {}) =>
+  h('button', {
+    type: 'button', ...props,
+    className: `btn btn-sm ${cls}`,
+    onclick,
+  }, iconName ? icon(iconName) : null, label || null);
 
 // Label/value list. rows: [label, node|string] pairs; null rows are skipped.
 export const kv = rows => h('dl', { className: 'kv' },
@@ -59,14 +68,20 @@ export function lifebar({ elapsed, rekeyIn, expiresIn }) {
   const end = expiresIn != null ? elapsed + expiresIn : elapsed + (rekeyIn ?? 0);
   // A value as a percentage of the bar's full length, clamped to 0-100.
   const pct = v => end > 0 ? Math.min(100, Math.max(0, v / end * 100)) : 0;
+  const value = pct(elapsed);
   const marker = rekeyIn != null && expiresIn != null ? h('i', { className: 'mark', style: `left:${pct(elapsed + rekeyIn)}%` }) : null;
-  return h('div', { className: 'lifebar' }, h('div', { className: 'track' },
-    h('div', { className: 'fill', style: `width:${pct(elapsed)}%` }), marker));
+  return h('div', { className: 'progress lifebar', role: 'progressbar', ariaLabel: 'Lifetime elapsed',
+    ariaValueMin: '0', ariaValueMax: '100', ariaValueNow: String(Math.round(value)) },
+  h('div', { className: 'progress-bar', style: `width:${value}%` }), marker);
 }
 
 // Horizontal score meter; lvl colors the fill (good | fair | weak).
-export const meter = (score, max, lvl) => h('div', { className: `meter ${lvl}` },
-  h('div', { className: 'fill', style: `width:${max ? score / max * 100 : 0}%` }));
+export const meter = (score, max, lvl) => {
+  const value = Math.min(100, Math.max(0, max ? score / max * 100 : 0));
+  return h('div', { className: `progress meter ${lvl}`, role: 'progressbar', ariaLabel: 'Score',
+    ariaValueMin: '0', ariaValueMax: '100', ariaValueNow: String(Math.round(value)) },
+  h('div', { className: 'progress-bar', style: `width:${value}%` }));
+};
 
 // Inline SVG line chart. series: [{ values: number[], cls }]; all series share one scale.
 export function sparkline(series, { width = 160, height = 36, max: fixedMax } = {}) {
@@ -96,8 +111,9 @@ export const emptyState = (text, action = null) =>
 
 // A banner listing what needs attention ({ level: 'bad' | 'warn' | 'info', text }), or a green all-clear.
 export function healthBanner(list, okText) {
-  if (!list.length) return h('div', { className: 'net-health ok' }, icon('check-circle'), okText);
+  if (!list.length) return h('div', { className: 'alert alert-success net-health ok', role: 'status' }, icon('check-circle'), okText);
   const worst = list.some(f => f.level === 'bad') ? 'bad' : list.some(f => f.level === 'warn') ? 'warn' : 'info';
-  return h('div', { className: `net-health ${worst}` },
+  const variant = { bad: 'danger', warn: 'warning', info: 'info' }[worst];
+  return h('div', { className: `alert alert-${variant} net-health ${worst}`, role: 'alert' },
     h('ul', {}, list.map(f => h('li', { className: f.level }, icon(f.level === 'bad' ? 'x-circle' : f.level === 'warn' ? 'exclamation-triangle' : 'info-circle'), f.text))));
 }

@@ -15,8 +15,8 @@ anything, so the init scripts do the work, as they do for `/etc/init.d/<name> re
   stand out. UDP sockets in the kernel's ephemeral range (`ip_local_port_range`, 32768 and up: the port picked for an
   outgoing query) and sockets that no process owns (WireGuard's, which the kernel holds) are left out. A service that
   procd does not track by PID, or that has no open port, shows a dash.
-- **Buttons**: Start (disabled while the service runs; a disabled button keeps the normal look at reduced opacity, as
-  `base.css` defines the Bootstrap disabled-state variables for `.btn-fl` and `.btn-brand`), Stop and Restart on every
+- **Buttons**: Start (disabled while the service runs; a disabled button keeps the normal look at reduced opacity through
+  the themed Bootstrap `btn-*` variables in `base.css`), Stop and Restart on every
   init script, then **Disable** for a service that starts at boot or **Enable** for one that does not (the script's own
   `disable` and `enable`, which remove or add the `S<NN><name>` link in `/etc/rc.d`; the running service is not touched,
   and the Start at boot column changes once the list refreshes). The boot-sequence

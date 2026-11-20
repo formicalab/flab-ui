@@ -12,7 +12,11 @@ export const legend = paragraphs => h('div', { className: 'muted small set-legen
 const NOTE_ICONS = { bad: 'x-circle', warn: 'exclamation-triangle', ok: 'check-circle', info: 'info-circle' };
 
 // A note line: kind is bad | warn | ok | info.
-export const note = (kind, text, ...extra) => h('div', { className: `set-note ${kind}` }, icon(NOTE_ICONS[kind] ?? 'info-circle'), text, ...extra);
+export const note = (kind, text, ...extra) => {
+  const variant = { bad: 'danger', warn: 'warning', ok: 'success', info: 'info' }[kind] ?? 'info';
+  return h('div', { className: `alert alert-${variant} set-note ${kind}`, role: kind === 'bad' || kind === 'warn' ? 'alert' : 'status' },
+    icon(NOTE_ICONS[kind] ?? 'info-circle'), text, ...extra);
+};
 
 // The id of the list input to focus after the next redraw (set when a row was just added).
 let focusId = null;
@@ -22,8 +26,8 @@ function listRow(f, io, list, index) {
   const input = h('input', { className: 'form-control form-control-sm', placeholder: f.placeholder ?? '', value: list[index], disabled: io.disabled,
     spellcheck: false, autocomplete: 'off', oninput: e => { list[index] = e.target.value; io.touched(); } });
   io.register(input, index);
-  const remove = button('', 'x-lg', () => { list.splice(index, 1); io.redraw(); }, 'btn-fl', { title: 'Remove', ariaLabel: 'Remove', disabled: io.disabled });
-  return { input, node: h('div', { className: 'set-row' }, input, remove) };
+  const remove = button('', 'x-lg', () => { list.splice(index, 1); io.redraw(); }, 'btn-outline-secondary', { title: 'Remove', ariaLabel: 'Remove', disabled: io.disabled });
+  return { input, node: h('div', { className: 'set-row input-group input-group-sm' }, input, remove) };
 }
 
 // The control for one schema field, with its label and hint. `io` connects it to the page:
@@ -50,7 +54,7 @@ export function fieldRow(f, io) {
   if (f.type === 'list') {
     const list = io.get();
     const rows = list.map((_, i) => listRow(f, io, list, i));
-    const add = button(f.addLabel ?? 'Add', 'plus-lg', () => { list.push(''); focusId = io.id; io.redraw(); }, 'btn-fl', { disabled: io.disabled });
+    const add = button(f.addLabel ?? 'Add', 'plus-lg', () => { list.push(''); focusId = io.id; io.redraw(); }, 'btn-outline-secondary', { disabled: io.disabled });
     input = h('div', {}, h('div', { className: 'set-list' }, rows.length ? rows.map(r => r.node) : muted('None.')), add);
     if (focusId === io.id) {
       focusId = null;
@@ -80,8 +84,8 @@ export function fieldRow(f, io) {
       spellcheck: false, autocomplete: 'new-password', oninput: e => change(e.target.value) });
     io.register(secretInput);
     const reveal = button('', 'eye', () => { const show = secretInput.type === 'password'; secretInput.type = show ? 'text' : 'password'; reveal.replaceChildren(icon(show ? 'eye-slash' : 'eye')); },
-      'btn-fl', { title: 'Show or hide what you typed', ariaLabel: 'Show or hide what you typed' });
-    input = h('div', { className: 'set-row' }, secretInput, reveal);
+      'btn-outline-secondary', { title: 'Show or hide what you typed', ariaLabel: 'Show or hide what you typed' });
+    input = h('div', { className: 'set-row input-group input-group-sm' }, secretInput, reveal);
   } else {
     // An `int` field with `number: true` is a number input (spin buttons, the range from min and max); without it the
     // field is a text box that the model validates.
@@ -107,8 +111,8 @@ export function reviewBanner({ onSave, onDiscard, seconds = 30 }) {
   const summaryNode = h('span', { className: 'set-bar-summary' });
   const detailsToggle = button('', null, () => { open = !open; banner.render(last); });
   const discard = button('Discard edits', 'arrow-counterclockwise', onDiscard);
-  const saveButton = button('Save and apply', 'check2', onSave, 'btn-brand');
-  const dismiss = button('', 'x-lg', () => last.dismiss(), 'btn-fl', { title: 'Dismiss', ariaLabel: 'Dismiss' });
+  const saveButton = button('Save and apply', 'check2', onSave, 'btn-primary');
+  const dismiss = button('', 'x-lg', () => last.dismiss(), 'btn-outline-secondary', { title: 'Dismiss', ariaLabel: 'Dismiss' });
   const outcome = h('div', { className: 'set-bar-outcome' });
   const notes = h('div', { className: 'set-notes' });
   const list = h('ul', { className: 'set-changes' });

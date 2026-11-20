@@ -102,21 +102,22 @@ small, .small { font-size: .8rem; }
   backdrop-filter: blur(24px) saturate(140%);
 }
 .cmdbar h1 { font-size: 1.2rem; font-weight: 600; margin: 0 auto 0 0; }
+.fl-summary-slot { display: contents; }
 .cmdbar .form-control, .cmdbar .form-select { width: auto; min-width: 11rem; }
-.cmdbar .seg { order: 1; }
+.cmdbar .fl-summary { order: 1; flex: 1 0 100%; margin-top: .25rem; }
+.cmdbar .seg { order: 2; }
 .cmdbar .search, .cmdbar .form-select { order: 2; }
+.cmdbar .search { width: auto; min-width: 16rem; flex: 0 1 24rem; }
 .cmdbar .cmd-pause, .cmdbar .cmd-refresh { order: 3; margin-left: auto; }
 .cmdbar .cmd-refresh + .small { margin-left: 0; }
-.search { position: relative; }
-.search svg { position: absolute; left: .6rem; top: 50%; transform: translateY(-50%); color: var(--fl-muted); pointer-events: none; }
-.search input { padding-left: 2rem; }
+.search .input-group-text { padding: 0 .6rem; color: var(--fl-muted); background: var(--fl-surface); border-color: var(--fl-stroke); }
 /* Tab strip in the command bar: one segmented control, the active tab filled */
-.seg { display: inline-flex; border: 1px solid var(--fl-stroke); border-radius: 6px; overflow: hidden; background: var(--fl-surface); }
 .seg[hidden] { display: none; }
-.seg-tab { border: 0; background: transparent; color: var(--fl-text); padding: .25rem .9rem; font-size: .875rem; }
-.seg-tab + .seg-tab { border-left: 1px solid var(--fl-stroke); }
-.seg-tab:hover { background: var(--fl-surface-hover); }
-.seg-tab.active { background: var(--fl-brand); color: #fff; }
+.seg .seg-tab.active {
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: var(--fl-brand);
+  --bs-btn-active-border-color: var(--fl-brand);
+}
 /* Page body: vertical stack of the page's cards */
 main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
 .page-section-title { display: flex; align-items: center; gap: .55rem; margin: .2rem 0 -.45rem; font-size: 1rem; color: var(--fl-muted); }
@@ -134,16 +135,19 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
 .empty-state { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 
 /* ── Buttons and form controls ── */
-.btn { border-radius: 4px; }
-.btn-fl, .btn-brand { display: inline-flex; align-items: center; gap: .4rem; }
-.btn-fl { background: var(--fl-surface); border: 1px solid var(--fl-stroke); color: var(--fl-text); }
-.btn-fl:hover { background: var(--fl-surface-hover); color: var(--fl-text); }
-.btn-brand { background: var(--fl-brand); border: 1px solid var(--fl-brand); color: #fff; }
-.btn-brand:hover { background: var(--fl-brand-hover); border-color: var(--fl-brand-hover); color: #fff; }
-/* Bootstrap's `.btn:disabled` reads these variables, which only its own button variants define; without them a disabled
-   button's border falls back to the text color. A disabled button keeps its normal look at reduced opacity. */
-.btn-fl { --bs-btn-disabled-bg: var(--fl-surface); --bs-btn-disabled-border-color: var(--fl-stroke); --bs-btn-disabled-color: var(--fl-text); }
-.btn-brand { --bs-btn-disabled-bg: var(--fl-brand); --bs-btn-disabled-border-color: var(--fl-brand); --bs-btn-disabled-color: #fff; }
+.btn { --bs-btn-border-radius: 4px; display: inline-flex; align-items: center; gap: .4rem; }
+.btn-primary {
+  --bs-btn-color: #fff; --bs-btn-bg: var(--fl-brand); --bs-btn-border-color: var(--fl-brand);
+  --bs-btn-hover-color: #fff; --bs-btn-hover-bg: var(--fl-brand-hover); --bs-btn-hover-border-color: var(--fl-brand-hover);
+  --bs-btn-active-color: #fff; --bs-btn-active-bg: var(--fl-brand-hover); --bs-btn-active-border-color: var(--fl-brand-hover);
+  --bs-btn-disabled-color: #fff; --bs-btn-disabled-bg: var(--fl-brand); --bs-btn-disabled-border-color: var(--fl-brand);
+}
+.btn-outline-secondary {
+  --bs-btn-color: var(--fl-text); --bs-btn-bg: var(--fl-surface); --bs-btn-border-color: var(--fl-stroke);
+  --bs-btn-hover-color: var(--fl-text); --bs-btn-hover-bg: var(--fl-surface-hover); --bs-btn-hover-border-color: var(--fl-stroke);
+  --bs-btn-active-color: var(--fl-text); --bs-btn-active-bg: var(--fl-surface-hover); --bs-btn-active-border-color: var(--fl-control-border);
+  --bs-btn-disabled-color: var(--fl-text); --bs-btn-disabled-bg: var(--fl-surface); --bs-btn-disabled-border-color: var(--fl-stroke);
+}
 .form-control, .form-select { background-color: var(--fl-surface); border-color: var(--fl-stroke); border-bottom-color: var(--fl-control-border); border-radius: 4px; }
 .form-control:focus, .form-select:focus { border-color: var(--fl-stroke); border-bottom: 2px solid var(--fl-brand); box-shadow: none; background-color: var(--fl-surface); }
 /* Checkboxes, radios and switches. Bootstrap draws the box with --bs-border-color, which this theme sets to the pale card stroke, so an unchecked box
@@ -155,7 +159,6 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
 .form-check-input:checked, .form-check-input[type=checkbox]:indeterminate { background-color: var(--fl-brand); border-color: var(--fl-brand); }
 
 /* ── Data grid ── */
-.grid-wrap { overflow-x: auto; }
 .table { --bs-table-bg: transparent; --bs-table-hover-bg: var(--fl-surface-hover); --bs-table-color: var(--fl-text); margin: 0; }
 .table > :not(caption) > * > * { padding: .5rem .85rem; border-bottom-color: var(--fl-stroke); white-space: nowrap; vertical-align: middle; }
 .table thead th { color: var(--fl-muted); font-weight: 600; font-size: .8rem; user-select: none; }
@@ -172,7 +175,7 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
 .muted { color: var(--fl-muted); }
 
 /* ── Soft badges ── */
-.fl-badge { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 600; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
+.fl-badge { --bs-badge-padding-x: .55rem; --bs-badge-padding-y: .1rem; --bs-badge-font-size: .75rem; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
 .fl-badge.success { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
 .fl-badge.warning { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
 .fl-badge.danger  { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
@@ -195,16 +198,13 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
 .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 /* Block heading: small uppercase caption above a group of rows inside a card */
 .blk h3 { margin: 0 0 .8rem; font-size: .75rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fl-muted); }
-/* Lifetime bar: a fill showing elapsed lifetime with a marker where rekeying starts */
-.lifebar .track { position: relative; height: 6px; border-radius: 3px; background: var(--fl-neutral-bg); }
-.lifebar .fill { height: 100%; border-radius: 3px; background: var(--fl-brand); }
+/* Lifetime bar: Bootstrap's progress with a marker where rekeying starts */
+.lifebar { position: relative; }
 .lifebar .mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--fl-warn-fg); }
 /* Rating meter: thin bar whose fill color follows good / fair / weak */
-.meter { height: 6px; border-radius: 3px; background: var(--fl-neutral-bg); overflow: hidden; }
-.meter .fill { height: 100%; border-radius: 3px; }
-.meter.good .fill { background: var(--fl-ok-fg); }
-.meter.fair .fill { background: var(--fl-warn-fg); }
-.meter.weak .fill { background: var(--fl-bad-fg); }
+.meter.good .progress-bar { background: var(--fl-ok-fg); }
+.meter.fair .progress-bar { background: var(--fl-warn-fg); }
+.meter.weak .progress-bar { background: var(--fl-bad-fg); }
 /* Sparkline: rx (brand) and tx (green) polylines of a rate history */
 .spark polyline { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
 .spark .rx { stroke: var(--fl-brand); }
@@ -221,22 +221,22 @@ main { padding: 1.25rem 1.5rem 2rem; display: flex; flex-direction: column; gap:
 }
 
 /* ── Folds (core/fold.js), here because any page may use them ── */
-/* A card that folds down to its header (foldable()): the header is the toggle. The marker is a triangle on the left that points
+/* A card that folds down to its header (foldable()): the header is the toggle. The Bootstrap Icon chevron points
    right when folded and down when open, like the arrow of a disclosure. */
 .fl-fold-header { cursor: pointer; }
 .fl-fold-header:hover { background: var(--fl-surface-hover); }
 .fl-fold-header:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
-.fl-chevron { flex: none; width: 0; height: 0; border-left: .5rem solid currentColor; border-top: .3rem solid transparent; border-bottom: .3rem solid transparent; transform: rotate(90deg); transition: transform .15s; }
+.fl-chevron { flex: none; width: .75rem; height: .75rem; color: var(--fl-muted); transform: rotate(90deg); transition: transform .15s; }
 .fl-folded > :not(.card-header) { display: none; }
 .fl-folded > .card-header { border-bottom: 0; }
 .fl-folded .fl-chevron { transform: none; }
 
-/* A native <details> fold (disclosure()): the same arrow as a folded card, before the summary content, pointing right when
+/* A native <details> fold (disclosure()): the same chevron as a folded card, before the summary content, pointing right when
    closed and down when open. `.fl-disclosure-bar` makes the summary a padded group header that is divided from the body when open. */
 .fl-disclosure > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; list-style: none; cursor: pointer; }
 .fl-disclosure > summary::-webkit-details-marker { display: none; }
-.fl-disclosure > summary::before { content: ""; flex: none; width: 0; height: 0; border-left: .5rem solid currentColor; border-top: .3rem solid transparent; border-bottom: .3rem solid transparent; transition: transform .15s; }
-.fl-disclosure[open] > summary::before { transform: rotate(90deg); }
+.fl-disclosure > summary .fl-chevron { transform: none; }
+.fl-disclosure[open] > summary .fl-chevron { transform: rotate(90deg); }
 .fl-disclosure > summary:focus-visible { outline: 2px solid var(--fl-brand); outline-offset: -2px; }
 .fl-disclosure-bar > summary { padding: .5rem .8rem; font-weight: 600; }
 .fl-disclosure-bar > summary:hover { background: var(--fl-surface-hover); }
@@ -253,11 +253,12 @@ details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
 .table .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .table td svg { margin-right: .3rem; vertical-align: -1px; color: var(--fl-muted); }
 .table .dot { display: inline-block; }
-.net-health { display: flex; align-items: center; gap: .6rem; padding: .7rem 1rem; border-radius: 10px; border: 1px solid var(--fl-stroke); background: var(--fl-surface); }
-.net-health.ok { color: var(--fl-ok-fg); background: var(--fl-ok-bg); border-color: transparent; }
-.net-health.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); border-color: transparent; }
-.net-health.bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); border-color: transparent; }
-.net-health.info { background: var(--fl-info-bg); color: var(--fl-info-fg); border-color: transparent; }
+.alert { --bs-alert-margin-bottom: 0; }
+.alert-success { --bs-alert-color: var(--fl-ok-fg); --bs-alert-bg: var(--fl-ok-bg); --bs-alert-border-color: var(--fl-ok-bg); }
+.alert-warning { --bs-alert-color: var(--fl-warn-fg); --bs-alert-bg: var(--fl-warn-bg); --bs-alert-border-color: var(--fl-warn-bg); }
+.alert-danger { --bs-alert-color: var(--fl-bad-fg); --bs-alert-bg: var(--fl-bad-bg); --bs-alert-border-color: var(--fl-bad-bg); }
+.alert-info { --bs-alert-color: var(--fl-info-fg); --bs-alert-bg: var(--fl-info-bg); --bs-alert-border-color: var(--fl-info-bg); }
+.net-health { display: flex; align-items: center; gap: .6rem; padding: .7rem 1rem; border-radius: 10px; }
 .net-health ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
 .net-health li { display: flex; align-items: center; gap: .55rem; }
 .net-health svg { flex: none; }
@@ -317,7 +318,7 @@ details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
 .login-submit { justify-content: center; height: 2.8rem; border: 0; border-radius: 10px; font-weight: 600; background: linear-gradient(90deg, var(--fl-brand), #7a5cff); transition: filter .15s, transform .15s; }
 .login-submit:hover { background: linear-gradient(90deg, var(--fl-brand), #7a5cff); filter: brightness(1.08); transform: translateY(-1px); }
 .login-submit:disabled { opacity: .6; transform: none; }
-.login-error { display: flex; align-items: center; gap: .55rem; padding: .6rem .85rem; border-radius: 10px; background: var(--fl-bad-bg); color: var(--fl-bad-fg); animation: login-shake .35s ease; }
+.login-error { display: flex; align-items: center; gap: .55rem; padding: .6rem .85rem; border-radius: 10px; animation: login-shake .35s ease; }
 .login-error svg { flex: none; }
 @keyframes login-shake { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
 .login-note { display: flex; align-items: center; gap: .4rem; }

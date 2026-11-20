@@ -237,7 +237,7 @@ function sourceInput(state, status, disabled) {
 // The Run button (`label` reads "Start server" for the iperf3 server); it is disabled for a login that may not start
 // diagnostics.
 function runButton(state, allowed, label = 'Run') {
-  return button(label, 'play-fill', () => start(state), 'btn-brand', { disabled: !allowed });
+  return button(label, 'play-fill', () => start(state), 'btn-primary', { disabled: !allowed });
 }
 
 // The server choices of the DNS lookup: the router's own resolver, the ones it asks upstream, three public ones, and a
@@ -418,7 +418,7 @@ function traceBody(job) {
     h('td', { className: 'num' }, hop.avg == null ? muted('–') : timeBar(fmtMs(hop.avg), hop.avg, max)),
     h('td', {}, hop.addrs.includes(t.target?.ip) ? badge('destination', 'success') : null)));
   return h('div', {},
-    h('div', { className: 'grid-wrap' }, h('table', { className: 'table table-hover rt-trace' },
+    h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover rt-trace' },
       h('thead', {}, h('tr', {}, ['Hop', 'Router', 'Round trips', 'Average', ''].map((c, i) => h('th', { className: i === 0 || i === 3 ? 'num' : '' }, c)))),
       h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 5, className: 'muted' }, job.running ? 'Waiting for the first hop…' : 'No hops'))))),
     asn ? asPathView(t.hops, asn) : null,

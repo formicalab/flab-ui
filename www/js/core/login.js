@@ -50,10 +50,10 @@ export function showLogin(onSuccess, message) {
     pass.focus();
   };
 
-  const submit = h('button', { type: 'submit', className: 'btn btn-brand login-submit' }, 'Sign in', icon('arrow-right', 18));
+  const submit = h('button', { type: 'submit', className: 'btn btn-primary login-submit' }, 'Sign in', icon('arrow-right', 18));
   const form = h('form', { className: 'login-form' },
     h('div', { className: 'login-head' }, h('h1', {}, 'Welcome back'), h('p', { className: 'muted' }, 'Sign in to manage this router.')),
-    message ? h('div', { className: 'login-error', role: 'alert' }, icon('exclamation-triangle', 18), message) : null,
+    message ? h('div', { className: 'alert alert-danger login-error', role: 'alert' }, icon('exclamation-triangle', 18), message) : null,
     h('label', {}, h('span', { className: 'form-label' }, 'User name'), field('person', user)),
     h('label', {}, h('span', { className: 'form-label' }, 'Password'), field('key', pass, reveal)),
     submit,

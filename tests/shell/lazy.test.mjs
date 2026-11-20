@@ -107,7 +107,11 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [], m
     }),
     './login.js': await synthetic({ showLogin: callback => { onLogin = callback; app.replaceChildren('LOGIN'); } }),
     './freshness.js': await synthetic({ ensureCurrent: async () => false }),
-    './ui.js': await synthetic({ card: (_, child) => child, button: (label, _icon, onclick) => element('button', { onclick }, label) }),
+    './ui.js': await synthetic({
+      card: (_, child) => child,
+      button: (label, _icon, onclick) => element('button', { onclick }, label),
+      spinner: text => element('span', { className: 'spinner-border', role: 'status' }, text),
+    }),
     '../pages/index.js': registry,
   };
   const module = new vm.SourceTextModule(await source('core/app.js'), { context });
