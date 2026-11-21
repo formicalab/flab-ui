@@ -151,6 +151,23 @@ pwsh -File tools/package.ps1 -Action Release -Version <version> -Amend -NotesFil
 
 ## Releasing
 
+**To cut a release, one command does everything:**
+
+```powershell
+pwsh -File tools/package.ps1 -Action Cut -Message "<commit message>" [-Version <version>] [-Install -Router root@<router>]
+```
+
+Write the `## <version>` section of `CHANGELOG.md` first (it is the release notes). `Cut` then takes the patch after
+the latest tag (or `-Version`), commits any pending changes with `-Message` and pushes `main`, runs the hosted release
+with `-Amend`, fast-forwards the local `packages` checkout to the feed branch the workflow rewrote, and runs `Check`, so
+the packages `Makefile` (`PKG_VERSION`, `PKG_RELEASE`, `PKG_HASH`), the tag, the changelog, the GitHub release, the
+local and the remote repositories are verified to agree. `-Install` also downloads the published apks, verifies their
+checksums, installs them on the router and compares every installed file with the tag. Dropped connections to GitHub
+are retried, and the workflow run is judged by its final status, not by the connection that watched it. `-DryRun`
+builds on GitHub without touching anything. The apks are built by the hosted workflow, never locally.
+
+The steps below are what `Cut` runs through `Release`.
+
 The tag and the package Makefile have to name the same version. The feed definition lives in the packages fork,
 separately from this source: the release tarball is finalized before its hash is recorded in the feed. A GitHub-hosted
 workflow owns that sequence, so releases are reproducible and do not require a local WSL SDK:
@@ -173,7 +190,9 @@ The workflow:
 6. Pushes the package branch and creates the GitHub release with the APKs and checksums. `-Draft` creates a draft
    release.
 
-`-Amend` folds the feed update into the existing single package commit and force-pushes with an explicit lease.
+`-Amend` folds the feed update into the existing single package commit and force-pushes with an explicit lease, so a local
+`packages` checkout is left on the replaced commit until it is reset to the fork (`Release` and `Cut` do that when the
+checkout is clean and differs only in the Makefile). The commit subject stays that of the first version it was made for.
 Without it, the workflow adds `flab-ui: update to <version>`.
 Use `-DryRun` to run the complete hosted APK build without creating a tag, changing the package branch or publishing a
 release. Choose an unused version; these examples are placeholders.

@@ -64,7 +64,7 @@ flab-ui/
   LICENSE                    MIT license
   docs/                      The documentation (start at docs/README.md); one file per page under docs/pages/
   tools/gen-zones.py         Regenerates pages/settings/zones.js from the IANA time zone database
-  tools/package.ps1          Builds the OpenWrt package with an SDK (Linux, or WSL on Windows), copies the pages to a router (Sync), installs or removes the package with apk, verifies release consistency (Check) and publishes releases (Action Sync, Build, Deploy, Remove, Check or Release)
+  tools/package.ps1          Builds the OpenWrt package with an SDK (Linux, or WSL on Windows), copies the pages to a router (Sync), installs or removes the package with apk, verifies release consistency (Check) and publishes releases (Action Sync, Build, Deploy, Remove, Check, Release or Cut, which does a whole release)
   tools/stage-source.sh      Stages the source tree for an SDK build (shared by the package script and the release workflow)
   tools/artifact-manifest.json  The source-to-install contract the build and the install check against
   .github/workflows/release.yml  The hosted release workflow (tag, feed update, APK build, GitHub release)

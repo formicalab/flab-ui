@@ -97,7 +97,8 @@ Details are in the [security model](docs/architecture.md#security-model).
   or in WSL on Windows), `-Action Deploy` installs it on a router and `-Action Remove` removes it. `-Action Check`
   verifies that the Makefile, the tag, the changelog, the GitHub release and the installed apk agree, and
   `-Action Release` dispatches a GitHub-hosted workflow that tags the source, updates the package Makefile, builds all
-  APKs from the immutable tag tarball and creates the GitHub release. Local release commands do not need WSL or an SDK. See
+  APKs from the immutable tag tarball and creates the GitHub release. `-Action Cut` does a whole release in one command
+  (commit, push, hosted release, local packages checkout, check). Local release commands do not need WSL or an SDK. See
   [Package script](docs/package.md#package-script) and [Releasing](docs/package.md#releasing).
 - Tests live in `tests/` and need Node.js, PowerShell 7 and, for most suites, ssh access to a test router. They use
   fixtures and mocks and do not change the router's configuration; `-Browser` also drives a browser. See

@@ -17,6 +17,11 @@ Remove    removes every installed flab-ui package, cleans flab-owned files and c
 Release   validates the source repository, dispatches the hosted release workflow and waits for it. GitHub Actions
           tags v<Version>, updates the package-feed source hash, builds all APKs with an OpenWrt SDK, and publishes the
           release. -DryRun performs the same hosted SDK build without tagging or publishing.
+Cut       the whole release in one command: takes the next patch version (or -Version), requires its CHANGELOG.md
+          section, commits (-Message) and pushes pending changes, runs the hosted release (amending the feed commit),
+          fast-forwards the local packages checkout to the feed branch the workflow rewrote, and checks that the
+          Makefile, tag, hash, changelog, GitHub release and local and remote repositories agree. -Install also installs
+          the published apks on the router. Network hiccups are retried; the run is judged by its final status.
 
 The OpenWrt SDK only runs on Linux. On Linux the build runs directly in bash; on Windows it runs inside WSL (-Distro)
 and the working tree is reached through /mnt. The SDK must already be set up, with the feed that holds admin/flab-ui
@@ -27,7 +32,7 @@ A Deploy or Remove replaces the plugins that serve the signed-in pages, so do no
 running on the same router.
 
 .PARAMETER Action
-Build, Deploy, Sync, Check, Remove or Release (see the description).
+Build, Deploy, Sync, Check, Remove, Release or Cut (see the description).
 
 .PARAMETER Backend
 Sync only: also copy rpcd/ and restart rpcd. Never use while a configuration apply awaits confirmation.
@@ -73,10 +78,17 @@ validated before any Git state is changed.
 
 .PARAMETER DryRun
 Hosted release only: build all release APKs on GitHub without tagging or publishing.
+
+.PARAMETER Message
+Cut only: commit message for the uncommitted changes of the working tree, which Cut commits and pushes first. Required
+when the tree is not clean.
+
+.PARAMETER Install
+Cut only: after publishing, download the release apks, verify their checksums, install them on the router and check it.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('Build', 'Deploy', 'Sync', 'Check', 'Remove', 'Release')][string]$Action,
+    [Parameter(Mandatory)][ValidateSet('Build', 'Deploy', 'Sync', 'Check', 'Remove', 'Release', 'Cut')][string]$Action,
     [string]$Router = $(if ($env:FLAB_ROUTER) { $env:FLAB_ROUTER } else { 'root@192.168.1.1' }),
     [ValidatePattern('^[A-Za-z0-9._-]+$')][string]$Distro = 'Ubuntu-26.04',
     [ValidatePattern('^[A-Za-z0-9._/$*~-]+$')][string]$Sdk = '$HOME/sdk/openwrt-sdk-*',
@@ -89,6 +101,8 @@ param(
     [switch]$Backend,
     [switch]$Draft,
     [string]$NotesFile,
+    [string]$Message,
+    [switch]$Install,
     [switch]$DryRun
 )
 
@@ -337,6 +351,31 @@ function Invoke-Native {
     $out = & $File @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$File $($Arguments -join ' ') failed with exit code $LASTEXITCODE" }
     return $out
+}
+
+function Invoke-Retry {
+    <#
+    .SYNOPSIS
+    Runs a script block and retries it after a pause when it throws, for calls over a network that may drop.
+    .DESCRIPTION
+    Use it only for calls that are safe to repeat (reads, a push). Rethrows the last error after the last attempt.
+    .PARAMETER Script
+    The script block; its output is returned.
+    .PARAMETER Attempts
+    Number of tries.
+    .PARAMETER DelaySeconds
+    Pause between tries.
+    #>
+    param([Parameter(Mandatory)][scriptblock]$Script, [int]$Attempts = 6, [int]$DelaySeconds = 10)
+
+    for ($try = 1; ; $try++) {
+        try { return & $Script }
+        catch {
+            if ($try -ge $Attempts) { throw }
+            Write-Warning "$($_.Exception.Message) (attempt $try of $Attempts); retrying in $DelaySeconds s"
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
 }
 
 function Wait-Objects {
@@ -625,10 +664,10 @@ function Start-HostedRelease {
     $run = $null
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
-        $runsJson = (Invoke-Native gh @(
+        $runsJson = (Invoke-Retry { Invoke-Native gh @(
             'run', 'list', '--workflow', 'release.yml', '--branch', 'main',
             '--event', 'workflow_dispatch', '--limit', '10', '--json', 'databaseId,createdAt'
-        )) -join "`n"
+        ) }) -join "`n"
         $run = @($runsJson | ConvertFrom-Json) | Where-Object {
             $createdAt = if ($_.createdAt -is [DateTime]) {
                 ([DateTime]$_.createdAt).ToUniversalTime()
@@ -647,11 +686,127 @@ function Start-HostedRelease {
     if (-not $run) { throw 'GitHub accepted the release request, but the workflow run could not be found.' }
 
     Write-Host "Hosted release run: https://github.com/formicalab/flab-ui/actions/runs/$($run.databaseId)"
-    $null = Invoke-Native gh @('run', 'watch', "$($run.databaseId)", '--exit-status')
-    $url = @(Invoke-Native gh @('run', 'view', "$($run.databaseId)", '--json', 'url', '--jq', '.url'))[0]
-    Write-Host "Hosted release completed: $url"
+    # Polled instead of `gh run watch`, which dies with the first dropped connection although the run carries on.
+    do {
+        $info = (Invoke-Retry { Invoke-Native gh @('run', 'view', "$($run.databaseId)", '--json', 'status,conclusion,url') }) -join "`n" | ConvertFrom-Json
+        if ($info.status -ne 'completed') { Start-Sleep -Seconds 15 }
+    } while ($info.status -ne 'completed')
+    if ($info.conclusion -ne 'success') { throw "The hosted release run ended with '$($info.conclusion)': $($info.url)" }
+    Write-Host "Hosted release completed: $($info.url)"
+    if (-not $DryRun) { Sync-PackagesCheckout }
 }
 
+function Sync-PackagesCheckout {
+    <#
+    .SYNOPSIS
+    Fast-forwards the local packages checkout to the feed branch that the release workflow just rewrote.
+    .DESCRIPTION
+    With -Amend the workflow force-pushes an amended package commit, so the local checkout is left on the commit it
+    replaced. The local branch is reset to the remote one, but only when the checkout is clean and the two differ in the
+    package Makefile alone; anything else is somebody's work and is left for a person to reconcile.
+    #>
+    if (-not (Test-Path (Join-Path $PackagesDir '.git'))) { Write-Warning "No packages checkout at $PackagesDir; not updated."; return }
+    $branch = Invoke-Native git @('-C', $PackagesDir, 'branch', '--show-current')
+    if (Invoke-Native git @('-C', $PackagesDir, 'status', '--porcelain')) { throw "The packages checkout $PackagesDir has uncommitted changes; update it by hand." }
+    $null = Invoke-Retry { Invoke-Native git @('-C', $PackagesDir, 'fetch', '--quiet', $Remote, $branch) }
+    $changed = @(Invoke-Native git @('-C', $PackagesDir, 'diff', '--name-only', 'HEAD', "$Remote/$branch"))
+    if ($changed | Where-Object { $_ -ne 'admin/flab-ui/Makefile' }) {
+        throw "The packages checkout differs from $Remote/$branch beyond the Makefile ($($changed -join ', ')); reconcile it by hand."
+    }
+    $null = Invoke-Native git @('-C', $PackagesDir, 'reset', '--hard', '--quiet', "$Remote/$branch")
+    Write-Host "Packages checkout is now at $Remote/$branch."
+}
+
+function Get-NextVersion {
+    <#
+    .SYNOPSIS
+    The patch version after the highest v<major>.<minor>.<patch> tag on origin.
+    #>
+    $null = Invoke-Retry { Invoke-Native git @('-C', $root, 'fetch', '--quiet', '--tags', 'origin') }
+    $latest = @(Invoke-Native git @('-C', $root, 'tag', '--list', 'v*')) |
+        Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
+        ForEach-Object { [version]$_.Substring(1) } | Sort-Object -Descending | Select-Object -First 1
+    if (-not $latest) { throw 'No version tag found; give -Version.' }
+    return '{0}.{1}.{2}' -f $latest.Major, $latest.Minor, ($latest.Build + 1)
+}
+
+function Install-Release {
+    <#
+    .SYNOPSIS
+    Installs the published apks of v<Version> on the router and checks the result.
+    .DESCRIPTION
+    Downloads the release assets, verifies them against the release's own SHA-256 file, replaces the installed flab-ui
+    packages like Deploy does, then waits for the rpcd objects and compares every installed file with the tag.
+    #>
+    $artifacts = @(Test-ArtifactContract)
+    $expected = @(Get-ChildItem (Join-Path (Join-Path $root 'rpcd') 'ucode') -Filter 'flab.*.uc' | ForEach-Object { $_.BaseName })
+    $dir = Join-Path ([IO.Path]::GetTempPath()) "flab-release-$Version"
+    Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+    $null = New-Item $dir -ItemType Directory
+    try {
+        $null = Invoke-Retry { Invoke-Native gh @('release', 'download', "v$Version", '--dir', $dir, '--clobber') }
+        $sums = Get-ChildItem $dir -Filter '*.sha256' -File | ForEach-Object { Get-Content $_ } | Where-Object { $_ -match '^[0-9a-f]{64}\s+\S+$' }
+        $apks = @(Get-ChildItem $dir -Filter '*.apk' -File)
+        if ($apks.Count -lt 2) { throw 'The release has no complete apk set.' }
+        # Every apk must appear in the release's checksum file and match it before anything is installed.
+        foreach ($apk in $apks) {
+            $line = $sums | Where-Object { ($_ -split '\s+', 2)[1].TrimStart('*') -eq $apk.Name } | Select-Object -First 1
+            if (-not $line) { throw "No checksum for $($apk.Name)." }
+            if ((Get-FileHash $apk.FullName -Algorithm SHA256).Hash.ToLower() -ne ($line -split '\s+')[0]) { throw "Checksum mismatch for $($apk.Name)." }
+        }
+        Write-Host "Installing $($apks.Count) release apks of v$Version on the router..."
+        Remove-FlabPackages
+        scp -O -q $apks.FullName "${Router}:/tmp/"
+        if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
+        Invoke-Remote @"
+set -e
+trap 'rm -f /tmp/flab-ui-*.apk' EXIT
+apk add --allow-untrusted /tmp/flab-ui-*.apk
+"@ | Write-Host
+        Wait-Objects -Expected $expected
+        Test-InstalledArtifacts -Entries $artifacts -FromFeed
+        $installed = (Invoke-Remote 'apk list -I flab-ui 2>/dev/null | head -n 1') -replace '^(\S+).*$', '$1'
+        if ($installed -ne "flab-ui-$Version-r1") { throw "The router reports '$installed', not flab-ui-$Version-r1." }
+        Write-Host "Router runs $installed."
+    }
+    finally { Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+function Invoke-Cut {
+    <#
+    .SYNOPSIS
+    Cuts a release end to end: commit, push, hosted release, local packages checkout, optional router install, check.
+    .DESCRIPTION
+    The version is -Version, else the patch after the latest tag. The CHANGELOG.md section of that version must already
+    exist (it is the release notes). Pending working-tree changes are committed with -Message and pushed. -DryRun
+    runs the hosted build only and touches nothing.
+    #>
+    if ((Invoke-Native git @('-C', $root, 'branch', '--show-current')) -ne 'main') { throw 'Cut from the main branch.' }
+    if (-not $script:Version) { $script:Version = Get-NextVersion }
+    $script:Amend = [switch]$true
+    $script:NotesFile = 'CHANGELOG.md'
+    Write-Host "Cutting v$Version$(if ($DryRun) { ' (dry run)' })."
+    if (-not $DryRun) {
+        if ([IO.File]::ReadAllText((Join-Path $root 'CHANGELOG.md')) -notmatch "(?m)^## $([regex]::Escape($Version)) ") {
+            throw "CHANGELOG.md has no '## $Version' section: write the release notes first."
+        }
+        if (Invoke-Native git @('-C', $root, 'status', '--porcelain')) {
+            if (-not $Message) { throw 'The working tree has uncommitted changes: give -Message to commit them.' }
+            $null = Invoke-Native git @('-C', $root, 'add', '-A')
+            $null = Invoke-Native git @('-C', $root, 'commit', '--quiet', '-m', $Message)
+        }
+        $null = Invoke-Retry { Invoke-Native git @('-C', $root, 'fetch', '--quiet', 'origin', 'main') }
+        if ([int](Invoke-Native git @('-C', $root, 'rev-list', '--count', 'HEAD..origin/main')) -gt 0) { throw 'origin/main has commits that are not here: pull first.' }
+        if ([int](Invoke-Native git @('-C', $root, 'rev-list', '--count', 'origin/main..HEAD')) -gt 0) {
+            $null = Invoke-Retry { Invoke-Native git @('-C', $root, 'push', '--quiet', 'origin', 'main') }
+        }
+    }
+    Start-HostedRelease
+    if ($DryRun) { return }
+    if ($Install) { Install-Release }
+    Test-Consistency -NoRouter:(-not $Install)
+    Write-Host "v$Version is released: https://github.com/formicalab/flab-ui/releases/tag/v$Version"
+}
 #endregion
 
 #region Sync
@@ -757,7 +912,11 @@ function Test-Consistency {
     Prints one line per check and throws when one fails. The network and the router are queried; a router
     that cannot be reached is reported as a failure of that check only. A working-tree build installed on the router
     (a release number made of the time, not 1) is reported, not treated as a failure.
+    .PARAMETER NoRouter
+    Skip the check of the router (used by Cut when it did not install anything).
     #>
+    param([switch]$NoRouter)
+
     $makefile = Join-Path (Join-Path (Join-Path $PackagesDir 'admin') 'flab-ui') 'Makefile'
     if (-not (Test-Path $makefile)) { throw "No Makefile at $makefile; set -PackagesDir." }
     $text = [IO.File]::ReadAllText($makefile)
@@ -808,14 +967,17 @@ function Test-Consistency {
     $pushed = $remoteHead.Count -gt 0 -and (($remoteHead[0] -split '\s+')[0] -eq (Invoke-Native git @('-C', $PackagesDir, 'rev-parse', 'HEAD')))
     Report ($clean -and $pushed) "packages checkout on $branch is clean and equals $Remote/$branch"
 
-    try {
-        $installed = (Invoke-Remote 'apk list -I flab-ui 2>/dev/null | head -n 1') -replace '^(\S+).*$', '$1'
-        if (-not $installed) { Report $false 'router: flab-ui is not installed' }
-        elseif ($installed -eq [IO.Path]::GetFileNameWithoutExtension($apkName)) { Report $true "router has $installed" }
-        elseif ($installed -match "^flab-ui-$([regex]::Escape($version))-r\d{12}$") { Write-Host "  --  router has the working-tree build $installed" }
-        else { Report $false "router has $installed, the Makefile names $([IO.Path]::GetFileNameWithoutExtension($apkName))" }
+    if ($NoRouter) { Write-Host '  --  router not checked' }
+    else {
+        try {
+            $installed = (Invoke-Remote 'apk list -I flab-ui 2>/dev/null | head -n 1') -replace '^(\S+).*$', '$1'
+            if (-not $installed) { Report $false 'router: flab-ui is not installed' }
+            elseif ($installed -eq [IO.Path]::GetFileNameWithoutExtension($apkName)) { Report $true "router has $installed" }
+            elseif ($installed -match "^flab-ui-$([regex]::Escape($version))-r\d{12}$") { Write-Host "  --  router has the working-tree build $installed" }
+            else { Report $false "router has $installed, the Makefile names $([IO.Path]::GetFileNameWithoutExtension($apkName))" }
+        }
+        catch { Report $false "router: $($_.Exception.Message)" }
     }
-    catch { Report $false "router: $($_.Exception.Message)" }
 
     if ($state.Failed) { throw "$($state.Failed) consistency check(s) failed." }
 }
@@ -823,7 +985,7 @@ function Test-Consistency {
 
 #region Actions
 if ($MyInvocation.InvocationName -eq '.') { return }
-if ($Action -in 'Deploy', 'Sync', 'Check', 'Remove') { Assert-RouterName }
+if ($Action -in 'Deploy', 'Sync', 'Check', 'Remove' -or ($Action -eq 'Cut' -and $Install)) { Assert-RouterName }
 switch ($Action) {
     'Build' { $null = Build-Package -FromFeed:$UseFeedSource }
     'Deploy' {
@@ -834,5 +996,6 @@ switch ($Action) {
     'Check' { Test-Consistency }
     'Remove' { Remove-FlabPackages }
     'Release' { Start-HostedRelease }
+    'Cut' { Invoke-Cut }
 }
 #endregion
