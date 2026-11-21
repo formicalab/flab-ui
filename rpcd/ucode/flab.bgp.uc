@@ -14,8 +14,8 @@
 'use strict';
 
 import { deferred } from 'flab.worker';
-import { readfile } from 'fs';
-import { run, num, one_line } from 'flab.util';
+import { readfile, stat } from 'fs';
+import { run, command_result, num, one_line } from 'flab.util';
 
 // Multipliers from the unit printed by `birdc show memory` to bytes (BIRD uses 1024-based units).
 const MEM_UNITS = { B: 1, kB: 1024, MB: 1048576, GB: 1073741824 };
@@ -25,6 +25,26 @@ const STAT_COLUMNS = ['received', 'rejected', 'filtered', 'ignored', 'rx_limit',
 // Test seam: with FLAB_BGP_FIXTURES=<dir> set (never the case inside rpcd) saved command output is read
 // from <dir>/<name>.txt instead of running birdc/ip, so down-state and IPv6 samples can be tested.
 const FIXTURES = getenv('FLAB_BGP_FIXTURES');
+
+// The configuration file of the bird3 package's init script, read by `config` and checked by `check`.
+const CONFIG_FILE = '/etc/bird.conf';
+// The most bytes of the configuration file that `config` returns.
+const MAX_CONFIG = 262144;
+// What `action` may do to one BGP protocol, as the birdc command that is run (the protocol name follows). `reload bgp in` asks the
+// peer to send its routes again (route refresh), `reload bgp out` announces ours again; neither touches the session itself.
+const ACTIONS = {
+	restart: 'restart',
+	enable: 'enable',
+	disable: 'disable',
+	refresh_in: 'reload bgp in',
+	refresh_out: 'reload bgp out',
+};
+// The most routes a non-BGP protocol may export for `status` to list them (see collect()).
+const MAX_LISTED_EXPORTS = 2000;
+// Seconds `check` and `action` wait for birdc.
+const BIRDC_TIMEOUT = 15;
+// The most birdc output of `check` and `action` that is returned.
+const MAX_OUTPUT = 4096;
 
 // Output of the command `cmd`, or of the fixture file `name` when the test seam is active.
 function source(name, cmd) {
@@ -448,7 +468,7 @@ function path_view(r, kernel) {
 // JSON view of a route that BIRD did not learn through BGP (static, direct, ...).
 function local_view(r, kernel) {
 	return {
-		prefix: r.prefix, protocol: r.protocol, kind: r.type, source: r.source, preference: r.preference,
+		prefix: r.prefix, table: r.table, protocol: r.protocol, kind: r.type, source: r.source, preference: r.preference,
 		best: r.best, dev: r.nexthops[0]?.dev, since: r.since, in_kernel: kernel[r.prefix] != null,
 	};
 }
@@ -539,11 +559,20 @@ function findings(peers, paths) {
 			continue;
 		if (!length(p.exported))
 			warn(`${p.name} is not receiving any announcement from this router.`);
-		let dropped = 0;
-		for (let ch in p.channels)
+		let dropped = 0, imported = 0;
+		for (let ch in p.channels) {
 			dropped += (ch.stats?.import_updates?.filtered ?? 0) + (ch.stats?.import_updates?.rejected ?? 0);
+			imported += ch.routes?.imported ?? 0;
+			if (ch.state != null && ch.state != 'UP')
+				warn(`${p.name}: the ${ch.afi} channel is ${ch.state}, not UP, although the session is Established.`);
+		}
+		if (length(p.channels) && imported == 0)
+			info(`${p.name} is Established but no route was imported from it.`);
 		if (dropped > 0)
 			info(`${p.name}: the import filter dropped ${dropped} received route(s).`);
+		// A peer that is silent for less than three keepalives is declared dead by a single lost packet.
+		if (p.hold_timer?.total != null && p.keepalive_timer?.total != null && p.hold_timer.total < 3 * p.keepalive_timer.total)
+			warn(`${p.name}: the hold time (${p.hold_timer.total} s) is shorter than three keepalive intervals (${p.keepalive_timer.total} s each), so one lost keepalive can drop the session.`);
 		let local_gr = filter(p.local_caps, (c) => c.name == 'Graceful restart');
 		let remote_gr = filter(p.neighbor_caps, (c) => c.name == 'Graceful restart');
 		if (length(local_gr) && !length(remote_gr))
@@ -573,6 +602,19 @@ function collect() {
 		if (safe_name(p.name))
 			exports[p.name] = parse_routes(birdc('show route export ' + p.name));
 	}
+	// The routes the other protocols that export are handed (the kernel protocol's, mostly), so the page can list what a spline of its
+	// diagram stands for. A protocol that exports a very large table (a full BGP table into the kernel) is not listed: the count says
+	// how many, and reading them all every few seconds would cost the router more than the list is worth.
+	let handed = {};
+	for (let p in protocols) {
+		if (p.proto == 'BGP' || !safe_name(p.name))
+			continue;
+		let n = 0;
+		for (let c in p.channels)
+			n += c.routes?.exported ?? 0;
+		if (n > 0 && n <= MAX_LISTED_EXPORTS)
+			handed[p.name] = parse_routes(birdc('show route export ' + p.name));
+	}
 	let interfaces = neighbor_interfaces(routes, neighbors);
 
 	let paths = map(filter(routes, (r) => r.is_bgp), (r) => path_view(r, kernel));
@@ -592,6 +634,7 @@ function collect() {
 			name: p.name, proto: p.proto, table: p.table, state: p.state, since: p.since, info: p.info,
 			channels: map(p.channels, (c) => ({ afi: c.afi, table: c.table, state: c.state, import_state: c.import_state, export_state: c.export_state,
 				preference: num(c.preference), input_filter: c.input_filter, output_filter: c.output_filter, routes: c.routes, stats: c.stats })),
+			exported: handed[p.name] ? map(handed[p.name], (r) => ({ prefix: r.prefix, table: r.table, protocol: r.protocol, kind: r.type, preference: r.preference })) : null,
 		})),
 		memory: parse_memory(birdc('show memory')),
 		findings: findings(peers, paths),
@@ -599,12 +642,99 @@ function collect() {
 }
 //#endregion
 
-// rpcd registration: ubus object flab.bgp with the single method `status` (no arguments).
+//#region configuration, check and actions
+
+// `text` with the secrets of BIRD's BGP authentication hidden: the string or byte string that follows `password` or `secret`
+// becomes "<redacted>". Returns { text, count }. This is deliberately wider than needed (a quoted word after "password" in a
+// comment is hidden too): a secret must never reach the browser, and a pattern that errs the other way is a leak.
+function redact(text) {
+	let pattern = /(^|[^A-Za-z0-9_])(password|secret)[ \t]+("([^"\\\n]|\\.)*"|0x[0-9A-Fa-f]+|([0-9A-Fa-f][0-9A-Fa-f]:)+[0-9A-Fa-f][0-9A-Fa-f])/g;
+	let count = length(match(text, pattern) ?? []);
+	return { text: count ? replace(text, pattern, '$1$2 "<redacted>"') : text, count };
+}
+
+// The reply of `config`: the configuration file of BIRD, secrets redacted, with its size and modification time (epoch seconds), so
+// the page can tell whether BIRD has read it since it was last changed. { available: false } when the file does not exist.
+function config() {
+	let file = FIXTURES ? `${FIXTURES}/bird_conf.txt` : CONFIG_FILE;
+	let st = stat(file);
+	if (!st)
+		return { path: CONFIG_FILE, available: false };
+	let text = readfile(file, MAX_CONFIG + 1) ?? '';
+	let truncated = length(text) > MAX_CONFIG;
+	if (truncated)
+		text = substr(text, 0, MAX_CONFIG);
+	let hidden = redact(text);
+	return { path: CONFIG_FILE, available: true, size: st.size, mtime: st.mtime, truncated, redacted: hidden.count, text: hidden.text };
+}
+
+// The output of a birdc command without the "BIRD x.y.z ready." greeting, and whether birdc succeeded. In the test seam the saved
+// text decides: it is an error when it holds one of birdc's error messages.
+function birdc_result(cmd) {
+	if (FIXTURES) {
+		let out = trim(replace(birdc(cmd), /^BIRD [^\n]*\n/, ''));
+		return { ok: !match(out, /syntax error|No such command|Unable to connect|No protocols match/), output: out };
+	}
+	let r = command_result('birdc ' + cmd + ' 2>&1', { timeout: BIRDC_TIMEOUT, max_output: MAX_OUTPUT });
+	return { ok: r.ok, output: trim(replace(r.output ?? '', /^BIRD [^\n]*\n/, '')), timed_out: r.timed_out };
+}
+
+// The reply of `check`: BIRD parses the configuration file without using it (`configure check`). ok is true when BIRD says
+// "Configuration OK"; otherwise output holds the error with its line number.
+function check() {
+	let r = birdc_result('configure check');
+	return { ok: r.ok && match(r.output, /Configuration OK/) != null, output: r.output };
+}
+
+// A failed reply of `action`.
+function refuse(name, action, error) {
+	return { name, action, ok: false, output: '', error };
+}
+
+// The reply of `action`: runs one fixed birdc command on one BGP protocol. Strict about what reaches birdc: the action must be a key of
+// ACTIONS and the name must be a plain protocol name that BIRD lists as a BGP protocol right now, so no other protocol (the kernel
+// protocol, for one) can be disabled from here and no name can carry a second command.
+function action(request) {
+	let name = request?.args?.name;
+	let act = request?.args?.action;
+	if (type(act) != 'string' || !ACTIONS[act])
+		return refuse(name, act, 'The action must be restart, enable, disable, refresh_in or refresh_out.');
+	if (!safe_name(name))
+		return refuse(name, act, 'The protocol name is not valid.');
+	let known = filter(parse_protocols(birdc('show protocols all')), (p) => p.proto == 'BGP' && p.name == name);
+	if (!length(known))
+		return refuse(name, act, 'BIRD has no BGP protocol of that name.');
+	let r = birdc_result(ACTIONS[act] + ' ' + name);
+	return {
+		name, action: act, ok: r.ok, output: r.output,
+		error: r.ok ? null : (r.timed_out ? `birdc did not answer within ${BIRDC_TIMEOUT} seconds.` : (r.output || 'birdc reported an error.')),
+	};
+}
+//#endregion
+
+// rpcd registration: ubus object flab.bgp. `status` and `config` take no arguments; `check` runs a syntax check of the configuration
+// file; `action` (the only method that changes anything) takes { name, action }.
 return deferred({
 	'flab.bgp': {
 		status: {
 			call: function(request) {
 				return collect();
+			},
+		},
+		config: {
+			call: function(request) {
+				return config();
+			},
+		},
+		check: {
+			call: function(request) {
+				return check();
+			},
+		},
+		action: {
+			args: { name: '', action: '' },
+			call: function(request) {
+				return action(request);
 			},
 		},
 	},

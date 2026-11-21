@@ -148,4 +148,31 @@ scenario('announce', d => {
   d['show_route_export_azure_xfrm3.txt'] = head;
 });
 
+// --- the configuration file, its check and the peer actions: a file with every kind of secret BIRD has, saved birdc answers for the
+// commands the actions run, and one scenario where `configure check` finds an error
+const CONF = [
+  'router id 192.168.1.1;',
+  'template bgp t {',
+  '    password "hunter2";   # tail',
+  '    authentication md5;',
+  '    keys { key { id 1; secret "abcDEF123"; algorithm hmac sha256; }; key { id 2; secret 0x1a2b3c4d; }; };',
+  '}',
+  '# password "in a comment" is hidden as well',
+  'protocol bgp p { neighbor 1.1.1.1 as 2; password "second"; }',
+  'protocol static { route 192.168.0.0/16 blackhole; }',
+  '',
+].join('\n');
+const ready = 'BIRD 3.3.3 ready.\n';
+scenario('tools', d => {
+  d['bird_conf.txt'] = CONF;
+  d['configure_check.txt'] = `${ready}Reading configuration from /etc/bird.conf\nConfiguration OK\n`;
+  d['restart_azure_xfrm0.txt'] = `${ready}azure_xfrm0: restarted\n`;
+  d['reload_bgp_in_azure_xfrm1.txt'] = `${ready}azure_xfrm1.ipv4: reloading\n`;
+  d['disable_azure_xfrm2.txt'] = `${ready}syntax error, unexpected CF_SYM_UNDEFINED, expecting CF_SYM_KNOWN or TEXT or ALL\n`;
+});
+scenario('badcheck', d => {
+  d['bird_conf.txt'] = CONF;
+  d['configure_check.txt'] = `${ready}Reading configuration from /etc/bird.conf\n/etc/bird.conf:12:5 syntax error, unexpected '}'\n`;
+});
+
 console.log('scenarios:', fs.readdirSync(root).filter(n => n !== 'fx-real').join(', '));

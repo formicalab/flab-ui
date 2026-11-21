@@ -107,30 +107,93 @@ type (`uci get` with `type: route` and `route6`), never the whole network config
   editing a default route; see [configuration-change limitations](../architecture.md#configuration-change-limitations).
 
 ## BGP tab
-Status of BIRD 3 (`flab.bgp`). Sections, top to bottom:
+Status of BIRD 3 (`flab.bgp`), plus its configuration file, read only. Sections, top to bottom:
 - **Tiles:** sessions established, prefixes learned (and paths), prefixes announced, multipath (ECMP) share,
   kernel sync, BIRD version/uptime.
-- **Daemon and memory** cards (the daemon is what everything below reports on), then **BIRD protocols**.
+- **Daemon and memory** cards (the daemon is what everything below reports on), then the **BIRD configuration**, then **BIRD protocols**.
+  The protocols card opens with a **flow diagram** that follows the BIRD 3.3.3 guide (Architecture, "Protocols and channels";
+  "Channel options"): every protocol is joined to a routing table (`master4`, ...) by a channel with two filters, and the diagram
+  draws that join. Each protocol is a lane; the table is on the right; to the left is what lies outside BIRD (the Linux
+  kernel for the Kernel protocol, the network interfaces for Device and Direct, the neighbors' AS for BGP). Two splines per
+  channel: **→ import** (the protocol puts routes into the table) and **← export** (the table hands routes to the protocol),
+  as thick as the number of routes, which is written above the lane (`16 routes`, `1 each`); **a click on a count lists those
+  routes** in a drawer (what the table hands to the kernel, the paths a group of sessions imports, a protocol's own routes), and
+  a click on a prefix in the list opens the route-choice drawer. Each spline carries a tag, placed against the table,
+  with its filter: the filter's name for a named one (a click opens it in the configuration card), `accept all` or
+  `reject all` otherwise, and **`default`** when the file has no `import` or `export` line for the channel, so BIRD's own
+  default applies (import all, except for external BGP; export none, except for external BGP and L3VPN). What the file
+  sets itself (the kernel's `import none; export all`) is not called a default. Nothing passes on a **blocked** edge: it is
+  a short dashed stub next to its protocol, in the colour of its direction, that ends in a grey ✕. A protocol that the file leaves unnamed is matched by the name BIRD
+  gives it (`kernel1`, `static1`: the type and a counter that skips names in use). Device (and BFD) have no channel, so they
+  have no spline. The diagram says, as the guide does, that BIRD's tables are not the kernel's forwarding table: the Kernel
+  protocol copies them there. BGP sessions that are alike (same channels, filters, neighbor AS and template) share one lane
+  (`azure_xfrm ×4`); a click opens the group into one lane per session, a click on one of them closes it again, and a click on a
+  single protocol's lane goes to its row in the table. Without a readable file the tags still show BIRD's own filters but
+  nothing is called a default (it cannot be known). Below the diagram: a legend and the guide's rules in a caption; then the
+  table. The protocols table lists every instance with its state, table, route counts, preference and filters. Each filter chip
+  (import first, export second) explains itself in its tooltip: what an import or export filter is for that kind of protocol,
+  and, for a named filter, its own comment from the configuration file; a filter defined in the file is a button that opens the
+  configuration at its source. A legend above the table explains each protocol type the router runs (Kernel, Device, Direct,
+  Static, BGP, and any other BIRD protocol: OSPF, RIP, Babel, BFD, RPKI, Pipe, RAdv, ...; the same text is the tooltip of the
+  Type cell; the BGP entry carries, underlined, why the file writes filters for every external session: RFC 8212 requires
+  both to be explicit) and what the chips and `in · out` mean, and every column heading has a tooltip.
+- **BIRD configuration** (folded at first; shown below the "BIRD is not running" message too, since the file is the first
+  place to look): `/etc/bird.conf` with line numbers, comments dimmed and a **Jump to** row (every protocol, template
+  and filter; a click highlights its lines and scrolls to them). The badges say the size, the modification time and
+  whether **BIRD has read the file since it was last changed** (the file's time against BIRD's "last reconfiguration").
+  **Check** runs `birdc configure check`, which parses the file without applying it, and shows BIRD's own answer
+  with the line number of an error. Secrets never reach the browser: the backend replaces what follows `password` and
+  `secret` with `"<redacted>"` and says how many it hid. Nothing edits the file.
 - **Topology:** this router, one node per peer, remote AS node (peers are grouped by neighbor AS). The router
   node lists what its peers actually receive ("Announces"), whichever BIRD protocol produced it. CSS grid plus
   SVG connectors (animated while a session is Established). Each peer keeps one color (`pc-0..5`) across every
   table on the page; colors are assigned on first sight and never reshuffled when other peers come and go
   (more than 6 peers reuse the least-used color). The connector math needs equal-height, touching peer cells
   (see the comment in `routing/bgp/topology.js`).
-- **Health** (findings from the backend) and **active next hops per peer** (how many prefixes use each peer as
-  an installed next hop).
+- **Health** (findings from the backend and a review of the configuration file) and **active next hops per
+  peer** (how many prefixes use each peer as an installed next hop).
 - **One card per peer:** session (state, neighbor/local AS, session type, interface, hold/keepalive/send-hold
   timers as remaining-time bars; a session that is down shows its last error and the next connect attempt),
   capability comparison for both directions (rows where only one side offers a capability are highlighted),
   one routing block per channel (ipv4, ipv6, ...: state, filters, route counts) and the BIRD route-change
-  statistics.
+  statistics. A **Configuration** section says where the peer is defined (lines of the file), which template it
+  inherits and shows the source of its protocol block, template and filters in folds (the open folds are kept
+  across polls). The header holds the **actions** (below).
 - **Learned routes:** every BGP path grouped by prefix. Status is Best, ECMP (installed in the kernel as an
   equal-cost next hop) or Backup. Columns: peer, next hop, interface, AS path chips (prepending collapses to
   `65520 ×2`), origin, local pref, MED and communities (the last two only appear when some path has them),
   since. Filter, peer selector, "Best paths only", sortable columns. At most 400 paths are drawn until
-  **Show all** is pressed.
-- **Announced routes:** prefix x peer matrix plus export-filter results per peer (considered, blocked by
-  filter, rejected, announced). **Local & connected routes** closes the page.
+  **Show all** is pressed. **A click on a prefix opens a drawer that explains BIRD's choice**: one card per route
+  for that prefix (BGP paths and routes of other protocols such as a static blackhole) with the values BIRD compares
+  and, for each one not chosen, the rule it lost on ("AS path length: 1 against 3"), or why it is installed next
+  to the best path (it ties on every rule except the router ID, which BIRD ignores for multipath). The rules are
+  the ones of the BIRD documentation in order: route preference, local preference, AS path length, origin, MED
+  (only between paths of the same neighboring AS), eBGP over iBGP, router ID. The distance to the boundary router
+  is not reported by BIRD, so it is not shown. The drawer is a snapshot of the poll it was opened from.
+- **Announced routes:** prefix x peer matrix plus export-filter results per peer. **Announced now** is how many routes the
+  peer is sent at this moment; the columns after it (considered, blocked by filter, rejected, accepted) are BIRD's counters
+  of export *updates* since the session came up, so a route that is sent again (a route refresh, a changed attribute, a
+  refeed of the table) counts again and each session has its own age: they differ from peer to peer and are larger than the
+  number of routes. A note under the table says so, and each heading has a tooltip. The routes that BIRD did not learn through BGP (the
+  `direct` routes of the tunnel interfaces, the `static` blackhole aggregate, ...) are not a card of their own: they are listed
+  **under the row of the protocol that made them** in the BIRD protocols table (prefix, kind, the device it points at,
+  whether the kernel has it), behind an arrow before the protocol's name. A protocol with eight routes or fewer starts open;
+  folding one is remembered across polls.
+
+**Peer actions** (a login that may call `flab.bgp action`; each asks first and says what it will do, then shows
+BIRD's answer): *Refresh in* (`reload bgp in`: the peer sends its routes again, the import filter is applied
+afresh), *Refresh out* (`reload bgp out`: announce again), both without touching the session and only while it is
+Established; *Restart* and *Disable* (`restart`, `disable`), which drop the session and withdraw its routes; and
+*Enable* for a protocol that was disabled (the only action it offers). A disabled protocol stays disabled until
+enabled or until BIRD restarts.
+
+**Configuration review** (in the Health card, from the file and the live sessions): the file is newer than BIRD's
+last reconfiguration; a BGP protocol in the file that BIRD does not run; for the external sessions, `import all` or
+`export all`, no route limit (`import limit` or `receive limit`) and no TCP authentication (`password` or
+`authentication md5|ao`), each naming all the sessions it applies to. Settings are resolved through the template a
+protocol inherits (`from`), the protocol's own value winning. Live findings added with it: a channel that is not
+UP although the session is Established, an Established session that imported no route, and a hold time shorter than
+three keepalive intervals.
 
 Notes:
 - **Everything is derived from live data on every poll** (5 s): peers, channels, routes, announcements

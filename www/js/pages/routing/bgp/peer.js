@@ -1,10 +1,13 @@
-// One card per BGP peer: session, negotiated capabilities (both directions) and one routing block per channel.
+// One card per BGP peer: session, negotiated capabilities (both directions), one routing block per channel, the peer's part of the
+// configuration file and the actions on the session.
 
 import { h } from '../../../core/dom.js';
 import { icon } from '../../../core/icons.js';
 import { badge, chip, kv, section, meter, muted, mono } from '../../../core/ui.js';
 import { fmtNum, fmtBytes } from '../../../core/format.js';
 import { peerClass, peerTitle, isUp, stateKind, isPrivateAs } from './util.js';
+import { peerActions } from './actions.js';
+import { peerConfigSection } from './config.js';
 
 // Tooltip text for each capability name BIRD reports, with the defining RFC.
 const CAP_HELP = {
@@ -126,17 +129,20 @@ function channelBlock(ch) {
     h('div', { className: 'mt-3' }, statsTable(ch.stats))));
 }
 
-// The card for one peer: header (colored with the peer's palette class from util.js), then session,
-// capabilities and one routing block per channel.
-export function peerCard(p, data) {
+// The card for one peer: header (colored with the peer's palette class from util.js, with the actions when the login may run them),
+// then session, capabilities, one routing block per channel and, when the configuration file was read, where the peer is defined.
+// `ctx` is { state }: the page state, which remembers the open folds and runs the actions.
+export function peerCard(p, data, ctx) {
   const up = isUp(p);
+  const config = peerConfigSection(p, data, ctx.state);
   return h('div', { className: `card bgp-card ${peerClass(data, p.name)} ${up ? 'is-up' : 'is-down'}` },
     h('div', { className: 'bgp-card-head' },
       h('span', { className: `dot ${up ? 'up' : 'down'}` }),
       h('strong', { className: 'name' }, peerTitle(p)),
       badge(p.name, ''),
       badge(p.state, stateKind(p.state)),
-      badge(p.neighbor ?? '–', 'info')),
+      badge(p.neighbor ?? '–', 'info'),
+      peerActions(p, ctx.state)),
     h('div', { className: 'bgp-cols' }, sessionBlock(p), capsBlock(p),
-      h('div', { className: 'bgp-channels' }, p.channels.length ? p.channels.map(c => channelBlock(c)) : channelBlock(null))));
+      h('div', { className: 'bgp-channels' }, p.channels.length ? p.channels.map(c => channelBlock(c)) : channelBlock(null), config)));
 }

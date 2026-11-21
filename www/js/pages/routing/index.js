@@ -23,6 +23,13 @@ const state = {
   tab: 'routes', paused: false,
   // BGP tab: routes filter text, selected peer, best paths only, routes table sort, whether every path is drawn.
   q: '', peer: 'all', best: false, sort: { key: 'prefix', dir: 1 }, bgpAll: false,
+  // BGP configuration card: folded, scroll position of the file box, the block to jump to and the one highlighted, the last
+  // syntax check, and which source folds of the peer cards are open.
+  cfgFolded: true, cfgScroll: 0, cfgJump: null, cfgBlock: null, cfgCheck: null, cfgOpen: new Set(),
+  // BIRD protocols card: which protocols have their own routes shown or hidden (protocol name -> open); absent = the default.
+  protoOpen: new Map(),
+  // The groups of BGP sessions that the protocols diagram shows one by one (a set of group keys); absent = one lane for the group.
+  flowOpen: new Set(),
   // Routes tab: route filter text, address family ('all', '4', '6'), table ('all' or a name), route list sort,
   // whether the whole list is drawn, the lookup form, the active lookup query and the form's error.
   rq: '', family: 'all', table: 'all', rsort: { key: 'prefix', dir: 1 }, all: false,
@@ -120,7 +127,7 @@ function routesView(data) {
 // Page object registered in pages/index.js (contract documented there).
 export default {
   interval: 5000,
-  css: ['css/forms.css', 'css/bgp.css', 'css/routing.css'],
+  css: ['css/forms.css', 'css/bgp.css', 'css/routing.css', 'css/drawer.css'],
   // Polling stops while the lookup form is being typed in, because the redraw would take the focus away, and while the
   // Static-route editor holds unsaved edits, a focused control or a save in progress.
   isPaused: () => state.paused || Boolean(document.activeElement?.closest?.('.rt-lookup')) || (state.tab === 'routes' && staticEditor.paused('.rt-static')),

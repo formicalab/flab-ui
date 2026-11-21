@@ -107,6 +107,115 @@
 .membar .mv { text-align: right; font-variant-numeric: tabular-nums; color: var(--fl-muted); font-size: .8rem; }
 .membar.total { font-weight: 600; border-top: 1px solid var(--fl-stroke); padding-top: .45rem; }
 
+/* BIRD configuration card: the file with line numbers, a block index, the syntax-check outcome and the peers' source folds */
+.cfg-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: .75rem; }
+.cfg-index { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; margin: .75rem 0; }
+.cfg-chip { cursor: pointer; border: 1px solid var(--fl-stroke); background: var(--fl-surface); color: inherit; font-weight: 500; }
+.cfg-chip:hover { border-color: var(--fl-brand); }
+.cfg-code { max-height: 32rem; overflow: auto; padding: .5rem 0; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface); font-family: var(--fl-mono); font-size: .8rem; line-height: 1.5; }
+.cfg-line { display: flex; white-space: pre; }
+.cfg-ln { flex: 0 0 3.4rem; padding-right: .8rem; text-align: right; color: var(--fl-muted); user-select: none; }
+.cfg-tx { flex: 1 0 auto; padding-right: 1rem; }
+.cfg-comment { color: var(--fl-muted); font-style: italic; }
+.cfg-hit { background: color-mix(in srgb, var(--fl-brand) 14%, transparent); }
+.cfg-check { display: flex; gap: .6rem; align-items: flex-start; padding: .6rem .8rem; margin-bottom: .5rem; border-radius: 6px; }
+.cfg-check.ok { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
+.cfg-check.bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
+.cfg-check svg { flex: 0 0 auto; margin-top: .15rem; }
+.cfg-check-body { flex: 1 1 auto; min-width: 0; }
+.cfg-check .btn-close { flex: 0 0 auto; margin-left: auto; }
+.cfg-output, .cfg-src { margin: .4rem 0 0; padding: .5rem .7rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface); color: var(--fl-text, inherit); font-family: var(--fl-mono); font-size: .78rem; line-height: 1.45; white-space: pre; overflow: auto; max-height: 22rem; }
+.cfg-fold { margin-top: .5rem; }
+
+/* The protocols flow diagram: lanes, tables, splines and their tags. Colors come from the theme variables, so the dark theme follows. */
+.bgp-flow-wrap { padding: 1rem 1rem .5rem; border-bottom: 1px solid var(--fl-stroke); }
+.bgp-flow-scroll { overflow-x: auto; }
+.bgp-flow { display: block; width: 100%; min-width: 860px; height: auto; font-size: 10px; }
+.bgp-flow text { fill: currentColor; font-family: inherit; }
+.bgp-flow .flow-title { font-size: 11px; font-weight: 600; }
+.bgp-flow .flow-sub { font-size: 9px; fill: var(--fl-muted); }
+.bgp-flow .flow-table-name { font-size: 12px; font-weight: 700; }
+.bgp-flow .flow-count { font-size: 9px; fill: var(--fl-muted); }
+.bgp-flow .flow-count.link { cursor: pointer; }
+.bgp-flow .flow-count.link:hover, .bgp-flow .flow-count.link:focus-visible { fill: var(--fl-brand); text-decoration: underline; outline: none; }
+.bgp-flow .flow-outside rect, .bgp-flow .flow-lane rect { fill: var(--fl-surface); stroke: var(--fl-stroke); stroke-width: 1; }
+.bgp-flow .flow-outside rect { stroke-dasharray: 4 3; }
+.bgp-flow .flow-table rect { fill: color-mix(in srgb, var(--fl-brand) 10%, var(--fl-surface)); stroke: var(--fl-brand); stroke-width: 1.5; }
+.bgp-flow .flow-lane { cursor: pointer; }
+.bgp-flow .flow-lane:hover rect, .bgp-flow .flow-lane:focus-visible rect { stroke: var(--fl-brand); }
+.bgp-flow .flow-lane:focus-visible { outline: none; }
+.bgp-flow .flow-dot { fill: var(--fl-ok-fg); }
+.bgp-flow .flow-lane.warn .flow-dot { fill: var(--fl-warn-fg); }
+.bgp-flow .flow-lane.down .flow-dot { fill: var(--fl-bad-fg); }
+.bgp-flow .flow-toggle { font-size: 13px; fill: var(--fl-muted); }
+.bgp-flow .flow-edge path { fill: none; stroke-linecap: round; }
+.bgp-flow .flow-edge.in path { stroke: var(--fl-brand); }
+.bgp-flow .flow-edge.out path { stroke: var(--fl-muted); }
+.bgp-flow .flow-edge.blocked path { stroke-dasharray: 5 4; }
+.bgp-flow .flow-edge .flow-stop path { stroke: var(--fl-muted); stroke-width: 2; stroke-linecap: round; }
+.bgp-flow .flow-link { fill: none; stroke: var(--fl-muted); stroke-width: 1.4; }
+.bgp-flow .flow-link.quiet { stroke-dasharray: 2 3; }
+.bgp-flow .flow-arrow path { fill: var(--fl-muted); }
+.bgp-flow .flow-edge .flow-head { stroke: none; fill: var(--fl-muted); }
+.bgp-flow .flow-edge.in .flow-head { fill: var(--fl-brand); }
+.bgp-flow .flow-tag rect { stroke: transparent; }
+.bgp-flow .flow-tag.accept rect { fill: var(--fl-ok-bg); }
+.bgp-flow .flow-tag.accept text { fill: var(--fl-ok-fg); }
+.bgp-flow .flow-tag.reject rect { fill: var(--fl-warn-bg); }
+.bgp-flow .flow-tag.reject text { fill: var(--fl-warn-fg); }
+.bgp-flow .flow-tag.filter rect { fill: color-mix(in srgb, var(--fl-brand) 14%, var(--fl-surface)); }
+.bgp-flow .flow-tag text { font-weight: 600; font-size: 9.5px; }
+.bgp-flow .flow-tag.link { cursor: pointer; }
+.bgp-flow .flow-tag.link:hover rect, .bgp-flow .flow-tag.link:focus-visible rect { stroke: var(--fl-brand); }
+.bgp-flow .flow-tag.link:focus-visible { outline: none; }
+.bgp-flow-legend { display: flex; flex-wrap: wrap; gap: .25rem 1.2rem; margin-top: .6rem; color: var(--fl-muted); }
+.bgp-flow-caption { margin: .5rem 0 .25rem; }
+/* The list of the routes behind a count of the diagram, in a drawer */
+.bgp-edge-list { margin: 0; font-size: .85rem; }
+.bgp-edge-list th { font-size: .75rem; color: var(--fl-muted); }
+
+tr.bgp-row-flash > td { animation: bgp-row-flash 1.6s ease-out; }
+@keyframes bgp-row-flash { from { background: color-mix(in srgb, var(--fl-brand) 22%, transparent); } to { background: transparent; } }
+
+/* The legend above the protocols table, and a filter chip that is a button (it jumps to the filter in the configuration card) */
+.bgp-legend { display: grid; gap: .4rem; padding: 1rem 1rem .75rem; border-bottom: 1px solid var(--fl-stroke); }
+.bgp-legend-row { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; }
+.bgp-types { display: grid; grid-template-columns: max-content 1fr; gap: .3rem .8rem; align-items: center; margin: 0; }
+.bgp-types dt, .bgp-types dd { margin: 0; }
+.bgp-note { text-decoration: underline; text-underline-offset: 2px; }
+
+/* A protocol's name that folds its own routes, and those routes under its row. The same block layout and font for a name with or without the arrow, so every row has the same height. */
+.bgp-fold { display: flex; width: fit-content; align-items: center; gap: .35rem; padding: 0; border: 0; background: none; color: inherit; font: inherit; line-height: 1.5; text-align: left; cursor: pointer; }
+.bgp-fold:hover b { color: var(--fl-brand); }
+.bgp-fold svg { color: var(--fl-muted); }
+.bgp-nofold:hover b { color: inherit; }
+.bgp-fold svg, .bgp-fold-gap { flex: 0 0 14px; width: 14px; }
+.table td .bgp-fold svg { margin: 0; }
+.bgp-nofold { cursor: default; }
+.table > tbody > tr.bgp-sub > td { padding: 0 0 .5rem 2.1rem; background: var(--fl-surface); }
+/* The nested table must not take part in the sizing of the columns of the table it sits in */
+.bgp-sub > td > .table-responsive { width: 0; min-width: 100%; }
+.bgp-local { margin: 0; table-layout: fixed; --bs-table-bg: transparent; }
+.bgp-local th:nth-child(1) { width: 28%; }
+.bgp-local th:nth-child(2) { width: 30%; }
+.bgp-local th:nth-child(3) { width: 24%; }
+.bgp-local th:nth-child(4) { width: 18%; }
+.bgp-local th { font-size: .75rem; color: var(--fl-muted); }
+.cfg-chip-link { cursor: pointer; border: 1px solid transparent; font-family: inherit; }
+.cfg-chip-link:hover { border-color: var(--fl-brand); }
+
+/* Peer actions in a card header, and the prefix that opens the route explanation */
+.bgp-card-head .bgp-actions { margin-left: auto; }
+.link-prefix { padding: 0; border: 0; background: none; color: inherit; text-align: left; text-decoration: underline dotted var(--fl-muted); text-underline-offset: 3px; cursor: pointer; }
+.link-prefix:hover { color: var(--fl-brand); text-decoration-style: solid; }
+.bgp-why-list { display: grid; gap: .6rem; }
+.bgp-why-item { padding: .6rem .8rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface); }
+.bgp-why-item.best { border-color: color-mix(in srgb, var(--fl-ok-fg) 45%, transparent); background: var(--fl-ok-bg); }
+.bgp-why-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .4rem; }
+.bgp-figs { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: .35rem .9rem; }
+.bgp-fig { display: flex; flex-direction: column; min-width: 0; }
+.bgp-why { margin: .5rem 0 0; font-size: .85rem; }
+
 /* Narrow screens: stack the topology and hide the connector graphics */
 @media (max-width: 991.98px) {
   .bgp-topo { grid-template-columns: 1fr; }

@@ -5,6 +5,7 @@ import { icon } from '../../../core/icons.js';
 import { badge, button, card, muted } from '../../../core/ui.js';
 import { fmtNum } from '../../../core/format.js';
 import { peerDot, peerClass, asPath, communityText, prefixKey, firstAddress } from './util.js';
+import { openRouteDetail } from './routedetail.js';
 
 // Paths drawn before "Show all": a router that learns a large table would otherwise draw tens of thousands of rows.
 const ROW_LIMIT = 400;
@@ -39,7 +40,10 @@ const COLS = [
 // prefix is shown in bold and repeated rows of the same prefix are dimmed.
 function cell(col, r, data, first) {
   switch (col.key) {
-    case 'prefix': return h('span', { className: `mono ${first ? 'fw-semibold' : 'muted'}` }, r.prefix);
+    case 'prefix': return h('button', {
+      type: 'button', className: `link-prefix mono ${first ? 'fw-semibold' : 'muted'}`, title: 'How BIRD chose the route for this prefix',
+      onclick: () => openRouteDetail(r.prefix, data),
+    }, r.prefix);
     case 'status': return status(r);
     case 'peer': return h('span', { className: 'peer-label', title: r.peer }, peerDot(data, r.peer), r.peer);
     case 'next_hop': return h('span', { className: 'mono' }, r.next_hop ?? '–');

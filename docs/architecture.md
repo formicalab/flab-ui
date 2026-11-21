@@ -127,7 +127,7 @@ flab-ui/
         routing/             Routing: index.js (page, tabs, state), model.js (pure: addresses, tables, findings, filtering, lookup meaning),
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards), static.js (static-route tables and
                              editor wiring), static-model.js (pure: the route and route6 sections, draft, validation, risks, UCI operations, check after a save)
-          bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js
+          bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js; config.js (the configuration file card and a peer's section of it), configmodel.js (pure reader and review of bird.conf), actions.js (restart, enable, disable, route refresh), routedetail.js and routemodel.js (the drawer that explains BIRD's route choice), flow.js and flowmodel.js (the protocols flow diagram)
         toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, dispatch of the result views; Wake-on-LAN), parts.js (view parts the views share), output.js (the retained-text limit),
                              diagviews.js (ping, traceroute, DNS, check, comparison and certificate views), diagmodel.js (pure: request
                              checks, output parsing, the check's verdict), iperfmodel.js / iperfview.js (the iperf3 server),

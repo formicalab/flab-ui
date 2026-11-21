@@ -4,6 +4,7 @@
 //   down     - azure_xfrm1 cannot connect (state Active, its routes gone)
 //   dual     - IPv6 channels/routes added, one best IPv6 route missing from the kernel
 //   announce - per-peer announcement differences, one peer receiving nothing
+// and the method calls made against the tools and badcheck scenarios: config (a file with secrets), check_ok, check_bad, act_*.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -25,6 +26,8 @@ check(base.peers.every(p => p.state === 'Established'), 'all peers Established')
 check(base.paths.filter(p => p.best).every(p => p.in_kernel) && base.paths.filter(p => p.best).every(p => p.kernel_paths === 2), 'best paths in kernel with ECMP x2');
 check(base.paths.every(p => p.table === 'master4'), 'routes tagged master4');
 check(base.peers.every(p => p.channels.length === 1 && p.exported.length === 1), 'one channel and one announcement per peer');
+const kernelBase = base.protocols.find(p => p.proto === 'Kernel');
+check(Array.isArray(kernelBase.exported) && kernelBase.exported.length === 16 && kernelBase.exported.every(r => r.prefix && r.table === 'master4') && base.protocols.filter(p => p.proto === 'BGP').every(p => p.exported === null), 'the routes handed to the kernel protocol are listed (16), and only for protocols that are not BGP', JSON.stringify(kernelBase.exported?.length));
 check(texts(base).every(t => t.startsWith('[good]')), 'only green findings', texts(base).join(' | '));
 
 console.log('== down (xfrm1 Active) ==');
@@ -63,6 +66,7 @@ check(!texts(dual).some(t => /2001:db8:100::\/48/.test(t) && t.startsWith('[bad]
 check(x0.exported.some(e => e.prefix === '2001:db8:f00d::/48' && e.table === 'master6' && e.kind === 'blackhole'), 'IPv6 announcement parsed with its table', JSON.stringify(x0.exported));
 const l6 = dual.local.find(l => l.prefix === '2001:db8:f00d::/48');
 check(l6 && l6.in_kernel && l6.kind === 'blackhole', 'IPv6 static blackhole shows as installed local route');
+check(dual.local.every(l => typeof l.table === 'string') && l6.table === 'master6' && base.local.every(l => l.table === 'master4'), 'every local route names its table (the protocols diagram counts them per table)', JSON.stringify(dual.local.map(l => l.table)));
 check(dual.protocols.find(p => p.name === 'static2')?.channels[0].table === 'master6', 'IPv6 static protocol parsed');
 check(find(dual, 'azure_xfrm1').channels.length === 2 && find(dual, 'azure_xfrm2').channels.length === 1, 'only the dual-stack peers have two channels');
 
@@ -76,6 +80,30 @@ check(find(an, 'azure_xfrm3').exported.length === 0, 'peer 3 receives nothing');
 check(find(an, 'azure_xfrm1').exported.find(e => e.protocol === 'ospf1').preference === 150, 'metric suffix in "(150/10)" ignored for preference');
 check(texts(an).some(t => t.startsWith('[warn]') && t.includes('azure_xfrm3') && /announcement/.test(t)), 'warning for the peer that receives no announcement', texts(an).join(' | '));
 check(!texts(an).some(t => t.includes('azure_xfrm0') && t.startsWith('[warn]')), 'no warning for peers that receive announcements');
+
+console.log('== configuration file ==');
+const cfg = load('config');
+check(cfg.available === true && cfg.path === '/etc/bird.conf' && cfg.truncated === false && cfg.size > 0 && typeof cfg.mtime === 'number', 'the file is read with its size and modification time', JSON.stringify({ ...cfg, text: undefined }));
+check(cfg.redacted === 5, 'five secrets were found: two passwords, two secrets (text and hex) and one in a comment', String(cfg.redacted));
+check(!/hunter2|abcDEF123|1a2b3c4d|in a comment|second/.test(cfg.text), 'no secret reaches the reply', cfg.text);
+check((cfg.text.match(/<redacted>/g) ?? []).length === 5 && /password "<redacted>";/.test(cfg.text), 'each secret is replaced by "<redacted>"', cfg.text);
+check(/authentication md5;/.test(cfg.text) && /keys \{ key \{ id 1; secret "<redacted>"; algorithm hmac sha256; \}; key \{ id 2; secret "<redacted>"; \}; \};/.test(cfg.text) && /neighbor 1\.1\.1\.1 as 2;/.test(cfg.text), 'everything else is untouched', cfg.text);
+check(load('base').findings.length > 0 && !('config' in load('base')), 'status does not carry the file (it is a separate call)');
+
+console.log('== configuration check ==');
+const ok = load('check_ok'), bad = load('check_bad');
+check(ok.ok === true && /Configuration OK/.test(ok.output) && !/ready/.test(ok.output), 'a good file is OK, without birdc\'s greeting', JSON.stringify(ok));
+check(bad.ok === false && /syntax error/.test(bad.output) && /bird\.conf:12:5/.test(bad.output), 'a bad file is not OK and the error keeps its line number', JSON.stringify(bad));
+
+console.log('== actions ==');
+const act = n => load(`act_${n}`);
+check(act('restart').ok === true && act('restart').output === 'azure_xfrm0: restarted' && act('restart').error === null, 'restart of a BGP protocol runs and returns the answer', JSON.stringify(act('restart')));
+check(act('refresh').ok === true && /reloading/.test(act('refresh').output), 'refresh in runs "reload bgp in"', JSON.stringify(act('refresh')));
+check(act('fail').ok === false && /syntax error/.test(act('fail').error), 'a birdc error is reported, not hidden', JSON.stringify(act('fail')));
+check(act('badname').ok === false && /name is not valid/.test(act('badname').error), 'a name with shell characters is refused before anything runs', JSON.stringify(act('badname')));
+check(act('notbgp').ok === false && /no BGP protocol/.test(act('notbgp').error), 'a protocol that is not BGP (the kernel protocol) is refused', JSON.stringify(act('notbgp')));
+check(act('unknown').ok === false && /no BGP protocol/.test(act('unknown').error), 'a name BIRD does not know is refused', JSON.stringify(act('unknown')));
+check(act('badaction').ok === false && /action must be/.test(act('badaction').error), 'an action that is not in the list is refused', JSON.stringify(act('badaction')));
 
 console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall backend checks passed');
 process.exit(failed ? 1 : 0);

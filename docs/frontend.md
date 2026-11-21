@@ -231,10 +231,15 @@ This is the one place that says how shared UI looks and behaves; the other docs 
   `tlsdiagram.js` for the pictures.
   The BGP tab is `bgp/`: `tab.js` composes the sections; `topology.js`, `peer.js`, `routes.js`,
   `announced.js` and `system.js` each export card builders that take the backend data; `util.js` holds the
-  per-peer color helpers, AS-path chips and prefix sort key.
+  per-peer color helpers, AS-path chips and prefix sort key. `config.js` draws the read-only configuration file card and a
+  peer's section of it, `actions.js` the per-peer actions (each behind a confirmation dialog) and `routedetail.js` the drawer that
+  explains BIRD's choice among the routes of a prefix; their pure parts are `configmodel.js` (the scanner and block finder for
+  bird.conf, which knows comments and strings, the names BIRD gives unnamed protocols, the import and export statements of a
+  channel, and the review of the file), `routemodel.js` (the selection rules) and `flowmodel.js` (the geometry of the protocols
+  diagram, which `flow.js` draws as SVG).
 - **Pure models**: `firewall/model.js` (zone matrix) and `firewall/edit.js`, `validate.js`, `plan.js`, `view.js`, `check.js`, `describe.js` (the editor),
   `interfaces/boardmodel.js` (the network board), `interfaces/model.js`, `interfaces/checks.js`, `interfaces/panelmodel.js` and `interfaces/wizardmodel.js` (the network editor),
-  `network/vlanmodel.js` (the VLAN editor), `routing/static-model.js` (the static routes), `wifi/model.js` and `wifi/channels.js`, `wireguard/model.js`, `wireguard/addr.js` and
+  `network/vlanmodel.js` (the VLAN editor), `routing/static-model.js` (the static routes), `routing/bgp/configmodel.js`, `routing/bgp/routemodel.js` and `routing/bgp/flowmodel.js` (the BGP configuration, route choice and protocols diagram), `wifi/model.js` and `wifi/channels.js`, `wireguard/model.js`, `wireguard/addr.js` and
   `wireguard/keys.js`, `traffic/settings-model.js`, `logs/entries.js` (log filtering and formatting), `settings/model.js` and `dhcp/model.js` (validation and the
   UCI change plan) and `core/fields.js` (field checks)
   have no DOM access and are unit-tested on their own.

@@ -44,7 +44,9 @@ $libs = Join-Path $root 'rpcd\lib\flab'
 $work = Join-Path ([IO.Path]::GetTempPath()) 'flab-bgp-test'
 $remote = '/tmp/flab-bgp-test'
 # Scenario directories built by mkfx.mjs (base = unchanged capture); each is also the name of its output JSON.
-$scenarios = 'base', 'down', 'dual', 'announce'
+$scenarios = 'base', 'down', 'dual', 'announce', 'tools', 'badcheck'
+# Method calls made against the tools and badcheck scenarios (config file, check, actions); each is also the name of its output JSON.
+$calls = 'config', 'check_ok', 'check_bad', 'act_restart', 'act_refresh', 'act_fail', 'act_badname', 'act_notbgp', 'act_unknown', 'act_badaction'
 
 #region Helpers
 function Invoke-Remote {
@@ -76,7 +78,7 @@ birdc show status        > `$d/show_status.txt 2>&1
 birdc show protocols all > `$d/show_protocols_all.txt 2>&1
 birdc show route all     > `$d/show_route_all.txt 2>&1
 birdc show memory        > `$d/show_memory.txt 2>&1
-for p in `$(birdc show protocols | awk '/ BGP /{print `$1}'); do birdc show route export `$p > `$d/show_route_export_`$p.txt 2>&1; done
+for p in `$(birdc show protocols | awk 'NR>2 {print `$1}'); do birdc show route export `$p > `$d/show_route_export_`$p.txt 2>&1 || true; done
 /sbin/ip -4 route show proto bird > `$d/ip4.txt 2>&1
 /sbin/ip -6 route show proto bird > `$d/ip6.txt 2>&1
 "@
@@ -101,8 +103,23 @@ for sc in $($scenarios -join ' '); do
   FLAB_BGP_FIXTURES=$remote/`$sc ucode -L "$remote/*.uc" h.uc > out-`$sc.json 2> err-`$sc.txt || { echo "`$sc failed:"; cat err-`$sc.txt; exit 1; }
   if [ -s err-`$sc.txt ]; then echo "`$sc wrote to stderr:"; cat err-`$sc.txt; exit 1; fi
 done
+# call <scenario> <output name> <method> [protocol name] [action]: one rpcd method against a scenario's fixtures.
+call() {
+  FLAB_BGP_FIXTURES=$remote/`$1 FLAB_BGP_METHOD=`$3 FLAB_BGP_NAME="`$4" FLAB_BGP_ACTION="`$5" ucode -L "$remote/*.uc" h.uc > out-`$2.json 2> err-`$2.txt || { echo "`$2 failed:"; cat err-`$2.txt; exit 1; }
+  if [ -s err-`$2.txt ]; then echo "`$2 wrote to stderr:"; cat err-`$2.txt; exit 1; fi
+}
+call tools config config
+call tools check_ok check
+call badcheck check_bad check
+call tools act_restart action azure_xfrm0 restart
+call tools act_refresh action azure_xfrm1 refresh_in
+call tools act_fail action azure_xfrm2 disable
+call tools act_badname action 'azure_xfrm0; reboot' restart
+call tools act_notbgp action kernel1 disable
+call tools act_unknown action nosuch restart
+call tools act_badaction action azure_xfrm0 reboot
 "@
-    foreach ($sc in $scenarios) {
+    foreach ($sc in ($scenarios + $calls)) {
         Invoke-Native 'scp' @('-O', "${Router}:$remote/out-$sc.json", (Join-Path $work "out\$sc.json"))
     }
     #endregion

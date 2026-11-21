@@ -39,7 +39,7 @@ function reserve_worker_slot() {
 // Methods that change something on the router (start or stop a service, wake a host, run a test): at most one per object at a
 // time, a second one is refused while the first runs.
 const MUTATING = [
-	'control', 'start', 'stop', 'wake', 'cable_test', 'wps', 'ntp_sync',
+	'control', 'start', 'stop', 'wake', 'cable_test', 'wps', 'ntp_sync', 'action',
 	'backup_create', 'backup_download', 'backup_begin', 'backup_upload',
 	'backup_inspect', 'backup_restore', 'backup_cancel',
 ];
