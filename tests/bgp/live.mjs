@@ -50,6 +50,7 @@ page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
 // Answers the page's flab.bgp status ubus call with the current scenario and every action with a canned reply; the configuration
 // file and its check are the real router's (read only). Everything else goes to the real router.
+let realConfigText = '';
 await page.route('**/ubus', async route => {
   const req = route.request();
   let body = null;
@@ -61,9 +62,10 @@ await page.route('**/ubus', async route => {
     return reply(actionReply ?? { name: args.name, action: args.action, ok: true, output: `${args.name}: done (mock)`, error: null });
   }
   if (current && object === 'flab.bgp' && method === 'status') return reply(current);
-  if (fileModified != null && object === 'flab.bgp' && method === 'config') {
+  if (object === 'flab.bgp' && method === 'config') {
     const real = await (await route.fetch()).json();
-    return reply({ ...real.result[1], mtime: fileModified });
+    realConfigText = real.result?.[1]?.text ?? realConfigText;
+    return reply(fileModified != null ? { ...real.result[1], mtime: fileModified } : real.result[1]);
   }
   return route.continue();
 });
@@ -223,7 +225,9 @@ check(await protoCard.locator('tr.bgp-sub').count() === 2, 'and opens again');
 
 console.log('\n== review of the configuration ==');
 const reviewed = await findings();
-check(reviewed.some(t => /No route limit .*azure_xfrm0.*azure_xfrm3/.test(t)) && reviewed.some(t => /No TCP authentication/.test(t)), 'the health card reviews the file: no route limit, no authentication', reviewed.join(' | '));
+// The router's own file decides what the review can find: a limit in it (as a hardened file has) removes that finding.
+const fileHasLimit = /^\s*(import|receive) limit\b/m.test(realConfigText);
+check((fileHasLimit || reviewed.some(t => /No route limit .*azure_xfrm0.*azure_xfrm3/.test(t))) && (!fileHasLimit || !reviewed.some(t => /No route limit/.test(t))) && reviewed.some(t => /No TCP authentication/.test(t)), `the health card reviews the file: ${fileHasLimit ? 'a route limit is set, so no warning about one' : 'no route limit'}, no authentication`, reviewed.join(' | '));
 check(!reviewed.some(t => /changed after BIRD last read/.test(t)), 'no drift warning while BIRD has read the file');
 fileModified = Math.floor(Date.now() / 1000) + 3600;
 await refresh();
