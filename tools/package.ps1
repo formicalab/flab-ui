@@ -705,15 +705,16 @@ function Sync-PackagesCheckout {
     .DESCRIPTION
     With -Amend the workflow force-pushes an amended package commit, so the local checkout is left on the commit it
     replaced. The local branch is reset to the remote one, but only when the checkout is clean and the two differ in the
-    package Makefile alone; anything else is somebody's work and is left for a person to reconcile.
+    package directory alone (the Makefile, and the feed files the workflow copies from the source, such as ACL files);
+    anything else is somebody's work and is left for a person to reconcile.
     #>
     if (-not (Test-Path (Join-Path $PackagesDir '.git'))) { Write-Warning "No packages checkout at $PackagesDir; not updated."; return }
     $branch = Invoke-Native git @('-C', $PackagesDir, 'branch', '--show-current')
     if (Invoke-Native git @('-C', $PackagesDir, 'status', '--porcelain')) { throw "The packages checkout $PackagesDir has uncommitted changes; update it by hand." }
     $null = Invoke-Retry { Invoke-Native git @('-C', $PackagesDir, 'fetch', '--quiet', $Remote, $branch) }
     $changed = @(Invoke-Native git @('-C', $PackagesDir, 'diff', '--name-only', 'HEAD', "$Remote/$branch"))
-    if ($changed | Where-Object { $_ -ne 'admin/flab-ui/Makefile' }) {
-        throw "The packages checkout differs from $Remote/$branch beyond the Makefile ($($changed -join ', ')); reconcile it by hand."
+    if ($changed | Where-Object { $_ -notlike 'admin/flab-ui/*' }) {
+        throw "The packages checkout differs from $Remote/$branch beyond the package directory ($($changed -join ', ')); reconcile it by hand."
     }
     $null = Invoke-Native git @('-C', $PackagesDir, 'reset', '--hard', '--quiet', "$Remote/$branch")
     Write-Host "Packages checkout is now at $Remote/$branch."
