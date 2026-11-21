@@ -129,7 +129,9 @@ pwsh -File tools/package.ps1 -Action Release -Version <version> -Amend -NotesFil
   The feed's Makefile is never modified by a working-tree build.
 - **Keeping the release in step.** The Makefile (`PKG_VERSION`, `PKG_RELEASE:=1`, `PKG_HASH`), the tag `v<version>`, the
   changelog section and the GitHub release's apk name one version; only `Release` writes them, together. `Check`
-  reports each of them and the apk installed on the router, and fails on a mismatch. It also says how many commits
+  reports each of them and the apk installed on the router, and fails on a mismatch. It also fails when the feed's
+  ACL files differ from the tag's `rpcd/acl.d`, or when the feed Makefile does not install a plugin, ACL file, page
+  folder, stylesheet or module manifest of the tag, or names one it does not have. It also says how many commits
   the source is past the tag: those are not in the published apk.
 - **Where the SDK is.** On Linux the build runs directly in bash. On Windows it runs in WSL (`-Distro`, default
   `Ubuntu-26.04`) and reaches the working tree through `/mnt`. `-Sdk` is the SDK directory as that shell sees it
@@ -158,10 +160,14 @@ pwsh -File tools/package.ps1 -Action Cut -Message "<commit message>" [-Version <
 ```
 
 Write the `## <version>` section of `CHANGELOG.md` first (it is the release notes). `Cut` then takes the patch after
-the latest tag (or `-Version`), commits any pending changes with `-Message` and pushes `main`, runs the hosted release
+the latest tag (or `-Version`), commits any pending changes with `-Message`, and, before anything is pushed or tagged,
+checks that the feed `Makefile` (which is edited by hand, not by the workflow) installs every rpcd plugin, ACL file,
+page folder, stylesheet and module manifest of the tree and defines, builds and lists in the metapackage every module
+package; a new file that no package would install stops the release. It then pushes `main`, runs the hosted release
 with `-Amend`, fast-forwards the local `packages` checkout to the feed branch the workflow rewrote, and runs `Check`, so
 the packages `Makefile` (`PKG_VERSION`, `PKG_RELEASE`, `PKG_HASH`), the tag, the changelog, the GitHub release, the
-local and the remote repositories are verified to agree. `-Install` also downloads the published apks, verifies their
+feed's ACL files (which must equal the tag's `rpcd/acl.d`), the local and the remote repositories are verified to
+agree. `-Install` also downloads the published apks, verifies their
 checksums, installs them on the router and compares every installed file with the tag. Dropped connections to GitHub
 are retried, and the workflow run is judged by its final status, not by the connection that watched it. `-DryRun`
 builds on GitHub without touching anything. The apks are built by the hosted workflow, never locally.

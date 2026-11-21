@@ -18,9 +18,11 @@ Release   validates the source repository, dispatches the hosted release workflo
           tags v<Version>, updates the package-feed source hash, builds all APKs with an OpenWrt SDK, and publishes the
           release. -DryRun performs the same hosted SDK build without tagging or publishing.
 Cut       the whole release in one command: takes the next patch version (or -Version), requires its CHANGELOG.md
-          section, commits (-Message) and pushes pending changes, runs the hosted release (amending the feed commit),
+          section, commits (-Message), checks that the feed Makefile installs everything the tree contains, pushes,
+          runs the hosted release (amending the feed commit),
           fast-forwards the local packages checkout to the feed branch the workflow rewrote, and checks that the
-          Makefile, tag, hash, changelog, GitHub release and local and remote repositories agree. -Install also installs
+          Makefile, tag, hash, changelog, feed ACL files, GitHub release and local and remote repositories agree.
+          -Install also installs
           the published apks on the router. Network hiccups are retried; the run is judged by its final status.
 
 The OpenWrt SDK only runs on Linux. On Linux the build runs directly in bash; on Windows it runs inside WSL (-Distro)
@@ -795,6 +797,15 @@ function Invoke-Cut {
             $null = Invoke-Native git @('-C', $root, 'add', '-A')
             $null = Invoke-Native git @('-C', $root, 'commit', '--quiet', '-m', $Message)
         }
+    }
+    # Before anything is pushed or tagged: the feed Makefile (written by hand, not by the workflow) must install every
+    # file of the tree about to be released, or the apks would silently lack it and need another release.
+    $branch = Invoke-Native git @('-C', $PackagesDir, 'branch', '--show-current')
+    $null = Invoke-Retry { Invoke-Native git @('-C', $PackagesDir, 'fetch', '--quiet', $Remote, $branch) }
+    $feedMakefile = (Invoke-Native git @('-C', $PackagesDir, 'show', "$Remote/${branch}:admin/flab-ui/Makefile")) -join "`n"
+    $problems = @(Get-FeedProblems -Ref 'HEAD' -MakefileText $feedMakefile)
+    if ($problems) { throw "The feed Makefile ($Remote/$branch) does not match the source; fix it in the packages repository first:`n  $($problems -join "`n  ")" }
+    if (-not $DryRun) {
         $null = Invoke-Retry { Invoke-Native git @('-C', $root, 'fetch', '--quiet', 'origin', 'main') }
         if ([int](Invoke-Native git @('-C', $root, 'rev-list', '--count', 'HEAD..origin/main')) -gt 0) { throw 'origin/main has commits that are not here: pull first.' }
         if ([int](Invoke-Native git @('-C', $root, 'rev-list', '--count', 'origin/main..HEAD')) -gt 0) {
@@ -904,6 +915,77 @@ function Get-MakeVariable {
     return $found[0].Groups[1].Value.Trim()
 }
 
+function Get-FeedProblems {
+    <#
+    .SYNOPSIS
+    Compares what the feed Makefile installs with what the source tree contains; returns a list of problems.
+    .DESCRIPTION
+    The release workflow updates only the version fields and the ACL files of the feed package. Which pages,
+    stylesheets, rpcd plugins, ACL files and module manifests each package installs, and which module packages exist,
+    is written by hand in the Makefile, so a new file in the source is silently left out of every package until the
+    Makefile names it. This reads the source from a Git tree (a tag or HEAD) and reports, for each kind of file, what
+    the tree has and the Makefile does not install (it would be missing from the apks) and the reverse (the build
+    would fail). With -FeedAclDir it also reports ACL files of the feed that differ from the tree's.
+    .PARAMETER Ref
+    Git tree-ish of this repository that holds the source: a tag, or HEAD.
+    .PARAMETER MakefileText
+    Text of the feed's admin/flab-ui/Makefile.
+    .PARAMETER FeedAclDir
+    Optional folder of the feed's ACL files to compare byte for byte (line endings aside) with rpcd/acl.d of the tree.
+    .OUTPUTS
+    Strings, one per problem; none when everything agrees.
+    #>
+    param([Parameter(Mandatory)][string]$Ref, [Parameter(Mandatory)][string]$MakefileText, [string]$FeedAclDir)
+
+    $paths = @(Invoke-Native git @('-C', $root, 'ls-tree', '-r', '--name-only', $Ref))
+    # The names found by a pattern in the paths, with the first capture group as the name.
+    $fromPaths = { param($Pattern) @($paths | Where-Object { $_ -match $Pattern } | ForEach-Object { [regex]::Match($_, $Pattern).Groups[1].Value } | Sort-Object -Unique) }
+    # The names a Makefile pattern mentions, plus the space-separated lists of the macro calls (group numbers in $Groups).
+    $mentions = { param($Pattern) @([regex]::Matches($MakefileText, $Pattern) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) }
+    $words = { param($Calls, $Group) @($Calls | ForEach-Object { $_.Groups[$Group].Value -split '\s+' } | Where-Object { $_ }) }
+    $backend = [regex]::Matches($MakefileText, 'Install/FlabBackend,\$\(1\),([^,]*),([^)]*)\)')
+    $frontend = [regex]::Matches($MakefileText, 'Install/FlabFrontend,\$\(1\),([^,]*),([^,]*),([^)]*)\)')
+    $defined = & $mentions '(?m)^define Package/flab-ui-mod-([a-z0-9-]+)\s*$'
+    $built = & $mentions 'BuildPackage,flab-ui-mod-([a-z0-9-]+)\)'
+    $meta = [regex]::Match($MakefileText, '(?s)define Package/flab-ui\r?\n(.*?)\r?\nendef').Groups[1].Value
+    $depended = @([regex]::Matches($meta, '\+flab-ui-mod-([a-z0-9-]+)') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+
+    # Each row: what it is, the names the source tree has, the names the Makefile installs.
+    $kinds = @(
+        @('rpcd plugin (rpcd/ucode/flab.*.uc)', (& $fromPaths '^rpcd/ucode/flab\.([A-Za-z0-9_-]+)\.uc$'),
+            @((@(& $mentions 'rpcd/ucode/flab\.([A-Za-z0-9_-]+)\.uc') + @(& $words $backend 1)) | Sort-Object -Unique)),
+        @('ACL file (rpcd/acl.d/flab-*.json)', (& $fromPaths '^rpcd/acl\.d/flab-([A-Za-z0-9_-]+)\.json$'),
+            @((@(& $mentions 'acl\.d/flab-([A-Za-z0-9_-]+)\.json') + @(& $words $backend 2)) | Sort-Object -Unique)),
+        @('page folder (www/js/pages/*/)', (& $fromPaths '^www/js/pages/([^/]+)/'),
+            @((@(& $mentions 'www/js/pages/([A-Za-z0-9_-]+)/') + @(& $words $frontend 1)) | Sort-Object -Unique)),
+        @('stylesheet (www/css/*.css)', (& $fromPaths '^www/css/([A-Za-z0-9_-]+\.css)$'),
+            @((@(& $mentions 'www/css/([A-Za-z0-9_-]+\.css)') + @(& $words $frontend 2)) | Sort-Object -Unique)),
+        @('module manifest (www/modules/*.json)', (& $fromPaths '^www/modules/([A-Za-z0-9_-]+)\.json$'),
+            @(& $words $frontend 3 | Sort-Object -Unique)),
+        @('module package (flab-ui-mod-*) of a manifest', (& $fromPaths '^www/modules/([A-Za-z0-9_-]+)\.json$'), $defined),
+        @('module package that is built', $defined, $built),
+        @('module package that the flab-ui metapackage depends on', $defined, $depended)
+    )
+    foreach ($kind in $kinds) {
+        $name, $have, $installed = $kind
+        foreach ($missing in @($have | Where-Object { $_ -notin $installed })) { "${name}: '$missing' is in the source but the Makefile does not install it" }
+        foreach ($extra in @($installed | Where-Object { $_ -notin $have })) { "${name}: the Makefile names '$extra', which the source does not have" }
+    }
+
+    if ($FeedAclDir) {
+        foreach ($acl in & $fromPaths '^rpcd/acl\.d/(flab-[A-Za-z0-9_-]+\.json)$') {
+            $feedFile = Join-Path $FeedAclDir $acl
+            if (-not (Test-Path -LiteralPath $feedFile)) { "ACL file $acl is not in the feed"; continue }
+            $source = (Invoke-Native git @('-C', $root, 'show', "${Ref}:rpcd/acl.d/$acl")) -join "`n"
+            $feed = [IO.File]::ReadAllText($feedFile) -replace "`r`n", "`n"
+            if ($source.TrimEnd("`n") -ne $feed.TrimEnd("`n")) { "ACL file $acl in the feed differs from the source" }
+        }
+        foreach ($stale in @(Get-ChildItem $FeedAclDir -Filter 'flab-*.json' -File | Where-Object { $_.Name -notin (& $fromPaths '^rpcd/acl\.d/(flab-[A-Za-z0-9_-]+\.json)$') })) {
+            "ACL file $($stale.Name) is in the feed but not in the source"
+        }
+    }
+}
+
 function Test-Consistency {
     <#
     .SYNOPSIS
@@ -954,6 +1036,14 @@ function Test-Consistency {
 
     $changelog = [IO.File]::ReadAllText((Join-Path $root 'CHANGELOG.md'))
     Report ($changelog -match "(?m)^## $([regex]::Escape($version)) ") "CHANGELOG.md has a section for $version"
+
+    # The feed must install everything the tag contains, and its ACL files must be the tag's.
+    if ($localTag) {
+        $feedDir = Join-Path (Split-Path $makefile -Parent) 'files/usr/share/rpcd/acl.d'
+        $problems = @(Get-FeedProblems -Ref $tag -MakefileText $text -FeedAclDir $feedDir)
+        Report (-not $problems) "feed Makefile and ACL files match what $tag contains"
+        $problems | ForEach-Object { Write-Host "        $_" }
+    }
 
     try {
         $assets = @((Invoke-Native gh @('release', 'view', $tag, '--repo', $slug, '--json', 'assets', '--jq', '.assets[].name')))
