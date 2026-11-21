@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.21 - 2026-11-21
+
+### Routing: BGP
+
+- **BIRD configuration** card: a read-only view of `/etc/bird.conf` (the text after `password` and `secret` is redacted),
+  a *Check* button that runs `birdc configure check` (it applies nothing), a closeable result, a review of the file
+  (for example, external BGP sessions without filters), filter sources one click away, and each peer's own lines of the file.
+- **Peer actions**: restart, enable, disable, and reload in or out, for BGP protocols only, with a confirmation.
+- **Route choice**: a click on a prefix opens a drawer that explains why BIRD preferred one path over the others.
+- **BIRD protocols** opens with a **flow diagram** that follows the BIRD 3.3.3 guide: one lane per protocol, the routing
+  table on the right, and a spline for each import and export, as thick as the number of routes. Each spline carries its
+  filter (the filter's name, `accept all`, `reject all`, or `default` when the file has no such line, with BIRD's own
+  default explained in a tooltip); a blocked edge is a short stub that ends in a ✕. BGP sessions that are alike share one
+  lane, which opens on a click. A click on a route count lists those routes in a drawer. Unnamed protocols are matched by the
+  name BIRD gives them (`kernel1`, `static1`).
+- A legend explains the protocol types and the filters; local routes (Direct, Static) fold under their protocol row;
+  the announced-routes table shows what each peer is sent now, and why the counters differ.
+- The tooltip of a Direct import says that its routes are the next hops that the multihop BGP sessions resolve.
+- Backend: `flab.bgp` has `config`, `check` and `action` methods, and returns the routes that the table hands to each
+  non-BGP protocol (`protocols[].exported`, up to 2000).
+
 ## 0.1.20 - 2026-11-21
 
 ### Interface
