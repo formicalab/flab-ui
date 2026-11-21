@@ -2,7 +2,7 @@
 Changes the router: it shows and edits `/etc/config/system`: every option the OpenWrt wiki
 documents for the `system` section and for its `timeserver` (NTP) section, in four cards that each take the full
 width of the page: General, Time zone and NTP, System log, and Kernel, cron and memory. A fifth card provides
-configuration backup and restore. It is shown at the bottom of the navigation pane and refreshes every 10 s. It
+configuration backup and restore. It is shown at the bottom of the navigation pane and refreshes every 10 s (the Pause and Refresh buttons are the page's). It
 reads through rpcd's `uci` object (`uci get system`), `system info` (the clock) and `service list sysntpd` (what the
 NTP client runs with); the ACL fragment `rpcd/acl.d/flab-settings.json` also grants the backup methods of
 `flab.system`.

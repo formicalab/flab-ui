@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.20 - 2026-11-21
+
+### Interface
+
+- On every page the command bar's topmost line holds the title at the left and, grouped at the right, the Pause and
+  Refresh buttons followed by the "Updated" timestamp. Summary tiles, tabs and filters follow on the lines below.
+- Pause was added to DHCP, DNS and Dynamic DNS (one Pause for both tabs), Services and System settings, so every page
+  that polls has Pause and Refresh (Overview and Toolbox have neither).
+
+### Page order
+
+- DHCP shows the advertised IPv6 prefixes (Router advertisements) before the leases.
+- IPsec shows the strongSwan daemon card right below the tiles, before the score explanation and the connections.
+- The Routing BGP tab shows the BIRD daemon, memory and protocols cards right below the tiles, before the topology.
+
 ## 0.1.19 - 2026-11-20
 
 ### Toolbox

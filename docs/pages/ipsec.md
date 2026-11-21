@@ -1,9 +1,10 @@
 # IPsec VPN (route `#ipsec`)
 One card per strongSwan connection: header with state and security grade, a router-to-gateway flow diagram,
 IKE SA details, tunnel (child SA) details, live traffic with interface counters and a chart, and a 0-100 score
-breakdown with warnings. The score explanation sits above the cards (IKE encryption 20, IKE PRF/integrity 10,
-IKE key exchange 20, authentication 10, ESP encryption 20, PFS 15, rekeying and liveness 5), followed by the
-daemon card. Compact/detailed toggle. When charon is not running, the daemon card is a red error if connections are
+breakdown with warnings. Below the tiles come the daemon card, which is about the daemon rather than any one
+connection, then the score explanation (IKE encryption 20, IKE PRF/integrity 10,
+IKE key exchange 20, authentication 10, ESP encryption 20, PFS 15, rekeying and liveness 5) and the connection
+cards. Compact/detailed toggle. When charon is not running, the daemon card is a red error if connections are
 configured, and a plain note when `/etc/config/swanctl` has no sections (the init script then never starts charon);
 the plugin reports this as `daemon.configured`.
 

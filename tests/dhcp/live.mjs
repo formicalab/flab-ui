@@ -271,7 +271,7 @@ check(await group('lan', 'Services').getAttribute('open') === null && await grou
 check(await bar().isHidden(), 'the banner is hidden while nothing is edited');
 check(await cardOf('Network boot').locator('tbody tr').count() === 1 && await cardOf('Network boot').locator('input[title="Boot file address"]').inputValue() === 'tftp://[fd11::1]/pxe.efi' && await cardOf('Network boot').locator('input[title="Architecture code"]').inputValue() === '07', 'the network boot entry is shown with its address and architecture');
 check(/dhcp_option/.test(await poolCard('lan').locator('.dhcp-extra').textContent()) && /3,192\.168\.1\.254/.test(await poolCard('lan').locator('.dhcp-extra').textContent()) && /force/.test(await poolCard('lan').locator('.dhcp-extra').textContent()) && await poolCard('lan100').locator('.dhcp-extra').count() === 0, 'options this page has no control for are listed read only in their pool, and only where there are some');
-check((await page.locator('main .page-section-title').allInnerTexts()).join(' | ') === 'Daemon settings | Pool settings | Network boot | Leases | Router advertisements', 'the DHCP page orders the daemon, pools and network boot settings before the client and prefix lists');
+check((await page.locator('main .page-section-title').allInnerTexts()).join(' | ') === 'Daemon settings | Pool settings | Network boot | Router advertisements | Leases', 'the DHCP page orders the daemon, pools and network boot settings, then the advertised prefixes, before the client list');
 await shot('mock-base');
 
 console.log('\n== folding the daemon and the pools ==');

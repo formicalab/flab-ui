@@ -5,13 +5,13 @@
 //
 // It reads through rpcd's own `uci` object and writes through core/uci.js applyChange():
 // stage, apply with the rollback countdown, read the settings back, confirm. The page redraws on every poll, so
-// polling is suspended while there is something to lose: unsaved edits, a focused control, a save, or a backup transfer.
+// polling is suspended while there is something to lose: unsaved edits, a focused control, a save, a backup transfer, or Pause.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { chevron } from '../../core/fold.js';
 import { can, optional, ubus } from '../../core/ubus.js';
 import { badge, button, kv, mono, muted, spinner, tile, tiles } from '../../core/ui.js';
-import { refreshControl } from '../../core/controls.js';
+import { pauseControl, refreshControl } from '../../core/controls.js';
 import { fieldRow, legend } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
 import { uci } from '../../core/uci.js';
@@ -33,7 +33,8 @@ const editor = createEditor({
   },
 });
 const { state } = editor;
-const openCards = new Set();
+// The Pause button's flag (the editor's state is separate).
+const live = { paused: false };
 const ntpAction = { busy: false, message: null };
 let reloadPage = () => {};
 
@@ -197,13 +198,13 @@ export default {
   nav: 'bottom',
   interval: 10000,
   css: ['css/forms.css', 'css/settings.css'],
-  isPaused: () => backupBusy() || editor.paused('.settings-form'),
+  isPaused: () => live.paused || backupBusy() || editor.paused('.settings-form'),
 
   load,
 
   controls({ reload }) {
     reloadPage = reload;
-    return { nodes: [refreshControl(reload), editor.attach(reload)] };
+    return { nodes: [pauseControl(live), refreshControl(reload), editor.attach(reload)] };
   },
 
   view(data, rerender) {

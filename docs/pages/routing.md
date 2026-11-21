@@ -110,6 +110,7 @@ type (`uci get` with `type: route` and `route6`), never the whole network config
 Status of BIRD 3 (`flab.bgp`). Sections, top to bottom:
 - **Tiles:** sessions established, prefixes learned (and paths), prefixes announced, multipath (ECMP) share,
   kernel sync, BIRD version/uptime.
+- **Daemon and memory** cards (the daemon is what everything below reports on), then **BIRD protocols**.
 - **Topology:** this router, one node per peer, remote AS node (peers are grouped by neighbor AS). The router
   node lists what its peers actually receive ("Announces"), whichever BIRD protocol produced it. CSS grid plus
   SVG connectors (animated while a session is Established). Each peer keeps one color (`pc-0..5`) across every
@@ -129,8 +130,7 @@ Status of BIRD 3 (`flab.bgp`). Sections, top to bottom:
   since. Filter, peer selector, "Best paths only", sortable columns. At most 400 paths are drawn until
   **Show all** is pressed.
 - **Announced routes:** prefix x peer matrix plus export-filter results per peer (considered, blocked by
-  filter, rejected, announced). **Local & connected routes**, **BIRD protocols**, **daemon** and **memory**
-  cards close the page.
+  filter, rejected, announced). **Local & connected routes** closes the page.
 
 Notes:
 - **Everything is derived from live data on every poll** (5 s): peers, channels, routes, announcements

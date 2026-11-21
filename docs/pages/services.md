@@ -1,5 +1,5 @@
 # Services (route `#services`)
-Refreshed every 5 s. Lists the router's services and starts, stops, restarts, enables and disables them. Two sources are merged by
+Refreshed every 5 s (the Pause and Refresh buttons are the page's). Lists the router's services and starts, stops, restarts, enables and disables them. Two sources are merged by
 name: the init scripts in `/etc/init.d` (`flab.services list`: whether each starts at boot and in which position,
 from the `S<NN><name>` links of `/etc/rc.d`), which is why a service that is stopped but installed still appears, and
 the daemons procd reports (`service list`: state and PIDs). procd's own `service` object cannot start or stop

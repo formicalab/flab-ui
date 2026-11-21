@@ -1,5 +1,5 @@
-// IPsec page: strongSwan status from the flab.ipsec plugin. Summary tiles on top, then one card per
-// connection (connection.js), the daemon card and the score explanation (daemon.js).
+// IPsec page: strongSwan status from the flab.ipsec plugin. Summary tiles on top, then the daemon card and the
+// score explanation (daemon.js), then one card per connection (connection.js).
 // Throughput is derived in the browser from successive counter samples (rates.js), which is why every
 // poll goes through record() before the data is rendered. `compact` hides the per-connection details.
 import { h } from '../../core/dom.js';
@@ -77,7 +77,7 @@ export default {
   },
 
   // Connections matching the state filter and every search term (name, state, remote addresses, remote
-  // ID or child names) are shown; the scoring explanation sits above them, the daemon card below.
+    // ID or child names) are shown; the daemon card and the scoring explanation sit above them.
   view(data, rerender) {
     const q = state.q.toLowerCase();
     // Connections matching the state filter and every search term.
@@ -91,6 +91,7 @@ export default {
 
     return [
       summary(data),
+      daemonCard(data.daemon),
       scoringCard(),
       shown.length
         ? h('div', { className: `vpn-grid ${state.compact ? 'compact' : ''}` }, shown.map(c => connectionCard(c, { compact: state.compact })))
@@ -99,7 +100,6 @@ export default {
           data.connections.length && (state.q || state.filter !== 'all')
             ? button('Clear filters', 'x-lg', () => { state.q = ''; state.filter = 'all'; rerender(); })
             : null),
-      daemonCard(data.daemon),
     ];
   },
 };

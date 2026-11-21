@@ -1,12 +1,12 @@
 # DHCP (route `#dhcp`)
 Shows and edits odhcpd, the router's DHCPv6 and router advertisement (RA) server and, when it is the main server,
 its DHCPv4 server too; it is configured in
-`/etc/config/dhcp`. It refreshes every 10 s and reads through the ubus `dhcp` object (`ipv4leases`,
+`/etc/config/dhcp`. It refreshes every 10 s (the Pause and Refresh buttons are the page's) and reads through the ubus `dhcp` object (`ipv4leases`,
 `ipv6leases`, `ipv6ra`), `network.interface dump` (which device belongs to which interface and its subnet),
 `service list odhcpd` and `service list dnsmasq` and rpcd's `uci` object; it needs no plugin, only the ACL fragment
 `rpcd/acl.d/flab-dhcp.json`. Leases are keyed by device (`br-lan`) in the ubus replies and shown under their
 logical interface (`lan`). Top to bottom the page shows the tiles (they stay on top, in the command bar), the
-daemon settings, the pool settings and network boot (the configuration), then the clients (leases and static leases in one list) and the advertised prefixes (what is happening now).
+daemon settings, the pool settings and network boot (the configuration), then the advertised prefixes and the clients (leases and static leases in one list), what is happening now.
 - **Who serves DHCPv4** is detected: odhcpd when `odhcpd.maindhcp` is on, otherwise dnsmasq when its procd service
   runs (the usual split of dnsmasq for IPv4 and an IPv6-only odhcpd). In the dnsmasq case odhcpd has no
   `ipv4leases`, so the page reads dnsmasq's lease file (the `leasefile` option of `config dnsmasq`, default

@@ -30,6 +30,11 @@ function ensureCss(hrefs) {
   }
 }
 
+// The topmost line of the command bar on every page: the title on the left; on the right the Pause and Refresh
+// buttons (where the page has them) followed by the "Updated" timestamp.
+const topRow = (heading, buttons, stamp) =>
+  h('div', { className: 'cmd-top' }, heading, h('div', { className: 'cmd-actions' }, ...buttons, stamp));
+
 // The first registered page opens when the URL has no hash.
 const defaultPageId = basePages[0].id;
 
@@ -91,8 +96,8 @@ async function route() {
     h('button', { type: 'button', className: 'nav-link-fl', onclick: signOut }, icon('box-arrow-right'), 'Sign out'));
 
   const results = h('main', { id: 'page-content' }, h('div', { className: 'text-center muted p-5' }, spinner('Loading page…')));
-  const stamp = h('span', { className: 'muted small' });
-  const cmdbar = h('header', { className: 'cmdbar' }, h('h1', {}, entry.title ?? entry.label), stamp);
+  const stamp = h('span', { className: 'cmd-stamp muted small' });
+  const cmdbar = h('header', { className: 'cmdbar' }, topRow(h('h1', {}, entry.title ?? entry.label), [], stamp));
   byId('app').replaceChildren(h('div', { className: 'shell' }, nav, h('div', { className: 'content' }, cmdbar, results)));
 
   let module;
@@ -117,7 +122,8 @@ async function route() {
   const heading = h('h1', {}, entry.title ?? entry.label);
   const summarySlot = h('div', { className: 'fl-summary-slot' });
   // Summary tiles sit above command controls on every page; individual pages keep only their detailed content.
-  cmdbar.replaceChildren(heading, stamp, summarySlot, ...ctl.nodes);
+  const isLead = node => node?.classList?.contains('cmd-pause') || node?.classList?.contains('cmd-refresh');
+  cmdbar.replaceChildren(topRow(heading, ctl.nodes.filter(isLead), stamp), summarySlot, ...ctl.nodes.filter(node => !isLead(node)));
   const drawSummaries = (summaries = []) => summarySlot.replaceChildren(...summaries);
   // Redraws the page from the last data without polling; controls call it so filter changes apply instantly.
   function rerender() {

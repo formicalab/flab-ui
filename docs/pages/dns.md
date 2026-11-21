@@ -12,7 +12,7 @@ understands both engines, **Unbound** (read through `unbound-control`, which nee
 `/etc/config/unbound`) and **dnsmasq** (read through the ubus object `dnsmasq metrics` and UCI), and every mix: Unbound
 running, dnsmasq running, both (one of them on another port, for instance dnsmasq on 5353 behind Unbound; both are
 reported and the one on port 53 is the engine the page describes), none running (a finding) and installed but stopped
-(the configured engine is still described from its configuration). One call, `flab.dns status`, every 10 s; the page
+(the configured engine is still described from its configuration). One call, `flab.dns status`, every 10 s (the Pause and Refresh buttons are shared by both tabs); the page
 pauses while a text box has the focus. Top to bottom:
 - **Tiles**: Resolver (engine, version, uptime, and "dnsmasq also runs (port 5353)" when both run), Queries (since the resolver
   started, and the average per minute; for dnsmasq the forwarded plus the locally answered), the share answered without

@@ -1,9 +1,11 @@
 // Combined DNS page: the local resolver and ddns-scripts share one navigation entry and switch with top tabs.
-import { tabsControl } from '../../core/controls.js';
+import { pauseControl, tabsControl } from '../../core/controls.js';
 import resolver from './resolver.js';
 import dynamic from '../ddns/index.js';
 
 const state = { tab: 'resolver' };
+// One Pause for both tabs, so it holds when the tab is switched.
+const live = { paused: false };
 const pages = { resolver, dynamic };
 const page = () => pages[state.tab];
 export const routeForTab = tab => tab === 'dynamic' ? '#ddns' : '#dns';
@@ -16,7 +18,7 @@ export function openTab(tab) {
 export default {
   interval: 10000,
   css: ['css/forms.css', 'css/dns.css', 'css/ddns.css'],
-  isPaused: () => page().isPaused?.() ?? false,
+  isPaused: () => live.paused || (page().isPaused?.() ?? false),
 
   async load() {
     const tab = state.tab;
@@ -36,7 +38,7 @@ export default {
     };
     show();
     return {
-      nodes: [tabs.node, ...Object.values(controls).flatMap(ctl => ctl.nodes)],
+      nodes: [tabs.node, pauseControl(live), ...Object.values(controls).flatMap(ctl => ctl.nodes)],
       update(data) {
         show();
         controls[data.tab].update?.(data.data);

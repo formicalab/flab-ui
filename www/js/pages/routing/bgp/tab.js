@@ -4,7 +4,7 @@
 // derived from it on every poll, so peers, routes and announcements that come and go are reflected on the
 // next refresh without any page-side configuration. Each section is a card builder in a sibling module:
 //   topology.js   router -> peers -> remote AS diagram
-//   system.js     health findings, protocol list, daemon and memory cards
+//   system.js     health findings, protocol list, daemon and memory cards (the daemon cards and the protocol list come first)
 //   peer.js       one card per peer (session, capabilities, channels)
 //   routes.js     learned routes table (filter, peer selector, best-only, sort)
 //   announced.js  announcement matrix, export-filter results, local routes
@@ -66,6 +66,10 @@ export function bgpView(data, state, rerender) {
   return [
     summary(data),
     h('div', { className: 'row g-3' },
+      h('div', { className: 'col-12 col-xl-5' }, daemonCard(data)),
+      h('div', { className: 'col-12 col-xl-7' }, memoryCard(data))),
+    protocolsCard(data),
+    h('div', { className: 'row g-3' },
       h('div', { className: 'col-12 col-xxl-8' }, topologyCard(data)),
       h('div', { className: 'col-12 col-xxl-4' }, healthCard(data))),
     h('div', { className: 'bgp-grid' }, data.peers.map(p => peerCard(p, data))),
@@ -73,9 +77,5 @@ export function bgpView(data, state, rerender) {
     h('div', { className: 'row g-3' },
       h('div', { className: 'col-12 col-xl-7' }, announcedCard(data)),
       h('div', { className: 'col-12 col-xl-5' }, localCard(data))),
-    protocolsCard(data),
-    h('div', { className: 'row g-3' },
-      h('div', { className: 'col-12 col-xl-5' }, daemonCard(data)),
-      h('div', { className: 'col-12 col-xl-7' }, memoryCard(data))),
   ];
 }

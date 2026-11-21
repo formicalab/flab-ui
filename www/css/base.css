@@ -101,19 +101,17 @@ small, .small { font-size: .8rem; }
   padding: .75rem 1.5rem; background: var(--fl-acrylic); border-bottom: 1px solid var(--fl-stroke);
   backdrop-filter: blur(24px) saturate(140%);
 }
-.cmdbar h1 { font-size: 1.2rem; font-weight: 600; margin: 0 auto 0 0; }
+.cmdbar h1 { font-size: 1.2rem; font-weight: 600; margin: 0; }
+/* Topmost line: the title at the left, the Pause and Refresh buttons and the "Updated" stamp grouped at the right */
+.cmd-top { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.cmd-actions { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
+.cmd-actions .cmd-stamp { white-space: nowrap; }
 .fl-summary-slot { display: contents; }
 .cmdbar .form-control, .cmdbar .form-select { width: auto; min-width: 11rem; }
 .cmdbar .fl-summary { order: 1; flex: 1 0 100%; margin-top: .25rem; }
-/* When Refresh is the only control, it sits at the bottom right of the tiles, level with their lower edge. With any other
-   control (tabs, filters, Pause) it stays in that button row, at its right end. */
-.cmdbar:has(.fl-summary):not(:has(> :not(h1, .fl-summary-slot, .cmd-refresh, .set-bar, .muted.small))) .fl-summary { flex: 1 1 calc(100% - 8rem); min-width: 0; }
-.cmdbar:has(.fl-summary):not(:has(> :not(h1, .fl-summary-slot, .cmd-refresh, .set-bar, .muted.small))) .cmd-refresh { order: 1; align-self: flex-end; }
-.cmdbar .seg { order: 2; }
-.cmdbar .search, .cmdbar .form-select { order: 2; }
+/* Everything else (tabs, filters, page buttons) sits below the summary tiles */
+.cmdbar > :not(.cmd-top, .fl-summary, .fl-summary-slot, .set-bar) { order: 2; }
 .cmdbar .search { width: auto; min-width: 16rem; flex: 0 1 24rem; }
-.cmdbar .cmd-pause, .cmdbar .cmd-refresh { order: 3; margin-left: auto; }
-.cmdbar .cmd-refresh + .small { margin-left: 0; }
 .search .input-group-text { padding: 0 .6rem; color: var(--fl-muted); background: var(--fl-surface); border-color: var(--fl-stroke); }
 /* Tab strip in the command bar: one segmented control, the active tab filled */
 .seg[hidden] { display: none; }
@@ -350,7 +348,6 @@ details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
   .nav-link-fl { width: auto; }
   .nav-spacer { display: none; }
   .cmdbar, main { padding-left: 1rem; padding-right: 1rem; }
-  .cmdbar h1 { flex: 1 0 100%; }
   .cmdbar .search { flex: 1 1 12rem; }
   .cmdbar .search input { width: 100%; }
   .cmdbar .form-select { min-width: 9rem; }

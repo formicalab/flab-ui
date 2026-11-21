@@ -34,8 +34,11 @@ or on the trusted reverse proxy that fronts it.
 - Routing is hash based (`#overview`, `#radios`, ...). The first entry in `pages/index.js` is the default.
   The merged DNS page uses `#dns` for the resolver and `#ddns` for Dynamic DNS, so refresh and browser navigation
   preserve the selected tab.
-- On every route change the shell rebuilds: navigation pane, command bar (page title, the page's
-  persistent controls, "Updated hh:mm:ss" stamp) and a `<main>` results area.
+- On every route change the shell rebuilds: navigation pane, command bar and a `<main>` results area. The command
+  bar's topmost line is the same on every page: the title at the left; at the right the page's Pause and Refresh
+  buttons (where it has them, recognised by the `cmd-pause` / `cmd-refresh` classes of `pauseControl` /
+  `refreshControl`) and, last, the "Updated hh:mm:ss" stamp. The summary tiles, tabs, filters and the page's other
+  controls follow on the lines below.
 - `page.load()` fetches data, `page.view(data, rerender)` returns nodes. A `setInterval` repeats
   `load()` every `page.interval` ms (a page that gives `interval` as a function gets a chained `setTimeout` instead,
   re-reading the period before each poll) unless `page.isPaused()` is true. A poll is also skipped while the previous

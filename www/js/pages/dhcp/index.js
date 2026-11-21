@@ -9,12 +9,13 @@
 // so no plugin is needed, and writes
 // through core/uci.js applyChange(): stage, apply with the rollback countdown, read the config back, confirm.
 // The controls and the review banner are shared with System settings (core/forms.js). The page redraws on every
-// poll, so polling is suspended while there is something to lose: unsaved edits, a focused control or a save.
+// poll, so polling is suspended while there is something to lose: unsaved edits, a focused control or a save, or
+// when Pause is pressed.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { optional, ubus } from '../../core/ubus.js';
 import { tile, tiles } from '../../core/ui.js';
-import { refreshControl, searchControl, selectControl } from '../../core/controls.js';
+import { pauseControl, refreshControl, searchControl, selectControl } from '../../core/controls.js';
 import { note } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
 import { reveal } from '../../core/fold.js';
@@ -42,6 +43,8 @@ const { state } = editor;
 // polling.
 const filter = { q: '', iface: 'all', type: 'all' };
 let clientControls = null;
+// The Pause button's flag (the editor's state is separate).
+const live = { paused: false };
 
 // Reads the config, the leases and announcements, the interfaces and the daemons' state, plus how many changes
 // are already staged in this session (applying would commit those too, so the page warns about them). The ubus
@@ -83,7 +86,7 @@ function summary(data) {
 export default {
   interval: 10000,
   css: ['css/forms.css', 'css/dhcp.css'],
-  isPaused: () => editor.paused('.dhcp-form'),
+  isPaused: () => live.paused || editor.paused('.dhcp-form'),
 
   load,
 
@@ -94,7 +97,7 @@ export default {
     type.setOptions(CLIENT_TYPES);
     clientControls = { search: searchControl(filter, 'q', rerender, 'Filter clients…'), iface, type };
     return {
-      nodes: [refreshControl(reload), editor.attach(reload)],
+      nodes: [pauseControl(live), refreshControl(reload), editor.attach(reload)],
       update(data) {
         const names = [...new Set([...data.pools.map(p => p.iface), ...clientList(data, state.draft ?? draftFrom(data)).map(c => c.iface).filter(Boolean)])].sort();
         clientControls.iface.setOptions([['all', 'All interfaces'], ...names.map(n => [n, n])]);
@@ -111,7 +114,8 @@ export default {
     // error must not stay hidden in a folded card or a closed group, so those are opened.
     ctx.sync = () => editor.markErrors(ctx.inputs, canEdit, reveal);
 
-    // Configuration first, from the widest to the narrowest (the daemon, interface pools, network boot), then the live lists.
+    // Configuration first, from the widest to the narrowest (the daemon, interface pools, network boot), then the live lists
+    // (the advertised prefixes, then the leases).
     // Each editable group is `.dhcp-form`, so it is not polled over while focused.
     const clients = h('div', { className: 'dhcp-form' }, clientsCard(ctx, filter, { controls: clientControls }));
     const boot = h('div', { className: 'dhcp-form' }, bootCard(ctx));
@@ -132,10 +136,10 @@ export default {
       pools,
       title('hdd-network', 'Network boot'),
       boot,
-      title('people', 'Leases'),
-      clients,
       title('broadcast', 'Router advertisements'),
       announcedCard(data),
+      title('people', 'Leases'),
+      clients,
     ];
     ctx.sync();
     return page.filter(Boolean);

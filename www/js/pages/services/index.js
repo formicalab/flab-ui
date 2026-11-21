@@ -7,14 +7,14 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { AuthError, can, optional, ubus } from '../../core/ubus.js';
 import { badge, button, card, mono, muted, spinner, tile, tiles } from '../../core/ui.js';
-import { refreshControl, searchControl } from '../../core/controls.js';
+import { pauseControl, refreshControl, searchControl } from '../../core/controls.js';
 import { note } from '../../core/forms.js';
 import { fmtNum } from '../../core/format.js';
 import { LABELS, PROGRESS, actionsFor, buildRows, describeOutcome, filterRows, readProcd, riskOf, summarize } from './model.js';
 
 // What survives the redraw on every poll: the filter text, the call in progress ({ name, action }), the action
-// waiting for confirmation ({ name, action }) and the outcome of the last call.
-const state = { q: '', busy: null, pending: null, outcome: null };
+// waiting for confirmation ({ name, action }), the outcome of the last call and whether Pause is on.
+const state = { q: '', busy: null, pending: null, outcome: null, paused: false };
 
 // The shell's redraw and refresh functions, handed over by controls().
 const shell = { rerender: () => {}, reload: () => {} };
@@ -168,14 +168,15 @@ function servicesCard(rows, writable) {
 export default {
   interval: 5000,
   css: ['css/forms.css', 'css/services.css'],
+  isPaused: () => state.paused,
   load,
 
-  // The filter box and Refresh stay in the command bar across redraws.
+  // The filter box, Pause and Refresh stay in the command bar across redraws.
   controls({ rerender, reload }) {
     clearTimeout(detachedRefresh);
     shell.rerender = rerender;
     shell.reload = reload;
-    return { nodes: [searchControl(state, 'q', rerender, 'Filter services…'), refreshControl(reload)] };
+    return { nodes: [searchControl(state, 'q', rerender, 'Filter services…'), pauseControl(state), refreshControl(reload)] };
   },
 
   // Tiles, the confirmation and outcome notes, then the table. Without the plugin, or without permission to
