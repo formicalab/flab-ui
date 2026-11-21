@@ -17,6 +17,8 @@ export const FLOW = { width: 1040, outsideW: 130, laneX: 172, laneW: 172, tableW
 // Width of a chip's text in the drawing (an estimate: the SVG has no layout engine to measure with), at the diagram's font size.
 export const textWidth = s => Math.ceil(String(s).length * 5.4);
 
+const DEFAULT_TABLE = { ipv4: 'master4', ipv6: 'master6' };
+
 // "azure_xfrm" for azure_xfrm0..3: what the names have in common without their numbers, or the first name when nothing is shared.
 function commonName(names) {
   let prefix = names[0];
@@ -125,6 +127,8 @@ export function buildFlow(data, config, open = new Set()) {
     const known = protocolBlocks(config, first.p.name).own != null;
     const external = /\bexternal\b/.test(first.peer?.session ?? '');
     first.p.channels.forEach((c, ci) => {
+      // A channel whose table the output did not name is in BIRD's default table for its kind (the guide: the main table of its type).
+      const tableName = c.table ?? DEFAULT_TABLE[c.afi] ?? 'table';
       const pol = config ? channelPolicy(config, first.p.name, c.afi) : { known: false, import: null, export: null };
       const sum = key => l.members.reduce((n, m) => n + (m.p.channels[ci]?.routes?.[key] ?? 0), 0);
       const each = key => [...new Set(l.members.map(m => m.p.channels[ci]?.routes?.[key] ?? 0))];
@@ -134,16 +138,16 @@ export function buildFlow(data, config, open = new Set()) {
         const count = sum(key);
         const same = each(key);
         const edge = {
-          id: `${lane.key}:${c.afi}:${dir}`, lane: lane.key, names, type: first.p.proto, table: c.table ?? null, afi: c.afi, dir, count,
+          id: `${lane.key}:${c.afi}:${dir}`, lane: lane.key, names, type: first.p.proto, table: tableName, afi: c.afi, dir, count,
           countText: policy.blocked ? '' : (l.group && dir === 'out' && same.length === 1 && l.members.length > 1 ? `${same[0]} each` : routes(count)),
           blocked: policy.blocked, strokeWidth: Math.min(7, 1.6 + Math.log2(1 + count)),
           tag: { text: policy.text + (policy.source === 'default' ? ' · default' : ''), kind: policy.kind, filter: policy.filter, source: policy.source,
-            title: explain(dir, policy, { ...lane, group: l.group, sessions: l.members.length }, c.table ?? 'its table', external, first.p.proto, first.p.proto === 'BGP' ? null : nextHopRoutes(data, names, c.table)) },
+            title: explain(dir, policy, { ...lane, group: l.group, sessions:             l.members.length }, tableName, external, first.p.proto, first.p.proto === 'BGP' ? null : nextHopRoutes(data, names, tableName)) },
         };
         lane.edges.push(edge);
         edges.push(edge);
       }
-      lane.channels.push({ afi: c.afi, table: c.table ?? null });
+                  lane.channels.push({ afi: c.afi, table: tableName });
     });
     lanes.push(lane);
   }

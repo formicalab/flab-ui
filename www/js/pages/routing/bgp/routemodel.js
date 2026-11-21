@@ -15,8 +15,8 @@ function ipv4(text) {
 // The candidates for `prefix`: its BGP paths and the routes of other protocols (static, direct), each as
 // { kind, peer, preference, best, localPref, asPathLength, origin, med, neighborAs, external, routerId, nextHop, inKernel, path }.
 export function candidates(data, prefix) {
-  const peers = new Map(data.peers.map(p => [p.name, p]));
-  const bgp = data.paths.filter(r => r.prefix === prefix).map(r => {
+  const peers = new Map((data.peers ?? []).map(p => [p.name, p]));
+  const bgp = (data.paths ?? []).filter(r => r.prefix === prefix).map(r => {
     const peer = peers.get(r.peer);
     return {
       kind: 'bgp', peer: r.peer, preference: r.preference, best: r.best,

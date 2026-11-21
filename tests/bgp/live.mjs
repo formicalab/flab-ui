@@ -51,6 +51,7 @@ page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 // Answers the page's flab.bgp status ubus call with the current scenario and every action with a canned reply; the configuration
 // file and its check are the real router's (read only). Everything else goes to the real router.
 let realConfigText = '';
+let configOverride = null;
 await page.route('**/ubus', async route => {
   const req = route.request();
   let body = null;
@@ -63,6 +64,7 @@ await page.route('**/ubus', async route => {
   }
   if (current && object === 'flab.bgp' && method === 'status') return reply(current);
   if (object === 'flab.bgp' && method === 'config') {
+    if (configOverride) return reply(configOverride);
     const real = await (await route.fetch()).json();
     realConfigText = real.result?.[1]?.text ?? realConfigText;
     return reply(fileModified != null ? { ...real.result[1], mtime: fileModified } : real.result[1]);
@@ -154,7 +156,7 @@ check(!(await cfgCard.evaluate(e => e.classList.contains('fl-folded'))) && (awai
 
 console.log('\n== the flow diagram ==');
 const flowSvg = protoCard.locator('#bgp-flow');
-check(await flowSvg.count() === 1 && (await flowSvg.boundingBox()).y < (await protoCard.locator('table.table-hover').boundingBox()).y, 'the diagram is in the protocols card, above the table');
+check(await flowSvg.count() === 1 && await protoCard.evaluate(c => c.querySelector('#bgp-flow').getBoundingClientRect().y < c.querySelector('table.table-hover').getBoundingClientRect().y), 'the diagram is in the protocols card, above the table');
 check(await flowSvg.locator('.flow-lane').count() === 5 && await flowSvg.locator('.flow-lane', { hasText: '×4' }).count() === 1, 'one lane per protocol, the four BGP sessions in one lane');
 check(await flowSvg.locator('.flow-table', { hasText: 'master4' }).count() === 1 && /45 routes/.test((await flowSvg.locator('.flow-table text').allTextContents()).join(' ')), 'the routing table master4 with the routes it holds');
 const outsideTitles = await flowSvg.locator('.flow-outside .flow-title').allTextContents();
@@ -345,6 +347,49 @@ const many = await colors();
 check(Object.keys(many).length === 8 && Object.values(many).every(c => /^pc-[0-5]$/.test(c)), '8 peers render with colors from the palette', JSON.stringify(many));
 check(['azure_xfrm0', 'azure_xfrm1', 'azure_xfrm2', 'azure_xfrm3'].every(n => many[n] === baseline[n] || n === 'azure_xfrm1'), 'earlier peers are not recolored', JSON.stringify(many));
 check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal page overflow with 8 peers');
+
+console.log('\n== routers unlike this one ==');
+// No VPN at all: BIRD runs the kernel, device, direct and static protocols, there is no BGP session and no xfrm interface.
+const errorsBefore = errors.length;
+const noBgp = clone(base);
+noBgp.peers = [];
+noBgp.paths = [];
+noBgp.protocols = noBgp.protocols.filter(p => p.proto !== 'BGP');
+noBgp.local = noBgp.local.filter(r => r.protocol !== 'direct1');
+for (const c of noBgp.protocols.find(p => p.name === 'direct1').channels) c.routes = { imported: 0, exported: 0, preferred: 0 };
+for (const p of noBgp.protocols) if (p.exported) p.exported = p.exported.filter(r => r.protocol !== 'direct1' && !r.protocol.startsWith('azure'));
+await stage('no BGP session and no xfrm interface', noBgp);
+const noBgpFlow = page.locator('#bgp-flow');
+check(await noBgpFlow.count() === 1 && await noBgpFlow.locator('.flow-lane').count() === 4 && await page.locator('.bgp-card').count() === 0, 'the diagram shows the four protocols that are left, and there is no peer card');
+check((await noBgpFlow.locator('.flow-count[data-edge="direct1:ipv4:in"]').evaluate(e => e.lastChild.textContent)).trim() === '0 routes', 'a Direct protocol with no interface to watch says 0 routes');
+check(await noBgpFlow.locator('.flow-outside', { hasText: /AS \d+/ }).count() === 0, 'there is no neighbor AS node without a BGP session');
+await noBgpFlow.locator('.flow-count[data-edge="direct1:ipv4:in"]').click();
+await page.waitForSelector('.fl-drawer.show');
+check(await page.locator('.fl-drawer tbody tr').count() === 0 || /no route/i.test(await page.locator('.fl-drawer').innerText()), 'listing the routes of an empty edge shows an empty list, not an error');
+await page.keyboard.press('Escape');
+check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal page overflow without BGP');
+check(errors.length === errorsBefore, 'no console or page errors without BGP', errors.slice(errorsBefore).join(' | '));
+
+// BIRD stopped: the page says so and still offers the file.
+const stopped = { generated: base.generated, daemon: { running: false, error: 'birdc: Unable to connect to server control socket (/run/bird/bird.ctl): No such file or directory' }, peers: [], paths: [], local: [], protocols: [], memory: [], findings: [] };
+await stage('BIRD is not running', stopped);
+check(/BIRD is not running/.test(await page.locator('.empty-state, .empty').first().innerText().catch(() => '')) || /BIRD is not running/.test(await page.locator('main, #app, body').first().innerText()), 'the page says that BIRD is not running');
+check(await page.locator('.card', { hasText: 'BIRD configuration' }).count() === 1, 'and the configuration file is still offered');
+check(errors.length === errorsBefore, 'no console or page errors with BIRD stopped', errors.slice(errorsBefore).join(' | '));
+
+// The file does not exist, is empty, or is not BIRD syntax: the diagram still draws, nothing is called a default.
+for (const [label, cfg] of [['has no configuration file', { path: '/etc/bird.conf', available: false }],
+  ['has an empty configuration file', { path: '/etc/bird.conf', available: true, size: 0, mtime: 1, truncated: false, redacted: 0, text: '' }],
+  ['has a configuration file that is not BIRD syntax', { path: '/etc/bird.conf', available: true, size: 20, mtime: 1, truncated: false, redacted: 0, text: 'protocol kernel { ipv4 {{{ }}} ' }]]) {
+  configOverride = cfg;
+  await stage(`a router that ${label}`, null);
+  await page.waitForTimeout(500);
+  check(await page.locator('#bgp-flow .flow-lane').count() === 5 && await page.locator('#bgp-flow .flow-tag').count() > 0, `${label}: the diagram still draws`);
+  check(await page.locator('#bgp-flow .flow-tag > text', { hasText: 'default' }).count() === 0, `${label}: and nothing is called a default, because the file cannot say`);
+  check(await page.locator('.card', { hasText: 'BIRD configuration' }).count() === 1, `${label}: the configuration card is there`);
+}
+configOverride = null;
+check(errors.length === errorsBefore, 'no console or page errors with an unusable configuration file', errors.slice(errorsBefore).join(' | '));
 
 console.log('\n== back to the live router ==');
 current = null;

@@ -8,6 +8,7 @@ import path from 'node:path';
 const here = rel => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/routing/bgp', rel)).href);
 const { parseConfig, channelPolicy, findBlock, nameOf } = await here('configmodel.js');
 const { buildFlow, edgeRoutes, FLOW, LIST_MAX } = await here('flowmodel.js');
+const { candidates } = await here('routemodel.js');
 
 let failed = 0;
 // Records one assertion: prints PASS/FAIL with the message (plus `extra` diagnostics on failure) and counts failures.
@@ -138,6 +139,9 @@ const dual = buildFlow({ ...data, protocols: data.protocols.map(p => p.name === 
 check(dual.tables.map(t => t.name).join() === 'master4,master6' && dual.lanes[3].edges.length === 4 && dual.tables[0].y + dual.tables[0].h < dual.tables[1].y, 'a protocol with a second channel gets its own edges and a second table', dual.tables.map(t => t.name).join());
 check(buildFlow({ protocols: [], peers: [], paths: [], local: [] }, null).lanes.length === 0, 'no protocols, no lanes');
 check(buildFlow({ ...data, protocols: [{ name: 'device1', proto: 'Device', state: 'up', channels: [] }] }, null).tables.length === 0, 'a router with only Device has no table to draw');
+const noTable = buildFlow({ protocols: [{ name: 's1', proto: 'Static', state: 'up', channels: [{ afi: 'ipv4', state: 'UP', input_filter: 'ACCEPT', output_filter: 'REJECT', routes: { imported: 1, exported: 0, preferred: 1 } }] }], peers: [] }, null);
+check(noTable.tables.map(t => t.name).join() === 'master4' && !/NaN|undefined/.test(noTable.edges.map(e => e.path).join()), 'a channel whose table the output did not name is drawn in BIRD\'s default table for its kind, with valid paths');
+check(candidates({ paths: [], local: [] }, '10.0.0.0/8').length === 0 && candidates({}, '10.0.0.0/8').length === 0, 'a route list from data with no peers, paths or local routes is empty, not an error');
 
 if (failed) { console.error(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nall flow checks passed');
