@@ -14,6 +14,7 @@ plugin: they unit-test their models and, with `-Browser`, drive the page against
 | Toolbox | `pwsh -File flab-ui\tests\toolbox\run.ps1 [-Browser] [-KeepWork]` | The Toolbox model (request checks, the parsers of ping, traceroute, DNS, comparison and certificate output, the connectivity check's verdicts, MAC handling) and, from real captures, the parsers of the iperf3 events, the DNS trace and mtr and the AS data of a traceroute; `flab.diag` running real jobs on the router (streaming, offsets, stop, DNS, traceroute, mtr, a DNS trace, an iperf3 server with a loopback client, the router's own certificate, a comparison, a whole connectivity check, a packet capture on loopback (streaming, a second capture refused, Stop, the pcap and its download, advanced filters), a Wake-on-LAN packet on loopback, every allowed option, every refused tool request of `refusals.txt` and every refused wake request of `wake-refusals.txt` with an injection canary, job-id traversal, the three-job cap, CRLF source); the page against a scripted job engine |
 | Traffic | `pwsh -File flab-ui\tests\traffic\run.ps1 [-Browser]` | The Traffic model (interfaces, WAN, totals, findings, endpoints, NAT, states, merging hosts by MAC, filtering and sorting, protocol rows); `flab.traffic` against a captured and several synthetic routers (every protocol, TCP state, NAT form and IPv6 spelling, a 60000-entry table, nlbwmon periods, no nlbw, no conntrack, no accounting) checked against an independent reference, and every refused argument; the Live, Connections and Usage tabs against mocked replies (the Settings tab is covered by the nlbwmon settings suite) |
 | IPsec | `pwsh -File flab-ui\tests\ipsec\run.ps1 [-Browser]` | `flab.ipsec`, IPsec page, throughput history |
+| Asterisk | `pwsh -File flab-ui\tests\asterisk\run.ps1 [-Browser]` (the pure models are `tests/asterisk/dialplan.test.mjs` and `pjsip.test.mjs`, part of `run-pure.mjs`) | `flab.asterisk` parsers, findings, redaction and refused requests against a real capture and synthetic scenarios; the Asterisk page, its dialplan matcher against Asterisk's own answer |
 | Network | `pwsh -File flab-ui\tests\network\run.ps1 [-Browser]` | `flab.network`, `flab.radio`, `flab.mesh`, `flab.wireguard`, `flab.firewall`, `flab.logs`; Ethernet, Devices and Interfaces (the bridges on its board), Wi-Fi radios (with the networks and mesh points), WireGuard, Firewall and Logs pages; navigation order; unit tests of the shared helpers (including the session, `uci` and `applyChange` layer) |
 | Settings | `pwsh -File flab-ui\tests\settings\run.ps1 [-Browser]` | System settings model, option table and zone table; backup download, upload inspection and restore confirmation; the whole editing flow against a mock router |
 | DHCP | `pwsh -File flab-ui\tests\dhcp\run.ps1 [-Browser]` | DHCP model (address helpers, reading config and leases, validation, change plan); the page against the router's own data, then the whole editing flow against a mock router |
@@ -194,6 +195,29 @@ data. Scenarios: `base`, `down`, `rekey` (two child SAs), `multi` (two IKE SAs u
 without connection, child SA without child config), `ipv6`, `daemondown`, `unconfigured` (charon stopped with an
 empty swanctl config). `tests/ipsec/rates.test.mjs` unit
 tests the throughput history (rates, counter resets, gaps, pauses, per-SA keys, removed connections).
+
+## Asterisk suite
+`pwsh -File flab-ui\tests\asterisk\run.ps1 [-Browser] [-Keep]`. Everything run on the router is read only.
+- **Pure models** (`tests/asterisk/*.test.mjs`, no router, part of `run-pure.mjs`): the dialplan model (Asterisk's pattern matching,
+  the search order over includes, what a step jumps to and dials, the routing map and its findings, the application table) and the
+  PJSIP and configuration models (state colors, summaries, the filter, round-trip history, line kinds and sections of a file).
+- **Backend**: the plugin records what it reads (`FLAB_RECORD`: the CLI output, the configuration files, the log tail, the process data)
+  into a real capture; `mkfx.mjs` derives the scenarios and `harness.uc` runs `flab.asterisk.uc` on the router against each one
+  (`FLAB_FIXTURES`); `assert.mjs` checks the JSON. Scenarios: `base` (the real capture: every field parsed, the PJSIP objects linked
+  both ways, the dialplan steps with their source lines, no secret of the router in any reply, line numbers kept by the redaction,
+  `resolve` through an include, every unsafe `resolve`, `endpoint` and `config` request refused), `unreachable`, `stopped`, `disabled`
+  and `notinstalled` (the four ways Asterisk is not up, and which of them is an error), `regfail` (a Rejected registration), `calls`
+  (a call in progress with two contacts), `nopjsip`, `changed` (pjsip.conf changed after the last reload), `recenterr` (a fresh log
+  error), `many` (more endpoints than get a detail query) and `secrets` (an `Authenticate`, a `Set(…PASSWORD=)`, a compared PIN, a
+  global token, `secret=` and `md5_cred=` lines and an endpoint `password` parameter, none of which may reach a reply, while a plain
+  `Set(PLAIN=ok)` and a user name must stay).
+- **Browser** (`-Browser`): the page against those scenarios (the `flab.asterisk` calls are answered from them; `resolve` goes to the real
+  router): tiles and tabs, a rejected registration, a daemon that does not answer, a disabled one, endpoints and the side panel with its
+  lazy parameter table, a call in progress, the dialplan browser and its filter, a source link that opens the configuration at its line,
+  the routing map and the highlight of a context, the number tester compared with Asterisk itself (`1002`, an Italian landline, `6000`
+  through an include, a number nothing matches, an invalid number), the configuration viewer, and the planted secrets. No console error.
+- The active-channel parser follows the documented `core show channels concise` format; the `calls` scenario is built from that
+  format, because the lab PBX had no call to capture.
 
 ## Network suite
 - **Unit tests** (`tests/network/*.test.mjs`, no router): `rates` (the rate tracker), `firewall` (zone matrix and findings), `logs` (level and text filters,

@@ -1,0 +1,1 @@
+{"entries":[{"id":"asterisk","label":"Telephony: Asterisk","icon":"telephone","order":95,"module":"./asterisk/index.js"}]}

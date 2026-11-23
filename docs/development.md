@@ -74,6 +74,14 @@ filters) in a DOM-free module with a unit test.
 - **BIRD has no JSON output**: `flab.bgp` parses `birdc` text (indentation-based sections for protocols,
   header plus tab-indented attribute lines for routes). The parser skips unknown lines, so a newer BIRD only
   loses fields. Protocol names from `birdc` are validated before being used in a shell command.
+- **Asterisk has no JSON on its CLI either, and no structured interface is on by default**: `flab.asterisk` parses
+  `asterisk -rx` text. The `pjsip show endpoint|registration|transport <name>` commands print a `ParameterName : ParameterValue`
+  table, which is the stable part; the lists use fixed columns read from the right. AMI and ARI need a configured user and
+  an HTTP or TCP listener (both are off on a stock install) and ARI has no PJSIP detail or dialplan, so the CLI is the only
+  source that works everywhere without changing the PBX. `asterisk -rx` accepts one command per process and answers in about
+  10 ms. It returns status 0 for an unknown object (`Unable to find object`), so an object name is checked against the list first.
+  `dialplan show <exten>@<context>` follows includes and picks the pattern Asterisk would, which makes it the oracle for the
+  page's own matcher. `core show application` is empty on OpenWrt builds (no XML documentation).
 - **ucode numbers and time**: `+"08"` is 8 (decimal), `timelocal({...})` works for BIRD and logread
   timestamps (month 1-12), `match(s, /re/g)` returns an array of `[full, group]` pairs, `split(s, sep, limit)`
   is supported, `replace(s, /re/gi, '$1<redacted>')` supports backreferences.

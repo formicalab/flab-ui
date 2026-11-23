@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.1.22 - unreleased
+
+### Asterisk (new optional module, `flab-ui-mod-asterisk`)
+
+A read-only page for the Asterisk PBX (built for Asterisk 23, the version in the OpenWrt telephony feed), **Telephony: Asterisk** in
+the navigation. It reads Asterisk through its CLI and changes nothing: no reload, no originate, no edit.
+
+- **Overview**: is the daemon up (and why not: disabled, stopped, not answering, not installed), version, uptime, memory, call
+  counters, what is exposed (AMI, HTTP), CDR and logging, the loaded modules, a banner of what needs attention (a registration that is
+  not `Registered`, an unavailable endpoint, a file changed after the last reload, recent errors), and the log's recent warnings and errors.
+- **PJSIP**: one card per outbound registration, a signalling diagram, the endpoints (trunk or phone, state, calls, context,
+  codecs, contacts, identify addresses) with a side panel and every parameter on demand, contacts with their round-trip history,
+  transports and active channels.
+- **Dialplan** (the loaded one, not the file): a **browser** (contexts, extensions explained in words, steps with their application,
+  where each can go next and the source line), a **routing map** (endpoints → contexts → dialed endpoints, with the live state and the
+  wiring problems it finds), and a **number tester** that follows Asterisk's search (own extensions in Asterisk's order, then includes)
+  and asks Asterisk itself (`dialplan show <number>@<context>`) whether the two agree.
+- **Configuration**: the files of `/etc/asterisk` and `/etc/config/asterisk`, with a jump to a section and to the line a dialplan step
+  came from, and a mark on a file changed after the last reload.
+- PINs, passwords and secrets are hidden by the backend before anything reaches the browser: configuration values named
+  `password`, `secret`, `md5_cred`, `pin` and the like, `Authenticate()` and `DISA()` arguments, `Set(<secret name>=…)`, a literal compared
+  with a secret-named variable, secret-named global variables and PJSIP parameters. This is best effort (a secret under an innocent
+  name cannot be recognized); line numbers stay valid.
+- Backend: `flab.asterisk` (`status`, `pjsip`, `endpoint`, `dialplan`, `resolve`, `config`; all read only) and its ACL fragment, package
+  `flab-ui-mod-asterisk`. Tests: `tests/asterisk` (pure models, the backend against a real capture and twelve scenarios, and the page in a browser).
+- Not included: call history (the PBX needs a CDR backend for it), and AMI or ARI as a data source (both are off on a stock install).
+
 ## 0.1.21 - 2026-11-21
 
 ### Routing: BGP

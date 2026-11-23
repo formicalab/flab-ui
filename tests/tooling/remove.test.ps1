@@ -61,6 +61,7 @@ function Invoke-Remote {
 $fullInstall = @(
     'flab-ui',
     'flab-ui-base',
+    'flab-ui-mod-asterisk',
     'flab-ui-mod-dhcp',
     'flab-ui-mod-dns',
     'flab-ui-mod-firewall',

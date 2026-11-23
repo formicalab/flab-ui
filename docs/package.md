@@ -17,6 +17,7 @@ full-install metapackage:
 | `flab-ui-mod-dhcp` | DHCP and router advertisements |
 | `flab-ui-mod-dns` | DNS and Dynamic DNS |
 | `flab-ui-mod-routing` | Routes and BGP |
+| `flab-ui-mod-asterisk` | Asterisk telephony (read only) |
 | `flab-ui-mod-traffic` | Traffic and nlbwmon |
 | `flab-ui-mod-toolbox` | Network diagnostic tools |
 | `flab-ui-mod-services` | Service control |
@@ -36,7 +37,7 @@ registers only installed pages. Removing a feature package therefore removes its
 | `admin/flab-ui/files/.../acl.d/*.json` in the packages checkout | `/usr/share/rpcd/acl.d/` |
 
 It depends only on `rpcd`, `rpcd-mod-ucode`, `ucode`, `ucode-mod-fs`, `ucode-mod-ubus`, `ucode-mod-uci`, `ucode-mod-uloop`, `uhttpd` and
-`uhttpd-mod-ubus`. The programs the pages read from (`swanctl`, `birdc`, `wg`, `nft`, `iw`, `nlbw`, ...) are optional
+`uhttpd-mod-ubus`. The programs the pages read from (`swanctl`, `birdc`, `asterisk`, `wg`, `nft`, `iw`, `nlbw`, ...) are optional
 runtime tools, not dependencies: install the ones for the pages you use. Installing and removing a package restarts rpcd
 so it rescans the plugin executables.
 The packages are built from the `v<version>` tag of this repository; `tests/` and `tools/` are not installed.

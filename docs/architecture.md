@@ -5,12 +5,12 @@ standard `ubus` JSON-RPC endpoint and a few small `rpcd` ucode plugins. It was d
 (1 GB RAM).
 
 > **Hard rule: standalone.** flab-ui must never depend on the ubus objects or libraries of another web UI. Read data
-> directly from `swanctl`, `netifd`, `procd`, `nft`, `wg`, sysfs, the kernel (`ip`, `iw`, `hostapd_cli`) and `uci`. rpcd's
+> directly from `swanctl`, `asterisk`, `netifd`, `procd`, `nft`, `wg`, sysfs, the kernel (`ip`, `iw`, `hostapd_cli`) and `uci`. rpcd's
 > own `uci` object (staged edits, apply with rollback) is part of rpcd and is what configuration changes use.
 
 It is installed as the `flab-ui` package (see [OpenWrt package](package.md#openwrt-package)). It signs in with the router's own
 `root` login and creates no login of its own. The pages that only
-read the router are Overview, IPsec VPN, Toolbox (which runs diagnostics and sends a Wake-on-LAN packet) and Logs. The others
+read the router are Overview, IPsec VPN, Asterisk (read only: it never reloads or changes the PBX), Toolbox (which runs diagnostics and sends a Wake-on-LAN packet) and Logs. The others
 edit its configuration through UCI: System settings (`/etc/config/system`), DHCP (`/etc/config/dhcp`, and the server DUID in `/etc/config/network`), DNS (`/etc/config/unbound`, or the dnsmasq section of `/etc/config/dhcp`), Dynamic DNS (`/etc/config/ddns`), Wi-Fi radios (the radios, their wireless networks and mesh points in `/etc/config/wireless`), Devices and Interfaces, which holds the bridges and, on its Ethernet ports tab, the VLAN sections (`/etc/config/network`), WireGuard (the WireGuard interfaces and peers in `/etc/config/network`), Firewall (`/etc/config/firewall`), the static-route editor on Routing (the `route` and `route6` sections of `/etc/config/network`) and the Settings tab of Traffic (`/etc/config/nlbwmon`). The Services page starts, stops and restarts services. How configuration changes are made safely is described in
 [Configuration changes](#configuration-changes) and how services are controlled under [Services](pages/services.md#services-route-services).
 
@@ -26,13 +26,13 @@ uhttpd  (ubus_prefix '/ubus', static files from /www/flab)
 rpcd ---- built-in objects:  session, system, network.interface, service, uci (configuration changes)
    |
    '----- ucode plugins (this repo): flab.wifi, flab.radio, flab.mesh, flab.wireguard, flab.firewall,
-                |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.diag, flab.traffic, flab.dns, flab.ddns, flab.sensors, flab.system, flab.logs, flab.services
+                |                    flab.network, flab.ipsec, flab.bgp, flab.routing, flab.asterisk, flab.diag, flab.traffic, flab.dns, flab.ddns, flab.sensors, flab.system, flab.logs, flab.services
                 |  import
                 v
         shared ucode modules: flab.util, flab.vici, flab.exec, flab.jobs, flab.worker
                 |
                 v
-   swanctl --raw (VICI) · birdc · nft · wg · ip xfrm/route · hostapd_cli · iw · logread · dmesg · netifd · uci · sysfs
+   swanctl --raw (VICI) · birdc · asterisk -rx · nft · wg · ip xfrm/route · hostapd_cli · iw · logread · dmesg · netifd · uci · sysfs
 ```
 
 The installed frontend is modular. `flab-ui-base` always provides the shell, shared assets, Overview and System
@@ -68,7 +68,7 @@ flab-ui/
   tools/stage-source.sh      Stages the source tree for an SDK build (shared by the package script and the release workflow)
   tools/artifact-manifest.json  The source-to-install contract the build and the install check against
   .github/workflows/release.yml  The hosted release workflow (tag, feed update, APK build, GitHub release)
-  tests/                     bgp/, ddns/, dhcp/, dns/, execution/, fwedit/, ifedit/, ipsec/, netboard/, netpanels/, network/ (network, Wi-Fi radios with their mesh points, WireGuard, firewall, logs, helpers), nlbwedit/, routeedit/, routing/, services/, settings/, shell/ (the application shell), toolbox/, tooling/ (package and release scripts), traffic/, vlanedit/, wgedit/, wifi/, wifiedit/, run-pure.mjs (the pure-test aggregate),
+  tests/                     asterisk/, bgp/, ddns/, dhcp/, dns/, execution/, fwedit/, ifedit/, ipsec/, netboard/, netpanels/, network/ (network, Wi-Fi radios with their mesh points, WireGuard, firewall, logs, helpers), nlbwedit/, routeedit/, routing/, services/, settings/, shell/ (the application shell), toolbox/, tooling/ (package and release scripts), traffic/, vlanedit/, wgedit/, wifi/, wifiedit/, run-pure.mjs (the pure-test aggregate),
                              TestSession.ps1 (the temporary rpcd session the browser tests sign in with, and the Invoke-Native helper every run.ps1 uses)
   www/                       Static site, installed to /www/flab
     index.html               Shell page: loads vendor CSS, css/base.css and js/main.js
@@ -128,6 +128,7 @@ flab-ui/
                              lookup.js (next-hop lookup card), tables.js (tables, rules and route list cards), static.js (static-route tables and
                              editor wiring), static-model.js (pure: the route and route6 sections, draft, validation, risks, UCI operations, check after a save)
           bgp/               The BGP tab: tab.js (composition), topology.js, peer.js, routes.js, announced.js, system.js, util.js; config.js (the configuration file card and a peer's section of it), configmodel.js (pure reader and review of bird.conf), actions.js (restart, enable, disable, route refresh), routedetail.js and routemodel.js (the drawer that explains BIRD's route choice), flow.js and flowmodel.js (the protocols flow diagram)
+        asterisk/            Asterisk (optional module): index.js (page, tabs, controls, polling), state.js (the view state and the way between tabs), overview.js (tiles, daemon card, findings, log problems), pjsip.js (registrations, signalling diagram, endpoints, contacts, transports, channels, the endpoint side panel), pjsipmodel.js (pure: state colors, summaries, filter, round-trip history, endpoint notes), dialplan.js (the Browser view), steps.js (the step listing with jumps and dials), map.js (the routing map as one SVG), tester.js (the number tester), dialplanmodel.js (pure: Asterisk's pattern matching and search order, what steps jump to and dial, the routing map and its findings), apps.js (what the applications do), config.js (the configuration viewer), configmodel.js (pure: line kinds and sections)
         toolbox/             Toolbox: index.js (page, openTool), diag.js (form, job polling, dispatch of the result views; Wake-on-LAN), parts.js (view parts the views share), output.js (the retained-text limit),
                              diagviews.js (ping, traceroute, DNS, check, comparison and certificate views), diagmodel.js (pure: request
                              checks, output parsing, the check's verdict), iperfmodel.js / iperfview.js (the iperf3 server),

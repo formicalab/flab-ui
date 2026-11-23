@@ -21,13 +21,14 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | DNS | Resolver status, options and zones in one tab; ddns-scripts services, status and logs in another tab. |
 | Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. A second view lists the connected Wi-Fi clients. The ports and the radios open their own pages. |
 | Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |
+| Telephony: Asterisk | The Asterisk PBX when it is installed (read only): daemon status, PJSIP registrations, endpoints and contacts, the loaded dialplan as a browser, a routing map and a number tester, and the configuration files with secrets hidden. |
 | Traffic | Bandwidth, connections and nlbwmon usage; edit the nlbwmon settings. |
 | Services | List, start, stop, restart, enable and disable services. |
 | Toolbox | Ping, traceroute, MTR, DNS, TLS checks, a packet capture with pcap download, an iperf3 server and Wake-on-LAN. |
 | Logs | System and kernel log. |
 | System settings | `/etc/config/system`: general, time zone and NTP, logging, kernel and cron; configuration backup download and restore. |
 
-Each page reads from the program it manages (`swanctl`, `birdc`, `wg`, `nft`, `iw`, `nlbw`, `unbound-control` and so
+Each page reads from the program it manages (`swanctl`, `birdc`, `asterisk`, `wg`, `nft`, `iw`, `nlbw`, `unbound-control` and so
 on). These are optional: install the ones for the pages you use.
 
 Use a current Chrome, Edge, Firefox or Safari: the frontend needs native ES modules, BigInt, `structuredClone` and

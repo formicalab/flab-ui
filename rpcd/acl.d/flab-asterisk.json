@@ -1,0 +1,11 @@
+{
+  "flab": {
+    "description": "flab-ui Asterisk page",
+    "read": {
+      "ubus": {
+        "flab.asterisk": ["status", "pjsip", "endpoint", "dialplan", "resolve", "config"]
+      }
+    },
+    "write": {}
+  }
+}
