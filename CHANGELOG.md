@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.22 - unreleased
+## 0.1.22 - 2026-11-23
+
+### Routing
+
+- **BGP tab**: tolerates channels without a table and data without peers instead of failing, and the tests exercise such routers.
 
 ### Asterisk (new optional module, `flab-ui-mod-asterisk`)
 
