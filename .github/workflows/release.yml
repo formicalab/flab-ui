@@ -200,8 +200,8 @@ jobs:
           find "$SDK/bin/packages" -type f -name "flab-ui*-$VERSION-r1.apk" \
             -exec cp {} "$RUNNER_TEMP/release/" \;
           mapfile -t apks < <(find "$RUNNER_TEMP/release" -maxdepth 1 -type f -name '*.apk' | sort)
-          test "${#apks[@]}" -eq 13 || {
-            echo "Expected 13 APKs, found ${#apks[@]}." >&2
+          test "${#apks[@]}" -eq 14 || {
+            echo "Expected 14 APKs, found ${#apks[@]}." >&2
             printf '%s\n' "${apks[@]}" >&2
             exit 1
           }
@@ -288,7 +288,7 @@ jobs:
             echo "## Hosted release"
             echo
             echo "- Version: \`$VERSION\`"
-            echo "- APK count: 13"
+            echo "- APK count: 14"
             if [ "$DRY_RUN" = true ]; then
               echo "- Publish: dry run only"
             else

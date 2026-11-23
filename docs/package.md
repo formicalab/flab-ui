@@ -192,7 +192,7 @@ The workflow:
 2. Downloads that tag's source tarball and calculates the hash that the feed Makefile will verify.
 3. Updates `PKG_VERSION`, `PKG_RELEASE`, `PKG_HASH`, the license files and copied ACL integration files in the
    `flab-ui` branch of `formicalab/packages`.
-4. Builds all thirteen APKs with a pinned OpenWrt 25.12.6 SDK from the immutable tag tarball.
+4. Builds all fourteen APKs with a pinned OpenWrt 25.12.6 SDK from the immutable tag tarball.
 5. Uploads the APK set and a combined SHA-256 file as workflow artifacts.
 6. Pushes the package branch and creates the GitHub release with the APKs and checksums. `-Draft` creates a draft
    release.
