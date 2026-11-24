@@ -3,7 +3,7 @@
 
 import { h, byId } from './dom.js';
 import { icon } from './icons.js';
-import { ubus, hasSession, logout, clearSession, AuthError } from './ubus.js';
+import { ubus, hasSession, logout, clearSession, sessionStatus, sessionNotice, AuthError } from './ubus.js';
 import { showLogin } from './login.js';
 import { ensureCurrent } from './freshness.js';
 import { button, card, spinner } from './ui.js';
@@ -196,16 +196,55 @@ function expire() {
   clearInterval(timer);
   refresh = null;
   clearSession();
+  hideNotice();
   showLogin(route, 'Session expired');
 }
 
-// Ends the session on the router, then shows the login form.
-async function signOut() {
+// Ends the session on the router, then shows the login form (with `message` when the sign-out was not the user's
+// own choice or the router could not be told to end the session).
+async function signOut(message) {
   const mine = ++routeNo;
   clearInterval(timer);
   refresh = null;
-  await logout();
-  if (mine === routeNo) showLogin(route);
+  hideNotice();
+  const { destroyed, idleLeftS } = await logout();
+  if (mine !== routeNo) return;
+  showLogin(route, typeof message === 'string' ? message : destroyed ? undefined
+    : `Signed out in this browser, but the router could not be reached to end the session. It ends by itself after about ${Math.max(1, Math.ceil(idleLeftS / 60))} minutes without activity.`);
+}
+
+// The session notice: a fixed bar outside the page (the shell is rebuilt on every route). A session that is only
+// close to its idle limit offers "Stay signed in", which makes a cheap call; one that nears its maximum age cannot
+// be extended, so the user is told to finish.
+let notice = null;
+function hideNotice() { notice?.remove(); notice = null; }
+function showNotice(info) {
+  const text = info.kind === 'age'
+    ? `This session reaches its maximum age in ${info.seconds} s. Finish your work; you will have to sign in again.`
+    : `You will be signed out in ${info.seconds} s because of inactivity.`;
+  if (!notice) {
+    notice = h('div', { className: 'session-notice alert alert-warning', role: 'alert' });
+    document.body.append(notice);
+  }
+  notice.replaceChildren(h('span', {}, text), info.kind === 'idle' ? button('Stay signed in', null, stayAlive, 'btn-warning') : null);
+}
+
+// Any call restarts rpcd's idle countdown.
+async function stayAlive() {
+  try {
+    await ubus('system', 'board');
+  } catch (e) {
+    if (e instanceof AuthError) return expire();
+  }
+  checkSession();
+}
+
+// Runs every few seconds: ends a session that reached its maximum age, otherwise shows or hides the notice.
+function checkSession() {
+  const status = sessionStatus();
+  if (status?.ageLeftS === 0) { hideNotice(); signOut('Session ended: it reached its maximum age.'); return; }
+  const info = sessionNotice(status);
+  if (info) showNotice(info); else hideNotice();
 }
 
 // Entry point: picks the default page, routes on hash changes, refreshes the open page when the tab comes back to
@@ -213,6 +252,7 @@ async function signOut() {
 export function start() {
   if (!location.hash) location.hash = defaultPageId;
   addEventListener('hashchange', route);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh?.(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh?.(); checkSession(); } });
+  setInterval(checkSession, 5000);
   route();
 }

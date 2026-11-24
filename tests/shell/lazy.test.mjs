@@ -103,7 +103,8 @@ async function shell({ signedIn = true, imports = {}, loads = {}, boards = [], m
       ubus: (object, method) => object === 'flab.system' && method === 'modules'
         ? Promise.resolve(typeof modules === 'function' ? modules() : modules).then(modules => ({ modules }))
         : boards.shift()?.promise ?? Promise.resolve({ hostname: 'test', model: 'image' }),
-      logout: async () => { signedIn = false; }, clearSession: () => { signedIn = false; },
+      logout: async () => { signedIn = false; return { destroyed: true, idleLeftS: 0 }; }, clearSession: () => { signedIn = false; },
+      sessionStatus: () => null, sessionNotice: () => null,
     }),
     './login.js': await synthetic({ showLogin: callback => { onLogin = callback; app.replaceChildren('LOGIN'); } }),
     './freshness.js': await synthetic({ ensureCurrent: async () => false }),

@@ -134,9 +134,14 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   exception with a bounded length. Mutating requests are not retried automatically.
 - **`uci.js`**: the only code that calls rpcd's `uci` object, see [Configuration changes](architecture.md#configuration-changes).
   `applyChange()` runs a whole change with its safety net; pages should call that, not the single steps.
-- The session id and ACLs live in `sessionStorage`; browser session restoration may restore that storage. Login timeout
-  is 900 s without RPC activity, not 900 s from sign-in. Polling keeps the session alive; Sign out clears local storage
-  and attempts to destroy the router-side session.
+- The session id, ACLs and timing live in `sessionStorage`; browser session restoration may restore that storage. Login timeout
+  is 900 s without RPC activity (`login()` accepts another `timeoutS`), not 900 s from sign-in. Polling keeps the session alive,
+  as does any call rpcd accepts. `sessionStatus()` gives the idle time left by the browser's reckoning, and the shell shows a
+  notice (`sessionNotice()`) a minute before the end, with a "Stay signed in" button that makes a cheap call. A paused page, such
+  as an open editor, does not poll. `login()` also accepts an optional `maxAgeS`, an absolute session age that
+  the shell enforces by signing out; no call extends it. Sign out destroys the router-side session (repeated once if the first
+  attempt fails; a "denied" answer means it is already gone) and clears local storage; when the router cannot be told, the login
+  screen says the session ends by itself after the idle time. Tests: `tests/shell/session.test.mjs`.
 
 ## Styling
 

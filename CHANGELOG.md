@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Sign-in and sessions
+
+- **Session warning:** a minute before the router ends an idle session, a notice offers "Stay signed in". `login()` can also set an absolute
+  maximum session age (off by default), after which the shell signs out.
+- **Sign out** repeats a failed `session.destroy` once; when the router still cannot be reached, the sign-in screen says that the session
+  ends by itself after the idle time.
+
 ### Asterisk
 
 - **Calls tab: the called number of an incoming call** is shown in the To column. The CDR's `dst` is the last extension reached (`s`), so it

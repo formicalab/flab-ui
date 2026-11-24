@@ -329,6 +329,9 @@ details.legend ul { margin: .5rem 0 0; padding-left: 1.25rem; }
 @keyframes login-shake { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
 .login-note { display: flex; align-items: center; gap: .4rem; }
 
+/* Warning that the session is about to end: fixed above the page, which the shell rebuilds on every route */
+.session-notice { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 1080; display: flex; align-items: center; gap: .75rem; margin: 0; max-width: calc(100vw - 2rem); box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
+
 /* Sign-in on narrow screens: single column, compact hero */
 @media (max-width: 767.98px) {
   .login-card { grid-template-columns: minmax(0, 1fr); }
