@@ -1,5 +1,5 @@
 # Asterisk (route `#asterisk`, optional `flab-ui-mod-asterisk`)
-The PBX of the router, read only apart from three reload buttons. Five tabs; only the open tab is polled (Overview and PJSIP every 5 s, Calls every 10 s, Dialplan every
+The PBX of the router, read only apart from three reload buttons. Five tabs, the live ones (Overview, Calls) first and, after a small gap, PJSIP, Dialplan and Configuration files; only the open tab is polled (Overview and PJSIP every 5 s, Calls every 10 s, Dialplan every
 30 s, Configuration not at all: Refresh reads it again). Data comes from the `flab.asterisk` plugin, which talks to
 Asterisk through its CLI (`asterisk -rx '<command>'`, over the control socket). The only change the page can make is a
 reload (see Reload below): there is no originate and no edit. The page is built for Asterisk 23, the version in the
@@ -31,20 +31,6 @@ Overview banner about a configuration file changed after the last load points he
   *harmless* and raises no finding: on OpenWrt (musl) Asterisk cannot read the nameservers, so it logs "There are no local
   system nameservers configured" at every start and reload and resolves through the system resolver, which works.
 
-## PJSIP
-- **Registrations**: one card per outbound registration with its state, when it renews, and its settings (client and server
-  URI, intervals, retries, proxy), linked to the endpoint it belongs to.
-- **Signalling**: phones on the left, Asterisk with its transports in the middle, trunks on the right; the lines move while
-  a call is up.
-- **Endpoints**: state, calls, context, codecs, reachable contacts and what identifies the endpoint (by user name, or by
-  address). A *trunk* is an endpoint with a registration or an identify address; a *phone* registers with Asterisk.
-  Filter by text or by role. A row opens a side panel with the endpoint's settings by group, its credentials (user names,
-  never passwords), contacts, identify addresses and, on demand, every parameter Asterisk reports (secrets hidden).
-- **Contacts** with the round-trip time and its history since the tab was opened, **transports** (what Asterisk listens on,
-  what it announces, the local networks), and the **active channels** with the application each is in and its duration.
-- An unavailable phone with contacts is told apart from one with none: the first registered but its contacts do not answer
-  the periodic check, the second never registered.
-
 ## Calls
 The recent calls, newest first, from the file `cdr_csv.so` writes (`/var/log/asterisk/cdr-csv/Master.csv`). Each row: when (the full
 time is the tooltip), direction (incoming, outgoing or internal: a call that came in through a trunk endpoint is incoming, one that
@@ -61,6 +47,20 @@ it to the last 5000 lines every night. The page reads the newest 300 calls. The 
 the user field are not sent to the browser, because they can hold dialed digits or a PIN being compared. With Asterisk stopped the
 file is still read, so the last calls stay visible.
 
+## PJSIP
+- **Registrations**: one card per outbound registration with its state, when it renews, and its settings (client and server
+  URI, intervals, retries, proxy), linked to the endpoint it belongs to.
+- **Signalling**: phones on the left, Asterisk with its transports in the middle, trunks on the right; the lines move while
+  a call is up.
+- **Endpoints**: state, calls, context, codecs, reachable contacts and what identifies the endpoint (by user name, or by
+  address). A *trunk* is an endpoint with a registration or an identify address; a *phone* registers with Asterisk.
+  Filter by text or by role. A row opens a side panel with the endpoint's settings by group, its credentials (user names,
+  never passwords), contacts, identify addresses and, on demand, every parameter Asterisk reports (secrets hidden).
+- **Contacts** with the round-trip time and its history since the tab was opened, **transports** (what Asterisk listens on,
+  what it announces, the local networks), and the **active channels** with the application each is in and its duration.
+- An unavailable phone with contacts is told apart from one with none: the first registered but its contacts do not answer
+  the periodic check, the second never registered.
+
 ## Dialplan
 The loaded dialplan (`dialplan show`), not the file: what Asterisk actually uses. Three views.
 
@@ -69,7 +69,7 @@ The loaded dialplan (`dialplan show`), not the file: what Asterisk actually uses
   extension is a fold: the pattern, what it means in words (`_0[1-9].` is “0”, then 1–9, then one or more of anything), what it
   dials (also through the subroutines it calls), and its steps: priority, label, application (colored by what it does; the tooltip says what it does), arguments with
   `${variables}` marked, where the step can go next (a click shows the destination) and the source line, which opens the
-  Configuration tab at that line. A filter narrows the extensions by pattern, application or arguments. The global variables
+  Configuration files tab at that line. A filter narrows the extensions by pattern, application or arguments. The global variables
   are listed below.
 - **Routing map**: endpoints (where calls enter) → contexts → dialed endpoints, drawn from the dialplan and the live endpoints.
   `Dial(PJSIP/+39${EXTEN}@Vodafone)` links the context to the endpoint Vodafone with its live state. A global variable in the
@@ -93,7 +93,7 @@ value shows as `<redacted>`, and the count line at the top of the Browser view s
 …), a comparison of such a variable with a literal (`$["${PIN}" = "3003"]`), and the `[globals]` with such names. A secret under
 an innocent name cannot be recognized.
 
-## Configuration
+## Configuration files
 The files of `/etc/asterisk` and `/etc/config/asterisk`, read only and with the secrets hidden (the value of `password`, `secret`,
 `md5_cred` and similar, and what the Dialplan tab hides). Only text inside a line changes, so line numbers stay valid: a click on
 the source of a dialplan step opens the file with that line highlighted. Files with no settings (only comments) are hidden until

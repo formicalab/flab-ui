@@ -22,7 +22,8 @@ import { configView, loadConfig } from './config.js';
 import { reloadControl } from './actions.js';
 import { bind, rtt, state } from './state.js';
 
-const TABS = [['overview', 'Overview'], ['pjsip', 'PJSIP'], ['calls', 'Calls'], ['dialplan', 'Dialplan'], ['config', 'Configuration']];
+// The live views first, then (after a gap) what the PBX is made of.
+const TABS = [['overview', 'Overview'], ['calls', 'Calls'], null, ['pjsip', 'PJSIP'], ['dialplan', 'Dialplan'], ['config', 'Configuration files']];
 const DIALPLAN_VIEWS = [['browse', 'Browser'], ['map', 'Routing map'], ['test', 'Number tester']];
 
 // Reads what the open tab shows.
@@ -66,7 +67,7 @@ function dialplanTab(data) {
 export default {
   interval: () => state.tab === 'overview' || state.tab === 'pjsip' ? 5000 : state.tab === 'calls' ? 10000 : 30000,
   css: ['css/drawer.css', 'css/asterisk.css'],
-  // The Configuration tab is not polled; the number tester must not lose what is being typed.
+  // The Configuration files tab is not polled; the number tester must not lose what is being typed.
   isPaused: () => state.paused || state.tab === 'config' || Boolean(document.activeElement?.closest?.('.ast-tester')),
 
   load,

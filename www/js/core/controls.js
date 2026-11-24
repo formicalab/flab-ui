@@ -49,14 +49,15 @@ export const refreshControl = reload => {
   return btn;
 };
 
-// A strip of tab buttons bound to state[key]; options are [value, label] pairs. A click selects the tab and calls
-// onchange(value). Returns { node, setOptions(options) } so a page can offer only the tabs that make sense
+// A strip of tab buttons bound to state[key]; options are [value, label] pairs, and a null entry leaves a small gap between two groups of tabs.
+// A click selects the tab and calls onchange(value). Returns { node, setOptions(options) } so a page can offer only the tabs that make sense
 // (the selection falls back to the first tab when its own disappears; the strip is hidden below two tabs).
 export function tabsControl(state, key, onchange) {
   const node = h('div', { className: 'btn-group btn-group-sm seg', role: 'tablist', ariaLabel: 'Views' });
   let options = [];
+  let tabs = [];
   const choose = (index, focus = false) => {
-    const next = options[index]?.[0];
+    const next = tabs[index]?.[0];
     if (next == null || state[key] === next) return;
     state[key] = next;
     draw();
@@ -65,28 +66,36 @@ export function tabsControl(state, key, onchange) {
   };
   // Rebuilds the tab buttons from the current options and marks the selected one.
   const draw = () => {
-    node.hidden = options.length < 2;
-    node.replaceChildren(...options.map(([value, label], index) => h('button', {
-      type: 'button', role: 'tab', className: `btn btn-outline-secondary seg-tab ${state[key] === value ? 'active' : ''}`,
-      ariaSelected: String(state[key] === value), ariaControls: 'page-content', tabIndex: state[key] === value ? 0 : -1,
-      onclick: () => choose(index),
-      onkeydown: event => {
-        let at;
-        if (event.key === 'ArrowRight') at = (index + 1) % options.length;
-        else if (event.key === 'ArrowLeft') at = (index - 1 + options.length) % options.length;
-        else if (event.key === 'Home') at = 0;
-        else if (event.key === 'End') at = options.length - 1;
-        if (at == null) return;
-        event.preventDefault();
-        choose(at, true);
-      },
-    }, label)));
+    tabs = options.filter(Boolean);
+    node.hidden = tabs.length < 2;
+    let index = -1;
+    node.replaceChildren(...options.map((option, at) => {
+      if (!option) return h('span', { className: 'seg-gap', ariaHidden: 'true' });
+      const [value, label] = option, mine = ++index;
+      return h('button', {
+        type: 'button', role: 'tab',
+        className: `btn btn-outline-secondary seg-tab ${state[key] === value ? 'active' : ''} ${options[at + 1] === null ? 'seg-before-gap' : ''} ${options[at - 1] === null ? 'seg-after-gap' : ''}`,
+        ariaSelected: String(state[key] === value), ariaControls: 'page-content', tabIndex: state[key] === value ? 0 : -1,
+        onclick: () => choose(mine),
+        onkeydown: event => {
+          let to;
+          if (event.key === 'ArrowRight') to = (mine + 1) % tabs.length;
+          else if (event.key === 'ArrowLeft') to = (mine - 1 + tabs.length) % tabs.length;
+          else if (event.key === 'Home') to = 0;
+          else if (event.key === 'End') to = tabs.length - 1;
+          if (to == null) return;
+          event.preventDefault();
+          choose(to, true);
+        },
+      }, label);
+    }));
   };
   return {
     node,
     setOptions(next) {
       options = next;
-      if (!options.some(([value]) => value === state[key])) state[key] = options[0][0];
+      const first = options.find(Boolean);
+      if (!options.some(option => option && option[0] === state[key])) state[key] = first[0];
       draw();
     },
   };

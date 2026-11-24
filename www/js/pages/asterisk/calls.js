@@ -47,12 +47,12 @@ export function callsView(c, pjsip) {
   });
   const line = h('div', { className: 'muted small mb-2' },
     `${s.calls} call${s.calls === 1 ? '' : 's'} · ${s.answered} answered · ${s.missed} missed · ${s.failed} failed · ${fmtSpan(s.talk)} talking`);
-  const note = h('div', { className: 'muted small mt-2' }, 'The history is the file ', mono(c.file), ` (${c.entries.length} line${c.entries.length === 1 ? '' : 's'} read${c.truncated ? ', the oldest ones left out' : ''}). `,
+  const note = h('div', { className: 'muted small mb-1' }, 'The history is the file ', mono(c.file), ` (${c.entries.length} line${c.entries.length === 1 ? '' : 's'} read${c.truncated ? ', the oldest ones left out' : ''}). `,
     'It lives in RAM: it is emptied by a reboot and trimmed to the last 5000 lines every night.');
   return [
-    card([icon('clock-history'), 'Recent calls'], h('div', { className: 'card-body' }, line,
+    card([icon('clock-history'), 'Recent calls'], h('div', { className: 'card-body' }, note, line,
       h('div', { className: 'table-responsive' }, h('table', { className: 'table table-hover ast-table' },
         h('thead', {}, h('tr', {}, ['When', 'Direction', 'From', 'To', 'Result', 'Ringing', 'Talking'].map(t => h('th', {}, t)))),
-        h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 7, className: 'muted' }, 'No call matches the filter.'))))), note)),
+        h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colSpan: 7, className: 'muted' }, 'No call matches the filter.'))))))),
   ];
 }

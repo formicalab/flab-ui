@@ -115,6 +115,10 @@ small, .small { font-size: .8rem; }
 .search .input-group-text { padding: 0 .6rem; color: var(--fl-muted); background: var(--fl-surface); border-color: var(--fl-stroke); }
 /* Tab strip in the command bar: one segmented control, the active tab filled */
 .seg[hidden] { display: none; }
+/* A null entry in the options of tabsControl() leaves a gap; the tabs beside it get round corners again */
+.seg .seg-gap { flex: 0 0 .75rem; }
+.seg .seg-before-gap { border-top-right-radius: var(--bs-btn-border-radius) !important; border-bottom-right-radius: var(--bs-btn-border-radius) !important; }
+.seg .seg-after-gap { margin-left: 0 !important; border-top-left-radius: var(--bs-btn-border-radius) !important; border-bottom-left-radius: var(--bs-btn-border-radius) !important; }
 .seg .seg-tab.active {
   --bs-btn-active-color: #fff;
   --bs-btn-active-bg: var(--fl-brand);
