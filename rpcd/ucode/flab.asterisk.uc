@@ -15,7 +15,7 @@
 'use strict';
 
 import { deferred } from 'flab.worker';
-import { readfile, stat, open, lsdir } from 'fs';
+import { readfile, writefile, stat, open, lsdir } from 'fs';
 import { command_result, fixture_time, sysfs, uci_all, record_file } from 'flab.util';
 
 const BINARY = '/usr/sbin/asterisk';
@@ -138,7 +138,8 @@ function secret_name(name) {
 }
 
 // `text` of one dialplan application call or expression with the secrets hidden: the argument of Authenticate and DISA, the value Set()
-// gives to a variable named like a secret, and the literal such a variable is compared with ($["${PIN}" = "3003"]). `counter.n` counts
+// gives to a variable named like a secret, and the literal such a variable is compared with ($["${PIN}" = "3003"]; an empty literal or
+// another variable, as in $["${PIN}" = "${REMOTE_ACCESS_PIN}"], hides nothing). `counter.n` counts
 // what was hidden. This is best effort: a secret that has no telltale name cannot be recognized.
 function redact_data(text, counter) {
 	text = replace(text, /(Authenticate|DISA)\(([^,)]*)/gi, (all, app, arg) => {
@@ -154,7 +155,7 @@ function redact_data(text, counter) {
 		return `${app}(${name}=<redacted>`;
 	});
 	text = replace(text, /\$\{([A-Za-z0-9_]+)\}"?[ ]*(==|=|!=)[ ]*("[^"]*"|[^ "?)]+)/g, (all, name, op, rhs) => {
-		if (!secret_name(name) || rhs == '"<redacted>"')
+		if (!secret_name(name) || rhs == '"<redacted>"' || rhs == '""' || index(rhs, '${') >= 0)
 			return all;
 		counter.n++;
 		return substr(all, 0, length(all) - length(rhs)) + '"<redacted>"';
@@ -513,12 +514,36 @@ function conf_index(with_active) {
 	return out;
 }
 
+// Seconds since the epoch that `core show uptime` puts the last reload at, or null. Only a full `core reload` moves it.
+function reload_epoch(now, up) {
+	return up.reload != null ? now - up.reload : null;
+}
+
+// A reload made through `reload` (the page's buttons) leaves its time in a marker file, because `dialplan reload` and a PJSIP reload do not
+// move `Last reload`. The markers are in /tmp: after a reboot Asterisk loads everything again anyway.
+const RELOAD_MARK = '/tmp/flab-asterisk-reload';
+const RELOAD_FILES = { dialplan: /^extensions[A-Za-z0-9_.-]*\.conf$/, pjsip: /^pjsip[A-Za-z0-9_.-]*\.conf$/ };
+
+// When Asterisk last loaded the configuration file `name`: the later of the last full reload and the last reload that covers that file.
+function loaded_at(name, reloaded) {
+	let at = reloaded;
+	if (FIXTURES || at == null)
+		return at;
+	for (let what, files in RELOAD_FILES) {
+		let raw = match(name, files) ? trim(readfile(`${RELOAD_MARK}.${what}`) ?? '') : '';
+		let marked = match(raw, /^[0-9]+$/) ? +raw : 0;
+		if (marked > at)
+			at = marked;
+	}
+	return at;
+}
+
 // The reply of `config`: without a file name the list of files; with one, that file (secrets redacted) with its size and mtime.
 function config(request, reloaded) {
 	let want = request?.args?.file;
 	let files = conf_index(true);
 	for (let f in files)
-		f.changed = reloaded != null && f.mtime > reloaded + 2;
+		f.changed = reloaded != null && f.mtime > loaded_at(f.name, reloaded) + 2;
 	if (want == null || want == '')
 		return { files, reloaded };
 	let entry = filter(files, (f) => f.key == want)[0];
@@ -535,11 +560,6 @@ function config(request, reloaded) {
 //#endregion
 
 //#region core status
-
-// Seconds since the epoch that `core show uptime` puts the last reload at, or null.
-function reload_epoch(now, up) {
-	return up.reload != null ? now - up.reload : null;
-}
 
 // What needs attention, as [{ level: 'good' | 'info' | 'warn' | 'bad', text }].
 function findings(s) {
@@ -640,7 +660,7 @@ function status() {
 		registrations: length(regs), registered: length(filter(regs, (r) => r.status == 'Registered')),
 		endpoints: length(eps), available: length(filter(eps, (e) => e.state != 'Unavailable' && e.state != 'Invalid')),
 	};
-	s.changed_files = map(filter(index_, (f) => f.mtime > (s.reloaded ?? now) + 2 && f.key != 'uci'), (f) => f.name);
+	s.changed_files = map(filter(index_, (f) => f.mtime > loaded_at(f.name, s.reloaded ?? now) + 2 && f.key != 'uci'), (f) => f.name);
 	s.problems = recent_problems(now);
 	s.findings = findings(s);
 	return s;
@@ -801,6 +821,9 @@ function reload(request) {
 	if (type(what) != 'string' || !match(what, /^[a-z]{1,16}$/) || !RELOADS[what])
 		return { ok: false, what, command: null, output: '', error: 'What to reload must be core, dialplan or pjsip.' };
 	let r = cli_result(RELOADS[what]);
+	// The marker is written when Asterisk answered, whatever it printed; `core` needs none (it moves `Last reload`).
+	if (r.ok && !FIXTURES && RELOAD_FILES[what])
+		writefile(`${RELOAD_MARK}.${what}`, `${time()}`);
 	return { ok: r.ok, what, command: RELOADS[what], output: trim(r.output), error: r.ok ? null : 'Asterisk did not answer.' };
 }
 //#endregion

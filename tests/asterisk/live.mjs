@@ -65,6 +65,7 @@ await page.locator('.cmd-reload button', { hasText: 'Dialplan' }).click();
 await page.waitForSelector('dialog.fl-dialog[open]');
 check(/dialplan reload/.test(await page.locator('dialog.fl-dialog').innerText()), 'a Reload button asks first and names the command');
 await page.locator('dialog.fl-dialog button', { hasText: 'Cancel' }).click();
+await page.waitForSelector('dialog.fl-dialog', { state: 'detached', timeout: 3000 }).catch(() => {});
 check(await page.locator('dialog.fl-dialog').count() === 0, 'Cancel runs nothing (the test never confirms a reload)');
 check(/Asterisk daemon/.test(await text()) && /running/.test(await text()), 'the daemon card says running');
 check(await page.locator('.ast-log tbody tr').count() === base.problems.entries.length, 'the log table lists the problems', String(await page.locator('.ast-log tbody tr').count()));

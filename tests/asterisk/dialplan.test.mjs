@@ -96,6 +96,12 @@ check(m.stepDials(step(1, 'Dial', 'PJSIP/${ARG1}@${OUTBOUND_TRUNK}'))[0].kind ==
 const viaMap = m.buildMap({ globals: [{ name: 'OUTBOUND_TRUNK', value: 'Clouditalia' }], contexts: [{ name: 'sub-trunk', includes: [], extensions: [ext('s', dial('PJSIP/${ARG1}@${OUTBOUND_TRUNK}', '120'))] }] },
   { available: true, endpoints: [{ name: 'Clouditalia', role: 'trunk', context: 'sub-trunk', state: 'Not in use' }] });
 check(viaMap.edges.some(e => e.kind === 'dial' && e.to === 'tg:Clouditalia') && !viaMap.targets.some(t => t.id === 'tg:dynamic') && viaMap.findings.every(x => x.level !== 'warn'), 'the routing map follows the global to the trunk', j(viaMap.edges));
+const gdp = { globals: [{ name: 'OUTBOUND_TRUNK', value: 'Vodafone' }], contexts: [
+  { name: 'out', includes: [], extensions: [ext('112', step(1, 'Gosub', 'sub-trunk,s,1(${EXTEN})'), step(2, 'Hangup')), ext('loop', step(1, 'Goto', 'loop,1')), ext('dyn', step(1, 'Goto', '${X},s,1'))] },
+  { name: 'sub-trunk', includes: [], extensions: [ext('s', dial('PJSIP/${ARG1}@${OUTBOUND_TRUNK}', '120'), step(2, 'Return'))] }] };
+const follow = m.extensionDials(gdp, 'out', gdp.contexts[0].extensions[0], m.globalVars(gdp));
+check(follow.length === 1 && follow[0].endpoint === 'Vodafone' && follow[0].through === 'sub-trunk', 'the dials of a subroutine are found through its Gosub', j(follow));
+check(m.extensionDials(gdp, 'out', gdp.contexts[0].extensions[1]).length === 0 && m.extensionDials(gdp, 'out', gdp.contexts[0].extensions[2]).length === 0, 'a jump loop ends and a jump through a variable is not followed');
 
 console.log('== the routing map ==');
 const ep = (name, role, context, state = 'Not in use') => ({ name, role, context, state });

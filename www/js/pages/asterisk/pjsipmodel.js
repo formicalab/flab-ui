@@ -1,4 +1,4 @@
-// Pure model of the PJSIP tab and the Overview: state colors, summaries, the filter, contact round-trip history and countdown texts.
+// Pure model of the PJSIP tab and the Overview: state colors, the filter, contact round-trip history and countdown texts.
 // The data is the reply of `flab.asterisk pjsip` ({ endpoints, registrations, transports, channels }) and `flab.asterisk status`.
 
 // Badge kind of an endpoint's device state. An unreachable trunk is an error; an unreachable phone is only a warning (it may be switched off).

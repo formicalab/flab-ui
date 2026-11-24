@@ -9,7 +9,9 @@ OpenWrt telephony feed; the parsers skip lines they do not know, so another vers
 At the right end of the tab strip, on every tab: **All** (`core reload`), **Dialplan** (`dialplan reload`, extensions.conf
 only) and **PJSIP** (`module reload res_pjsip.so`, endpoints and registrations). A button asks first, says what will
 happen and which command runs, then shows what Asterisk answered and reads the page again. Calls in progress go on. The
-buttons are greyed when Asterisk is not running and absent when the login has no write access to `flab.asterisk reload`. The
+buttons are greyed when Asterisk is not running and absent when the login has no write access to `flab.asterisk reload`. Asterisk's
+`Last reload` moves only on **All**, so a Dialplan or PJSIP reload leaves a time marker in `/tmp` (`flab-asterisk-reload.<what>`) and
+the "file changed after the last load" banner compares extensions*.conf and pjsip*.conf with it too. The
 Overview banner about a configuration file changed after the last load points here.
 
 ## Overview
@@ -49,7 +51,7 @@ The loaded dialplan (`dialplan show`), not the file: what Asterisk actually uses
 - **Browser**: the contexts on the left (a context that no endpoint enters and nothing includes or jumps to is marked
   *unused*), the selected context on the right with the endpoints that enter it, what it includes and where it jumps. Each
   extension is a fold: the pattern, what it means in words (`_0[1-9].` is “0”, then 1–9, then one or more of anything), what it
-  dials, and its steps: priority, label, application (colored by what it does; the tooltip says what it does), arguments with
+  dials (also through the subroutines it calls), and its steps: priority, label, application (colored by what it does; the tooltip says what it does), arguments with
   `${variables}` marked, where the step can go next (a click shows the destination) and the source line, which opens the
   Configuration tab at that line. A filter narrows the extensions by pattern, application or arguments. The global variables
   are listed below.
@@ -60,7 +62,8 @@ The loaded dialplan (`dialplan show`), not the file: what Asterisk actually uses
   dialplan does not define, a `Dial` to an endpoint that does not exist, a jump to a missing context or label, and unused contexts.
 - **Number tester**: pick where the call enters (an endpoint or a context) and type a number. The page follows the dialplan the
   way Asterisk searches it, and shows the extension, whether it was found through an include, what it does next (the endpoints
-  dialed, with their state) and its steps. Nothing is dialed. The page also asks Asterisk itself
+  it can dial, with their state, also through the subroutines it `Gosub`s or jumps to, such as `sub-trunk`) and its steps.
+  Nothing is dialed. The page also asks Asterisk itself
   (`dialplan show <number>@<context>`) and says whether the two agree.
 
 How the search works, as Asterisk does it: the extensions of a context are tried in the order `dialplan show` lists them

@@ -4,7 +4,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { ubus } from '../../core/ubus.js';
 import { badge, button, card, kv, mono, muted } from '../../core/ui.js';
-import { describePattern, findExtension, globalVars, stepDials } from './dialplanmodel.js';
+import { describePattern, extensionDials, findExtension, globalVars } from './dialplanmodel.js';
 import { endpointKind } from './pjsipmodel.js';
 import { jumpTo, stepsTable } from './steps.js';
 import { rerender, state } from './state.js';
@@ -55,18 +55,16 @@ function agreement(t) {
   return { kind: 'success', text: s.found ? 'Asterisk agrees: it chooses the same extension.' : 'Asterisk agrees: nothing matches.' };
 }
 
-// What the call does after the match: the endpoints dialed (with their live state) and the contexts jumped to.
+// What the call does after the match: the endpoints it can dial (with their live state), also through the subroutines and contexts it jumps to.
 function outcome(dp, map, local) {
-  const dials = [];
-  const vars = globalVars(dp);
-  for (const s of local.extension.steps) for (const d of stepDials(s, vars)) dials.push(d);
   const rows = [];
-  for (const d of dials) {
+  for (const d of extensionDials(dp, local.context, local.extension, globalVars(dp))) {
+    const through = d.through ? muted(` · through ${d.through}`) : null;
     if (d.kind === 'endpoint') {
       const tg = map.targets.find(x => x.id === `tg:${d.endpoint}`);
-      rows.push(h('li', {}, h('span', { className: `ast-dot ${tg?.known ? endpointKind({ state: tg.state, role: tg.role }) || 'neutral' : 'danger'}` }), ` calls endpoint `, mono(d.endpoint), tg?.known ? muted(` · ${tg.state}`) : badge('no such endpoint', 'warning')));
-    } else if (d.kind === 'dynamic') rows.push(h('li', {}, 'calls an endpoint chosen at run time (the dialed number or a variable names it)'));
-    else if (d.kind === 'local') rows.push(h('li', {}, `calls a Local channel into context ${d.context ?? '?'}`));
+      rows.push(h('li', {}, h('span', { className: `ast-dot ${tg?.known ? endpointKind({ state: tg.state, role: tg.role }) || 'neutral' : 'danger'}` }), ` calls endpoint `, mono(d.endpoint), tg?.known ? muted(` · ${tg.state}`) : badge('no such endpoint', 'warning'), through));
+    } else if (d.kind === 'dynamic') rows.push(h('li', {}, 'calls an endpoint chosen at run time (the dialed number or a variable names it)', through));
+    else if (d.kind === 'local') rows.push(h('li', {}, `calls a Local channel into context ${d.context ?? '?'}`, through));
   }
   return rows.length ? h('ul', { className: 'ast-outcome' }, rows) : h('div', { className: 'muted' }, 'The extension places no call: it plays media, runs a script or jumps on.');
 }

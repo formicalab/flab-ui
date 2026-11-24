@@ -142,6 +142,7 @@ console.log('== secrets ==');
   check(ctx[0].data === '<redacted>' && ctx[1].data === 'SIP_PASSWORD=<redacted>', 'Authenticate and Set(…PASSWORD=) are redacted in the dialplan', JSON.stringify(ctx.slice(0, 2)));
   check(ctx[2].data === '$["${ADMIN_PIN}" != "<redacted>"]?bad', 'a compare of a secret variable keeps its shape', ctx[2].data);
   check(ctx[3].data === 'PLAIN=ok', 'an ordinary Set is not touched', ctx[3].data);
+  check(ctx[4].data === '$["${PIN}" != "" & "${PIN}" = "${REMOTE_ACCESS_PIN}"]?ok', 'an empty literal or another variable hides nothing', ctx[4].data);
   check(d.globals.find(g => g.name === 'API_TOKEN').value === '<redacted>' && d.globals.find(g => g.name === 'VISIBLE_NAME').value === 'shown', 'globals: the secret-named one is hidden, the other shown');
   const pj = load('secrets', 'config.pjsip');
   check(/username=visible-user/.test(pj.text) && /secret=<redacted>/.test(pj.text) && /md5_cred=<redacted>/.test(pj.text), 'configuration: secrets hidden, the user name kept');

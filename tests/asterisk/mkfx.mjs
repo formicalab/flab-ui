@@ -38,6 +38,10 @@ function scenario(name, fn) {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.cpSync(real, dir, { recursive: true });
   for (const c of ['core reload', 'dialplan reload', 'module reload res_pjsip.so']) write(dir, `${cliName(c)}.txt`, '');
+  // Whatever the real router did last, no file is newer than the last reload (an hour ago) unless the scenario says so.
+  const clock = +read(dir, 'clock.txt');
+  edit(dir, 'core show uptime seconds', t => t.replace(/Last reload: \d+/, 'Last reload: 3600'));
+  json(dir, 'conf_index.json', index => { for (const f of index) f.mtime = clock - 7200; });
   fn?.(dir);
 }
 
@@ -92,6 +96,7 @@ scenario('nopjsip', dir => {
 
 scenario('changed', dir => {
   const clock = +read(dir, 'clock.txt');
+  // pjsip.conf was written ten seconds ago, the last reload an hour ago.
   json(dir, 'conf_index.json', index => { for (const f of index) if (f.name === 'pjsip.conf') f.mtime = clock - 10; });
 });
 
@@ -122,7 +127,8 @@ scenario('secrets', dir => {
     `  's' =>            1. Authenticate(4321)                         [extensions.conf:900]\n` +
     `                    2. Set(SIP_PASSWORD=hunter2)                  [extensions.conf:901]\n` +
     `                    3. GotoIf($["\${ADMIN_PIN}" != "9999"]?bad)    [extensions.conf:902]\n` +
-    `                    4. Set(PLAIN=ok)                              [extensions.conf:903]\n`);
+    `                    4. Set(PLAIN=ok)                              [extensions.conf:903]\n` +
+    `                    5. GotoIf($["\${PIN}" != "" & "\${PIN}" = "\${REMOTE_ACCESS_PIN}"]?ok) [extensions.conf:904]\n`);
   edit(dir, 'dialplan show globals', t => t.replace('\n    -- ', '\n   API_TOKEN=abc123xyz\n   VISIBLE_NAME=shown\n\n    -- '));
   edit(dir, 'pjsip show endpoint Vodafone', t => `${t}\n password                           : swordfish\n`);
 });
@@ -137,13 +143,15 @@ for (const name of fs.readdirSync(work)) {
     fs.copyFileSync(path.join(real, `${cliName(`dialplan show ${f}`)}.txt`), path.join(dir, `${cliName(`dialplan show ${f}`)}.txt`));
 }
 
-// The real secrets of the captured router (passwords in pjsip.conf, a PIN literal in the dialplan): assert.mjs checks that none of them
-// reaches any reply. They are kept only in the temporary work folder.
+// The real secrets of the captured router (passwords in pjsip.conf, a PIN literal in the dialplan or in its [globals]): assert.mjs checks that none
+// of them reaches any reply. They are kept only in the temporary work folder.
 const out = path.join(work, 'out');
 fs.mkdirSync(out, { recursive: true });
 const rawPjsip = read(real, 'file__etc_asterisk_pjsip_conf.txt');
 const found = new Set();
 for (const m of rawPjsip.matchAll(/^[ \t]*(?:password|secret|md5_cred)[ \t]*=[ \t]*([^\s;]+)/gim)) found.add(m[1]);
-for (const m of read(real, `${cliName('dialplan show')}.txt`).matchAll(/\$\{[A-Za-z0-9_]*(?:PIN|PASS\w*|SECRET|TOKEN)\}"\s*[!=]=?\s*"([^"]+)"/g)) found.add(m[1]);
+// A literal only: a comparison with another variable names no secret.
+for (const m of read(real, `${cliName('dialplan show')}.txt`).matchAll(/\$\{[A-Za-z0-9_]*(?:PIN|PASS\w*|SECRET|TOKEN)\}"\s*[!=]=?\s*"([^"$]+)"/g)) found.add(m[1]);
+for (const m of read(real, `${cliName('dialplan show globals')}.txt`).matchAll(/^\s+[A-Za-z0-9_]*(?:PIN|PASS\w*|SECRET|TOKEN)[A-Za-z0-9_]*=(\S+)/gm)) found.add(m[1]);
 fs.writeFileSync(path.join(out, 'secrets.json'), JSON.stringify([...found].filter(v => v.length >= 4)));
 fs.writeFileSync(path.join(out, 'raw-pjsip.conf'), rawPjsip);

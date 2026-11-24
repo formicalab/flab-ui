@@ -236,6 +236,27 @@ export function stepDials(step, vars = {}) {
     return { tech, kind: 'other', raw };
   });
 }
+
+// Everything an extension can dial: its own Dial steps, then those of the extensions it jumps or Gosubs to (any depth, each extension once; a
+// jump through a variable cannot be followed). A dial found in another context carries `through`, the context that holds it ("sub-trunk").
+export function extensionDials(dp, contextName, extension, vars = {}) {
+  const out = [], seen = new Set(), byName = contextMap(dp);
+  const walk = (context, ext) => {
+    const key = `${context}|${ext.pattern}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    for (const step of ext.steps) {
+      for (const d of stepDials(step, vars)) out.push(context === contextName ? d : { ...d, through: context });
+      for (const j of stepJumps(dp, step, { context, exten: ext.pattern })) {
+        if (j.dynamic || j.missing) continue;
+        const next = byName.get(j.context)?.extensions.find(e => e.pattern === j.exten) ?? findExtension(dp, j.context, j.exten)?.extension;
+        if (next) walk(j.context, next);
+      }
+    }
+  };
+  walk(contextName, extension);
+  return out;
+}
 //#endregion
 
 //#region the routing map

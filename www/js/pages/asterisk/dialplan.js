@@ -4,7 +4,7 @@ import { icon } from '../../core/icons.js';
 import { badge, card, chip, emptyState, mono } from '../../core/ui.js';
 import { disclosure } from '../../core/fold.js';
 import { openEndpointDrawer } from './pjsip.js';
-import { describePattern, globalVars, stepDials } from './dialplanmodel.js';
+import { describePattern, extensionDials, globalVars } from './dialplanmodel.js';
 import { extId, stepsTable } from './steps.js';
 import { rerender, state } from './state.js';
 
@@ -23,11 +23,10 @@ function matches(ext, q) {
   return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
 }
 
-// What an extension dials, as endpoint names (for the summary line of its card).
-function dialled(dp, ext) {
+// What an extension dials, as endpoint names (for the summary line of its card), also through the subroutines it calls.
+function dialled(dp, ctx, ext) {
   const names = new Set();
-  const vars = globalVars(dp);
-  for (const s of ext.steps) for (const d of stepDials(s, vars)) names.add(d.kind === 'endpoint' ? d.endpoint : d.kind === 'dynamic' ? 'any endpoint' : d.kind === 'local' ? 'Local' : d.tech);
+  for (const d of extensionDials(dp, ctx.name, ext, globalVars(dp))) names.add(d.kind === 'endpoint' ? d.endpoint : d.kind === 'dynamic' ? 'any endpoint' : d.kind === 'local' ? 'Local' : d.tech);
   return [...names];
 }
 
@@ -63,7 +62,7 @@ function contextHeader(ctx, map) {
 function extensionCard(dp, map, ctx, ext, idx) {
   const key = `${ctx.name}|${ext.pattern}`;
   const open = state.openExt.has(key) || state.ext === ext.pattern || (ctx.extensions.length <= 4 && !state.openExt.has(`!${key}`));
-  const calls = dialled(dp, ext);
+  const calls = dialled(dp, ctx, ext);
   return h('div', { className: `card ast-ext ${state.ext === ext.pattern ? 'focus' : ''}`, id: extId(ctx.name, ext.pattern) },
     disclosure({
       cls: 'ast-ext-fold', summaryCls: 'ast-ext-sum', open,
