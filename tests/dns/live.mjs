@@ -242,7 +242,7 @@ check(x.value === '4' && x.sub === '4 default forwarders · 0 from the WAN', 'up
 x = await tile('DNSSEC');
 check(x.value === 'Validating' && !/text-warning/.test(x.cls), 'DNSSEC validating');
 let b = await banner();
-check((await bannerClass()).includes('warn') && /3 answers failed DNSSEC validation/.test(b) && /12 queries were dropped by rate limiting \(300 per second and client\)/.test(b) && /1 conditional zone \(proxy\.dsl\.vodafone\.it\) is forwarded in clear text/.test(b), 'findings: bogus answers, rate limiting and the one clear-text public zone', b);
+check((await bannerClass()).includes('warn') && /3 answers failed DNSSEC validation/.test(b) && /12 queries were dropped by rate limiting \(150 per second and client\)/.test(b) && /1 conditional zone \(proxy\.dsl\.vodafone\.it\) is forwarded in clear text/.test(b), 'findings: bogus answers, rate limiting and the one clear-text public zone', b);
 check(!/clear text to a public resolver/.test(b) && !/SERVFAIL/.test(b), 'the default forwarders over TLS and 1.9% SERVFAIL are not reported', b);
 const heads = await headers();
 check(['Configuration', 'Zones', 'Activity'].every((t, i) => heads[i]?.startsWith(t)) && heads.length === 3 && await page.locator('.dns-try').count() === 0, 'three cards in order: Configuration, Zones, Activity; no Forwarding, Upstream from the WAN or Try it card', heads.join(' | '));
@@ -349,7 +349,7 @@ const areaTitles = await texts(conf().locator('.dns-area-title'));
 const areaOpen = () => conf().locator('.dns-area').evaluateAll(d => d.map(x => x.open));
 check(j(areaTitles) === '["General","Security and privacy","Local names and DHCP","Performance and cache"]' && j(await areaOpen()) === '[true,false,false,false]', 'General stays open once the user opened it, the others are folded', areaTitles.join(' | '));
 const areaSums = await texts(conf().locator('.dns-area-sum'));
-check(areaSums.length === 2 && areaSums[0] === 'port 53 · 3 LAN interfaces · remote control: local host, unencrypted · basic statistics' && areaSums[1] === 'DNSSEC on · rebind protection: block private addresses (rfc 1918 and 4193) · local clients only · 300 queries/s per client', 'a folded area still says how it is set: the port, interfaces and monitoring; the security switches', areaSums.join(' // '));
+check(areaSums.length === 2 && areaSums[0] === 'port 53 · 3 LAN interfaces · remote control: local host, unencrypted · basic statistics' && areaSums[1] === 'DNSSEC on · rebind protection: block private addresses (rfc 1918 and 4193) · local clients only · 150 queries/s per client', 'a folded area still says how it is set: the port, interfaces and monitoring; the security switches', areaSums.join(' // '));
 check((await texts(conf().locator('.dns-area-count'))).join() === '14 options,11 options,8 options,5 options', 'each area says how many options it holds');
 await conf().locator('.dns-area').nth(1).locator('summary').first().click();
 await show(load('unbound'));

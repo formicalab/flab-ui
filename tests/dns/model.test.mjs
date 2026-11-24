@@ -157,7 +157,8 @@ check(f(d).find(x => x.key === 'bogus')?.text.startsWith('3 answers failed DNSSE
 d.stats.bogus = 1;
 check(f(d).find(x => x.key === 'bogus')?.text.startsWith('1 answer failed'), 'singular');
 d = clone(ub); d.stats.ratelimited = 12;
-check(f(d).find(x => x.key === 'ratelimited')?.text.startsWith('12 queries were dropped by rate limiting (300 per second and client)'), 'rate-limited queries name the limit', j(f(d)));
+check(f(d).find(x => x.key === 'ratelimited')?.text.startsWith('12 queries were dropped by rate limiting (150 per second and client)'), 'rate-limited queries name the per-client limit, which OpenWrt sets to half of rate_limit', j(f(d)));
+check(m.clientRateLimit('300') === 150 && m.clientRateLimit('11') === 5 && m.clientRateLimit('10') === null && m.clientRateLimit('0') === null && m.clientRateLimit('100000') === null && m.clientRateLimit(undefined) === null && m.clientRateLimit('abc') === null, 'OpenWrt applies a limit only above 10 and below 100000, and the client share is half of it');
 d = clone(dm);
 check(!f(d).some(x => x.key === 'unanswered'), '7 of 568 (1.2%) is fine');
 d.stats.unanswered = 20;
@@ -234,7 +235,7 @@ check(j(areas[0].sections.map(s => s.title)) === '["Service and monitoring","Lis
 check(j(f.map(x => x.key).sort()) === j(m.configFields({ ...ub, config: {} }).map(x => x.key).sort()) && new Set(f.map(x => x.key)).size === f.length && f.length === 38, 'every option is in exactly one area', String(f.length));
 const dareas = m.configAreas(dm);
 check(dareas.map(a => a.id).join() === 'general,security,local,cache,dhcp' && m.configFields(dm).length === 28 && dareas[1].sections.some(s => s.fields.some(x => x.key === 'dnssec')), 'dnsmasq\'s options are in five areas, General then Security and privacy', String(m.configFields(dm).length));
-check(areas[0].summary === 'port 53 · LAN interfaces from DHCP · remote control: off · basic statistics' && areas[1].summary === 'DNSSEC on · rebind protection: block private addresses (rfc 1918 and 4193) · local clients only · 300 queries/s per client', 'a folded area says something: the port, interfaces and monitoring; the security switches', `${areas[0].summary} // ${areas[1].summary}`);
+check(areas[0].summary === 'port 53 · LAN interfaces from DHCP · remote control: off · basic statistics' && areas[1].summary === 'DNSSEC on · rebind protection: block private addresses (rfc 1918 and 4193) · local clients only · 150 queries/s per client', 'a folded area says something: the port, interfaces and monitoring; the security switches', `${areas[0].summary} // ${areas[1].summary}`);
 check(areas[2].summary === '' && dareas[0].summary === 'port 53 · every interface · WAN resolvers used' && dareas[1].summary === 'DNSSEC off · rebind protection on · local clients only', 'the other areas have no line; dnsmasq\'s are worked out from its options', `${dareas[0].summary} // ${dareas[1].summary}`);
 check(f.every(x => x.label && x.hint && ['bool', 'enum', 'int', 'string', 'list'].includes(x.type) && (x.type !== 'enum' || (x.options.length > 1 && (x.default == null || x.options.includes(x.default)))) && (x.type !== 'int' || x.number === true)), 'every field has a label, a hint and a known type; an enum lists its choices; a number is a number input');
 check(f.filter(x => x.type === 'enum').every(x => x.options.every(o => x.labels?.[o])), 'every choice has its words');

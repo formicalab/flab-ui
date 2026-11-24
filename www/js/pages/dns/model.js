@@ -62,6 +62,14 @@ export function effective(data, key) {
   return data.config?.[key] ?? data.defaults?.[key];
 }
 
+// What Unbound's `ip-ratelimit` (queries per second from one client) is for the `rate_limit` option. OpenWrt writes
+// `ratelimit: N` (a limit on queries to one zone) and `ip-ratelimit: N/2` (half of it, to leave head room), and only
+// when N is above 10 and below 100000; otherwise Unbound has no limit. Returns null when there is none.
+export function clientRateLimit(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 10 && n < 100000 ? Math.floor(n / 2) : null;
+}
+
 // The engine the page describes: the running one, else the installed engine that is configured.
 export const subject = data => data.engine ?? data.configured ?? null;
 
@@ -262,7 +270,7 @@ export function findings(data) {
     const answers = Object.values(s.rcodes ?? {}).reduce((a, b) => a + b, 0);
     if (s.rcodes?.SERVFAIL && answers >= MIN_SAMPLE && s.rcodes.SERVFAIL / answers > 0.05) add('warn', 'servfail', `${fmtPct(pct(s.rcodes.SERVFAIL, answers))} of the answers are SERVFAIL (${fmtNum(s.rcodes.SERVFAIL)} of ${fmtNum(answers)}): an upstream server fails or does not answer, or DNSSEC validation fails.`);
     if (s.bogus > 0) add('warn', 'bogus', `${fmtNum(s.bogus)} answer${s.bogus === 1 ? '' : 's'} failed DNSSEC validation (bogus): a zone is misconfigured, the clock is wrong, or an answer was forged.`);
-    if (s.ratelimited > 0) add('warn', 'ratelimited', `${fmtNum(s.ratelimited)} quer${s.ratelimited === 1 ? 'y was' : 'ies were'} dropped by rate limiting (${effective(data, 'rate_limit') ?? '?'} per second and client).`);
+    if (s.ratelimited > 0) add('warn', 'ratelimited', `${fmtNum(s.ratelimited)} quer${s.ratelimited === 1 ? 'y was' : 'ies were'} dropped by rate limiting (${clientRateLimit(effective(data, 'rate_limit')) ?? '?'} per second and client).`);
   }
   if (s && e === 'dnsmasq' && s.forwarded >= MIN_SAMPLE && s.unanswered / s.forwarded > 0.02)
     add('warn', 'unanswered', `${fmtNum(s.unanswered)} of ${fmtNum(s.forwarded)} forwarded queries (${fmtPct(pct(s.unanswered, s.forwarded))}) got no answer from the upstream servers.`);
@@ -444,7 +452,7 @@ function areaSummary(engine, id, fields, draft) {
     return `port ${eff('listen_port')} · ${lan ? `${lan} LAN interface${lan === 1 ? '' : 's'}` : 'LAN interfaces from DHCP'} · remote control: ${word('unbound_control').toLowerCase()} · ${eff('extended_stats') ? 'extended' : 'basic'} statistics`;
   }
   if (engine === 'unbound' && id === 'security') {
-    return `DNSSEC ${on('validator')} · rebind protection: ${word('rebind_protection').toLowerCase()} · ${eff('localservice') ? 'local clients only' : 'any client'} · ${Number(eff('rate_limit')) ? `${eff('rate_limit')} queries/s per client` : 'no rate limit'}`;
+    return `DNSSEC ${on('validator')} · rebind protection: ${word('rebind_protection').toLowerCase()} · ${eff('localservice') ? 'local clients only' : 'any client'} · ${clientRateLimit(eff('rate_limit')) ? `${clientRateLimit(eff('rate_limit'))} queries/s per client` : 'no rate limit'}`;
   }
   if (engine === 'dnsmasq' && id === 'general') {
     const n = draft.interface?.length ?? 0;

@@ -73,7 +73,7 @@ export const UNBOUND_FIELDS = [
   { key: 'num_threads', type: 'int', number: true, min: 1, default: 1, label: 'Threads',
     hint: 'Worker threads answering queries; about one per CPU core is useful.' },
   { key: 'rate_limit', type: 'int', number: true, min: 0, default: 0, label: 'Rate limit (queries per second)',
-    hint: 'Queries per second one client may send; 0 is no limit. Queries above it are dropped.' },
+    hint: 'Queries per second Unbound resolves for one domain (zone). OpenWrt also limits each client to half of it, to leave head room. Queries above a limit are dropped. 0, or a value of 10 or less, is no limit.' },
   { key: 'unbound_control', type: 'enum', default: '0', label: 'Remote control',
     options: ['0', '1', '2', '3', '4'],
     labels: { 0: 'Off', 1: 'Local host, unencrypted', 2: 'Local host, TLS (keys created automatically)', 3: 'Network, TLS (keys created automatically)', 4: 'Network, TLS (existing key and certificate files)' },

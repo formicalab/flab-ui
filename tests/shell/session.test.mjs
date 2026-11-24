@@ -129,7 +129,8 @@ test('without a maximum age only the idle time counts, and no session has no sta
   assert.equal(sessionStatus().ageLeftS, null);
 });
 
-test('a stored session without timing data is treated as active just now', async () => {
+test('a stored session without timing data is treated as active just now', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 5_000_000 });
   await signIn();
   store.delete('sessionMeta');
   const { sessionStatus: fresh } = await import(`../../www/js/core/ubus.js?reload=${Math.random()}`);

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### DNS
+
+- **Rate limit shown correctly:** Unbound's per-client limit is half of the `rate_limit` option (OpenWrt writes `ratelimit: N` and
+  `ip-ratelimit: N/2`, and only for N from 11 to 99999). The findings, the Security summary and the option's hint now say so; a
+  `rate_limit` of 300 showed "300 per second and client" while clients were limited at 150.
+
 ### Sign-in and sessions
 
 - **Session warning:** a minute before the router ends an idle session, a notice offers "Stay signed in". `login()` can also set an absolute

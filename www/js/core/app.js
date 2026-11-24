@@ -253,6 +253,10 @@ export function start() {
   if (!location.hash) location.hash = defaultPageId;
   addEventListener('hashchange', route);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh?.(); checkSession(); } });
-  setInterval(checkSession, 5000);
   route();
+}
+
+// Starts the periodic session check (the notice and the maximum age). Separate from start(), which owns the refresh timer.
+export function watchSession() {
+  setInterval(checkSession, 5000);
 }
