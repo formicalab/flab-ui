@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.23 - 2026-11-24
+
+### Asterisk
+
+- **Calls tab** (new, next to Overview): the recent calls from the CDR file that `cdr_csv.so` writes (`/var/log/asterisk/cdr-csv/Master.csv`),
+  newest first: when, direction (incoming, outgoing or internal, from the trunk endpoints), who called whom and through which endpoint, the
+  result (answered, missed, failed), ringing and talking time, a filter by kind and text and a summary line. The legs of one call are shown
+  as one. The history lives in RAM (lost at a reboot, trimmed nightly); `lastdata` and the user field never leave the router. New backend
+  method `flab.asterisk calls` (read ACL).
+- **Reload buttons** at the right of the tab strip: All (`core reload`), Dialplan (`dialplan reload`) and PJSIP (`module reload res_pjsip.so`),
+  each after a confirmation. New backend method `flab.asterisk reload` (write ACL, serialized by the worker) that runs only those three
+  commands. A Dialplan or PJSIP reload leaves a time marker, so the "file changed after the last load" banner clears (Asterisk's `Last reload`
+  moves only on a full reload).
+- **Summary tiles on every tab**: the same six daemon tiles stay pinned above the tabs. The tab strip puts Overview and Calls first and, after a
+  small gap, PJSIP, Dialplan and **Configuration files** (renamed from Configuration; `tabsControl()` accepts a `null` option as a gap).
+- **Dialplan**: a global variable in a `Dial` endpoint (`PJSIP/${ARG1}@${OUTBOUND_TRUNK}`) is resolved, so the routing map, the steps and the
+  number tester name the real trunk; the extension chips and the number tester follow `Gosub`/`Goto` into subroutines (`sub-trunk`) and say which
+  one dials. The description of the `s` extension no longer claims it needs a call without a dialed number.
+- **Log**: the line Asterisk always writes on musl, "There are no local system nameservers configured", is marked *harmless* and no longer raises
+  the "errors in the last 24 hours" finding.
+- **Redaction**: an empty literal or a comparison with another variable (`$["${PIN}" = "${REMOTE_ACCESS_PIN}"]`) is left alone.
+- **Tests**: the scenarios no longer depend on when the real router last reloaded; a synthetic call history, a `nocdr` scenario, a Calls model
+  test and browser checks for the new tab, the gap and the Reload dialog.
+
 ## 0.1.22 - 2026-11-23
 
 ### Routing
