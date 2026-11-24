@@ -21,7 +21,7 @@ peers are discovered at run time, so other boards are shown as they are, but the
 | DNS | Resolver status, options and zones in one tab; ddns-scripts services, status and logs in another tab. |
 | Devices and Interfaces | The network as a board, from cable to interface, with bridges; edit it. A second view lists the connected Wi-Fi clients. The ports and the radios open their own pages. |
 | Routing | Kernel routes and rules; edit the static routes; BGP when BIRD is installed. |
-| Telephony: Asterisk | The Asterisk PBX when it is installed (read only apart from three reload buttons): daemon status, PJSIP registrations, endpoints and contacts, the loaded dialplan as a browser, a routing map and a number tester, and the configuration files with secrets hidden. |
+| Telephony: Asterisk | The Asterisk PBX when it is installed (read only apart from three reload buttons): daemon status, PJSIP registrations, endpoints and contacts, the recent calls, the loaded dialplan as a browser, a routing map and a number tester, and the configuration files with secrets hidden. |
 | Traffic | Bandwidth, connections and nlbwmon usage; edit the nlbwmon settings. |
 | Services | List, start, stop, restart, enable and disable services. |
 | Toolbox | Ping, traceroute, MTR, DNS, TLS checks, a packet capture with pcap download, an iperf3 server and Wake-on-LAN. |

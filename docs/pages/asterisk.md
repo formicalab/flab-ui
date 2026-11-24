@@ -1,5 +1,5 @@
 # Asterisk (route `#asterisk`, optional `flab-ui-mod-asterisk`)
-The PBX of the router, read only apart from three reload buttons. Four tabs; only the open tab is polled (Overview and PJSIP every 5 s, Dialplan every
+The PBX of the router, read only apart from three reload buttons. Five tabs; only the open tab is polled (Overview and PJSIP every 5 s, Calls every 10 s, Dialplan every
 30 s, Configuration not at all: Refresh reads it again). Data comes from the `flab.asterisk` plugin, which talks to
 Asterisk through its CLI (`asterisk -rx '<command>'`, over the control socket). The only change the page can make is a
 reload (see Reload below): there is no originate and no edit. The page is built for Asterisk 23, the version in the
@@ -45,6 +45,22 @@ Overview banner about a configuration file changed after the last load points he
 - An unavailable phone with contacts is told apart from one with none: the first registered but its contacts do not answer
   the periodic check, the second never registered.
 
+## Calls
+The recent calls, newest first, from the file `cdr_csv.so` writes (`/var/log/asterisk/cdr-csv/Master.csv`). Each row: when (the full
+time is the tooltip), direction (incoming, outgoing or internal: a call that came in through a trunk endpoint is incoming, one that
+went out through a trunk is outgoing; shown as “–” when PJSIP cannot be read), who called whom (the number, with the caller's name
+and the endpoint that carried the call under it), the result (Answered, Missed for no answer or busy, Failed for failed or
+congested), the time it rang and the time it was talked. A line over the table counts the calls shown by result and adds the
+talk time. A filter by kind (all, incoming, outgoing, internal, missed) and by text (numbers, name, endpoints, result) narrows the
+list. The legs of one call (a Local channel makes two CDR lines) are shown as one.
+
+The history is what Asterisk logged, so it needs the setup in the openwrt repo: the `asterisk-cdr-csv` package (or
+`utilities/install-asterisk-cdr-csv.sh`), and `unanswered=yes` and `congestion=yes` in `cdr.conf` so that missed and failed calls are
+kept too. The file is in `/var/log`, which is RAM on OpenWrt: it is lost at a reboot (no writes to the flash) and a cron job trims
+it to the last 5000 lines every night. The page reads the newest 300 calls. The arguments of the last application (`lastdata`) and
+the user field are not sent to the browser, because they can hold dialed digits or a PIN being compared. With Asterisk stopped the
+file is still read, so the last calls stay visible.
+
 ## Dialplan
 The loaded dialplan (`dialplan show`), not the file: what Asterisk actually uses. Three views.
 
@@ -87,7 +103,8 @@ each object's type, since one name can be an endpoint, an aor, an auth and more)
 ## Behavior worth knowing
 - Asterisk's CLI truncates some columns, such as long contact URIs; the page shows what the CLI gives.
 - `pjsip show endpoint` is asked once per endpoint (up to 40; more are listed without codecs and context and the page says so).
-- Call history is not shown: with no CDR backend (`cdr show status` lists none) Asterisk keeps only the counters. A `cdr_csv` or
-  `cdr_custom` module would make it possible to add it.
+- Call history is on the Calls tab, and exists only while a CDR backend writes it (`cdr show status` lists `csv`). Without one
+  Asterisk keeps only the counters, and the tab says what to install.
+- The Calls tab reads the file `/var/log/asterisk/cdr-csv/Master.csv`; the page cannot clear or change it.
 - The active-channel columns follow the documented concise format of `core show channels concise`; they have been checked against
   fixtures built from that format, not against a live call.

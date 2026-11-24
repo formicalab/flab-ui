@@ -1,11 +1,12 @@
 #!/usr/bin/ucode
 //
-// rpcd ucode plugin reporting the Asterisk PBX as JSON: ubus call flab.asterisk status|pjsip|endpoint|dialplan|resolve|config|reload
+// rpcd ucode plugin reporting the Asterisk PBX as JSON: ubus call flab.asterisk status|pjsip|endpoint|dialplan|resolve|config|calls|reload
 //
 // Everything is read only except `reload` (three fixed reload commands). Sources:
 //   - the Asterisk CLI (`asterisk -rx '<command>'`, over the control socket): core status, PJSIP registrations, endpoints, contacts and
 //     transports, the active channels, the loaded dialplan, and `dialplan show <exten>@<context>` to resolve a dialed number
-//   - /etc/asterisk/*.conf and /etc/config/asterisk (secrets redacted), /var/log/asterisk/messages.log (the recent warnings and errors)
+//   - /etc/asterisk/*.conf and /etc/config/asterisk (secrets redacted), /var/log/asterisk/messages.log (the recent warnings and errors) and
+//     /var/log/asterisk/cdr-csv/Master.csv (the call history written by cdr_csv.so)
 //   - /var/run/asterisk/asterisk.pid and /proc/<pid>/status (is it alive, how much memory)
 //
 // Asterisk's CLI has no machine-readable output, so the human-readable text is parsed. The parsers ignore lines they do not know, so a newer
@@ -467,6 +468,97 @@ function recent_problems(now) {
 }
 //#endregion
 
+//#region call history
+
+// The CDR file of cdr_csv.so and what one call of it looks like in the reply. cdr_csv writes one line per call leg:
+//   accountcode,src,dst,dcontext,clid,channel,dstchannel,lastapp,lastdata,start,answer,end,duration,billsec,disposition,amaflags,uniqueid,userfield
+// (plus peeraccount,linkedid,sequence with newcdrcolumns=yes). Text is quoted with "" for a quote, dates are "YYYY-MM-DD HH:MM:SS" in GMT
+// (usegmtime=yes in cdr.conf) or empty, numbers are bare. lastdata and userfield are not returned: lastdata holds the expanded arguments of the
+// last application, which can contain dialed digits or a PIN being compared.
+const CDR_FILE = '/var/log/asterisk/cdr-csv/Master.csv';
+const MAX_CDR_TAIL = 262144;
+const MAX_CALLS = 300;
+
+// One CSV line as a list of strings; "" inside a quoted field is a quote.
+function csv_fields(line) {
+	let out = [], cur = '', quoted = false, n = length(line);
+	for (let i = 0; i < n; i++) {
+		let c = substr(line, i, 1);
+		if (quoted) {
+			if (c != '"')
+				cur += c;
+			else if (substr(line, i + 1, 1) == '"') {
+				cur += '"';
+				i++;
+			}
+			else
+				quoted = false;
+		}
+		else if (c == '"')
+			quoted = true;
+		else if (c == ',') {
+			push(out, cur);
+			cur = '';
+		}
+		else
+			cur += c;
+	}
+	push(out, cur);
+	return out;
+}
+
+// "2026-11-24 12:48:38" (GMT) -> epoch seconds, or null for an empty or unreadable date.
+function cdr_time(text) {
+	let m = match(text ?? '', /^([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2})$/);
+	return m ? timegm({ year: +m[1], mon: +m[2], mday: +m[3], hour: +m[4], min: +m[5], sec: +m[6] }) : null;
+}
+
+// The endpoint of a channel name: "PJSIP/1001-0000000a" -> "1001", "Local/6000@lab-0000000f;1" -> "6000@lab"; null for no channel.
+function channel_endpoint(name) {
+	let at = index(name ?? '', '/');
+	if (at < 0)
+		return null;
+	return replace(replace(substr(name, at + 1), /;[12]$/, ''), /-[0-9a-f]{8}$/, '');
+}
+
+// One parsed CDR line as a call, or null when the line is not a complete record.
+function cdr_call(line) {
+	let f = csv_fields(line);
+	if (length(f) < 18)
+		return null;
+	let start = cdr_time(f[9]);
+	if (start == null)
+		return null;
+	return {
+		id: f[16], linked: f[19] || f[16], start, answer: cdr_time(f[10]), end: cdr_time(f[11]),
+		duration: number_or_null(f[12]), billsec: number_or_null(f[13]), disposition: f[14],
+		src: f[1], dst: f[2], clid: f[4], context: f[3], app: f[7],
+		channel: f[5], dstchannel: f[6], from_endpoint: channel_endpoint(f[5]), to_endpoint: channel_endpoint(f[6]),
+	};
+}
+
+// The reply of `calls`: the newest calls of the CDR file, newest first, and whether a backend writes it. The file is readable even when
+// Asterisk is down, so the history of the last calls stays visible then.
+function calls() {
+	let up = installed();
+	let cdr = parse_cdr(up ? cli('cdr show status') : null);
+	let out = { installed: up, enabled: cdr.enabled, backends: cdr.backends, csv: index(cdr.backends, 'csv') >= 0, file: CDR_FILE, entries: [], truncated: false, size: null };
+	let file = read_file(CDR_FILE, MAX_CDR_TAIL, true);
+	if (!file)
+		return out;
+	out.size = file.size;
+	out.truncated = file.size > MAX_CDR_TAIL;
+	let lines = split(file.text, '\n');
+	for (let i = length(lines) - 1; i >= 0 && length(out.entries) < MAX_CALLS; i--) {
+		let call = lines[i] != '' ? cdr_call(lines[i]) : null;
+		if (call)
+			push(out.entries, call);
+	}
+	sort(out.entries, (a, b) => b.start - a.start);
+	return out;
+}
+//#endregion
+
 //#region configuration files
 
 // Whether a configuration file has anything but comments and blank lines (the `;--` ... `--;` blocks are comments).
@@ -829,7 +921,8 @@ function reload(request) {
 //#endregion
 
 // rpcd registration: ubus object flab.asterisk. Every method but `reload` only reads. `status` is the Overview, `pjsip` the SIP objects, `endpoint` takes
-// { name }, `dialplan` the whole loaded dialplan, `resolve` takes { context, exten }, `config` takes an optional { file }, `reload` takes { what }.
+// { name }, `dialplan` the whole loaded dialplan, `resolve` takes { context, exten }, `config` takes an optional { file }, `calls` the call history,
+// `reload` takes { what }.
 return deferred({
 	'flab.asterisk': {
 		reload: {
@@ -863,6 +956,11 @@ return deferred({
 			args: { context: '', exten: '' },
 			call: function(request) {
 				return resolve(request);
+			},
+		},
+		calls: {
+			call: function(request) {
+				return calls();
 			},
 		},
 		config: {

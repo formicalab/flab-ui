@@ -31,6 +31,30 @@ const json = (dir, name, fn) => {
   write(dir, name, JSON.stringify(v));
 };
 
+// A synthetic cdr_csv file (the format of cdr_csv.c with newcdrcolumns, dates in GMT): an outgoing call that was answered, an incoming call nobody
+// answered and one that was, a busy internal call, a failed outgoing call, a caller name with a comma and quotes, the two legs of a Local channel,
+// a line from before newcdrcolumns, a broken line and empty ones. `lastdata` holds a marker that must never reach a reply.
+function callHistory(clock) {
+  const at = s => `"${new Date((clock - s) * 1000).toISOString().slice(0, 19).replace('T', ' ')}"`;
+  const q = t => `"${t.replace(/"/g, '""')}"`;
+  const line = (ago, f) => [q(''), q(f.src ?? ''), q(f.dst), q(f.ctx), q(f.clid), q(f.ch), q(f.dch ?? ''), q(f.app ?? 'Dial'), q('LASTDATA-MARKER'), at(ago), f.answered ? at(ago - 3) : '', at(ago - f.duration),
+    f.duration, f.bill ?? 0, q(f.disp), q('DOCUMENTATION'), q(f.id), q(''), q(''), q(f.link ?? f.id), f.seq ?? 1].join(',');
+  return [
+    line(3600, { src: '1001', dst: '0612345678', ctx: 'from-internal', clid: '"1001" <1001>', ch: 'PJSIP/1001-00000001', dch: 'PJSIP/Vodafone-00000002', answered: true, duration: 125, bill: 122, disp: 'ANSWERED', id: '1000.1' }),
+    line(3000, { src: '+393331234567', dst: '+390691602383', ctx: 'from-pstn', clid: '"+393331234567" <+393331234567>', ch: 'PJSIP/Vodafone-00000003', dch: 'PJSIP/1001-00000004', duration: 30, disp: 'NO ANSWER', id: '1000.2' }),
+    line(2400, { src: '+390212345678', dst: '+390691602383', ctx: 'from-pstn', clid: '"Rossi, ""Gino""" <+390212345678>', ch: 'PJSIP/Clouditalia-00000005', dch: 'PJSIP/1001-00000006', answered: true, duration: 66, bill: 60, disp: 'ANSWERED', id: '1000.3' }),
+    line(1800, { src: '1001', dst: '1002', ctx: 'from-internal', clid: '"1001" <1001>', ch: 'PJSIP/1001-00000007', dch: 'PJSIP/1002-00000008', duration: 12, disp: 'BUSY', id: '1000.4' }),
+    line(1200, { src: '1001', dst: '0687654321', ctx: 'from-internal', clid: '"1001" <1001>', ch: 'PJSIP/1001-00000009', dch: 'PJSIP/Vodafone-0000000a', duration: 1, disp: 'FAILED', id: '1000.5' }),
+    'garbage line without enough fields',
+    '',
+    line(600, { dst: '6000', ctx: 'internal-lab', clid: '"" <>', ch: 'Local/6000@internal-lab-0000000f;1', app: 'Wait', answered: true, duration: 1, bill: 1, disp: 'ANSWERED', id: '1000.6', seq: 40 }),
+    line(600, { dst: '6000', ctx: 'internal-lab', clid: '"" <>', ch: 'Local/6000@internal-lab-0000000f;2', app: 'Playback', answered: true, duration: 1, bill: 1, disp: 'ANSWERED', id: '1000.7', link: '1000.6', seq: 41 }),
+    // A line from before newcdrcolumns=yes: 18 fields, no linked id.
+    `${['', '1001', '0611111111', 'from-internal', '"1001" <1001>', 'PJSIP/1001-0000000b', 'PJSIP/Vodafone-0000000c', 'Dial', 'LASTDATA-MARKER'].map(q).join(',')},${at(300)},${at(297)},${at(200)},100,97,"ANSWERED","DOCUMENTATION","1000.8",""`,
+    '',
+  ].join('\n');
+}
+
 // Registers a scenario: the capture is copied to <work>/<name> and `fn(dir)` changes it. The reload commands are never run for real: every
 // scenario answers them from these files (and an unreachable daemon fails them like every other command).
 function scenario(name, fn) {
@@ -38,6 +62,7 @@ function scenario(name, fn) {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.cpSync(real, dir, { recursive: true });
   for (const c of ['core reload', 'dialplan reload', 'module reload res_pjsip.so']) write(dir, `${cliName(c)}.txt`, '');
+  write(dir, 'file__var_log_asterisk_cdr_csv_Master_csv.txt', callHistory(+read(dir, 'clock.txt')));
   // Whatever the real router did last, no file is newer than the last reload (an hour ago) unless the scenario says so.
   const clock = +read(dir, 'clock.txt');
   edit(dir, 'core show uptime seconds', t => t.replace(/Last reload: \d+/, 'Last reload: 3600'));
@@ -111,6 +136,12 @@ scenario('benignerr', dir => {
   const stamp = read(dir, 'now-log.txt').trim();
   const name = 'file__var_log_asterisk_messages_log.txt';
   write(dir, name, read(dir, name) + `[${stamp}] ERROR[321] res_pjsip/config_system.c: There are no local system nameservers configured, resorting to system resolution\n`);
+});
+
+// No CDR backend: the history is not written and the file does not exist.
+scenario('nocdr', dir => {
+  edit(dir, 'cdr show status', t => t.replace(/\n {4}csv\b/, '\n    (none)'));
+  fs.rmSync(path.join(dir, 'file__var_log_asterisk_cdr_csv_Master_csv.txt'));
 });
 
 scenario('many', dir => {

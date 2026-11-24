@@ -11,6 +11,12 @@
 /* The Reload buttons: at the right end of the tab strip's line */
 .cmd-reload { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
 
+/* Calls tab: direction of a call */
+.ast-dir { white-space: nowrap; }
+.ast-dir.in { color: var(--fl-ok-fg); }
+.ast-dir.out { color: var(--fl-brand); }
+.ast-dir.internal { color: var(--fl-muted); }
+
 /* Status dot used by endpoints and dialed targets */
 .ast-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; margin-right: .35rem; vertical-align: baseline; background: var(--fl-muted); }
 .ast-dot.success { background: var(--fl-ok-fg); }

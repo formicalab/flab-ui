@@ -47,7 +47,7 @@ $plugin = Join-Path $root 'rpcd\ucode\flab.asterisk.uc'
 $libs = Join-Path $root 'rpcd\lib\flab'
 $work = Join-Path ([IO.Path]::GetTempPath()) 'flab-asterisk-test'
 $remote = '/tmp/flab-asterisk-test'
-$scenarios = 'base', 'unreachable', 'stopped', 'disabled', 'notinstalled', 'regfail', 'calls', 'nopjsip', 'changed', 'recenterr', 'benignerr', 'many', 'secrets'
+$scenarios = 'base', 'unreachable', 'stopped', 'disabled', 'notinstalled', 'regfail', 'calls', 'nopjsip', 'changed', 'recenterr', 'benignerr', 'nocdr', 'many', 'secrets'
 # Output name -> method and JSON arguments, run for every scenario unless listed in $baseOnly.
 $methods = [ordered]@{
     'status'            = @('status', '{}')
@@ -57,6 +57,7 @@ $methods = [ordered]@{
     'config.pjsip'      = @('config', '{"file":"pjsip.conf"}')
     'config.extensions' = @('config', '{"file":"extensions.conf"}')
     'endpoint'          = @('endpoint', '{"name":"Vodafone"}')
+    'calls'             = @('calls', '{}')
     'reload.core'       = @('reload', '{"what":"core"}')
     'reload.pjsip'      = @('reload', '{"what":"pjsip"}')
 }

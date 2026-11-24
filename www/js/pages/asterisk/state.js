@@ -5,6 +5,8 @@ export const state = {
   tab: 'overview', paused: false,
   // PJSIP tab: filter text, role filter ('all' | 'trunk' | 'phone').
   q: '', role: 'all',
+  // Calls tab: filter text and kind ('all' | 'in' | 'out' | 'internal' | 'missed').
+  cq: '', ckind: 'all',
   // Dialplan tab: the view ('browse' | 'map' | 'test'), the selected context, the extension to open and highlight, the filter text,
   // the extensions the user unfolded (context|pattern), and the number tester (where it dials from, the digits, the answers).
   dpView: 'browse', ctx: null, ext: null, hl: null, dq: '', openExt: new Set(), mapSel: null,

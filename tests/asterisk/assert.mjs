@@ -9,6 +9,7 @@
 //   changed      pjsip.conf changed after Asterisk last loaded it
 //   recenterr    a fresh error in the log
 //   benignerr    the nameserver error musl always causes: listed, marked harmless, no finding
+//   nocdr        no CDR backend and no call history file
 //   many         more endpoints than get a detail query
 //   secrets      secrets in the configuration, the dialplan, the globals and the endpoint parameters
 import fs from 'node:fs';
@@ -104,6 +105,25 @@ console.log('== calls ==');
   check(e.calls.length === 1 && e.calls[0].time === '00:02:05' && e.calls[0].exten === '+390612345', 'the endpoint block lists its call', JSON.stringify(e.calls));
   check(e.active_channels.length === 1 && e.active_channels[0].channel === 'PJSIP/1001-0000000a', 'channels are matched to their endpoint');
   check(!s.findings.some(f => /1001/.test(f.text)), 'an endpoint in use is not reported as unavailable', texts(s.findings));
+}
+
+console.log('== call history ==');
+{
+  const h = load('base', 'calls'), ids = h.entries.map(e => e.id);
+  check(h.installed && h.enabled === true && h.csv === true && h.backends.includes('csv'), 'the csv backend is seen', JSON.stringify(h.backends));
+  check(ids.join() === '1000.8,1000.7,1000.6,1000.5,1000.4,1000.3,1000.2,1000.1' || ids.join() === '1000.8,1000.6,1000.7,1000.5,1000.4,1000.3,1000.2,1000.1', 'eight calls, the newest first; the broken and empty lines are skipped', ids.join());
+  const by = id => h.entries.find(e => e.id === id);
+  const out = by('1000.1');
+  check(out.duration === 125 && out.billsec === 122 && out.disposition === 'ANSWERED' && out.from_endpoint === '1001' && out.to_endpoint === 'Vodafone' && out.answer - out.start === 3 && out.end - out.start === 125, 'an outgoing call: times, seconds, endpoints from the channel names', JSON.stringify(out));
+  check(by('1000.2').disposition === 'NO ANSWER' && by('1000.2').answer === null && by('1000.2').from_endpoint === 'Vodafone', 'an unanswered call has no answer time');
+  check(by('1000.3').clid === '"Rossi, ""Gino""" <+390212345678>', 'a comma and doubled quotes inside a quoted field are read back', by('1000.3').clid);
+  check(by('1000.6').from_endpoint === '6000@internal-lab' && by('1000.6').linked === '1000.6' && by('1000.7').linked === '1000.6' && by('1000.8').linked === '1000.8', 'Local legs share a linked id, an old line falls back to its own id');
+  check(!strings([h]).some(t => t.includes('LASTDATA-MARKER')), 'the arguments of the last application never reach the reply');
+  check(h.file === '/var/log/asterisk/cdr-csv/Master.csv' && h.truncated === false, 'the file and whether it was cut');
+  const n = load('nocdr', 'calls');
+  check(n.csv === false && n.backends.length === 0 && n.entries.length === 0, 'without a backend and a file: nothing, and the reason is in csv', JSON.stringify(n));
+  const u = load('unreachable', 'calls');
+  check(u.csv === false && u.entries.length === 8, 'with Asterisk down the file is still read', `${u.csv} ${u.entries.length}`);
 }
 
 console.log('== nopjsip ==');
