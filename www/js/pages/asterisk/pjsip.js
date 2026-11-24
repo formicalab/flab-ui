@@ -2,27 +2,15 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { ubus } from '../../core/ubus.js';
-import { badge, card, chip, emptyState, kv, mono, muted, sparkline, tile, tiles, button } from '../../core/ui.js';
+import { badge, card, chip, emptyState, kv, mono, muted, sparkline, button } from '../../core/ui.js';
 import { disclosure } from '../../core/fold.js';
 import { openDrawer } from '../../core/drawer.js';
 import { fmtSpan } from '../../core/format.js';
-import { CONTACT_TEXT, ENDPOINT_GROUPS, ROLE_TEXT, allContacts, contactKind, countdown, endpointKind, endpointNotes, fmtRtt, matchesEndpoint, registrationKind, summarize } from './pjsipmodel.js';
+import { CONTACT_TEXT, ENDPOINT_GROUPS, ROLE_TEXT, allContacts, contactKind, countdown, endpointKind, endpointNotes, fmtRtt, matchesEndpoint, registrationKind } from './pjsipmodel.js';
 import { go, rtt, state } from './state.js';
 
 // A small colored dot for a state, with the text as its tooltip.
 const dot = (kind, title) => h('span', { className: `ast-dot ${kind || 'neutral'}`, title });
-
-// The tiles over the whole tab.
-function summaryTiles(p) {
-  const s = summarize(p);
-  return tiles(
-    tile('Registrations', s.registrations ? `${s.registered} / ${s.registrations}` : '–', s.registrations ? (s.registered === s.registrations ? 'all registered' : 'some are not registered') : 'none configured', s.registrations && s.registered < s.registrations ? 'text-danger' : (s.registrations ? 'text-success' : '')),
-    tile('Endpoints', `${s.usable} / ${s.endpoints}`, s.usable === s.endpoints ? 'all available' : `${s.endpoints - s.usable} unavailable`, s.usable < s.endpoints ? 'text-warning' : ''),
-    tile('In use', String(s.inUse), s.inUse ? 'endpoints with a call' : 'no call now'),
-    tile('Contacts', s.contacts ? `${s.reachable} / ${s.contacts}` : '–', s.contacts ? 'reachable' : 'no registered device', s.contacts && s.reachable < s.contacts ? 'text-warning' : ''),
-    tile('Active calls', String(s.calls), 'channels now'),
-    tile('Transports', String(p.transports.length), p.transports.map(t => t.bind).join(' · ')));
-}
 
 // One card per outbound registration.
 function registrationCards(p) {
@@ -122,7 +110,6 @@ export function pjsipView(p) {
     return [emptyState(p.reason === 'module' ? 'The PJSIP channel driver (chan_pjsip) is not loaded, so there is nothing to show about SIP. Install asterisk-pjsip.' : 'Asterisk is not running or does not answer, so its SIP state cannot be read.')];
   }
   return [
-    summaryTiles(p),
     p.truncated ? h('div', { className: 'alert alert-info' }, 'There are more endpoints than the page reads in detail; the later ones show no codec or context.') : null,
     h('h2', { className: 'ast-h' }, 'Outbound registrations'),
     registrationCards(p),

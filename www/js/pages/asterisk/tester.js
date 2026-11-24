@@ -4,7 +4,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { ubus } from '../../core/ubus.js';
 import { badge, button, card, kv, mono, muted } from '../../core/ui.js';
-import { describePattern, findExtension, stepDials } from './dialplanmodel.js';
+import { describePattern, findExtension, globalVars, stepDials } from './dialplanmodel.js';
 import { endpointKind } from './pjsipmodel.js';
 import { jumpTo, stepsTable } from './steps.js';
 import { rerender, state } from './state.js';
@@ -56,9 +56,10 @@ function agreement(t) {
 }
 
 // What the call does after the match: the endpoints dialed (with their live state) and the contexts jumped to.
-function outcome(map, local) {
+function outcome(dp, map, local) {
   const dials = [];
-  for (const s of local.extension.steps) for (const d of stepDials(s)) dials.push(d);
+  const vars = globalVars(dp);
+  for (const s of local.extension.steps) for (const d of stepDials(s, vars)) dials.push(d);
   const rows = [];
   for (const d of dials) {
     if (d.kind === 'endpoint') {
@@ -98,7 +99,7 @@ export function testerView(dp, map, list) {
           ['Context searched', mono(t.source.context)],
           ['Found in', r.via.length ? h('span', {}, mono(r.context), muted(` through the include${r.via.length > 1 ? 's' : ''} ${r.via.join(' → ')}`)) : mono(r.context)],
           ['Extension', h('span', {}, h('span', { className: 'ast-pattern mono' }, r.extension.pattern), ' ', muted(describePattern(r.extension.pattern)))],
-          ['Then', outcome(map, r)],
+          ['Then', outcome(dp, map, r)],
         ]),
         h('div', { className: 'mt-3 d-flex gap-2' }, button('Show it in the browser', 'diagram-3', () => jumpTo(r.context, r.extension.pattern, null), 'btn-outline-primary btn-sm')))
         : h('div', {}, h('div', { className: 'fw-semibold' }, `No extension in ${t.source.context} (or the contexts it includes) matches “${t.dialed}”.`),

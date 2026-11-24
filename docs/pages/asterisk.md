@@ -1,13 +1,21 @@
 # Asterisk (route `#asterisk`, optional `flab-ui-mod-asterisk`)
-The PBX of the router, read only. Four tabs; only the open tab is polled (Overview and PJSIP every 5 s, Dialplan every
+The PBX of the router, read only apart from three reload buttons. Four tabs; only the open tab is polled (Overview and PJSIP every 5 s, Dialplan every
 30 s, Configuration not at all: Refresh reads it again). Data comes from the `flab.asterisk` plugin, which talks to
-Asterisk through its CLI (`asterisk -rx '<command>'`, over the control socket). Nothing here changes Asterisk or its
-configuration: there is no reload, no originate and no edit. The page is built for Asterisk 23, the version in the
+Asterisk through its CLI (`asterisk -rx '<command>'`, over the control socket). The only change the page can make is a
+reload (see Reload below): there is no originate and no edit. The page is built for Asterisk 23, the version in the
 OpenWrt telephony feed; the parsers skip lines they do not know, so another version loses fields instead of breaking.
+
+## Reload
+At the right end of the tab strip, on every tab: **All** (`core reload`), **Dialplan** (`dialplan reload`, extensions.conf
+only) and **PJSIP** (`module reload res_pjsip.so`, endpoints and registrations). A button asks first, says what will
+happen and which command runs, then shows what Asterisk answered and reads the page again. Calls in progress go on. The
+buttons are greyed when Asterisk is not running and absent when the login has no write access to `flab.asterisk reload`. The
+Overview banner about a configuration file changed after the last load points here.
 
 ## Overview
 - Summary tiles: version and uptime, registrations (registered of all), endpoints (available of all), calls (active and
-  processed since start), memory and whether the configuration was changed after the last reload.
+  processed since start), memory and whether the configuration was changed after the last reload. The same tiles stay pinned
+  above the tabs on every tab (each tab's poll reads the status too), so the state of the daemon is always in view.
 - A banner of what needs attention: a registration that is not `Registered`, an endpoint that is `Unavailable`, a
   configuration file changed after Asterisk last loaded it (the reload command is named, not run), errors in the log in the
   last 24 hours, PJSIP not loaded or nothing configured. When Asterisk is not running the page tells the cases apart:
@@ -17,7 +25,9 @@ OpenWrt telephony feed; the parsers skip lines they do not know, so another vers
   limit, what is exposed (AMI, AMI over HTTP, realtime), whether CDR has a backend, the logger channels, the directories,
   and the loaded modules as chips (their descriptions are tooltips).
 - The registrations and endpoints at a glance, and the recent warnings and errors of `/var/log/asterisk/messages.log`
-  (the last 30; NOTICE lines are kept because the reason of a failed call is often one).
+  (the last 30; NOTICE lines are kept because the reason of a failed call is often one). A known harmless line is marked
+  *harmless* and raises no finding: on OpenWrt (musl) Asterisk cannot read the nameservers, so it logs "There are no local
+  system nameservers configured" at every start and reload and resolves through the system resolver, which works.
 
 ## PJSIP
 - **Registrations**: one card per outbound registration with its state, when it renews, and its settings (client and server
@@ -44,8 +54,9 @@ The loaded dialplan (`dialplan show`), not the file: what Asterisk actually uses
   Configuration tab at that line. A filter narrows the extensions by pattern, application or arguments. The global variables
   are listed below.
 - **Routing map**: endpoints (where calls enter) → contexts → dialed endpoints, drawn from the dialplan and the live endpoints.
-  `Dial(PJSIP/+39${EXTEN}@Vodafone)` links the context to the endpoint Vodafone with its live state; a variable in the endpoint
-  position is a dynamic target. A click on a context highlights its wiring. Under the map: an endpoint whose context the
+  `Dial(PJSIP/+39${EXTEN}@Vodafone)` links the context to the endpoint Vodafone with its live state. A global variable in the
+  endpoint position is replaced by its value, so `Dial(PJSIP/${ARG1}@${OUTBOUND_TRUNK})` links to whichever trunk the global names;
+  any other variable makes the target dynamic. A click on a context highlights its wiring. Under the map: an endpoint whose context the
   dialplan does not define, a `Dial` to an endpoint that does not exist, a jump to a missing context or label, and unused contexts.
 - **Number tester**: pick where the call enters (an endpoint or a context) and type a number. The page follows the dialplan the
   way Asterisk searches it, and shows the extension, whether it was found through an include, what it does next (the endpoints
@@ -58,7 +69,7 @@ extensions do not match are its includes searched, in order. In a pattern `X` is
 `.` one or more characters, `!` any rest (even none); spaces and dashes in a pattern are ignored.
 
 PINs and passwords in the dialplan are **hidden** by the backend before anything reaches the browser (see Backend). A hidden
-value shows as `<redacted>`, and the tile *Hidden values* of the Browser view says how many were hidden. This is best effort: it recognizes
+value shows as `<redacted>`, and the count line at the top of the Browser view says how many were hidden. This is best effort: it recognizes
 `Authenticate(...)` and `DISA(...)`, `Set(NAME=value)` where the name says it is a secret (`PIN`, `PASSWORD`, `SECRET`, `TOKEN`,
 …), a comparison of such a variable with a literal (`$["${PIN}" = "3003"]`), and the `[globals]` with such names. A secret under
 an innocent name cannot be recognized.

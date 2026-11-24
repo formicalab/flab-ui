@@ -31,8 +31,9 @@ function uptimeText(s) {
   return `${fmtSpan(s.uptime)} (since ${new Date(s.started * 1000).toLocaleString()})`;
 }
 
-// The summary tiles.
-function summaryTiles(s) {
+// The summary tiles, pinned above the tabs on every tab.
+export function summaryTiles(s) {
+  if (s.state === 'not_installed') return null;
   if (s.state !== 'running') {
     return tiles(tile('Asterisk', { stopped: 'Stopped', disabled: 'Disabled', unreachable: 'Not answering' }[s.state] ?? '–',
       s.state === 'disabled' ? 'enabled is 0 in /etc/config/asterisk' : s.state === 'unreachable' ? 'process alive, no control socket' : 'not running',
@@ -107,7 +108,8 @@ function problemsCard(s) {
   const p = s.problems;
   if (!p.available) return card([icon('journal-text'), 'Recent warnings and errors'], h('div', { className: 'card-body muted' }, 'Asterisk writes no messages.log, so there is nothing to show. Enable a "messages" file channel in logger.conf to see warnings and errors here.'));
   const levelKind = { error: 'danger', fatal: 'danger', warning: 'warning', notice: 'info' };
-  const rows = [...p.entries].reverse().map(e => [muted(e.time), badge(e.level, levelKind[e.level] ?? ''), mono(e.source), e.text]);
+  const rows = [...p.entries].reverse().map(e => [muted(e.time), badge(e.level, e.benign ? '' : levelKind[e.level] ?? ''), mono(e.source),
+    e.benign ? h('span', { title: e.benign }, e.text, ' ', badge('harmless', 'info')) : e.text]);
   return card([icon('journal-text'), 'Recent warnings and errors'],
     rows.length ? h('div', { className: 'ast-log' }, table(['Time', 'Level', 'Source', 'Message'], rows)) : h('div', { className: 'card-body muted' }, 'The log holds no warning or error.'));
 }

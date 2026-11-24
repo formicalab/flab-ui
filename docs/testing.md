@@ -197,7 +197,7 @@ empty swanctl config). `tests/ipsec/rates.test.mjs` unit
 tests the throughput history (rates, counter resets, gaps, pauses, per-SA keys, removed connections).
 
 ## Asterisk suite
-`pwsh -File flab-ui\tests\asterisk\run.ps1 [-Browser] [-Keep]`. Everything run on the router is read only.
+`pwsh -File flab-ui\tests\asterisk\run.ps1 [-Browser] [-Keep]`. Everything run on the router is read only; the reload commands are answered from fixtures and never run.
 - **Pure models** (`tests/asterisk/*.test.mjs`, no router, part of `run-pure.mjs`): the dialplan model (Asterisk's pattern matching,
   the search order over includes, what a step jumps to and dials, the routing map and its findings, the application table) and the
   PJSIP and configuration models (state colors, summaries, the filter, round-trip history, line kinds and sections of a file).
@@ -208,7 +208,7 @@ tests the throughput history (rates, counter resets, gaps, pauses, per-SA keys, 
   `resolve` through an include, every unsafe `resolve`, `endpoint` and `config` request refused), `unreachable`, `stopped`, `disabled`
   and `notinstalled` (the four ways Asterisk is not up, and which of them is an error), `regfail` (a Rejected registration), `calls`
   (a call in progress with two contacts), `nopjsip`, `changed` (pjsip.conf changed after the last reload), `recenterr` (a fresh log
-  error), `many` (more endpoints than get a detail query) and `secrets` (an `Authenticate`, a `Set(…PASSWORD=)`, a compared PIN, a
+  error), `benignerr` (the nameserver error musl always causes: marked harmless, no finding), `many` (more endpoints than get a detail query) and `secrets` (an `Authenticate`, a `Set(…PASSWORD=)`, a compared PIN, a
   global token, `secret=` and `md5_cred=` lines and an endpoint `password` parameter, none of which may reach a reply, while a plain
   `Set(PLAIN=ok)` and a user name must stay).
 - **Browser** (`-Browser`): the page against those scenarios (the `flab.asterisk` calls are answered from them; `resolve` goes to the real

@@ -3,7 +3,7 @@
 import { h } from '../../core/dom.js';
 import { badge, mono, muted } from '../../core/ui.js';
 import { appInfo } from './apps.js';
-import { stepDials, stepJumps } from './dialplanmodel.js';
+import { globalVars, stepDials, stepJumps } from './dialplanmodel.js';
 import { endpointKind } from './pjsipmodel.js';
 import { go, rerender, state } from './state.js';
 
@@ -42,10 +42,10 @@ function annotations(dp, map, step, here) {
       ? badge(`${text} (no such ${j.missing})`, 'warning')
       : h('button', { type: 'button', className: 'btn btn-link btn-sm p-0 ast-jump', title: j.cond ? `When ${j.cond}` : 'Show the destination', onclick: () => jumpTo(j.context, j.exten, j.prio) }, text));
   }
-  for (const d of stepDials(step)) {
+  for (const d of stepDials(step, globalVars(dp))) {
     if (d.kind === 'endpoint') {
       const t = map.targets.find(x => x.id === `tg:${d.endpoint}`);
-      out.push(h('span', { className: 'ast-target', title: t?.known ? `${d.endpoint}: ${t.state}` : `Asterisk has no endpoint ${d.endpoint}` },
+      out.push(h('span', { className: 'ast-target', title: (t?.known ? `${d.endpoint}: ${t.state}` : `Asterisk has no endpoint ${d.endpoint}`) + (d.via ? ` (the value of ${d.via})` : '') },
         h('span', { className: `ast-dot ${t?.known ? endpointKind({ state: t.state, role: t.role }) || 'neutral' : 'danger'}` }), `calls ${d.endpoint}`));
     } else if (d.kind === 'dynamic') out.push(muted('calls an endpoint chosen at run time'));
     else if (d.kind === 'local') out.push(muted(`calls a Local channel into ${d.context ?? '?'}`));

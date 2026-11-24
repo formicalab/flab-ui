@@ -31,10 +31,7 @@ check(m.contactKind('Avail') === 'success' && m.contactKind('Unavail') === 'dang
 check(m.countdown(45) === 'in 45 s' && m.countdown(600) === 'in 10 min' && m.countdown(3900) === 'in 1 h 5 min' && m.countdown(7200) === 'in 2 h' && m.countdown(null) === null, 'countdown texts');
 check(m.fmtRtt(53.428) === '53 ms' && m.fmtRtt(0.44) === '0.4 ms' && m.fmtRtt(null) === '–', 'round-trip texts');
 
-console.log('== summary and filter ==');
-const s = m.summarize(pjsip);
-check(s.registrations === 2 && s.registered === 1 && s.endpoints === 2 && s.usable === 1 && s.inUse === 1 && s.contacts === 2 && s.reachable === 1 && s.calls === 1, 'summary counts', j(s));
-check(j(m.summarize(null)) === j({ registrations: 0, registered: 0, endpoints: 0, usable: 0, inUse: 0, contacts: 0, reachable: 0, calls: 0 }), 'an absent PJSIP summarizes to zeros');
+console.log('== filter ==');
 const names = (q, role) => pjsip.endpoints.filter(e => m.matchesEndpoint(e, q, role)).map(e => e.name).join();
 check(names('') === '1001,V' && names('trunk') === 'V' && names('', 'phone') === '1001' && names('10.0.0 in use') === 'V' && names('nothing') === '', 'the filter searches name, role, state and identify criteria; the role filter narrows');
 check(m.endpointNotes(pjsip.endpoints[0]).some(n => n.level === 'warn' && /No contact is registered/.test(n.text)) && m.endpointNotes(pjsip.endpoints[1]).some(n => /does not answer/.test(n.text)), 'endpoint notes');

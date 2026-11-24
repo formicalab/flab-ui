@@ -54,18 +54,6 @@ export function allContacts(pjsip) {
   return (pjsip?.endpoints ?? []).flatMap(e => e.contacts.map(c => ({ endpoint: e.name, ...c })));
 }
 
-// Counts for the tiles: registrations (registered of all), endpoints (usable of all, in use now), contacts (reachable of all), calls.
-export function summarize(pjsip) {
-  const regs = pjsip?.registrations ?? [], eps = pjsip?.endpoints ?? [], contacts = allContacts(pjsip);
-  return {
-    registrations: regs.length, registered: regs.filter(r => r.status === 'Registered').length,
-    endpoints: eps.length, usable: eps.filter(e => e.state !== 'Unavailable' && e.state !== 'Invalid').length,
-    inUse: eps.filter(e => e.channels > 0).length,
-    contacts: contacts.length, reachable: contacts.filter(c => c.status === 'Avail').length,
-    calls: (pjsip?.channels ?? []).length,
-  };
-}
-
 // Whether an endpoint matches the search text (every word, in the name, role, state, context, codecs, auths, contacts or identify
 // criteria) and the role filter ('all' | 'trunk' | 'phone').
 export function matchesEndpoint(e, q, role = 'all') {

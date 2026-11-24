@@ -1,21 +1,19 @@
 // Dialplan tab, Browser view: the contexts on the left, the selected context's extensions on the right, each with its steps.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { badge, card, chip, emptyState, mono, tile, tiles } from '../../core/ui.js';
+import { badge, card, chip, emptyState, mono } from '../../core/ui.js';
 import { disclosure } from '../../core/fold.js';
 import { openEndpointDrawer } from './pjsip.js';
-import { describePattern, stepDials } from './dialplanmodel.js';
+import { describePattern, globalVars, stepDials } from './dialplanmodel.js';
 import { extId, stepsTable } from './steps.js';
 import { rerender, state } from './state.js';
 
-// The tiles over the whole dialplan.
-export function dialplanTiles(dp) {
-  return tiles(
-    tile('Contexts', String(dp.totals.contexts), 'in the loaded dialplan'),
-    tile('Extensions', String(dp.totals.extensions), 'names and patterns'),
-    tile('Steps', String(dp.totals.steps), 'priorities in all'),
-    tile('Global variables', String(dp.globals.length), dp.globals.length ? dp.globals.map(g => g.name).join(', ') : 'none'),
-    tile('Hidden values', String(dp.redacted), dp.redacted ? 'PINs and passwords are not shown' : 'nothing needed hiding', dp.redacted ? 'text-warning' : ''));
+// One line of counts over the whole dialplan (the daemon tiles above the tabs stay the same on every tab).
+export function dialplanStats(dp) {
+  const t = dp.totals;
+  return h('div', { className: 'muted small mb-2' },
+    `${t.contexts} contexts · ${t.extensions} extensions · ${t.steps} steps · ${dp.globals.length} global variables`,
+    dp.redacted ? ` · ${dp.redacted} hidden value${dp.redacted > 1 ? 's' : ''} (PINs and passwords are not shown)` : '');
 }
 
 // Whether an extension matches the filter text (pattern, application or arguments).
@@ -26,9 +24,10 @@ function matches(ext, q) {
 }
 
 // What an extension dials, as endpoint names (for the summary line of its card).
-function dialled(ext) {
+function dialled(dp, ext) {
   const names = new Set();
-  for (const s of ext.steps) for (const d of stepDials(s)) names.add(d.kind === 'endpoint' ? d.endpoint : d.kind === 'dynamic' ? 'any endpoint' : d.kind === 'local' ? 'Local' : d.tech);
+  const vars = globalVars(dp);
+  for (const s of ext.steps) for (const d of stepDials(s, vars)) names.add(d.kind === 'endpoint' ? d.endpoint : d.kind === 'dynamic' ? 'any endpoint' : d.kind === 'local' ? 'Local' : d.tech);
   return [...names];
 }
 
@@ -64,7 +63,7 @@ function contextHeader(ctx, map) {
 function extensionCard(dp, map, ctx, ext, idx) {
   const key = `${ctx.name}|${ext.pattern}`;
   const open = state.openExt.has(key) || state.ext === ext.pattern || (ctx.extensions.length <= 4 && !state.openExt.has(`!${key}`));
-  const calls = dialled(ext);
+  const calls = dialled(dp, ext);
   return h('div', { className: `card ast-ext ${state.ext === ext.pattern ? 'focus' : ''}`, id: extId(ctx.name, ext.pattern) },
     disclosure({
       cls: 'ast-ext-fold', summaryCls: 'ast-ext-sum', open,

@@ -41,7 +41,7 @@ function reserve_worker_slot() {
 const MUTATING = [
 	'control', 'start', 'stop', 'wake', 'cable_test', 'wps', 'ntp_sync', 'action',
 	'backup_create', 'backup_download', 'backup_begin', 'backup_upload',
-	'backup_inspect', 'backup_restore', 'backup_cancel',
+	'backup_inspect', 'backup_restore', 'backup_cancel', 'reload',
 ];
 
 // Wraps the `call` of every method in `objects` ({ object: { method: { args, call } } }) and returns `objects`.

@@ -1,8 +1,8 @@
 #!/usr/bin/ucode
 //
-// rpcd ucode plugin reporting the Asterisk PBX as JSON: ubus call flab.asterisk status|pjsip|endpoint|dialplan|resolve|config
+// rpcd ucode plugin reporting the Asterisk PBX as JSON: ubus call flab.asterisk status|pjsip|endpoint|dialplan|resolve|config|reload
 //
-// Everything is read only. Sources:
+// Everything is read only except `reload` (three fixed reload commands). Sources:
 //   - the Asterisk CLI (`asterisk -rx '<command>'`, over the control socket): core status, PJSIP registrations, endpoints, contacts and
 //     transports, the active channels, the loaded dialplan, and `dialplan show <exten>@<context>` to resolve a dialed number
 //   - /etc/asterisk/*.conf and /etc/config/asterisk (secrets redacted), /var/log/asterisk/messages.log (the recent warnings and errors)
@@ -438,7 +438,14 @@ function log_time(text, now) {
 	return at > now + 86400 ? timelocal({ year: year - 1, mon: MONTHS[m[1]], mday: +m[2], hour: +m[3], min: +m[4], sec: +m[5], isdst: -1 }) : at;
 }
 
-// The newest warnings and errors of messages.log, oldest first: [{ at, time, level, source, text }]. NOTICE lines are kept too, because the
+// Log lines that are not a fault. On musl (OpenWrt) the resolver API cannot list the nameservers, so res_pjsip always logs this at start and
+// on reload and then resolves through the system resolver, which works. They stay in the list (marked `benign`) but do not raise a finding.
+const BENIGN = [
+	{ source: 'res_pjsip/config_system.c', text: /^There are no local system nameservers configured, resorting to system resolution/,
+		why: 'Harmless on OpenWrt: Asterisk cannot read the nameservers from the musl resolver, so PJSIP resolves names through the system resolver (the one in /etc/resolv.conf) instead of its own.' },
+];
+
+// The newest warnings and errors of messages.log, oldest first: [{ at, time, level, source, text, benign? }]. NOTICE lines are kept too, because the
 // failed-call reason is often one (app_dial.c: Unable to create channel).
 function recent_problems(now) {
 	let file = read_file(LOG_FILE, MAX_LOG_TAIL, true);
@@ -447,8 +454,13 @@ function recent_problems(now) {
 	let entries = [];
 	for (let line in split(file.text, '\n')) {
 		let m = match(line, /^\[([^\]]+)\] (NOTICE|WARNING|ERROR|FATAL)\[[0-9]+\](\[[^\]]*\])? ([^ :]+): (.*)$/);
-		if (m)
-			push(entries, { at: log_time(m[1], now), time: m[1], level: lc(m[2]), source: m[4], text: m[5] });
+		if (!m)
+			continue;
+		let e = { at: log_time(m[1], now), time: m[1], level: lc(m[2]), source: m[4], text: m[5] };
+		for (let b in BENIGN)
+			if (e.source == b.source && match(e.text, b.text))
+				e.benign = b.why;
+		push(entries, e);
 	}
 	return { available: true, entries: slice(entries, -MAX_PROBLEMS) };
 }
@@ -551,8 +563,8 @@ function findings(s) {
 		if (e.state == 'Unavailable')
 			push(out, { level: 'warn', text: `Endpoint ${e.name} is unavailable: it has no reachable contact, so calls to it fail.` });
 	for (let f in s.changed_files)
-		push(out, { level: 'warn', text: `${f} was changed after Asterisk last loaded its configuration: reload it (asterisk -rx "core reload") to apply the change.` });
-	let day = s.now - 86400, errors = filter(s.problems.entries, (p) => p.level == 'error' && p.at != null && p.at >= day);
+		push(out, { level: 'warn', text: `${f} was changed after Asterisk last loaded its configuration: use Reload on this page (or asterisk -rx "core reload") to apply the change.` });
+	let day = s.now - 86400, errors = filter(s.problems.entries, (p) => p.level == 'error' && p.at != null && p.at >= day && !p.benign);
 	if (length(errors))
 		push(out, { level: 'warn', text: `${length(errors)} error${length(errors) == 1 ? '' : 's'} in the Asterisk log in the last 24 hours; the latest: ${errors[length(errors) - 1].text}` });
 	if (!s.pjsip_loaded)
@@ -776,12 +788,33 @@ function resolve(request) {
 	return { found: hit != null, context: ctx, exten: ext, in_context: hit?.name ?? null, via_include: hit?.included ?? false,
 		pattern: hit?.extensions[0]?.pattern ?? null, steps: hit?.extensions[0]?.steps ?? [] };
 }
+// The reply of `reload`: asks Asterisk to re-read its configuration. `what` is core (every module: `core reload`), dialplan (extensions.conf
+// only) or pjsip (pjsip.conf: endpoints and registrations). Only these fixed commands run; nothing of the request reaches the command line.
+const RELOADS = {
+	core: 'core reload',
+	dialplan: 'dialplan reload',
+	pjsip: 'module reload res_pjsip.so',
+};
+
+function reload(request) {
+	let what = request?.args?.what;
+	if (type(what) != 'string' || !match(what, /^[a-z]{1,16}$/) || !RELOADS[what])
+		return { ok: false, what, command: null, output: '', error: 'What to reload must be core, dialplan or pjsip.' };
+	let r = cli_result(RELOADS[what]);
+	return { ok: r.ok, what, command: RELOADS[what], output: trim(r.output), error: r.ok ? null : 'Asterisk did not answer.' };
+}
 //#endregion
 
-// rpcd registration: ubus object flab.asterisk. Every method only reads. `status` is the Overview, `pjsip` the SIP objects, `endpoint` takes
-// { name }, `dialplan` the whole loaded dialplan, `resolve` takes { context, exten }, `config` takes an optional { file }.
+// rpcd registration: ubus object flab.asterisk. Every method but `reload` only reads. `status` is the Overview, `pjsip` the SIP objects, `endpoint` takes
+// { name }, `dialplan` the whole loaded dialplan, `resolve` takes { context, exten }, `config` takes an optional { file }, `reload` takes { what }.
 return deferred({
 	'flab.asterisk': {
+		reload: {
+			args: { what: '' },
+			call: function(request) {
+				return reload(request);
+			},
+		},
 		status: {
 			call: function(request) {
 				return status();

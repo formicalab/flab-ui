@@ -1,8 +1,9 @@
-// Asterisk page (route #asterisk): the PBX of the router, read only. Data comes from the flab.asterisk plugin (rpcd/ucode/flab.asterisk.uc).
+// Asterisk page (route #asterisk): the PBX of the router, read only apart from Reload. Data comes from the flab.asterisk plugin (rpcd/ucode/flab.asterisk.uc).
 //   Overview       is the daemon up, key counts, what needs attention, the daemon card, recent warnings and errors   (flab.asterisk status)
 //   PJSIP          outbound registrations, endpoints, contacts, transports, channels                                (flab.asterisk pjsip, endpoint)
 //   Dialplan       the loaded dialplan: Browser, Routing map, Number tester                                         (flab.asterisk dialplan, resolve)
 //   Configuration  the configuration files, secrets hidden                                                          (flab.asterisk config)
+// The only change the page makes to the PBX is the Reload buttons at the right of the tab strip (flab.asterisk reload).
 // Only the open tab is polled: Overview and PJSIP every 5 s, the Dialplan every 30 s, the Configuration not at all (Refresh reads it again).
 // The view state lives in state.js so it survives the redraw on every poll.
 import { ubus, optional } from '../../core/ubus.js';
@@ -10,12 +11,13 @@ import { emptyState } from '../../core/ui.js';
 import { pauseControl, refreshControl, searchControl, selectControl, tabsControl } from '../../core/controls.js';
 import { buildMap } from './dialplanmodel.js';
 import { recordRtt } from './pjsipmodel.js';
-import { overviewView } from './overview.js';
+import { overviewView, summaryTiles } from './overview.js';
 import { pjsipView } from './pjsip.js';
-import { browseView, dialplanTiles } from './dialplan.js';
+import { browseView, dialplanStats } from './dialplan.js';
 import { mapView } from './map.js';
 import { sources, testerView } from './tester.js';
 import { configView, loadConfig } from './config.js';
+import { reloadControl } from './actions.js';
 import { bind, rtt, state } from './state.js';
 
 const TABS = [['overview', 'Overview'], ['pjsip', 'PJSIP'], ['dialplan', 'Dialplan'], ['config', 'Configuration']];
@@ -23,18 +25,22 @@ const DIALPLAN_VIEWS = [['browse', 'Browser'], ['map', 'Routing map'], ['test', 
 
 // Reads what the open tab shows.
 async function load() {
+  const status = ubus('flab.asterisk', 'status');
   switch (state.tab) {
     case 'pjsip': {
-      const p = await ubus('flab.asterisk', 'pjsip');
+      const [p, s] = await Promise.all([ubus('flab.asterisk', 'pjsip'), status]);
       recordRtt(rtt, p.available ? p : null);
-      return { tab: 'pjsip', p };
+      return { tab: 'pjsip', p, s };
     }
     case 'dialplan': {
-      const [dp, pjsip] = await Promise.all([ubus('flab.asterisk', 'dialplan'), optional(ubus('flab.asterisk', 'pjsip'))]);
-      return { tab: 'dialplan', dp, pjsip };
+      const [dp, pjsip, s] = await Promise.all([ubus('flab.asterisk', 'dialplan'), optional(ubus('flab.asterisk', 'pjsip')), status]);
+      return { tab: 'dialplan', dp, pjsip, s };
     }
-    case 'config': return { tab: 'config', cfg: await loadConfig() };
-    default: return { tab: 'overview', s: await ubus('flab.asterisk', 'status') };
+    case 'config': {
+      const [cfg, s] = await Promise.all([loadConfig(), status]);
+      return { tab: 'config', cfg, s };
+    }
+    default: return { tab: 'overview', s: await status };
   }
 }
 
@@ -47,7 +53,7 @@ function dialplanTab(data) {
   map.endpointByName = endpoints;
   if (state.dpView === 'map') return mapView(dp, map, endpoints);
   if (state.dpView === 'test') return testerView(dp, map, sources(dp, endpoints));
-  return [dialplanTiles(dp), browseView(dp, map)];
+  return [dialplanStats(dp), browseView(dp, map)];
 }
 
 // Page object registered in pages/index.js (contract documented there).
@@ -91,21 +97,24 @@ export default {
         reload();
       },
     });
+    const reloads = reloadControl(reload);
     return {
-      nodes: [tabs.node, views.node, search, role.node, dsearch, pauseControl(state), refreshControl(reload)],
-      update() {
+      nodes: [tabs.node, views.node, search, role.node, dsearch, reloads?.node, pauseControl(state), refreshControl(reload)].filter(Boolean),
+      update(data) {
         tabs.setOptions(TABS);
         views.setOptions(DIALPLAN_VIEWS);
         show();
+        reloads?.update(data);
       },
     };
   },
 
+  // The daemon's summary tiles are the same on every tab (the shell pins them above the tabs); the overview adds them itself.
   view(data) {
     switch (data.tab) {
-      case 'pjsip': return pjsipView(data.p);
-      case 'dialplan': return dialplanTab(data);
-      case 'config': return configView(data.cfg);
+      case 'pjsip': return [summaryTiles(data.s), pjsipView(data.p)];
+      case 'dialplan': return [summaryTiles(data.s), dialplanTab(data)];
+      case 'config': return [summaryTiles(data.s), configView(data.cfg)];
       default: return overviewView(data.s);
     }
   },

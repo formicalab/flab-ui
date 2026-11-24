@@ -89,6 +89,13 @@ check(dials('PJSIP/+39${EXTEN}@Vodafone,120,T')[0].endpoint === 'Vodafone', 'Dia
 check(dials('PJSIP/${EXTEN},30')[0].kind === 'dynamic', 'a variable in the endpoint position is dynamic');
 check(dials('PJSIP/a&PJSIP/b&Local/s@lab,20').map(x => x.kind).join() === 'endpoint,endpoint,local' && dials('PJSIP/a&PJSIP/b&Local/s@lab,20')[2].context === 'lab', 'several channels with &');
 check(dials('DAHDI/1,20')[0].kind === 'other' && m.stepDials(step(1, 'Hangup')).length === 0, 'other technologies; only Dial dials');
+const vars = m.globalVars({ globals: [{ name: 'OUTBOUND_TRUNK', value: 'Vodafone' }, { name: 'PIN', value: '<redacted>' }] });
+const viaGlobal = m.stepDials(step(1, 'Dial', 'PJSIP/${ARG1}@${OUTBOUND_TRUNK},120,${ARG2}'), vars);
+check(viaGlobal.length === 1 && viaGlobal[0].kind === 'endpoint' && viaGlobal[0].endpoint === 'Vodafone' && viaGlobal[0].via === 'OUTBOUND_TRUNK', 'a global in the endpoint position is resolved', j(viaGlobal));
+check(m.stepDials(step(1, 'Dial', 'PJSIP/${ARG1}@${OUTBOUND_TRUNK}'))[0].kind === 'dynamic' && m.stepDials(step(1, 'Dial', 'PJSIP/${ARG1}@${NOPE}'), vars)[0].kind === 'dynamic' && !('PIN' in vars), 'an unknown global, or none given, stays dynamic; a redacted one is left out');
+const viaMap = m.buildMap({ globals: [{ name: 'OUTBOUND_TRUNK', value: 'Clouditalia' }], contexts: [{ name: 'sub-trunk', includes: [], extensions: [ext('s', dial('PJSIP/${ARG1}@${OUTBOUND_TRUNK}', '120'))] }] },
+  { available: true, endpoints: [{ name: 'Clouditalia', role: 'trunk', context: 'sub-trunk', state: 'Not in use' }] });
+check(viaMap.edges.some(e => e.kind === 'dial' && e.to === 'tg:Clouditalia') && !viaMap.targets.some(t => t.id === 'tg:dynamic') && viaMap.findings.every(x => x.level !== 'warn'), 'the routing map follows the global to the trunk', j(viaMap.edges));
 
 console.log('== the routing map ==');
 const ep = (name, role, context, state = 'Not in use') => ({ name, role, context, state });

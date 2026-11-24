@@ -8,6 +8,7 @@
 //   nopjsip      the PJSIP modules are not loaded
 //   changed      pjsip.conf changed after Asterisk last loaded it
 //   recenterr    a fresh error in the log
+//   benignerr    the nameserver error musl always causes: listed, marked harmless, no finding
 //   many         more endpoints than get a detail query
 //   secrets      secrets in the configuration, the dialplan, the globals and the endpoint parameters
 import fs from 'node:fs';
@@ -64,6 +65,9 @@ console.log('== base (real captured output) ==');
   check(load('base', 'resolve.badnum').found === false && /not valid/.test(load('base', 'resolve.badnum').error), 'resolve refuses an unsafe number');
   check(load('base', 'endpoint.bad').found === false, 'endpoint refuses an unsafe or unknown name');
   check(load('base', 'config.bad').error, 'config refuses a file that is not a configuration file');
+  const rc = load('base', 'reload.core'), rp = load('base', 'reload.pjsip'), rd = load('base', 'reload.dialplan');
+  check(rc.ok && rc.command === 'core reload' && rp.ok && rp.command === 'module reload res_pjsip.so' && rd.ok && rd.command === 'dialplan reload', 'reload runs only its three fixed commands', JSON.stringify([rc, rp, rd]));
+  check(load('base', 'reload.bad').ok === false && load('base', 'reload.bad').command === null && /core, dialplan or pjsip/.test(load('base', 'reload.bad').error) && load('base', 'reload.none').ok === false, 'reload refuses anything else');
 }
 
 console.log('== unreachable / stopped / disabled / not installed ==');
@@ -73,6 +77,7 @@ console.log('== unreachable / stopped / disabled / not installed ==');
   check(u.findings.some(f => f.level === 'warn' && /control socket/.test(f.text)), 'warns about the control socket', texts(u.findings));
   check(load('unreachable', 'pjsip').available === false, 'pjsip is unavailable', JSON.stringify(load('unreachable', 'pjsip')));
   check(load('unreachable', 'dialplan').available === false, 'dialplan is unavailable');
+  check(load('unreachable', 'reload.core').ok === false && /did not answer/.test(load('unreachable', 'reload.core').error), 'a reload of an unreachable daemon fails with a reason');
   const st = load('stopped', 'status');
   check(!st.running && st.state === 'stopped' && st.findings.some(f => f.level === 'bad'), 'a stopped daemon that is enabled is an error', texts(st.findings));
   const di = load('disabled', 'status');
@@ -117,7 +122,11 @@ console.log('== changed / recenterr / many ==');
   check(load('base', 'status').changed_files.length === 0, 'an unchanged configuration is not flagged');
   const r = load('recenterr', 'status');
   check(r.problems.entries.some(e => /Synthetic failure/.test(e.text) && e.level === 'error' && e.source === 'res_pjsip.c'), 'the new log line is a problem entry', JSON.stringify(r.problems.entries.slice(-1)));
-  check(r.findings.some(f => /error in the Asterisk log in the last 24 hours.*Synthetic failure/.test(f.text)), 'a fresh error is a finding', texts(r.findings));
+  check(r.findings.some(f => /errors? in the Asterisk log in the last 24 hours.*Synthetic failure/.test(f.text)), 'a fresh error is a finding', texts(r.findings));
+  const b = load('benignerr', 'status');
+  const countOf = s => +(s.findings.find(f => /in the Asterisk log in the last 24 hours/.test(f.text))?.text.match(/^(\d+)/)?.[1] ?? 0);
+  check(b.problems.entries.some(e => /no local system nameservers/.test(e.text) && e.level === 'error' && e.benign) && countOf(b) === countOf(load('base', 'status')) && !b.findings.some(f => /nameservers/.test(f.text)), 'the musl nameserver error is listed as harmless and adds nothing to the findings', texts(b.findings));
+  check(!r.problems.entries.some(e => /Synthetic failure/.test(e.text) && e.benign), 'other errors are not marked harmless');
   const m = load('many', 'pjsip');
   check(m.endpoints.length === 45 && m.truncated === true, '45 endpoints are all listed, detail queries are capped', `${m.endpoints.length} ${m.truncated}`);
   check(m.endpoints.filter(e => e.settings).length === 40, 'exactly 40 endpoints got a detail query', String(m.endpoints.filter(e => e.settings).length));

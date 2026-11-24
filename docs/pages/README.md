@@ -17,7 +17,7 @@ pages run from the physical layer up; DHCP and DNS, the services the clients of 
 - [Dynamic DNS](ddns.md)
 - [Devices and Interfaces](interfaces.md) (with the [Connected devices](connected.md) view)
 - [Routing](routing.md)
-- [Asterisk](asterisk.md) (optional; read only)
+- [Asterisk](asterisk.md) (optional; read only apart from reload)
 - [Traffic](traffic.md)
 - [Services](services.md)
 - [Toolbox](toolbox.md)

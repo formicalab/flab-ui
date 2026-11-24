@@ -6,6 +6,10 @@
         "flab.asterisk": ["status", "pjsip", "endpoint", "dialplan", "resolve", "config"]
       }
     },
-    "write": {}
+    "write": {
+      "ubus": {
+        "flab.asterisk": ["reload"]
+      }
+    }
   }
 }

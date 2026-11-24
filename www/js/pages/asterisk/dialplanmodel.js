@@ -57,7 +57,7 @@ export function matchPattern(name, dialed) {
 
 // The special extension names and what Asterisk uses them for.
 const SPECIAL = {
-  s: 'start: used when a call enters without a dialed number',
+  s: 'start: the entry point when a context is entered without a dialed number (a Gosub/Goto into it, such as a subroutine, or a channel with no destination)',
   h: 'hangup handler: runs when the call ends',
   i: 'invalid: runs when the dialed number matches nothing',
   t: 'timeout: runs when the caller does not dial in time',
@@ -195,11 +195,31 @@ export function stepJumps(dp, step, from) {
   return out;
 }
 
-// What a Dial step calls: [{ tech, kind: 'endpoint' | 'dynamic' | 'local' | 'other', endpoint, context, raw }]. PJSIP/1001 and
-// PJSIP/+39${EXTEN}@Vodafone name an endpoint (1001, Vodafone); a variable in the endpoint position makes it dynamic; Local/x@ctx names a context.
-export function stepDials(step) {
+// The [globals] of the dialplan as { NAME: value }; a redacted value is left out because it says nothing.
+export function globalVars(dp) {
+  const vars = {};
+  for (const g of dp?.globals ?? []) if (g.value !== '<redacted>') vars[g.name] = g.value;
+  return vars;
+}
+
+// ${NAME} replaced by its global value; other variables (${EXTEN}, ${ARG1}…) stay. `used` collects the names that were replaced.
+function expandGlobals(text, vars, used) {
+  return text.replace(/\$\{([A-Za-z0-9_]+)\}/g, (all, name) => {
+    if (!Object.hasOwn(vars, name)) return all;
+    used.push(name);
+    return vars[name];
+  });
+}
+
+// What a Dial step calls: [{ tech, kind: 'endpoint' | 'dynamic' | 'local' | 'other', endpoint, context, raw, via }]. PJSIP/1001 and
+// PJSIP/+39${EXTEN}@Vodafone name an endpoint (1001, Vodafone); a variable in the endpoint position makes it dynamic unless it is a global
+// (`vars`, from globalVars()): PJSIP/${ARG1}@${OUTBOUND_TRUNK} then names the endpoint that OUTBOUND_TRUNK holds (`via` = the global's name);
+// Local/x@ctx names a context.
+export function stepDials(step, vars = {}) {
   if (step.app !== 'Dial') return [];
-  const first = splitTop(step.data ?? '', ',')[0];
+  const used = [];
+  const first = expandGlobals(splitTop(step.data ?? '', ',')[0], vars, used);
+  const via = used[0] ?? null;
   return splitAll(first, '&').map(raw => raw.trim()).filter(Boolean).map(raw => {
     const slash = raw.indexOf('/');
     const tech = slash < 0 ? raw : raw.slice(0, slash);
@@ -207,7 +227,7 @@ export function stepDials(step) {
     if (tech === 'PJSIP') {
       const at = rest.lastIndexOf('@');
       const name = (at >= 0 ? rest.slice(at + 1) : rest).split('/')[0];
-      return /\$\{/.test(name) ? { tech, kind: 'dynamic', endpoint: null, raw } : { tech, kind: 'endpoint', endpoint: name, raw };
+      return /\$\{/.test(name) ? { tech, kind: 'dynamic', endpoint: null, raw } : { tech, kind: 'endpoint', endpoint: name, raw, ...(via ? { via } : {}) };
     }
     if (tech === 'Local') {
       const at = rest.lastIndexOf('@');
@@ -231,6 +251,7 @@ export function buildMap(dp, pjsip) {
   const targets = new Map();
   const note = (level, text) => findings.push({ level, text });
 
+  const vars = globalVars(dp);
   const contexts = (dp?.contexts ?? []).map(c => ({
     name: c.name, extensions: c.extensions.length, includes: c.includes ?? [], jumps: [], dials: 0, entries: [], reached: false,
   }));
@@ -252,13 +273,13 @@ export function buildMap(dp, pjsip) {
   for (const c of dp?.contexts ?? []) {
     for (const ext of c.extensions) {
       for (const step of ext.steps) {
-        for (const d of stepDials(step)) {
+        for (const d of stepDials(step, vars)) {
           let id, node;
           if (d.kind === 'endpoint') {
             id = `tg:${d.endpoint}`;
             const ep = byEndpoint.get(d.endpoint);
             node = { id, kind: 'endpoint', name: d.endpoint, state: ep?.state ?? null, role: ep?.role ?? null, known: Boolean(ep) };
-            if (!ep && pjsip?.available) note('warn', `The dialplan dials PJSIP/${d.endpoint} (context ${c.name}, extension ${ext.pattern}), but Asterisk has no endpoint of that name.`);
+            if (!ep && pjsip?.available) note('warn', `The dialplan dials PJSIP/${d.endpoint}${d.via ? ` (the value of ${d.via})` : ''} (context ${c.name}, extension ${ext.pattern}), but Asterisk has no endpoint of that name.`);
           } else if (d.kind === 'dynamic') {
             id = 'tg:dynamic';
             node = { id, kind: 'dynamic', name: 'any endpoint (chosen at run time)', state: null, role: null, known: true };

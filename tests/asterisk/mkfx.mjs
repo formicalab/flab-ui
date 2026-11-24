@@ -31,11 +31,13 @@ const json = (dir, name, fn) => {
   write(dir, name, JSON.stringify(v));
 };
 
-// Registers a scenario: the capture is copied to <work>/<name> and `fn(dir)` changes it.
+// Registers a scenario: the capture is copied to <work>/<name> and `fn(dir)` changes it. The reload commands are never run for real: every
+// scenario answers them from these files (and an unreachable daemon fails them like every other command).
 function scenario(name, fn) {
   const dir = path.join(work, name);
   fs.rmSync(dir, { recursive: true, force: true });
   fs.cpSync(real, dir, { recursive: true });
+  for (const c of ['core reload', 'dialplan reload', 'module reload res_pjsip.so']) write(dir, `${cliName(c)}.txt`, '');
   fn?.(dir);
 }
 
@@ -71,7 +73,7 @@ scenario('calls', dir => {
     '',
   ].join('\n'));
   edit(dir, 'pjsip show endpoints', t => t.replace(
-    / Endpoint:  1001 [^\n]*\n +InAuth:  1001\/1001\n +Aor:  1001 +2\n( +Contact:  1001\/[^\n]*\n)*/,
+    / Endpoint:  1001 [^\n]*\n +InAuth:  1001\/1001\n +Aor:  1001 +\d+\n( +Contact:  1001\/[^\n]*\n)*/,
     ' Endpoint:  1001                                                 In use        1 of inf\n' +
     '     InAuth:  1001/1001\n' +
     '        Aor:  1001                                               2\n' +
@@ -97,6 +99,13 @@ scenario('recenterr', dir => {
   const stamp = read(dir, 'now-log.txt').trim();
   const name = 'file__var_log_asterisk_messages_log.txt';
   write(dir, name, read(dir, name) + `[${stamp}] ERROR[321] res_pjsip.c: Synthetic failure for the test\n`);
+});
+
+// The error Asterisk always logs on musl: listed, marked harmless, no finding.
+scenario('benignerr', dir => {
+  const stamp = read(dir, 'now-log.txt').trim();
+  const name = 'file__var_log_asterisk_messages_log.txt';
+  write(dir, name, read(dir, name) + `[${stamp}] ERROR[321] res_pjsip/config_system.c: There are no local system nameservers configured, resorting to system resolution\n`);
 });
 
 scenario('many', dir => {

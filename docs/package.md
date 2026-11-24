@@ -17,7 +17,7 @@ full-install metapackage:
 | `flab-ui-mod-dhcp` | DHCP and router advertisements |
 | `flab-ui-mod-dns` | DNS and Dynamic DNS |
 | `flab-ui-mod-routing` | Routes and BGP |
-| `flab-ui-mod-asterisk` | Asterisk telephony (read only) |
+| `flab-ui-mod-asterisk` | Asterisk telephony (read only apart from reload) |
 | `flab-ui-mod-traffic` | Traffic and nlbwmon |
 | `flab-ui-mod-toolbox` | Network diagnostic tools |
 | `flab-ui-mod-services` | Service control |
