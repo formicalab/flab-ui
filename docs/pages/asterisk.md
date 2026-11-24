@@ -44,8 +44,11 @@ The history is what Asterisk logged, so it needs the setup in the openwrt repo: 
 `utilities/install-asterisk-cdr-csv.sh`), and `unanswered=yes` and `congestion=yes` in `cdr.conf` so that missed and failed calls are
 kept too. The file is in `/var/log`, which is RAM on OpenWrt: it is lost at a reboot (no writes to the flash) and a cron job trims
 it to the last 5000 lines every night. The page reads the newest 300 calls. The arguments of the last application (`lastdata`) and
-the user field are not sent to the browser, because they can hold dialed digits or a PIN being compared. With Asterisk stopped the
-file is still read, so the last calls stay visible.
+the user field are not sent to the browser, because they can hold dialed digits or a PIN being compared; the one exception is an account
+code of the form `did:<number>`, which the dialplan of the openwrt repo sets on every incoming call (`Set(CHANNEL(accountcode)=did:${EXTEN})`:
+the CDR's own destination is the last extension reached, `s`, never the number dialed, and this firmware has no `CDR()` function) and which
+the page shows as the called number, with the endpoint that rang under it.
+With Asterisk stopped the file is still read, so the last calls stay visible. Calls logged before that line was added show no called number.
 
 ## PJSIP
 - **Registrations**: one card per outbound registration with its state, when it renews, and its settings (client and server

@@ -32,7 +32,7 @@ export function groupCalls(entries) {
     byLink.set(e.linked, list);
   }
   return [...byLink.values()]
-    .map(list => ({ ...(list.find(e => e.dstchannel) ?? list[0]), legs: list.length }))
+    .map(list => ({ ...(list.find(e => e.dstchannel) ?? list[0]), did: list.find(e => e.did)?.did ?? null, legs: list.length }))
     .sort((a, b) => b.start - a.start);
 }
 
@@ -50,7 +50,7 @@ export function partiesOf(call) {
   const number = call.src || clid.number || call.from_endpoint || '–';
   return {
     from: number, fromName: clid.name && clid.name !== number ? clid.name : '', fromVia: call.from_endpoint && call.from_endpoint !== number ? call.from_endpoint : '',
-    to: call.dst && call.dst !== 's' ? call.dst : (call.to_endpoint ?? '–'), toVia: call.to_endpoint && call.to_endpoint !== call.dst ? call.to_endpoint : '',
+    to: call.did || (call.dst && call.dst !== 's' ? call.dst : (call.to_endpoint ?? '–')), toVia: call.to_endpoint && call.to_endpoint !== (call.did || call.dst) ? call.to_endpoint : '',
   };
 }
 
@@ -62,7 +62,7 @@ export function filterCalls(calls, trunks, kind = 'all', q = '') {
     if (kind === 'missed') { if (resultOf(c.disposition)[2] !== 'missed') return false; }
     else if (kind !== 'all' && directionOf(c, trunks) !== kind) return false;
     if (!words.length) return true;
-    const hay = [c.src, c.dst, c.clid, c.from_endpoint, c.to_endpoint, c.disposition].filter(Boolean).join(' ').toLowerCase();
+    const hay = [c.src, c.dst, c.did, c.clid, c.from_endpoint, c.to_endpoint, c.disposition].filter(Boolean).join(' ').toLowerCase();
     return words.every(w => hay.includes(w));
   });
 }

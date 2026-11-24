@@ -474,7 +474,7 @@ function recent_problems(now) {
 //   accountcode,src,dst,dcontext,clid,channel,dstchannel,lastapp,lastdata,start,answer,end,duration,billsec,disposition,amaflags,uniqueid,userfield
 // (plus peeraccount,linkedid,sequence with newcdrcolumns=yes). Text is quoted with "" for a quote, dates are "YYYY-MM-DD HH:MM:SS" in GMT
 // (usegmtime=yes in cdr.conf) or empty, numbers are bare. lastdata and userfield are not returned: lastdata holds the expanded arguments of the
-// last application, which can contain dialed digits or a PIN being compared.
+// last application, which can contain dialed digits or a PIN being compared. Only an account code of the form "did:<number>" is, as `did`.
 const CDR_FILE = '/var/log/asterisk/cdr-csv/Master.csv';
 const MAX_CDR_TAIL = 262144;
 const MAX_CALLS = 300;
@@ -521,6 +521,13 @@ function channel_endpoint(name) {
 	return replace(replace(substr(name, at + 1), /;[12]$/, ''), /-[0-9a-f]{8}$/, '');
 }
 
+// The number an incoming call dialed, which the dialplan stores in the account code as "did:<number>" (the CDR's dst is the last extension
+// reached, "s"); null for any other account code, which is never passed on.
+function cdr_did(accountcode) {
+	let m = match(accountcode ?? '', /^did:([+0-9]{1,32})$/);
+	return m ? m[1] : null;
+}
+
 // One parsed CDR line as a call, or null when the line is not a complete record.
 function cdr_call(line) {
 	let f = csv_fields(line);
@@ -530,6 +537,7 @@ function cdr_call(line) {
 	if (start == null)
 		return null;
 	return {
+		did: cdr_did(f[0]),
 		id: f[16], linked: f[19] || f[16], start, answer: cdr_time(f[10]), end: cdr_time(f[11]),
 		duration: number_or_null(f[12]), billsec: number_or_null(f[13]), disposition: f[14],
 		src: f[1], dst: f[2], clid: f[4], context: f[3], app: f[7],

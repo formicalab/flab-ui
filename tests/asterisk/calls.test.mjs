@@ -33,6 +33,10 @@ check(p.from === '1001' && p.to === '0612345678' && p.toVia === 'Vodafone' && p.
 const q = m.partiesOf(call('s', { src: '+39333', dst: 's', clid: '"Mario" <+39333>', from_endpoint: 'Vodafone', to_endpoint: '1001' }));
 check(q.from === '+39333' && q.fromName === 'Mario' && q.fromVia === 'Vodafone' && q.to === '1001', 'a call to the start extension shows the endpoint it rang', j(q));
 check(m.partiesOf(call('e')).from === '–' && m.partiesOf(call('e')).to === '–', 'nothing known shows dashes');
+const d = m.partiesOf(call('d', { src: '+39333', dst: 's', did: '+390691602383', from_endpoint: 'Vodafone', to_endpoint: '1001' }));
+check(d.to === '+390691602383' && d.toVia === '1001', 'an incoming call shows the number dialed, the endpoint it rang as via', j(d));
+check(m.partiesOf(call('d', { dst: 's', did: '+3906', from_endpoint: 'Vodafone' })).toVia === '', 'no ringing endpoint, no via');
+check(m.groupCalls([call('a', { linked: 'x', did: '+3906' }), call('b', { linked: 'x', dstchannel: 'PJSIP/1001-0000000a', to_endpoint: '1001' })])[0].did === '+3906', 'the dialed number of any leg is kept for the call');
 
 console.log('== filter and summary ==');
 const list = [incoming, { ...outgoing, disposition: 'ANSWERED', billsec: 60 }, { ...internal, disposition: 'BUSY' }, { ...outgoing, id: 'f', disposition: 'FAILED', dst: '0699' }];

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Asterisk
+
+- **Calls tab: the called number of an incoming call** is shown in the To column. The CDR's `dst` is the last extension reached (`s`), so it
+  never held the number dialed. The dialplan now stores it in the CDR account code as `did:<number>`; the backend passes on only that form (as
+  `did`), and the text filter searches it. Calls logged before the dialplan change show no number.
+
 ## 0.1.23 - 2026-11-24
 
 ### Asterisk
