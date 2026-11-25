@@ -4,7 +4,8 @@
 //
 // Everything is read only except `reload` (three fixed reload commands). Sources:
 //   - the Asterisk CLI (`asterisk -rx '<command>'`, over the control socket): core status, PJSIP registrations, endpoints, contacts and
-//     transports, the active channels, the loaded dialplan, and `dialplan show <exten>@<context>` to resolve a dialed number
+//     transports, the calls in progress (channels with their codecs, RTP statistics and bridges: `core show channel`, `pjsip show channelstats`, `bridge show all`),
+//     the loaded dialplan, and `dialplan show <exten>@<context>` to resolve a dialed number
 //   - /etc/asterisk/*.conf and /etc/config/asterisk (secrets redacted), /var/log/asterisk/messages.log (the recent warnings and errors) and
 //     /var/log/asterisk/cdr-csv/Master.csv (the call history written by cdr_csv.so)
 //   - /var/run/asterisk/asterisk.pid and /proc/<pid>/status (is it alive, how much memory)
@@ -986,8 +987,10 @@ function parse_bridges(text) {
 	}
 	return out;
 }
-// The reply of `active`: the calls in progress as channels, each with its codecs (native, in use for reading and writing, transcoding) and, for
-// a PJSIP channel, the RTP statistics. Channels that share a bridge id are the two sides of one call (the page joins them).
+// The reply of `active`: the calls in progress as channels, each with its details (codecs: native, in use for reading and writing, transcoding; the number
+// dialed, caller name, ids, streams, automatic hangup time), for a PJSIP channel the codecs its endpoint allows and the RTP statistics, and the bridges
+// that join them. Channels that share a bridge id are the two sides of one call (the page joins them). `now` is the router's clock, from which the page
+// derives start times and the time left. The channel variables (which can hold a PIN) and the arguments of the application are never passed on.
 function active() {
 	let text = cli('core show channels concise');
 	if (text == null)

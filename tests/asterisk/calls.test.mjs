@@ -1,5 +1,5 @@
-// Unit test for the Calls model (www/js/pages/asterisk/callsmodel.js): grouping of CDR lines into calls, direction, parties, filter, summary and
-// the clock times. Pure functions: no router and no browser. Usage: node calls.test.mjs
+// Unit test for the Calls model (www/js/pages/asterisk/callsmodel.js): grouping of CDR lines into calls, direction, parties, filter, summary,
+// the clock times, and the calls in progress (grouping by bridge, codecs, far end, direction, quality, hold, hangup). Pure functions: no router and no browser. Usage: node calls.test.mjs
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
