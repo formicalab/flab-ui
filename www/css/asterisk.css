@@ -17,6 +17,21 @@
 .ast-dir.out { color: var(--fl-brand); }
 .ast-dir.internal { color: var(--fl-muted); }
 
+/* Calls tab: calls in progress. Each call has a row with the path of its media (an end, the codec and quality of each side, the bridge, the other end) */
+.ast-calls tbody > tr.ast-cf-row > td { padding: .8rem .5rem .6rem; }
+.ast-calls tbody > tr.ast-cf-row:hover > * { background: transparent; }
+.ast-cf-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .6rem; min-height: 1.4rem; }
+.ast-cf { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.ast-cf-node { display: flex; align-items: center; gap: .6rem; padding: .5rem .8rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); min-width: 9rem; }
+.ast-cf-node > svg { color: var(--fl-brand); flex: none; }
+.ast-cf-bridge { border-style: dashed; }
+.ast-cf-wire { flex: 1 1 9rem; min-width: 8rem; display: grid; gap: .3rem; text-align: center; }
+.ast-cf-label { font-size: .85rem; }
+.ast-wire.held { background: repeating-linear-gradient(90deg, var(--fl-warn-fg) 0 4px, transparent 4px 12px); opacity: .7; }
+.ast-trend { height: 22px; margin-top: .15rem; }
+.ast-trend .spark { width: 110px; height: 20px; display: block; }
+.ast-trend .spark-empty { font-size: .7rem; }
+
 /* Status dot used by endpoints and dialed targets */
 .ast-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; margin-right: .35rem; vertical-align: baseline; background: var(--fl-muted); }
 .ast-dot.success { background: var(--fl-ok-fg); }

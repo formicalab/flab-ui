@@ -20,7 +20,8 @@ import { mapView } from './map.js';
 import { sources, testerView } from './tester.js';
 import { configView, loadConfig } from './config.js';
 import { reloadControl } from './actions.js';
-import { bind, rtt, state } from './state.js';
+import { recordActive } from './callsmodel.js';
+import { bind, qos, rtt, state } from './state.js';
 
 // The live views first, then (after a gap) what the PBX is made of.
 const TABS = [['overview', 'Overview'], ['calls', 'Calls'], null, ['pjsip', 'PJSIP'], ['dialplan', 'Dialplan'], ['config', 'Configuration files']];
@@ -37,6 +38,7 @@ async function load() {
     }
     case 'calls': {
       const [c, pjsip, active, s] = await Promise.all([ubus('flab.asterisk', 'calls'), optional(ubus('flab.asterisk', 'pjsip')), optional(ubus('flab.asterisk', 'active')), status]);
+      recordActive(qos, active);
       return { tab: 'calls', c, pjsip, active, s };
     }
     case 'dialplan': {

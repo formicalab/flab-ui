@@ -18,6 +18,9 @@ export const state = {
 // Round-trip history of the contacts, filled on every PJSIP poll (see pjsipmodel.recordRtt).
 export const rtt = new Map();
 
+// Jitter history (ms) of the channels of the calls in progress, filled on every poll of the Calls tab (see callsmodel.recordActive).
+export const qos = new Map();
+
 // The page's own operations, bound by index.js once the command bar exists.
 const nav = { go: () => {}, rerender: () => {}, reload: () => {} };
 export const bind = api => Object.assign(nav, api);

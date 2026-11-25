@@ -60,6 +60,31 @@ const tc = m.transcodingOf(leg('a', { formats: { read_transcode: 'alaw@8000->sli
 check(tc.active && tc.detail === 'alaw@8000->slin@8000' && !m.transcodingOf(leg('a')).active && !m.transcodingOf({}).active, 'transcoding is told apart, with its path when Asterisk gave one');
 check(m.lossText({ lost: 2, packets: 6250, loss_pct: 0 }) === '2 of 6250 lost (0%)' && m.lossText(null) === null, 'loss text');
 
+console.log('== far end, direction, quality ==');
+check(m.uriHost('sip:1001@192.168.1.50:5060;ob') === '192.168.1.50:5060' && m.uriHost('sip:+390691602383@ims.vodafone.it') === 'ims.vodafone.it' && m.uriHost('sip:1001@[2a01:827::1]:5060;ob') === '[2a01:827::1]:5060' && m.uriHost('sip:voip.example.it') === 'voip.example.it' && m.uriHost(null) === null, 'the host of a SIP URI');
+const pj = { available: true, endpoints: [
+  { name: '1001', role: 'phone', state: 'In use', channels: 1, contacts: [{ uri: 'sip:1001@192.168.1.50:5060;ob' }, { uri: 'sip:1001@192.168.1.50:5060;ob' }], identifies: [] },
+  { name: 'Vodafone', role: 'trunk', state: 'In use', channels: 1, contacts: [{ uri: 'sip:+39069@ims.vodafone.it' }], identifies: [{ matches: ['10.174.0.36/32', '10.173.0.1/32', '10.0.0.1/32'] }] },
+  { name: '1002', role: 'phone', state: 'On Hold', channels: 1, contacts: [], identifies: [] },
+  { name: '1003', role: 'phone', state: 'On Hold', channels: 2, contacts: [], identifies: [] }] };
+check(j(m.peerAddresses({ endpoint: '1001' }, pj)) === j(['192.168.1.50:5060']) && j(m.peerAddresses({ endpoint: 'Vodafone' }, pj)) === j(['ims.vodafone.it', '10.174.0.36/32', '10.173.0.1/32']) && m.peerAddresses({ endpoint: 'x' }, pj).length === 0 && m.peerAddresses({ endpoint: '1001' }, null).length === 0, 'the far end of a channel: contact hosts, then identifying addresses, no more than three, once each');
+check(m.onHold({ endpoint: '1002' }, pj) && !m.onHold({ endpoint: '1001' }, pj) && !m.onHold({ endpoint: '1003' }, pj) && !m.onHold({ endpoint: '1002' }, null), 'a call is on hold when its endpoint says so and has only this channel');
+const outgoingCall = { legs: [leg('PJSIP/Vodafone-b', { endpoint: 'Vodafone', app: 'AppDial' }), leg('PJSIP/1001-a', { endpoint: '1001', app: 'Dial' })] };
+const incomingCall = { legs: [leg('PJSIP/1001-a', { endpoint: '1001', app: 'AppDial' }), leg('PJSIP/Vodafone-b', { endpoint: 'Vodafone', app: 'Dial' })] };
+check(m.callerFirst(outgoingCall)[0].endpoint === '1001' && m.callerFirst(incomingCall)[0].endpoint === 'Vodafone', 'the channel that runs the dialplan is the caller and comes first');
+check(m.directionOfActive(outgoingCall, trunks) === 'out' && m.directionOfActive(incomingCall, trunks) === 'in' && m.directionOfActive({ legs: [leg('a', { endpoint: '1001', app: 'Dial' }), leg('b', { endpoint: '1002', app: 'AppDial' })] }, trunks) === 'internal' && m.directionOfActive({ legs: [leg('PJSIP/Vodafone-b', { endpoint: 'Vodafone', app: 'Playback', bridge: '' })] }, trunks) === 'in' && m.directionOfActive(outgoingCall, null) === null, 'direction of a call in progress from the trunk endpoints');
+const rtp = (o = {}) => ({ codec: 'alaw', uptime: '00:00:10', rx: { packets: 1000, lost: 0, loss_pct: 0, jitter: 0.002 }, tx: { packets: 1000, lost: 0, loss_pct: 0, jitter: 0.001 }, rtt: 0, ...o });
+check(m.qualityOf(null) === null && m.qualityOf(rtp()).kind === 'success' && m.qualityOf(rtp({ rx: { packets: 1000, lost: 12, jitter: 0 } })).kind === 'warning' && m.qualityOf(rtp({ rx: { packets: 100, lost: 6, jitter: 0 } })).kind === 'danger' && m.qualityOf(rtp({ tx: { packets: 1000, lost: 0, jitter: 0.04 } })).kind === 'warning' && m.qualityOf(rtp({ rtt: 0.4 })).kind === 'danger', 'quality by loss, jitter and round trip; a loss under 1% is seen from the counts');
+check(Math.abs(m.qualityOf(rtp({ rx: { packets: 1000, lost: 5, jitter: 0.012 } })).loss - 0.5) < 1e-9 && Math.abs(m.qualityOf(rtp({ rx: { packets: 1000, lost: 5, jitter: 0.012 } })).jitter - 12) < 1e-9, 'loss in percent and jitter in milliseconds');
+const hist = new Map();
+m.recordActive(hist, { available: true, channels: [leg('a', { rtp: rtp() }), leg('b', { rtp: null })] });
+m.recordActive(hist, { available: true, channels: [leg('a', { rtp: rtp() })] }, 2);
+m.recordActive(hist, { available: true, channels: [leg('a', { rtp: rtp() }), leg('c', { rtp: rtp() })] }, 2);
+check(hist.get('a').length === 2 && hist.has('c') && !hist.has('b'), 'jitter history per channel, kept short, dropped when the channel is gone', j([...hist.keys()]));
+check(m.hangupKind(null) === null && m.hangupKind(300) === null && m.hangupKind(60) === 'warning' && m.hangupKind(15) === 'danger' && m.hangupKind(-3) === 'danger', 'a hangup within a minute warns, within 15 s is urgent');
+const sum = m.summarizeActive([outgoingCall, { legs: [leg('PJSIP/1002-z', { endpoint: '1002', bridge: '', formats: { native: ['alaw'], read: 'alaw', write: 'slin', write_transcode: true } })] }], trunks, pj);
+check(sum.calls === 2 && sum.channels === 3 && sum.out === 1 && sum.internal === 1 && sum.transcoding === 1 && sum.between === 0 && sum.held === 1, 'the tiles count calls by direction, converting channels and calls on hold', j(sum));
+
 console.log('== clock times ==');
 const at = new Date(2026, 10, 25, 13, 2, 10).getTime() / 1000;
 check(m.stamp(at) === '2026-11-25 13:02:10' && m.stamp(at + 75, at) === '13:03:25' && m.stamp(at + 86400, at) === '2026-11-26 13:02:10' && m.stamp(null) === '', 'start and end as clock times, the end without its date on the same day');

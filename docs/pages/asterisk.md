@@ -32,23 +32,34 @@ Overview banner about a configuration file changed after the last load points he
   system nameservers configured" at every start and reload and resolves through the system resolver, which works.
 
 ## Calls
-**Calls in progress** come first: one table with a block of rows for each call (the channels that share a bridge are the two sides of one call;
-a channel still ringing is a call of its own), longest running first. Every call starts with a line about its bridge; a channel in no bridge (a menu or announcement, or a call not yet connected) says so. A bridged call names its bridge (from `bridge show all`):
-the technology (`simple_bridge`: the audio passes through Asterisk; `native_rtp`: the two sides exchange it directly, with no conversion), the
-number of channels, the type and the age. Each channel row shows its name, the caller's name and number and the number
-dialed (`DNID`), its state (with a badge when the media stream is on hold), what it is
-doing (the application and the dialplan position), then two codec columns in the order they are decided: the codecs **our endpoint allows** (its `allow`
-option, in our order of preference) and the codec **in use** (what Asterisk reads from and writes to the channel, picked among the codecs both sides
-support; when the read and write codecs differ, both are named; under it the codecs *negotiated* with the far side when the call was set up, shown only when
-they say more than the codec in use, i.e. several of them or one that Asterisk converts; Asterisk does not
-keep the far side's own list), with a **transcoding** badge when Asterisk converts the audio between
-two codecs (the tooltip gives the conversion; the badge is amber when it converts between the two sides of a call, which costs CPU and quality,
-and blue when the channel is not bridged: Asterisk itself plays a prompt, menu or announcement in its own format, e.g. a `slin` file on an `alaw`
-trunk, and converts it, which is normal), the RTP quality (loss, jitter and round trip time in each direction, from `pjsip show channelstats`;
-the tooltip counts the packets), the time the channel started (computed from the router's clock) and how long it has been up, with the time at which
-the dialplan's `TIMEOUT(absolute)` hangs it up by itself. A round trip time appears only when the peer sends RTCP reports. A call with direct media has no RTP numbers here, because the media does
-not pass through the router. The arguments of the application are not shown. The card says so when nothing is in progress or Asterisk does not
-answer, and is left out when the login may not call `active`.
+**Calls in progress** come first (polled every 10 s with the tab):
+- **Tiles** over all calls: how many (by direction), how many channels Asterisk converts (and of those how many sit in a bridge, which is the
+  one that matters), the worst loss, the worst jitter, and how many calls are on hold. Loss and jitter are coloured green, amber or red.
+- **One block per call**, longest running first (the channels that share a bridge are the two sides of one call; a channel still ringing is a call of
+  its own). It opens with a line with the **direction** (incoming: the trunk channel runs the dialplan; outgoing: the trunk channel is shown as `AppDial`;
+  internal: no trunk), an **on hold** badge when the endpoint reports On Hold (music on hold is playing; Asterisk generates it in its own format, so the
+  channel writes `slin` and shows a blue transcoding badge) and an amber/red badge when the dialplan's `TIMEOUT(absolute)` will hang the call up within a
+  minute / 15 s. Under it a **diagram of the media path**: the caller's endpoint (who calls, where it is), the wire to the bridge with the codec in use,
+  a *transcoding* badge where Asterisk converts, and the quality of that side; the **bridge** (technology, channels, age); the same for the other side, ending
+  at the called endpoint with the number dialed. The far end's address is the contact of its endpoint (a phone's address, a provider's host) then the
+  addresses that identify it; PJSIP does not tell which contact carries this call, so with several contacts they are all listed. A channel in no bridge (a menu
+  or announcement) ends at an Asterisk node with the application it talks to. The wires animate while audio flows and stop, in amber, on hold.
+- **One row per channel** under the diagram, caller first: its name, the caller's name and number and the number dialed (`DNID`), its state, what it is
+  doing (the application and the dialplan position), then two codec columns in the order they are decided: the codecs **our endpoint allows** (its `allow`
+  option, in our order of preference) and the codec **in use** (what Asterisk reads from and writes to the channel, picked among the codecs both sides
+  support; when the read and write codecs differ, both are named; under it the codecs *negotiated* with the far side when the call was set up, shown only when
+  they say more than the codec in use, i.e. several of them or one that Asterisk converts; Asterisk does not keep the far side's own list), with a
+  **transcoding** badge when Asterisk converts the audio (amber between the two sides of a call, which costs CPU and quality; blue for its own audio: a menu,
+  an announcement, music on hold, which is normal), the **RTP** quality with a coloured dot (loss, jitter and round trip in each direction, from
+  `pjsip show channelstats`; loss is counted from the packets, so a loss under 1 % shows; amber from 1 % loss, 30 ms jitter or 150 ms round trip, red from 5 %,
+  80 ms or 300 ms; a trend line of the jitter over the last polls; a round trip appears only when the peer sends RTCP reports), the time the channel started
+  (from the router's clock) and how long it has been up, with the time at which `TIMEOUT(absolute)` hangs it up. A call with direct media has no RTP numbers
+  here, because the media does not pass through the router. The arguments of the application are not shown.
+- **Click a channel** for a side panel with everything known about it: ids (unique, linked, call identifier), parties, the far end (endpoint, kind, state,
+  addresses), all the codec facts (allowed, negotiated, read, write, conversions, the media streams and their state), the RTP numbers of both directions, the
+  bridge and the timing.
+
+The card says so when nothing is in progress or Asterisk does not answer, and is left out when the login may not call `active`.
 
 **Recent calls**: the recent calls, newest first, from the file `cdr_csv.so` writes (`/var/log/asterisk/cdr-csv/Master.csv`). Each row: the start and the end of the call as clock times in the browser's time zone (the end without its date when it is the
 same day), direction (incoming, outgoing or internal: a call that came in through a trunk endpoint is incoming, one that

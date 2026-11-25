@@ -20,6 +20,12 @@
 - **Calls tab: calls in progress** (new card above the history, with a new backend method `flab.asterisk active`): every channel of a call in
   progress with the codec in use, the codecs negotiated for it, whether Asterisk transcodes it and the RTP loss, jitter and round trip time. The two
   channels of one call are listed together. The ACL `flab-asterisk` gains `active`.
+- **Calls tab: calls in progress, redrawn:** a diagram of the media path of each call (the caller, the codec and quality of each side, the bridge,
+  the called endpoint, with the far end's address and a transcoding mark where Asterisk converts); a direction badge (incoming, outgoing, internal);
+  tiles (calls, transcoding, worst loss and jitter, calls on hold); RTP quality coloured by loss, jitter and round trip, with the loss counted from the
+  packets and a jitter trend line; an **on hold** badge from the endpoint state (music on hold is why the channel writes `slin`); a warning when the
+  dialplan's automatic hangup is near; and a side panel per channel with everything known (ids, parties, far end, codecs, streams, RTP, bridge, timing).
+  `active` also returns the linked id and the call identifier of each channel.
 - **Calls tab: the bridge of a call** (from `bridge show all`): a line over the channels of a bridged call names the bridge technology
   (`simple_bridge`: the audio passes through Asterisk; `native_rtp`: the two sides exchange it directly), the number of channels, the bridge type
   and its age.

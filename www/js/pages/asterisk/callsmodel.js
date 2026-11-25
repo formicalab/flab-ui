@@ -123,6 +123,106 @@ export function lossText(side) {
   return side ? `${side.lost} of ${side.packets} lost (${side.loss_pct}%)` : null;
 }
 
+// ── calls in progress: the far end, direction, quality, hold ──
+
+// The names of the trunk endpoints (a Set), or null when PJSIP could not be read (then the direction is unknown).
+export const trunkNames = pjsip => pjsip?.available ? new Set(pjsip.endpoints.filter(e => e.role === 'trunk').map(e => e.name)) : null;
+
+// The host part of a SIP URI: "sip:1001@192.168.1.50:5060;ob" -> "192.168.1.50:5060" (the user part and the parameters are dropped); null when it is no URI.
+export function uriHost(uri) {
+  const m = /^sips?:(?:[^@]*@)?([^;>]+)/.exec(uri ?? '');
+  return m ? m[1] : null;
+}
+
+// The PJSIP endpoint of a channel in the reply of `flab.asterisk pjsip` (null when PJSIP could not be read or the channel is not PJSIP).
+export const endpointOf = (channel, pjsip) => pjsip?.available ? pjsip.endpoints.find(e => e.name === channel.endpoint) ?? null : null;
+
+// Where the far end of a channel is, as far as the PJSIP reply knows: the hosts of the contacts of its endpoint (a phone's address, a provider's
+// name) then the addresses that identify the endpoint (a provider's servers); no more than three, none for a channel that is not PJSIP.
+export function peerAddresses(channel, pjsip) {
+  const ep = endpointOf(channel, pjsip);
+  if (!ep) return [];
+  const hosts = (ep.contacts ?? []).map(c => uriHost(c.uri)).filter(Boolean);
+  const matches = (ep.identifies ?? []).flatMap(i => i.matches ?? []);
+  return [...new Set([...hosts, ...matches])].slice(0, 3);
+}
+
+// Whether the call of a channel is on hold: its endpoint reports "On Hold" and has this channel only (with more channels it cannot be told which).
+export function onHold(channel, pjsip) {
+  const ep = endpointOf(channel, pjsip);
+  return ep?.state === 'On Hold' && ep.channels === 1;
+}
+
+// The channels of a call with the one that started it first: the caller runs the dialplan, the called side is shown as AppDial.
+export const callerFirst = call => [...call.legs].sort((a, b) => (a.app === 'AppDial') - (b.app === 'AppDial'));
+
+// incoming | outgoing | internal for a call in progress, from the names of the trunk endpoints (a Set; null when they are not known): a trunk channel that
+// runs the dialplan received the call, one shown as AppDial was dialed by us.
+export function directionOfActive(call, trunks) {
+  if (!trunks) return null;
+  const trunk = call.legs.find(l => trunks.has(l.endpoint));
+  if (!trunk) return 'internal';
+  return trunk.app === 'AppDial' ? 'out' : 'in';
+}
+
+// Lost packets of one RTP direction in percent (the integer of the CLI hides a loss below 1%).
+export const lossPct = side => side && side.packets > 0 ? side.lost / side.packets * 100 : 0;
+
+// The quality of a channel's RTP: { kind, loss, jitter, rtt } with loss in %, jitter and round trip in ms, and kind success | warning | danger by
+// the worst of them (loss 1% / 5%, jitter 30 / 80 ms, round trip 150 / 300 ms). Null without statistics.
+export function qualityOf(rtp) {
+  if (!rtp) return null;
+  const loss = Math.max(lossPct(rtp.rx), lossPct(rtp.tx));
+  const jitter = Math.max(rtp.rx.jitter, rtp.tx.jitter) * 1000;
+  const rtt = (rtp.rtt ?? 0) * 1000;
+  const kind = loss >= 5 || jitter >= 80 || rtt >= 300 ? 'danger' : loss >= 1 || jitter >= 30 || rtt >= 150 ? 'warning' : 'success';
+  return { kind, loss, jitter, rtt };
+}
+
+// Jitter history (ms) per channel, filled on every poll of the Calls tab; channels that are gone are dropped.
+export function recordActive(history, active, max = 30) {
+  const live = new Set();
+  for (const c of active?.available ? active.channels : []) {
+    const q = qualityOf(c.rtp);
+    if (!q) continue;
+    const key = c.uniqueid || c.channel;
+    live.add(key);
+    const list = history.get(key) ?? [];
+    list.push(q.jitter);
+    if (list.length > max) list.shift();
+    history.set(key, list);
+  }
+  for (const key of [...history.keys()]) if (!live.has(key)) history.delete(key);
+  return history;
+}
+
+// How urgent the automatic hangup of a call is, from the seconds left: danger within 15 s, warning within a minute, else null.
+export const hangupKind = remaining => remaining == null ? null : remaining <= 15 ? 'danger' : remaining <= 60 ? 'warning' : null;
+
+// The numbers of the tiles over the calls in progress: calls and channels, by direction, the channels that convert (and those of them between the
+// two sides of a call), the worst loss and jitter over all channels and how many calls are on hold. `trunks` as for directionOf().
+export function summarizeActive(calls, trunks, pjsip) {
+  const s = { calls: calls.length, channels: 0, in: 0, out: 0, internal: 0, transcoding: 0, between: 0, held: 0, loss: 0, jitter: 0, worst: 'success' };
+  const rank = { success: 0, warning: 1, danger: 2 };
+  for (const call of calls) {
+    const dir = directionOfActive(call, trunks);
+    if (dir) s[dir]++;
+    if (call.legs.some(l => onHold(l, pjsip))) s.held++;
+    for (const ch of call.legs) {
+      s.channels++;
+      if (transcodingOf(ch).active) {
+        s.transcoding++;
+        if (ch.bridge) s.between++;
+      }
+      const q = qualityOf(ch.rtp);
+      if (!q) continue;
+      s.loss = Math.max(s.loss, q.loss);
+      s.jitter = Math.max(s.jitter, q.jitter);
+      if (rank[q.kind] > rank[s.worst]) s.worst = q.kind;
+    }
+  }
+  return s;
+}
 const two = n => String(n).padStart(2, '0');
 
 // A moment (epoch seconds) in the browser's time zone as "2026-11-25 13:02:10"; with `relativeTo` (epoch seconds) a moment on the same day is just

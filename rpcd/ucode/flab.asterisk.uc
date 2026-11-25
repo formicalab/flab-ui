@@ -885,10 +885,10 @@ function safe_channel(name) {
 // `core show channel <name>` -> { native, read, write, read_transcode, write_transcode, dnid, name, hangup_at, streams }: the codecs the channel
 // offers (NativeFormats), the ones in use in each direction, and whether Asterisk converts between them ("Yes <path>" when it does; transcode is
 // null when not printed); the number dialed (DNID Digits) and the caller's name when there are any; the moment the channel is hung up by itself
-// (the dialplan's TIMEOUT(absolute)), as epoch seconds; the media streams with their state (sendrecv, or sendonly/inactive on hold).
+// (the dialplan's TIMEOUT(absolute)), as epoch seconds; the ids that tie the channel to its call (linked id, call identifier); the media streams with their state (sendrecv, or sendonly/inactive on hold).
 // Only these lines are read: the rest (variables, which can hold a PIN) is not needed.
 function parse_channel_detail(text) {
-	let out = { native: [], read: null, write: null, read_transcode: null, write_transcode: null, dnid: null, name: null, hangup_at: null, streams: [] };
+	let out = { native: [], read: null, write: null, read_transcode: null, write_transcode: null, dnid: null, name: null, hangup_at: null, linked: null, identifier: null, streams: [] };
 	let in_streams = false, stream = null;
 	for (let line in split(text ?? '', '\n')) {
 		if (match(line, /^ -- Streams --/)) {
@@ -911,7 +911,7 @@ function parse_channel_detail(text) {
 			}
 			continue;
 		}
-		let m = match(line, /^[ ]*(NativeFormats|WriteFormat|ReadFormat|WriteTranscode|ReadTranscode|DNID Digits|Caller ID Name|Time to Hangup):(.*)$/);
+		let m = match(line, /^[ ]*(NativeFormats|WriteFormat|ReadFormat|WriteTranscode|ReadTranscode|DNID Digits|Caller ID Name|Time to Hangup|LinkedID|Call Identifier):(.*)$/);
 		if (!m)
 			continue;
 		let v = trim(m[2]);
@@ -925,6 +925,10 @@ function parse_channel_detail(text) {
 			out.dnid = (v == '' || v == '(N/A)') ? null : v;
 		else if (m[1] == 'Caller ID Name')
 			out.name = (v == '' || v == '(N/A)') ? null : v;
+		else if (m[1] == 'LinkedID')
+			out.linked = v == '' ? null : v;
+		else if (m[1] == 'Call Identifier')
+			out.identifier = (v == '' || v == '(None)') ? null : replace(v, /[][]/g, '');
 		else if (m[1] == 'Time to Hangup')
 			out.hangup_at = (match(v, /^[0-9]+$/) && +v > 1000000000) ? +v : null;
 		else {
