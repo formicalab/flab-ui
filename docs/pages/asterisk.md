@@ -33,7 +33,7 @@ Overview banner about a configuration file changed after the last load points he
 
 ## Calls
 **Calls in progress** come first: one table with a block of rows for each call (the channels that share a bridge are the two sides of one call;
-a channel still ringing is a call of its own), longest running first. A bridged call starts with a line naming its bridge (from `bridge show all`):
+a channel still ringing is a call of its own), longest running first. Every call starts with a line about its bridge; a channel in no bridge (a menu or announcement, or a call not yet connected) says so. A bridged call names its bridge (from `bridge show all`):
 the technology (`simple_bridge`: the audio passes through Asterisk; `native_rtp`: the two sides exchange it directly, with no conversion), the
 number of channels, the type and the age. Each channel row shows its name, the caller's name and number and the number
 dialed (`DNID`), its state (with a badge when the media stream is on hold), what it is

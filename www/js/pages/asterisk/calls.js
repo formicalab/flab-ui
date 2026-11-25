@@ -70,8 +70,15 @@ function legRow(ch, now) {
 }
 
 // The line over the channels of a bridged call: the bridge, how its media goes and for how long it has existed. Null for a channel in no bridge.
-function bridgeRow(bridge) {
-  if (!bridge) return null;
+function bridgeRow(call) {
+  const bridge = call.bridge;
+  if (!bridge) {
+    // A channel in no bridge is not connected to another party: it talks to an application of Asterisk, or is still being set up.
+    const talking = call.legs.every(ch => ch.state === 'Up');
+    const apps = [...new Set(call.legs.map(ch => ch.app).filter(Boolean))].join(', ');
+    return h('tr', { className: 'ast-bridge' }, h('td', { colSpan: 8, className: 'muted small' }, icon('diagram-2'), ' No bridge: ',
+      talking ? `the caller is talking to Asterisk itself${apps ? ` (${apps})` : ''}, not to another party.` : 'the call is not connected to another party yet.'));
+  }
   const what = BRIDGE_TEXT[bridge.technology] ?? '';
   return h('tr', { className: 'ast-bridge', title: what },
     h('td', { colSpan: 8, className: 'muted small' }, icon('diagram-2'), ' Bridge ', mono(bridge.id.slice(0, 8)), ' · ', h('span', { className: 'mono' }, bridge.technology),
@@ -95,7 +102,7 @@ function activeCard(a) {
         ['Our endpoint allows', 'Step 1. The codecs the PJSIP endpoint of this channel is configured to accept (its allow option), in our order of preference. The far side can only pick from these; its own list is not shown because Asterisk does not keep it after negotiating.'],
         ['Codec in use', 'Step 2. What Asterisk reads from and writes to the channel at this moment, chosen among the codecs both sides support (agreed when the call was set up). The agreed codecs are listed under it when they say more than the codec in use. When the audio Asterisk has is in another format, it converts it (transcoding).'],
         ['RTP'], ['Started'], ['Duration']].map(([t, tip]) => h('th', { title: tip ?? '' }, t)))),
-      calls.map(call => h('tbody', { title: call.legs.length > 1 ? 'The channels of one call' : '' }, bridgeRow(call.bridge), call.legs.map(ch => legRow(ch, a.now))))))));
+      calls.map(call => h('tbody', { title: call.legs.length > 1 ? 'The channels of one call' : '' }, bridgeRow(call), call.legs.map(ch => legRow(ch, a.now))))))));
 }
 
 // The Calls tab's nodes for the replies of `flab.asterisk calls`, `flab.asterisk pjsip` and `flab.asterisk active` (null when it cannot be read).
