@@ -57,9 +57,9 @@ function legRow(ch, now) {
       f?.dnid ? h('div', { className: 'muted small' }, `called ${f.dnid}`) : null),
     h('td', {}, badge(ch.state, ch.state === 'Up' ? 'success' : 'info'), held ? [' ', badge(held, 'warning', 'The media stream is not flowing both ways: the call is on hold, or one side has stopped sending.')] : null),
     h('td', {}, ch.app ? h('span', { className: 'mono' }, ch.app) : muted('–'), ch.exten ? h('div', { className: 'muted small' }, `${ch.exten}@${ch.context}`) : null),
-    h('td', {}, codec.text ? h('span', { className: 'mono' }, codec.text) : muted('–'), ' ', trans.active ? transcodingBadge(ch, trans) : null),
-    h('td', { className: 'small' }, ch.formats?.native?.length ? ch.formats.native.join(', ') : muted('–')),
     h('td', { className: 'small' }, ch.allowed?.length ? ch.allowed.join(', ') : muted('–')),
+    h('td', { className: 'small' }, ch.formats?.native?.length ? ch.formats.native.join(', ') : muted('–')),
+    h('td', {}, codec.text ? h('span', { className: 'mono' }, codec.text) : muted('–'), ' ', trans.active ? transcodingBadge(ch, trans) : null),
     h('td', { className: 'small', title: lossTitle }, rtp ?? muted('–')),
     h('td', { className: 'text-nowrap' }, ch.duration != null && now != null ? stamp(now - ch.duration) : '–'),
     h('td', { className: 'text-nowrap' }, ch.duration != null ? fmtSpan(ch.duration) : '–',
@@ -84,13 +84,14 @@ function activeCard(a) {
   if (!calls.length) return card(header, h('div', { className: 'card-body muted' }, 'No call is in progress.'));
   const note = h('div', { className: 'muted small mb-2' },
     `${calls.length} call${calls.length === 1 ? '' : 's'}, ${a.channels.length} channel${a.channels.length === 1 ? '' : 's'}. `,
-    'Codec in use: what Asterisk reads from and writes to the channel now. Negotiated: what the far side and our endpoint agreed on (the far side’s own list is not kept by Asterisk, so only the agreed codecs show). Our endpoint allows: the codecs we are configured to accept for that endpoint, in our order of preference. The two sides of a call are listed together',
+    'Codecs, in the order they are decided: Our endpoint allows = what this router is configured to accept for the endpoint (its allow list, in our order of preference); Negotiated = the codecs that both the far side and our endpoint support, agreed when the call was set up (the far side’s own list is not kept by Asterisk); In use now = the codec that is actually flowing. The two sides of a call are listed together',
     a.truncated ? '; the codecs of the channels beyond the first ones are not read' : '', '.');
   return card(header, h('div', { className: 'card-body' }, note,
     h('div', { className: 'table-responsive' }, h('table', { className: 'table ast-table' },
-      h('thead', {}, h('tr', {}, [['Channel'], ['State'], ['Doing'], ['Codec in use', 'What Asterisk reads from and writes to the channel now.'],
-        ['Negotiated', 'The codecs the far side and our endpoint agreed on for this channel (its native formats in Asterisk). Asterisk converts when the audio it has is in another format.'],
-        ['Our endpoint allows', 'The codecs the PJSIP endpoint of this channel is configured to accept (its allow option), in our order of preference. The far side picks from these; its own list is not shown because Asterisk does not keep it after negotiating.'],
+      h('thead', {}, h('tr', {}, [['Channel'], ['State'], ['Doing'],
+        ['Our endpoint allows', 'Step 1. The codecs the PJSIP endpoint of this channel is configured to accept (its allow option), in our order of preference. The far side can only pick from these; its own list is not shown because Asterisk does not keep it after negotiating.'],
+        ['Negotiated', 'Step 2. The codecs both sides support, agreed with the far side when the call was set up (the native formats of the channel in Asterisk).'],
+        ['In use now', 'Step 3. What Asterisk reads from and writes to the channel at this moment. When the audio it has is in another format, Asterisk converts it (transcoding).'],
         ['RTP'], ['Started'], ['Duration']].map(([t, tip]) => h('th', { title: tip ?? '' }, t)))),
       calls.map(call => h('tbody', { title: call.legs.length > 1 ? 'The channels of one call' : '' }, bridgeRow(call.bridge), call.legs.map(ch => legRow(ch, a.now))))))));
 }
