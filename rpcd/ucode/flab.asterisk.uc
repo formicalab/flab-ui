@@ -1,6 +1,6 @@
 #!/usr/bin/ucode
 //
-// rpcd ucode plugin reporting the Asterisk PBX as JSON: ubus call flab.asterisk status|pjsip|endpoint|dialplan|resolve|config|calls|reload
+// rpcd ucode plugin reporting the Asterisk PBX as JSON: ubus call flab.asterisk status|pjsip|endpoint|dialplan|resolve|config|calls|active|reload
 //
 // Everything is read only except `reload` (three fixed reload commands). Sources:
 //   - the Asterisk CLI (`asterisk -rx '<command>'`, over the control socket): core status, PJSIP registrations, endpoints, contacts and
@@ -872,6 +872,97 @@ function endpoint(request) {
 }
 //#endregion
 
+//#region calls in progress
+
+// The most channels that get a `core show channel` query (one CLI call each) in `active`.
+const MAX_ACTIVE = 24;
+
+// Channel names that may go into a CLI command (no quote, no space), such as "PJSIP/1001-0000000a" or "Local/6000@lab-0000000f;1".
+function safe_channel(name) {
+	return type(name) == 'string' && length(name) <= 120 && match(name, /^[A-Za-z0-9_.\/@;+:*#-]+$/) != null && substr(name, 0, 1) != '-';
+}
+
+// `core show channel <name>` -> { native, read, write, read_transcode, write_transcode }: the codecs the channel offers (NativeFormats), the
+// ones in use in each direction, and whether Asterisk converts between them ("Yes <path>" when it does; transcode is null when not printed).
+// Only these lines are read: the rest (caller ids, variables) is not needed.
+function parse_channel_detail(text) {
+	let out = { native: [], read: null, write: null, read_transcode: null, write_transcode: null };
+	for (let line in split(text ?? '', '\n')) {
+		let m = match(line, /^[ ]*(NativeFormats|WriteFormat|ReadFormat|WriteTranscode|ReadTranscode):(.*)$/);
+		if (!m)
+			continue;
+		let v = trim(m[2]);
+		if (m[1] == 'NativeFormats')
+			out.native = codecs(v);
+		else if (m[1] == 'WriteFormat')
+			out.write = v == '' ? null : v;
+		else if (m[1] == 'ReadFormat')
+			out.read = v == '' ? null : v;
+		else {
+			let yes = match(v, /^Yes(.*)$/);
+			out[m[1] == 'WriteTranscode' ? 'write_transcode' : 'read_transcode'] = yes ? (trim(yes[1]) == '' ? true : trim(yes[1])) : (v == '' ? null : false);
+		}
+	}
+	return out;
+}
+
+// A count as `pjsip show channelstats` prints it: divided by 1000 with a "K" after it when it is over 100000; null when it is not a number.
+function stat_number(token) {
+	let m = match(token ?? '', /^([0-9]+(\.[0-9]+)?)(K?)$/);
+	return m ? +m[1] * (m[3] == 'K' ? 1000 : 1) : null;
+}
+
+// `pjsip show channelstats` -> [{ channel, bridge, uptime, codec, rx: { packets, lost, loss_pct, jitter }, tx: { .. }, rtt }]. Jitter and round
+// trip time are in seconds. A line is: [bridge id] channel uptime codec, then count, lost, pct, jitter for each direction and the round trip time.
+// Asterisk cuts the channel name to 18 characters, and a call with direct media has no line of numbers.
+function parse_channelstats(text) {
+	let out = [];
+	for (let line in split(text ?? '', '\n')) {
+		let t = split(trim(line), /[ ]+/), at = -1;
+		for (let i = 0; i < length(t) && i < 2; i++)
+			if (match(t[i], /^[A-Za-z]+\//)) {
+				at = i;
+				break;
+			}
+		if (at < 0 || length(t) - at != 12)
+			continue;
+		let n = map(slice(t, at + 3), (x) => stat_number(x));
+		if (length(filter(n, (x) => x == null)) || !match(t[at + 1], /^[0-9]+:[0-9:]+$/))
+			continue;
+		push(out, {
+			channel: t[at], bridge: at ? t[0] : '', uptime: t[at + 1], codec: t[at + 2],
+			rx: { packets: n[0], lost: n[1], loss_pct: n[2], jitter: n[3] },
+			tx: { packets: n[4], lost: n[5], loss_pct: n[6], jitter: n[7] },
+			rtt: n[8],
+		});
+	}
+	return out;
+}
+// The reply of `active`: the calls in progress as channels, each with its codecs (native, in use for reading and writing, transcoding) and, for
+// a PJSIP channel, the RTP statistics. Channels that share a bridge id are the two sides of one call (the page joins them).
+function active() {
+	let text = cli('core show channels concise');
+	if (text == null)
+		return { available: false };
+	let channels = parse_channels(text);
+	let stats = parse_channelstats(cli('pjsip show channelstats'));
+	let n = 0;
+	for (let c in channels) {
+		// The arguments of the application (dialed digits, a PIN being compared) are not passed on.
+		delete c.data;
+		c.type = split(c.channel, '/')[0];
+		c.endpoint = channel_endpoint(c.channel);
+		if (safe_channel(c.channel) && n < MAX_ACTIVE) {
+			n++;
+			c.formats = parse_channel_detail(cli(`core show channel ${c.channel}`, 65536));
+		}
+		let hit = filter(stats, (s) => index(c.channel, s.channel) == 0 && (s.bridge == '' || index(c.bridge, s.bridge) == 0));
+		c.rtp = length(hit) ? { bridge: hit[0].bridge, uptime: hit[0].uptime, codec: hit[0].codec, rx: hit[0].rx, tx: hit[0].tx, rtt: hit[0].rtt } : null;
+	}
+	return { available: true, now: fixture_time(), truncated: n >= MAX_ACTIVE && length(channels) > MAX_ACTIVE, channels };
+}
+//#endregion
+
 //#region dialplan
 
 // The reply of `dialplan`: all contexts with their extensions and steps, and the [globals] variables.
@@ -930,7 +1021,7 @@ function reload(request) {
 
 // rpcd registration: ubus object flab.asterisk. Every method but `reload` only reads. `status` is the Overview, `pjsip` the SIP objects, `endpoint` takes
 // { name }, `dialplan` the whole loaded dialplan, `resolve` takes { context, exten }, `config` takes an optional { file }, `calls` the call history,
-// `reload` takes { what }.
+// `active` the calls in progress with their codecs, `reload` takes { what }.
 return deferred({
 	'flab.asterisk': {
 		reload: {
@@ -969,6 +1060,11 @@ return deferred({
 		calls: {
 			call: function(request) {
 				return calls();
+			},
+		},
+		active: {
+			call: function(request) {
+				return active();
 			},
 		},
 		config: {

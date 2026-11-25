@@ -17,6 +17,12 @@
 
 ### Asterisk
 
+- **Calls tab: calls in progress** (new card above the history, with a new backend method `flab.asterisk active`): every channel of a call in
+  progress with the codec in use, the codecs it offers, whether Asterisk transcodes it and the RTP loss, jitter and round trip time. The two
+  channels of one call are listed together. The ACL `flab-asterisk` gains `active`.
+- **Calls tab: clock times:** calls in progress show when they started, the history shows the start, the end and the whole duration of each
+  call (no more "21 h ago"). A transcoding badge is amber when Asterisk converts between the two sides of a call and blue when it only
+  converts its own prompt or menu audio (normal), with the reason in the tooltip.
 - **Calls tab: the called number of an incoming call** is shown in the To column. The CDR's `dst` is the last extension reached (`s`), so it
   never held the number dialed. The dialplan now stores it in the CDR account code as `did:<number>`; the backend passes on only that form (as
   `did`), and the text filter searches it. Calls logged before the dialplan change show no number.

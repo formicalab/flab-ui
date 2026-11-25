@@ -32,11 +32,22 @@ Overview banner about a configuration file changed after the last load points he
   system nameservers configured" at every start and reload and resolves through the system resolver, which works.
 
 ## Calls
-The recent calls, newest first, from the file `cdr_csv.so` writes (`/var/log/asterisk/cdr-csv/Master.csv`). Each row: when (the full
-time is the tooltip), direction (incoming, outgoing or internal: a call that came in through a trunk endpoint is incoming, one that
+**Calls in progress** come first: one table with a block of rows for each call (the channels that share a bridge are the two sides of one call;
+a channel still ringing is a call of its own), longest running first. Each channel row shows its name and caller id, its state, what it is
+doing (the application and the dialplan position), the **codec** in use (what Asterisk reads from and writes to the channel; when the two
+differ, both are named), the codecs the channel **offers** (its native formats), a **transcoding** badge when Asterisk converts the audio between
+two codecs (the tooltip gives the conversion; the badge is amber when it converts between the two sides of a call, which costs CPU and quality,
+and blue when the channel is not bridged: Asterisk itself plays a prompt, menu or announcement in its own format, e.g. a `slin` file on an `alaw`
+trunk, and converts it, which is normal), the RTP quality (loss, jitter and round trip time in each direction, from `pjsip show channelstats`;
+the tooltip counts the packets), the time the channel started (computed from the router's clock) and how long it has been up. A call with direct media has no RTP numbers here, because the media does
+not pass through the router. The arguments of the application are not shown. The card says so when nothing is in progress or Asterisk does not
+answer, and is left out when the login may not call `active`.
+
+**Recent calls**: the recent calls, newest first, from the file `cdr_csv.so` writes (`/var/log/asterisk/cdr-csv/Master.csv`). Each row: the start and the end of the call as clock times in the browser's time zone (the end without its date when it is the
+same day), direction (incoming, outgoing or internal: a call that came in through a trunk endpoint is incoming, one that
 went out through a trunk is outgoing; shown as “–” when PJSIP cannot be read), who called whom (the number, with the caller's name
 and the endpoint that carried the call under it), the result (Answered, Missed for no answer or busy, Failed for failed or
-congested), the time it rang and the time it was talked. A line over the table counts the calls shown by result and adds the
+congested), the whole duration, the time it rang and the time it was talked. A line over the table counts the calls shown by result and adds the
 talk time. A filter by kind (all, incoming, outgoing, internal, missed) and by text (numbers, name, endpoints, result) narrows the
 list. The legs of one call (a Local channel makes two CDR lines) are shown as one.
 

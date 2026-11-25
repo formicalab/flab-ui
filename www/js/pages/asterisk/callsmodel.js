@@ -77,11 +77,51 @@ export function summarize(calls) {
   return s;
 }
 
-// How long ago, in words: "just now", "5 min ago", "3 h ago", "2 d ago".
-export function ago(epoch, now) {
-  const s = Math.max(0, Math.round(now - epoch));
-  if (s < 45) return 'just now';
-  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  return `${Math.round(s / 86400)} d ago`;
+// The calls in progress (reply of `flab.asterisk active`): the channels that share a bridge id are the sides of one call, a channel in no bridge
+// yet (dialing, ringing) is a call of its own. Longest running first; each call has `legs` (its channels, longest running first) and `duration`.
+export function groupActive(channels) {
+  const calls = new Map();
+  for (const c of channels ?? []) {
+    const key = c.bridge || `channel:${c.uniqueid || c.channel}`;
+    if (!calls.has(key)) calls.set(key, { id: key, legs: [] });
+    calls.get(key).legs.push(c);
+  }
+  return [...calls.values()]
+    .map(call => {
+      const legs = call.legs.sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
+      return { ...call, legs, duration: legs[0]?.duration ?? null };
+    })
+    .sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
+}
+
+// The codec a channel carries, from what Asterisk reads from and writes to it: { text, differs }. The two are normally one codec ("ulaw"); when
+// they differ the text says which direction is which. The RTP codec of the statistics is the fallback when the channel detail is missing.
+export function codecOf(channel) {
+  const read = channel.formats?.read ?? null, write = channel.formats?.write ?? null;
+  if (read && write && read !== write) return { text: `in ${read} · out ${write}`, differs: true };
+  const one = read ?? write ?? channel.rtp?.codec ?? null;
+  return { text: one, differs: false };
+}
+
+// Whether Asterisk converts the audio of a channel between codecs (the call costs CPU and quality), and how ("alaw@8000->slin@8000" when it says).
+export function transcodingOf(channel) {
+  const f = channel.formats;
+  const paths = [f?.read_transcode, f?.write_transcode].filter(x => x);
+  return { active: paths.length > 0, detail: paths.filter(x => typeof x === 'string').join(' · ') };
+}
+
+// Loss of one RTP direction as text ("0 of 1259 lost (0.0%)"); null without numbers.
+export function lossText(side) {
+  return side ? `${side.lost} of ${side.packets} lost (${side.loss_pct}%)` : null;
+}
+
+const two = n => String(n).padStart(2, '0');
+
+// A moment (epoch seconds) in the browser's time zone as "2026-11-25 13:02:10"; with `relativeTo` (epoch seconds) a moment on the same day is just
+// "13:02:10". Empty for no moment.
+export function stamp(epoch, relativeTo = null) {
+  if (epoch == null) return '';
+  const d = new Date(epoch * 1000), time = `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+  const day = x => `${x.getFullYear()}-${two(x.getMonth() + 1)}-${two(x.getDate())}`;
+  return relativeTo != null && day(d) === day(new Date(relativeTo * 1000)) ? time : `${day(d)} ${time}`;
 }

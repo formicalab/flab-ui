@@ -1,7 +1,7 @@
 // Asterisk page (route #asterisk): the PBX of the router, read only apart from Reload. Data comes from the flab.asterisk plugin (rpcd/ucode/flab.asterisk.uc).
 //   Overview       is the daemon up, key counts, what needs attention, the daemon card, recent warnings and errors   (flab.asterisk status)
 //   PJSIP          outbound registrations, endpoints, contacts, transports, channels                                (flab.asterisk pjsip, endpoint)
-//   Calls          the recent calls from the cdr_csv file: when, direction, who, result, duration                    (flab.asterisk calls, pjsip)
+//   Calls          the calls in progress with their codecs, then the recent calls from the cdr_csv file               (flab.asterisk active, calls, pjsip)
 //   Dialplan       the loaded dialplan: Browser, Routing map, Number tester                                         (flab.asterisk dialplan, resolve)
 //   Configuration  the configuration files, secrets hidden                                                          (flab.asterisk config)
 // The only change the page makes to the PBX is the Reload buttons at the right of the tab strip (flab.asterisk reload).
@@ -36,8 +36,8 @@ async function load() {
       return { tab: 'pjsip', p, s };
     }
     case 'calls': {
-      const [c, pjsip, s] = await Promise.all([ubus('flab.asterisk', 'calls'), optional(ubus('flab.asterisk', 'pjsip')), status]);
-      return { tab: 'calls', c, pjsip, s };
+      const [c, pjsip, active, s] = await Promise.all([ubus('flab.asterisk', 'calls'), optional(ubus('flab.asterisk', 'pjsip')), optional(ubus('flab.asterisk', 'active')), status]);
+      return { tab: 'calls', c, pjsip, active, s };
     }
     case 'dialplan': {
       const [dp, pjsip, s] = await Promise.all([ubus('flab.asterisk', 'dialplan'), optional(ubus('flab.asterisk', 'pjsip')), status]);
@@ -125,7 +125,7 @@ export default {
   view(data) {
     switch (data.tab) {
       case 'pjsip': return [summaryTiles(data.s), pjsipView(data.p)];
-      case 'calls': return [summaryTiles(data.s), callsView(data.c, data.pjsip)];
+      case 'calls': return [summaryTiles(data.s), callsView(data.c, data.pjsip, data.active)];
       case 'dialplan': return [summaryTiles(data.s), dialplanTab(data)];
       case 'config': return [summaryTiles(data.s), configView(data.cfg)];
       default: return overviewView(data.s);

@@ -1,5 +1,5 @@
 // Unit test for the Calls model (www/js/pages/asterisk/callsmodel.js): grouping of CDR lines into calls, direction, parties, filter, summary and
-// the "how long ago" text. Pure functions: no router and no browser. Usage: node calls.test.mjs
+// the clock times. Pure functions: no router and no browser. Usage: node calls.test.mjs
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
@@ -46,8 +46,21 @@ check(ids('all', '0612') === 'o' && ids('all', 'vodafone failed') === 'f' && ids
 const s = m.summarize(list);
 check(s.calls === 4 && s.answered === 1 && s.missed === 2 && s.failed === 1 && s.talk === 60, 'the summary counts by group and adds the talk time', j(s));
 
-console.log('== how long ago ==');
-check(m.ago(1000, 1010) === 'just now' && m.ago(1000, 1000 + 300) === '5 min ago' && m.ago(1000, 1000 + 3 * 3600) === '3 h ago' && m.ago(1000, 1000 + 2 * 86400) === '2 d ago' && m.ago(1000, 900) === 'just now', 'ago texts');
+console.log('== calls in progress ==');
+const leg = (channel, o = {}) => ({ channel, bridge: 'b1', uniqueid: channel, duration: 10, formats: { native: ['ulaw'], read: 'ulaw', write: 'ulaw', read_transcode: false, write_transcode: false }, rtp: null, ...o });
+const live = m.groupActive([leg('PJSIP/1001-a', { duration: 5 }), leg('PJSIP/V-b', { duration: 7 }), leg('PJSIP/1002-c', { bridge: '', duration: 2 }), leg('PJSIP/1003-d', { bridge: 'b2', duration: 30 })]);
+check(live.map(c => c.legs.map(l => l.channel).join('+')).join() === 'PJSIP/1003-d,PJSIP/V-b+PJSIP/1001-a,PJSIP/1002-c', 'channels of one bridge are one call, a channel without a bridge is alone, the longest call first', j(live.map(c => c.id)));
+check(live[1].duration === 7 && m.groupActive(null).length === 0, 'a call lasts as long as its longest channel; nothing in progress, no calls');
+check(m.codecOf(leg('a')).text === 'ulaw' && !m.codecOf(leg('a')).differs, 'one codec when both directions agree');
+check(m.codecOf(leg('a', { formats: { read: 'alaw', write: 'ulaw' } })).text === 'in alaw · out ulaw' && m.codecOf(leg('a', { formats: { read: 'alaw', write: 'ulaw' } })).differs, 'both are named when they differ');
+check(m.codecOf(leg('a', { formats: undefined, rtp: { codec: 'g722' } })).text === 'g722' && m.codecOf(leg('a', { formats: undefined })).text === null, 'the RTP codec is the fallback, else none');
+const tc = m.transcodingOf(leg('a', { formats: { read_transcode: 'alaw@8000->slin@8000', write_transcode: true } }));
+check(tc.active && tc.detail === 'alaw@8000->slin@8000' && !m.transcodingOf(leg('a')).active && !m.transcodingOf({}).active, 'transcoding is told apart, with its path when Asterisk gave one');
+check(m.lossText({ lost: 2, packets: 6250, loss_pct: 0 }) === '2 of 6250 lost (0%)' && m.lossText(null) === null, 'loss text');
+
+console.log('== clock times ==');
+const at = new Date(2026, 10, 25, 13, 2, 10).getTime() / 1000;
+check(m.stamp(at) === '2026-11-25 13:02:10' && m.stamp(at + 75, at) === '13:03:25' && m.stamp(at + 86400, at) === '2026-11-26 13:02:10' && m.stamp(null) === '', 'start and end as clock times, the end without its date on the same day');
 
 if (failed) { console.error(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nAll Calls model checks passed');

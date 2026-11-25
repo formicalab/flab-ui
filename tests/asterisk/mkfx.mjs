@@ -101,9 +101,22 @@ scenario('calls', dir => {
     'PJSIP/Vodafone-0000000b!from-internal!_0[1-9].!2!Up!AppDial!(Outgoing Line)!+390612345!!!3!124!2f5b1c3e-aaaa!1700000000.11',
     '',
   ].join('\n'));
+  const detail = (name, native, wr, rd, wtrans, rtrans) => write(dir, `${cliName(`core show channel ${name}`)}.txt`,
+    ` -- General --\n           Name: ${name}\n           Type: PJSIP\n       UniqueID: 1700000000.10\n  Caller ID: 1001\n          State: Up (6)\n  NativeFormats: ${native}\n    WriteFormat: ${wr}\n     ReadFormat: ${rd}\n WriteTranscode: ${wtrans}\n  ReadTranscode: ${rtrans}\n1st File Descriptor: 15\n --   PBX   --\n        Context: from-internal\n    Application: Dial\n           Data: PJSIP/SECRET-DIGITS@Vodafone,120,T\n`);
+  detail('PJSIP/1001-0000000a', '(ulaw|alaw)', 'ulaw', 'ulaw', 'No', 'No');
+  detail('PJSIP/Vodafone-0000000b', '(alaw)', 'alaw', 'alaw', 'Yes ulaw@8000->alaw@8000', 'Yes alaw@8000->ulaw@8000');
+  write(dir, `${cliName('pjsip show channelstats')}.txt`, [
+    '                                             ...........Receive......... .........Transmit..........',
+    ' BridgeId ChannelId ........ UpTime.. Codec.   Count    Lost Pct  Jitter   Count    Lost Pct  Jitter RTT....',
+    ' =========================================================================================================',
+    '',
+    ' 2f5b1c3e PJSIP/1001-0000000 00:02:05 ulaw      6250       2   0   0.002    6240       1   0   0.001   0.012',
+    ' 2f5b1c3e PJSIP/Vodafone-000 00:02:04 alaw       150K      0   0   0.003     150K      3   0   0.004   0.000',
+    '',
+  ].join('\n'));
   edit(dir, 'pjsip show endpoints', t => t.replace(
     / Endpoint:  1001 [^\n]*\n +InAuth:  1001\/1001\n +Aor:  1001 +\d+\n( +Contact:  1001\/[^\n]*\n)*/,
-    ' Endpoint:  1001                                                 In use        1 of inf\n' +
+        ' Endpoint:  1001                                                 In use        1 of inf\n' +
     '     InAuth:  1001/1001\n' +
     '        Aor:  1001                                               2\n' +
     '      Contact:  1001/sip:1001@192.168.1.50:5060;ob               0123456789 Avail        12.345\n' +

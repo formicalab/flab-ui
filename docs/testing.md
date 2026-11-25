@@ -207,7 +207,7 @@ tests the throughput history (rates, counter resets, gaps, pauses, per-SA keys, 
   both ways, the dialplan steps with their source lines, no secret of the router in any reply, line numbers kept by the redaction,
   `resolve` through an include, every unsafe `resolve`, `endpoint` and `config` request refused), `unreachable`, `stopped`, `disabled`
   and `notinstalled` (the four ways Asterisk is not up, and which of them is an error), `regfail` (a Rejected registration), `calls`
-  (a call in progress with two contacts), `nopjsip`, `changed` (pjsip.conf changed after the last reload), `recenterr` (a fresh log
+  (a call in progress with two contacts, its two channels with their codecs, a transcoding one and the RTP statistics; the `active` method), `nopjsip`, `changed` (pjsip.conf changed after the last reload), `recenterr` (a fresh log
   error), `benignerr` (the nameserver error musl always causes: marked harmless, no finding), `nocdr` (no CDR backend and no history file; every other scenario gets a synthetic `Master.csv` with eight CDR lines, a quoted name, two legs of a Local channel, a broken line and a marker in `lastdata` that must not reach a reply), `many` (more endpoints than get a detail query) and `secrets` (an `Authenticate`, a `Set(…PASSWORD=)`, a compared PIN, a
   global token, `secret=` and `md5_cred=` lines and an endpoint `password` parameter, none of which may reach a reply, while a plain
   `Set(PLAIN=ok)` and a user name must stay).

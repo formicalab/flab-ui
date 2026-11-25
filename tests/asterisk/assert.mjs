@@ -107,6 +107,21 @@ console.log('== calls ==');
   check(!s.findings.some(f => /1001/.test(f.text)), 'an endpoint in use is not reported as unavailable', texts(s.findings));
 }
 
+console.log('== calls in progress ==');
+{
+  const a = load('calls', 'active'), [a1, a2] = a.channels;
+  check(a.available && a.channels.length === 2 && a.truncated === false && a.now > 0, 'two channels in progress, with the router clock', JSON.stringify(a));
+  check(a1.channel === 'PJSIP/1001-0000000a' && a1.type === 'PJSIP' && a1.endpoint === '1001' && a1.bridge === '2f5b1c3e-aaaa' && a1.duration === 125, 'the concise list is kept, with type and endpoint', JSON.stringify(a1));
+  check(a1.formats.native.join() === 'ulaw,alaw' && a1.formats.read === 'ulaw' && a1.formats.write === 'ulaw' && a1.formats.read_transcode === false && a1.formats.write_transcode === false, 'codecs of a channel without transcoding', JSON.stringify(a1.formats));
+  check(a2.formats.native.join() === 'alaw' && a2.formats.write_transcode === 'ulaw@8000->alaw@8000' && a2.formats.read_transcode === 'alaw@8000->ulaw@8000', 'a transcoding channel says how', JSON.stringify(a2.formats));
+  check(a1.rtp.codec === 'ulaw' && a1.rtp.rx.packets === 6250 && a1.rtp.rx.lost === 2 && a1.rtp.tx.jitter === 0.001 && a1.rtp.rtt === 0.012, 'RTP statistics matched to the channel by the cut name and the bridge', JSON.stringify(a1.rtp));
+  check(a2.rtp.rx.packets === 150000 && a2.rtp.tx.lost === 3 && !('channel' in a2.rtp), 'a count with K is multiplied by 1000', JSON.stringify(a2.rtp));
+  check(!strings([a]).some(t => t.includes('SECRET-DIGITS')) && !a.channels.some(c => 'data' in c), 'the arguments of the application never reach the reply');
+  const b = load('base', 'active');
+  check(b.available === true && b.channels.length === 0, 'no call in progress', JSON.stringify(b));
+  check(load('unreachable', 'active').available === false, 'with Asterisk down the channels cannot be read');
+}
+
 console.log('== call history ==');
 {
   const h = load('base', 'calls'), ids = h.entries.map(e => e.id);

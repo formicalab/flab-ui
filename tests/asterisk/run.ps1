@@ -58,6 +58,7 @@ $methods = [ordered]@{
     'config.extensions' = @('config', '{"file":"extensions.conf"}')
     'endpoint'          = @('endpoint', '{"name":"Vodafone"}')
     'calls'             = @('calls', '{}')
+    'active'            = @('active', '{}')
     'reload.core'       = @('reload', '{"what":"core"}')
     'reload.pjsip'      = @('reload', '{"what":"pjsip"}')
 }
@@ -111,7 +112,7 @@ d=@R@/fx-real
 date +%s > $d/clock.txt
 date '+%b %e %H:%M:%S' > $d/now-log.txt
 run() { FLAB_RECORD=$d FLAB_METHOD=$1 FLAB_ARGS="$2" ucode -L "@R@/*.uc" h.uc > /dev/null; }
-for m in status pjsip dialplan config; do run $m '{}'; done
+for m in status pjsip dialplan config active; do run $m '{}'; done
 run config '{"file":"pjsip.conf"}'
 run config '{"file":"extensions.conf"}'
 run endpoint '{"name":"Vodafone"}'
