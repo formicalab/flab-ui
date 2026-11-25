@@ -50,6 +50,9 @@ function legRow(ch, now) {
   const f = ch.formats, who = [f?.name, ch.callerid].filter(Boolean).join(' · ');
   // A stream that is not sendrecv: sendonly or recvonly is a call on hold, inactive is a stream turned off.
   const held = f?.streams?.find(s => s.type === 'audio' && s.state && s.state !== 'sendrecv')?.state ?? null;
+  // The negotiated codecs only when they say more than the codec in use: several of them, or one that is not the one in use (transcoding).
+  const native = ch.formats?.native ?? [];
+  const negotiated = native.length && !(native.length === 1 && native[0] === codec.text) ? native.join(', ') : null;
   const lossTitle = ch.rtp ? `Received: ${lossText(ch.rtp.rx)}. Sent: ${lossText(ch.rtp.tx)}.` : '';
   return h('tr', {},
     h('td', {}, h('div', { className: 'mono' }, ch.channel),
@@ -58,8 +61,8 @@ function legRow(ch, now) {
     h('td', {}, badge(ch.state, ch.state === 'Up' ? 'success' : 'info'), held ? [' ', badge(held, 'warning', 'The media stream is not flowing both ways: the call is on hold, or one side has stopped sending.')] : null),
     h('td', {}, ch.app ? h('span', { className: 'mono' }, ch.app) : muted('–'), ch.exten ? h('div', { className: 'muted small' }, `${ch.exten}@${ch.context}`) : null),
     h('td', { className: 'small' }, ch.allowed?.length ? ch.allowed.join(', ') : muted('–')),
-    h('td', { className: 'small' }, ch.formats?.native?.length ? ch.formats.native.join(', ') : muted('–')),
-    h('td', {}, codec.text ? h('span', { className: 'mono' }, codec.text) : muted('–'), ' ', trans.active ? transcodingBadge(ch, trans) : null),
+    h('td', {}, codec.text ? h('span', { className: 'mono' }, codec.text) : muted('–'), ' ', trans.active ? transcodingBadge(ch, trans) : null,
+      negotiated ? h('div', { className: 'muted small', title: 'The codecs both sides agreed on when the call was set up; the one in use is one of them, unless Asterisk converts.' }, `negotiated: ${negotiated}`) : null),
     h('td', { className: 'small', title: lossTitle }, rtp ?? muted('–')),
     h('td', { className: 'text-nowrap' }, ch.duration != null && now != null ? stamp(now - ch.duration) : '–'),
     h('td', { className: 'text-nowrap' }, ch.duration != null ? fmtSpan(ch.duration) : '–',
@@ -71,7 +74,7 @@ function bridgeRow(bridge) {
   if (!bridge) return null;
   const what = BRIDGE_TEXT[bridge.technology] ?? '';
   return h('tr', { className: 'ast-bridge', title: what },
-    h('td', { colSpan: 9, className: 'muted small' }, icon('diagram-2'), ' Bridge ', mono(bridge.id.slice(0, 8)), ' · ', h('span', { className: 'mono' }, bridge.technology),
+    h('td', { colSpan: 8, className: 'muted small' }, icon('diagram-2'), ' Bridge ', mono(bridge.id.slice(0, 8)), ' · ', h('span', { className: 'mono' }, bridge.technology),
       ` · ${bridge.channels} channel${bridge.channels === 1 ? '' : 's'} · ${bridge.type} · up ${fmtSpan(bridge.duration)}`, what ? ` · ${what}` : ''));
 }
 
@@ -84,14 +87,13 @@ function activeCard(a) {
   if (!calls.length) return card(header, h('div', { className: 'card-body muted' }, 'No call is in progress.'));
   const note = h('div', { className: 'muted small mb-2' },
     `${calls.length} call${calls.length === 1 ? '' : 's'}, ${a.channels.length} channel${a.channels.length === 1 ? '' : 's'}. `,
-    'Codecs, in the order they are decided: Our endpoint allows = what this router is configured to accept for the endpoint (its allow list, in our order of preference); Negotiated = the codecs that both the far side and our endpoint support, agreed when the call was set up (the far side’s own list is not kept by Asterisk); In use now = the codec that is actually flowing. The two sides of a call are listed together',
+    'Codecs, in the order they are decided: Our endpoint allows = what this router is configured to accept for the endpoint (its allow list, in our order of preference); Codec in use = the codec that is actually flowing, picked among those that both sides support (shown as negotiated under it when that adds something). The far side’s own list is not kept by Asterisk. The two sides of a call are listed together',
     a.truncated ? '; the codecs of the channels beyond the first ones are not read' : '', '.');
   return card(header, h('div', { className: 'card-body' }, note,
     h('div', { className: 'table-responsive' }, h('table', { className: 'table ast-table' },
       h('thead', {}, h('tr', {}, [['Channel'], ['State'], ['Doing'],
         ['Our endpoint allows', 'Step 1. The codecs the PJSIP endpoint of this channel is configured to accept (its allow option), in our order of preference. The far side can only pick from these; its own list is not shown because Asterisk does not keep it after negotiating.'],
-        ['Negotiated', 'Step 2. The codecs both sides support, agreed with the far side when the call was set up (the native formats of the channel in Asterisk).'],
-        ['In use now', 'Step 3. What Asterisk reads from and writes to the channel at this moment. When the audio it has is in another format, Asterisk converts it (transcoding).'],
+        ['Codec in use', 'Step 2. What Asterisk reads from and writes to the channel at this moment, chosen among the codecs both sides support (agreed when the call was set up). The agreed codecs are listed under it when they say more than the codec in use. When the audio Asterisk has is in another format, it converts it (transcoding).'],
         ['RTP'], ['Started'], ['Duration']].map(([t, tip]) => h('th', { title: tip ?? '' }, t)))),
       calls.map(call => h('tbody', { title: call.legs.length > 1 ? 'The channels of one call' : '' }, bridgeRow(call.bridge), call.legs.map(ch => legRow(ch, a.now))))))));
 }

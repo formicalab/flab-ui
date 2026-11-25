@@ -37,10 +37,11 @@ a channel still ringing is a call of its own), longest running first. A bridged 
 the technology (`simple_bridge`: the audio passes through Asterisk; `native_rtp`: the two sides exchange it directly, with no conversion), the
 number of channels, the type and the age. Each channel row shows its name, the caller's name and number and the number
 dialed (`DNID`), its state (with a badge when the media stream is on hold), what it is
-doing (the application and the dialplan position), then three codec columns in the order they are decided: the codecs **our endpoint allows** (its `allow`
-option, in our order of preference), the codecs **negotiated** for the channel (the ones both sides support, agreed when the call was set up; Asterisk does not
-keep the far side's own list) and the codec **in use now** (what Asterisk reads from and writes to the channel; when the two
-differ, both are named), with a **transcoding** badge when Asterisk converts the audio between
+doing (the application and the dialplan position), then two codec columns in the order they are decided: the codecs **our endpoint allows** (its `allow`
+option, in our order of preference) and the codec **in use** (what Asterisk reads from and writes to the channel, picked among the codecs both sides
+support; when the read and write codecs differ, both are named; under it the codecs *negotiated* with the far side when the call was set up, shown only when
+they say more than the codec in use, i.e. several of them or one that Asterisk converts; Asterisk does not
+keep the far side's own list), with a **transcoding** badge when Asterisk converts the audio between
 two codecs (the tooltip gives the conversion; the badge is amber when it converts between the two sides of a call, which costs CPU and quality,
 and blue when the channel is not bridged: Asterisk itself plays a prompt, menu or announcement in its own format, e.g. a `slin` file on an `alaw`
 trunk, and converts it, which is normal), the RTP quality (loss, jitter and round trip time in each direction, from `pjsip show channelstats`;
