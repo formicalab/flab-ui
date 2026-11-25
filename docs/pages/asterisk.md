@@ -33,13 +33,17 @@ Overview banner about a configuration file changed after the last load points he
 
 ## Calls
 **Calls in progress** come first: one table with a block of rows for each call (the channels that share a bridge are the two sides of one call;
-a channel still ringing is a call of its own), longest running first. Each channel row shows its name and caller id, its state, what it is
-doing (the application and the dialplan position), the **codec** in use (what Asterisk reads from and writes to the channel; when the two
-differ, both are named), the codecs the channel **offers** (its native formats), a **transcoding** badge when Asterisk converts the audio between
+a channel still ringing is a call of its own), longest running first. A bridged call starts with a line naming its bridge (from `bridge show all`):
+the technology (`simple_bridge`: the audio passes through Asterisk; `native_rtp`: the two sides exchange it directly, with no conversion), the
+number of channels, the type and the age. Each channel row shows its name, the caller's name and number and the number
+dialed (`DNID`), its state (with a badge when the media stream is on hold), what it is
+doing (the application and the dialplan position), the **codec in use** (what Asterisk reads from and writes to the channel; when the two
+differ, both are named), the codecs **negotiated** for the channel (the ones the far side and our endpoint agreed on, its native formats), a **transcoding** badge when Asterisk converts the audio between
 two codecs (the tooltip gives the conversion; the badge is amber when it converts between the two sides of a call, which costs CPU and quality,
 and blue when the channel is not bridged: Asterisk itself plays a prompt, menu or announcement in its own format, e.g. a `slin` file on an `alaw`
 trunk, and converts it, which is normal), the RTP quality (loss, jitter and round trip time in each direction, from `pjsip show channelstats`;
-the tooltip counts the packets), the time the channel started (computed from the router's clock) and how long it has been up. A call with direct media has no RTP numbers here, because the media does
+the tooltip counts the packets), the time the channel started (computed from the router's clock) and how long it has been up, with the time at which
+the dialplan's `TIMEOUT(absolute)` hangs it up by itself. A round trip time appears only when the peer sends RTCP reports. A call with direct media has no RTP numbers here, because the media does
 not pass through the router. The arguments of the application are not shown. The card says so when nothing is in progress or Asterisk does not
 answer, and is left out when the login may not call `active`.
 

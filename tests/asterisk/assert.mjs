@@ -111,13 +111,16 @@ console.log('== calls in progress ==');
 {
   const a = load('calls', 'active'), [a1, a2] = a.channels;
   check(a.available && a.channels.length === 2 && a.truncated === false && a.now > 0, 'two channels in progress, with the router clock', JSON.stringify(a));
-  check(a1.channel === 'PJSIP/1001-0000000a' && a1.type === 'PJSIP' && a1.endpoint === '1001' && a1.bridge === '2f5b1c3e-aaaa' && a1.duration === 125, 'the concise list is kept, with type and endpoint', JSON.stringify(a1));
+  check(a1.channel === 'PJSIP/1001-0000000a' && a1.type === 'PJSIP' && a1.endpoint === '1001' && a1.bridge === '2f5b1c3e-aaaa-4bbb-8ccc-0123456789ab' && a1.duration === 125, 'the concise list is kept, with type and endpoint', JSON.stringify(a1));
   check(a1.formats.native.join() === 'ulaw,alaw' && a1.formats.read === 'ulaw' && a1.formats.write === 'ulaw' && a1.formats.read_transcode === false && a1.formats.write_transcode === false, 'codecs of a channel without transcoding', JSON.stringify(a1.formats));
   check(a2.formats.native.join() === 'alaw' && a2.formats.write_transcode === 'ulaw@8000->alaw@8000' && a2.formats.read_transcode === 'alaw@8000->ulaw@8000', 'a transcoding channel says how', JSON.stringify(a2.formats));
   check(a1.rtp.codec === 'ulaw' && a1.rtp.rx.packets === 6250 && a1.rtp.rx.lost === 2 && a1.rtp.tx.jitter === 0.001 && a1.rtp.rtt === 0.012, 'RTP statistics matched to the channel by the cut name and the bridge', JSON.stringify(a1.rtp));
   check(a2.rtp.rx.packets === 150000 && a2.rtp.tx.lost === 3 && !('channel' in a2.rtp), 'a count with K is multiplied by 1000', JSON.stringify(a2.rtp));
-  check(!strings([a]).some(t => t.includes('SECRET-DIGITS')) && !a.channels.some(c => 'data' in c), 'the arguments of the application never reach the reply');
+  check(Array.isArray(a1.allowed) && Array.isArray(a2.allowed) && a2.allowed.length > 0 && a2.allowed.every(c => typeof c === 'string' && !/[()|]/.test(c)), 'the codecs our endpoint allows are read once per endpoint', JSON.stringify([a1.allowed, a2.allowed]));
+  check(!strings([a]).some(t => t.includes('SECRET-DIGITS') || t.includes('PIN-MARKER')) && !a.channels.some(c => 'data' in c), 'the arguments of the application and the channel variables never reach the reply');
+  check(a1.formats.dnid === '+390612345' && a1.formats.name === 'Gino Rossi' && a1.formats.hangup_at === a.now + 500 && a1.formats.streams.length === 1 && a1.formats.streams[0].state === 'sendrecv' && a2.formats.streams[0].state === 'sendonly' && a2.formats.dnid === '+390612345', 'dialed number, caller name, automatic hangup time and stream state', JSON.stringify(a1.formats));
   const b = load('base', 'active');
+  check(a.bridges.length === 2 && a.bridges[0].id === '2f5b1c3e-aaaa-4bbb-8ccc-0123456789ab' && a.bridges[0].name === null && a.bridges[0].channels === 2 && a.bridges[0].type === 'basic' && a.bridges[0].technology === 'simple_bridge' && a.bridges[0].duration === 124 && a.bridges[1].name === 'my bridge' && a.bridges[1].technology === 'holding_bridge', 'bridges with their technology', JSON.stringify(a.bridges));
   check(b.available === true && b.channels.length === 0, 'no call in progress', JSON.stringify(b));
   check(load('unreachable', 'active').available === false, 'with Asterisk down the channels cannot be read');
 }

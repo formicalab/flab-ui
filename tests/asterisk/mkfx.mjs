@@ -97,21 +97,28 @@ scenario('regfail', dir => {
 scenario('calls', dir => {
   edit(dir, 'core show calls', () => '1 active calls\n5 calls processed\n');
   write(dir, `${cliName('core show channels concise')}.txt`, [
-    'PJSIP/1001-0000000a!from-internal!_0[1-9].!2!Up!Dial!PJSIP/+390612345@Vodafone,120,T!1001!!!3!125!2f5b1c3e-aaaa!1700000000.10',
-    'PJSIP/Vodafone-0000000b!from-internal!_0[1-9].!2!Up!AppDial!(Outgoing Line)!+390612345!!!3!124!2f5b1c3e-aaaa!1700000000.11',
+    'PJSIP/1001-0000000a!from-internal!_0[1-9].!2!Up!Dial!PJSIP/+390612345@Vodafone,120,T!1001!!!3!125!2f5b1c3e-aaaa-4bbb-8ccc-0123456789ab!1700000000.10',
+    'PJSIP/Vodafone-0000000b!from-internal!_0[1-9].!2!Up!AppDial!(Outgoing Line)!+390612345!!!3!124!2f5b1c3e-aaaa-4bbb-8ccc-0123456789ab!1700000000.11',
     '',
   ].join('\n'));
-  const detail = (name, native, wr, rd, wtrans, rtrans) => write(dir, `${cliName(`core show channel ${name}`)}.txt`,
-    ` -- General --\n           Name: ${name}\n           Type: PJSIP\n       UniqueID: 1700000000.10\n  Caller ID: 1001\n          State: Up (6)\n  NativeFormats: ${native}\n    WriteFormat: ${wr}\n     ReadFormat: ${rd}\n WriteTranscode: ${wtrans}\n  ReadTranscode: ${rtrans}\n1st File Descriptor: 15\n --   PBX   --\n        Context: from-internal\n    Application: Dial\n           Data: PJSIP/SECRET-DIGITS@Vodafone,120,T\n`);
+  const clock = +read(dir, 'clock.txt');
+  const detail = (name, native, wr, rd, wtrans, rtrans, stream = 'sendrecv') => write(dir, `${cliName(`core show channel ${name}`)}.txt`,
+    ` -- General --\n           Name: ${name}\n           Type: PJSIP\n       UniqueID: 1700000000.10\n  Caller ID: 1001\n Caller ID Name: Gino Rossi\n    DNID Digits: +390612345\n          State: Up (6)\n  NativeFormats: ${native}\n    WriteFormat: ${wr}\n     ReadFormat: ${rd}\n WriteTranscode: ${wtrans}\n  ReadTranscode: ${rtrans}\n1st File Descriptor: 15\n --   PBX   --\n        Context: from-internal\n    Application: Dial\n           Data: PJSIP/SECRET-DIGITS@Vodafone,120,T\n Time to Hangup: ${clock + 500}\n      Bridge ID: 2f5b1c3e-aaaa-4bbb-8ccc-0123456789ab\n      Variables:\nPIN=PIN-MARKER\n\n -- Streams --\nName: audio-0\n    Type: audio\n    State: ${stream}\n    Group: -1\n    Formats: (${wr})\n`);
   detail('PJSIP/1001-0000000a', '(ulaw|alaw)', 'ulaw', 'ulaw', 'No', 'No');
-  detail('PJSIP/Vodafone-0000000b', '(alaw)', 'alaw', 'alaw', 'Yes ulaw@8000->alaw@8000', 'Yes alaw@8000->ulaw@8000');
+  detail('PJSIP/Vodafone-0000000b', '(alaw)', 'alaw', 'alaw', 'Yes ulaw@8000->alaw@8000', 'Yes alaw@8000->ulaw@8000', 'sendonly');
   write(dir, `${cliName('pjsip show channelstats')}.txt`, [
     '                                             ...........Receive......... .........Transmit..........',
     ' BridgeId ChannelId ........ UpTime.. Codec.   Count    Lost Pct  Jitter   Count    Lost Pct  Jitter RTT....',
     ' =========================================================================================================',
     '',
-    ' 2f5b1c3e PJSIP/1001-0000000 00:02:05 ulaw      6250       2   0   0.002    6240       1   0   0.001   0.012',
-    ' 2f5b1c3e PJSIP/Vodafone-000 00:02:04 alaw       150K      0   0   0.003     150K      3   0   0.004   0.000',
+    ' 2f5b1c3e 1001-0000000a      00:02:05 ulaw      6250       2   0   0.002    6240       1   0   0.001   0.012',
+    '          Vodafone-0000000b  00:02:04 alaw       150K      0   0   0.003     150K      3   0   0.004   0.000',
+    '',
+  ].join('\n'));
+  write(dir, `${cliName('bridge show all')}.txt`, [
+    'Bridge-ID                            Name                                 Chans Type            Technology      Duration',
+    '2f5b1c3e-aaaa-4bbb-8ccc-0123456789ab <unknown>                                2 basic           simple_bridge   00:02:04',
+    'e93854c2-94af-4a74-8217-4f5574ef05e1 my bridge                             1 holding         holding_bridge  00:00:07',
     '',
   ].join('\n'));
   edit(dir, 'pjsip show endpoints', t => t.replace(

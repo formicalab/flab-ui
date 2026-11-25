@@ -882,13 +882,36 @@ function safe_channel(name) {
 	return type(name) == 'string' && length(name) <= 120 && match(name, /^[A-Za-z0-9_.\/@;+:*#-]+$/) != null && substr(name, 0, 1) != '-';
 }
 
-// `core show channel <name>` -> { native, read, write, read_transcode, write_transcode }: the codecs the channel offers (NativeFormats), the
-// ones in use in each direction, and whether Asterisk converts between them ("Yes <path>" when it does; transcode is null when not printed).
-// Only these lines are read: the rest (caller ids, variables) is not needed.
+// `core show channel <name>` -> { native, read, write, read_transcode, write_transcode, dnid, name, hangup_at, streams }: the codecs the channel
+// offers (NativeFormats), the ones in use in each direction, and whether Asterisk converts between them ("Yes <path>" when it does; transcode is
+// null when not printed); the number dialed (DNID Digits) and the caller's name when there are any; the moment the channel is hung up by itself
+// (the dialplan's TIMEOUT(absolute)), as epoch seconds; the media streams with their state (sendrecv, or sendonly/inactive on hold).
+// Only these lines are read: the rest (variables, which can hold a PIN) is not needed.
 function parse_channel_detail(text) {
-	let out = { native: [], read: null, write: null, read_transcode: null, write_transcode: null };
+	let out = { native: [], read: null, write: null, read_transcode: null, write_transcode: null, dnid: null, name: null, hangup_at: null, streams: [] };
+	let in_streams = false, stream = null;
 	for (let line in split(text ?? '', '\n')) {
-		let m = match(line, /^[ ]*(NativeFormats|WriteFormat|ReadFormat|WriteTranscode|ReadTranscode):(.*)$/);
+		if (match(line, /^ -- Streams --/)) {
+			in_streams = true;
+			continue;
+		}
+		if (in_streams) {
+			let s = match(line, /^[ ]*(Name|Type|State|Formats):(.*)$/);
+			if (!s)
+				continue;
+			if (s[1] == 'Name') {
+				stream = { name: trim(s[2]), type: null, state: null, formats: [] };
+				push(out.streams, stream);
+			}
+			else if (stream) {
+				if (s[1] == 'Formats')
+					stream.formats = codecs(trim(s[2]));
+				else
+					stream[lc(s[1])] = trim(s[2]);
+			}
+			continue;
+		}
+		let m = match(line, /^[ ]*(NativeFormats|WriteFormat|ReadFormat|WriteTranscode|ReadTranscode|DNID Digits|Caller ID Name|Time to Hangup):(.*)$/);
 		if (!m)
 			continue;
 		let v = trim(m[2]);
@@ -898,6 +921,12 @@ function parse_channel_detail(text) {
 			out.write = v == '' ? null : v;
 		else if (m[1] == 'ReadFormat')
 			out.read = v == '' ? null : v;
+		else if (m[1] == 'DNID Digits')
+			out.dnid = (v == '' || v == '(N/A)') ? null : v;
+		else if (m[1] == 'Caller ID Name')
+			out.name = (v == '' || v == '(N/A)') ? null : v;
+		else if (m[1] == 'Time to Hangup')
+			out.hangup_at = (match(v, /^[0-9]+$/) && +v > 1000000000) ? +v : null;
 		else {
 			let yes = match(v, /^Yes(.*)$/);
 			out[m[1] == 'WriteTranscode' ? 'write_transcode' : 'read_transcode'] = yes ? (trim(yes[1]) == '' ? true : trim(yes[1])) : (v == '' ? null : false);
@@ -905,7 +934,6 @@ function parse_channel_detail(text) {
 	}
 	return out;
 }
-
 // A count as `pjsip show channelstats` prints it: divided by 1000 with a "K" after it when it is over 100000; null when it is not a number.
 function stat_number(token) {
 	let m = match(token ?? '', /^([0-9]+(\.[0-9]+)?)(K?)$/);
@@ -913,19 +941,16 @@ function stat_number(token) {
 }
 
 // `pjsip show channelstats` -> [{ channel, bridge, uptime, codec, rx: { packets, lost, loss_pct, jitter }, tx: { .. }, rtt }]. Jitter and round
-// trip time are in seconds. A line is: [bridge id] channel uptime codec, then count, lost, pct, jitter for each direction and the round trip time.
-// Asterisk cuts the channel name to 18 characters, and a call with direct media has no line of numbers.
+// trip time are in seconds (a round trip time of 0 means the peer sends no RTCP report). A line is: [bridge id] name uptime codec, then count,
+// lost, pct, jitter for each direction and the round trip time. The bridge id is missing for a channel that is not bridged, and the name has no
+// "PJSIP/" in front and is cut to 18 characters; a call with direct media has no line of numbers.
 function parse_channelstats(text) {
 	let out = [];
 	for (let line in split(text ?? '', '\n')) {
-		let t = split(trim(line), /[ ]+/), at = -1;
-		for (let i = 0; i < length(t) && i < 2; i++)
-			if (match(t[i], /^[A-Za-z]+\//)) {
-				at = i;
-				break;
-			}
-		if (at < 0 || length(t) - at != 12)
+		let t = split(trim(line), /[ ]+/);
+		if (length(t) != 12 && length(t) != 13)
 			continue;
+		let at = length(t) - 12;
 		let n = map(slice(t, at + 3), (x) => stat_number(x));
 		if (length(filter(n, (x) => x == null)) || !match(t[at + 1], /^[0-9]+:[0-9:]+$/))
 			continue;
@@ -938,6 +963,25 @@ function parse_channelstats(text) {
 	}
 	return out;
 }
+// `bridge show all` -> [{ id, name, channels, type, technology, duration }]: the bridges that join the channels of the calls. The technology says how the
+// media goes: simple_bridge passes it through Asterisk (which can convert or mix it), native_rtp lets the two sides exchange it directly, holding is a
+// channel parked on hold. A line is: id, name (may be <unknown>), channel count, type, technology, duration (h:mm:ss).
+function parse_bridges(text) {
+	let out = [];
+	for (let line in split(text ?? '', '\n')) {
+		let t = split(trim(line), /[ ]+/);
+		if (length(t) < 6 || !match(t[0], /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/))
+			continue;
+		let d = match(t[length(t) - 1], /^([0-9]+):([0-9]+):([0-9]+)$/);
+		if (!d || !match(t[length(t) - 4], /^[0-9]+$/))
+			continue;
+		push(out, {
+			id: t[0], name: length(t) > 6 ? join(' ', slice(t, 1, length(t) - 4)) : (t[1] == '<unknown>' ? null : t[1]),
+			channels: +t[length(t) - 4], type: t[length(t) - 3], technology: t[length(t) - 2], duration: +d[1] * 3600 + +d[2] * 60 + +d[3],
+		});
+	}
+	return out;
+}
 // The reply of `active`: the calls in progress as channels, each with its codecs (native, in use for reading and writing, transcoding) and, for
 // a PJSIP channel, the RTP statistics. Channels that share a bridge id are the two sides of one call (the page joins them).
 function active() {
@@ -946,20 +990,29 @@ function active() {
 		return { available: false };
 	let channels = parse_channels(text);
 	let stats = parse_channelstats(cli('pjsip show channelstats'));
+	let bridges = parse_bridges(cli('bridge show all'));
+	let allowed = {};
 	let n = 0;
 	for (let c in channels) {
 		// The arguments of the application (dialed digits, a PIN being compared) are not passed on.
 		delete c.data;
 		c.type = split(c.channel, '/')[0];
 		c.endpoint = channel_endpoint(c.channel);
+		// What our endpoint is configured to allow (its `allow` list, the order is our preference): one query per endpoint.
+		if (c.type == 'PJSIP' && safe_name(c.endpoint)) {
+			if (!exists(allowed, c.endpoint))
+				allowed[c.endpoint] = codecs(param(parse_params(cli(`pjsip show endpoint ${c.endpoint}`, 65536)), 'allow'));
+			c.allowed = allowed[c.endpoint];
+		}
 		if (safe_channel(c.channel) && n < MAX_ACTIVE) {
 			n++;
 			c.formats = parse_channel_detail(cli(`core show channel ${c.channel}`, 65536));
 		}
-		let hit = filter(stats, (s) => index(c.channel, s.channel) == 0 && (s.bridge == '' || index(c.bridge, s.bridge) == 0));
+		let local = substr(c.channel, index(c.channel, '/') + 1);
+		let hit = c.type != 'PJSIP' ? [] : filter(stats, (s) => index(local, s.channel) == 0 && (s.bridge == '' || index(c.bridge, s.bridge) == 0));
 		c.rtp = length(hit) ? { bridge: hit[0].bridge, uptime: hit[0].uptime, codec: hit[0].codec, rx: hit[0].rx, tx: hit[0].tx, rtt: hit[0].rtt } : null;
 	}
-	return { available: true, now: fixture_time(), truncated: n >= MAX_ACTIVE && length(channels) > MAX_ACTIVE, channels };
+	return { available: true, now: fixture_time(), truncated: n >= MAX_ACTIVE && length(channels) > MAX_ACTIVE, channels, bridges };
 }
 //#endregion
 

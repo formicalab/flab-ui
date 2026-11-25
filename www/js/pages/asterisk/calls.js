@@ -5,7 +5,7 @@ import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, card, emptyState, mono, muted } from '../../core/ui.js';
 import { fmtSpan } from '../../core/format.js';
-import { DIRECTION_TEXT, codecOf, directionOf, filterCalls, groupActive, groupCalls, lossText, partiesOf, resultOf, stamp, summarize, transcodingOf } from './callsmodel.js';
+import { BRIDGE_TEXT, DIRECTION_TEXT, codecOf, directionOf, filterCalls, groupActive, groupCalls, lossText, partiesOf, resultOf, stamp, summarize, transcodingOf } from './callsmodel.js';
 import { state } from './state.js';
 
 const DIRECTION_ICON = { in: 'arrow-down', out: 'arrow-up', internal: 'arrow-left-right' };
@@ -47,16 +47,32 @@ function transcodingBadge(ch, trans) {
 // One channel of a call in progress; `now` is the router's clock (epoch seconds), from which the start time follows.
 function legRow(ch, now) {
   const codec = codecOf(ch), trans = transcodingOf(ch), rtp = rtpLine(ch.rtp);
+  const f = ch.formats, who = [f?.name, ch.callerid].filter(Boolean).join(' · ');
+  // A stream that is not sendrecv: sendonly or recvonly is a call on hold, inactive is a stream turned off.
+  const held = f?.streams?.find(s => s.type === 'audio' && s.state && s.state !== 'sendrecv')?.state ?? null;
   const lossTitle = ch.rtp ? `Received: ${lossText(ch.rtp.rx)}. Sent: ${lossText(ch.rtp.tx)}.` : '';
   return h('tr', {},
-    h('td', {}, h('div', { className: 'mono' }, ch.channel), ch.callerid ? h('div', { className: 'muted small' }, ch.callerid) : null),
-    h('td', {}, badge(ch.state, ch.state === 'Up' ? 'success' : 'info')),
+    h('td', {}, h('div', { className: 'mono' }, ch.channel),
+      who ? h('div', { className: 'muted small' }, who) : null,
+      f?.dnid ? h('div', { className: 'muted small' }, `called ${f.dnid}`) : null),
+    h('td', {}, badge(ch.state, ch.state === 'Up' ? 'success' : 'info'), held ? [' ', badge(held, 'warning', 'The media stream is not flowing both ways: the call is on hold, or one side has stopped sending.')] : null),
     h('td', {}, ch.app ? h('span', { className: 'mono' }, ch.app) : muted('–'), ch.exten ? h('div', { className: 'muted small' }, `${ch.exten}@${ch.context}`) : null),
     h('td', {}, codec.text ? h('span', { className: 'mono' }, codec.text) : muted('–'), ' ', trans.active ? transcodingBadge(ch, trans) : null),
     h('td', { className: 'small' }, ch.formats?.native?.length ? ch.formats.native.join(', ') : muted('–')),
+    h('td', { className: 'small' }, ch.allowed?.length ? ch.allowed.join(', ') : muted('–')),
     h('td', { className: 'small', title: lossTitle }, rtp ?? muted('–')),
     h('td', { className: 'text-nowrap' }, ch.duration != null && now != null ? stamp(now - ch.duration) : '–'),
-    h('td', { className: 'text-nowrap' }, ch.duration != null ? fmtSpan(ch.duration) : '–'));
+    h('td', { className: 'text-nowrap' }, ch.duration != null ? fmtSpan(ch.duration) : '–',
+      f?.hangup_at && now != null ? h('div', { className: 'muted small', title: 'The dialplan limits the call (TIMEOUT(absolute)): Asterisk hangs up by itself at that time.' }, `hangs up ${stamp(f.hangup_at, now)} (in ${fmtSpan(f.hangup_at - now)})`) : null));
+}
+
+// The line over the channels of a bridged call: the bridge, how its media goes and for how long it has existed. Null for a channel in no bridge.
+function bridgeRow(bridge) {
+  if (!bridge) return null;
+  const what = BRIDGE_TEXT[bridge.technology] ?? '';
+  return h('tr', { className: 'ast-bridge', title: what },
+    h('td', { colSpan: 9, className: 'muted small' }, icon('diagram-2'), ' Bridge ', mono(bridge.id.slice(0, 8)), ' · ', h('span', { className: 'mono' }, bridge.technology),
+      ` · ${bridge.channels} channel${bridge.channels === 1 ? '' : 's'} · ${bridge.type} · up ${fmtSpan(bridge.duration)}`, what ? ` · ${what}` : ''));
 }
 
 // The calls in progress (reply of `flab.asterisk active`), with the codecs of every channel. Null when it could not be read.
@@ -64,16 +80,19 @@ function activeCard(a) {
   if (!a) return null;
   const header = [icon('telephone'), 'Calls in progress'];
   if (!a.available) return card(header, h('div', { className: 'card-body muted' }, 'Asterisk is not running or does not answer, so its channels cannot be read.'));
-  const calls = groupActive(a.channels);
+  const calls = groupActive(a.channels, a.bridges);
   if (!calls.length) return card(header, h('div', { className: 'card-body muted' }, 'No call is in progress.'));
   const note = h('div', { className: 'muted small mb-2' },
     `${calls.length} call${calls.length === 1 ? '' : 's'}, ${a.channels.length} channel${a.channels.length === 1 ? '' : 's'}. `,
-    'Codec is what Asterisk reads from and writes to the channel; Offers are the codecs the channel could use. The two sides of a call are listed together',
+    'Codec in use: what Asterisk reads from and writes to the channel now. Negotiated: what the far side and our endpoint agreed on (the far side’s own list is not kept by Asterisk, so only the agreed codecs show). Our endpoint allows: the codecs we are configured to accept for that endpoint, in our order of preference. The two sides of a call are listed together',
     a.truncated ? '; the codecs of the channels beyond the first ones are not read' : '', '.');
   return card(header, h('div', { className: 'card-body' }, note,
     h('div', { className: 'table-responsive' }, h('table', { className: 'table ast-table' },
-      h('thead', {}, h('tr', {}, ['Channel', 'State', 'Doing', 'Codec', 'Offers', 'RTP', 'Started', 'Duration'].map(t => h('th', {}, t)))),
-      calls.map(call => h('tbody', { title: call.legs.length > 1 ? 'The channels of one call' : '' }, call.legs.map(ch => legRow(ch, a.now))))))));
+      h('thead', {}, h('tr', {}, [['Channel'], ['State'], ['Doing'], ['Codec in use', 'What Asterisk reads from and writes to the channel now.'],
+        ['Negotiated', 'The codecs the far side and our endpoint agreed on for this channel (its native formats in Asterisk). Asterisk converts when the audio it has is in another format.'],
+        ['Our endpoint allows', 'The codecs the PJSIP endpoint of this channel is configured to accept (its allow option), in our order of preference. The far side picks from these; its own list is not shown because Asterisk does not keep it after negotiating.'],
+        ['RTP'], ['Started'], ['Duration']].map(([t, tip]) => h('th', { title: tip ?? '' }, t)))),
+      calls.map(call => h('tbody', { title: call.legs.length > 1 ? 'The channels of one call' : '' }, bridgeRow(call.bridge), call.legs.map(ch => legRow(ch, a.now))))))));
 }
 
 // The Calls tab's nodes for the replies of `flab.asterisk calls`, `flab.asterisk pjsip` and `flab.asterisk active` (null when it cannot be read).

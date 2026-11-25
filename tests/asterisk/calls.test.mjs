@@ -51,6 +51,8 @@ const leg = (channel, o = {}) => ({ channel, bridge: 'b1', uniqueid: channel, du
 const live = m.groupActive([leg('PJSIP/1001-a', { duration: 5 }), leg('PJSIP/V-b', { duration: 7 }), leg('PJSIP/1002-c', { bridge: '', duration: 2 }), leg('PJSIP/1003-d', { bridge: 'b2', duration: 30 })]);
 check(live.map(c => c.legs.map(l => l.channel).join('+')).join() === 'PJSIP/1003-d,PJSIP/V-b+PJSIP/1001-a,PJSIP/1002-c', 'channels of one bridge are one call, a channel without a bridge is alone, the longest call first', j(live.map(c => c.id)));
 check(live[1].duration === 7 && m.groupActive(null).length === 0, 'a call lasts as long as its longest channel; nothing in progress, no calls');
+const withBridge = m.groupActive([leg('PJSIP/1001-a'), leg('PJSIP/1002-c', { bridge: '' })], [{ id: 'b1', technology: 'native_rtp' }]);
+check(withBridge.find(c => c.id === 'b1').bridge.technology === 'native_rtp' && withBridge.find(c => c.id !== 'b1').bridge === null && m.BRIDGE_TEXT.native_rtp, 'a call gets the facts of its bridge, a channel in no bridge has none');
 check(m.codecOf(leg('a')).text === 'ulaw' && !m.codecOf(leg('a')).differs, 'one codec when both directions agree');
 check(m.codecOf(leg('a', { formats: { read: 'alaw', write: 'ulaw' } })).text === 'in alaw · out ulaw' && m.codecOf(leg('a', { formats: { read: 'alaw', write: 'ulaw' } })).differs, 'both are named when they differ');
 check(m.codecOf(leg('a', { formats: undefined, rtp: { codec: 'g722' } })).text === 'g722' && m.codecOf(leg('a', { formats: undefined })).text === null, 'the RTP codec is the fallback, else none');

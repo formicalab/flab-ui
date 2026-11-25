@@ -78,8 +78,9 @@ export function summarize(calls) {
 }
 
 // The calls in progress (reply of `flab.asterisk active`): the channels that share a bridge id are the sides of one call, a channel in no bridge
-// yet (dialing, ringing) is a call of its own. Longest running first; each call has `legs` (its channels, longest running first) and `duration`.
-export function groupActive(channels) {
+// yet (dialing, ringing) is a call of its own. Longest running first; each call has `legs` (its channels, longest running first), `duration` and
+// `bridge` (what `bridges` of the reply says about its bridge, or null).
+export function groupActive(channels, bridges = []) {
   const calls = new Map();
   for (const c of channels ?? []) {
     const key = c.bridge || `channel:${c.uniqueid || c.channel}`;
@@ -89,10 +90,17 @@ export function groupActive(channels) {
   return [...calls.values()]
     .map(call => {
       const legs = call.legs.sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
-      return { ...call, legs, duration: legs[0]?.duration ?? null };
+      return { ...call, legs, duration: legs[0]?.duration ?? null, bridge: (bridges ?? []).find(b => b.id === call.id) ?? null };
     })
     .sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
 }
+
+// What a bridge technology means for the media of the call.
+export const BRIDGE_TEXT = {
+  simple_bridge: 'The audio passes through Asterisk, which can convert, mix or record it.',
+  native_rtp: 'Asterisk is out of the media path: the two sides exchange the audio directly (RTP bridging), so there is no conversion.',
+  holding_bridge: 'The channel is parked on hold.',
+};
 
 // The codec a channel carries, from what Asterisk reads from and writes to it: { text, differs }. The two are normally one codec ("ulaw"); when
 // they differ the text says which direction is which. The RTP codec of the statistics is the fallback when the channel detail is missing.

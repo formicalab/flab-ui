@@ -136,7 +136,7 @@ await shot('calls');
 await stage('a call in progress', 'calls');
 const live = page.locator('.card:has(.card-header:has-text("Calls in progress"))');
 check(await live.locator('tbody tr').count() === 2 && await live.locator('tbody').count() === 1, 'the two channels of the call in progress are listed together');
-check(/ulaw/.test(await live.innerText()) && /ulaw, alaw/.test(await live.innerText()) && await live.locator('.fl-badge:has-text("transcoding")').count() === 1, 'the codec in use, the codecs offered and the channel that transcodes are shown');
+check(/ulaw/.test(await live.innerText()) && /ulaw, alaw/.test(await live.innerText()) && await live.locator('.fl-badge:has-text("transcoding")').count() === 1, 'the codec in use, the codecs negotiated and the channel that transcodes are shown');
 check(/loss in 0% · out 0%/.test(await live.innerText()) && /RTT 12\.0 ms/.test(await live.innerText()), 'the RTP quality is shown');
 await shot('calls-active');
 await stage('no CDR backend', 'nocdr');

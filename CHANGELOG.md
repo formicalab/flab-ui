@@ -18,8 +18,14 @@
 ### Asterisk
 
 - **Calls tab: calls in progress** (new card above the history, with a new backend method `flab.asterisk active`): every channel of a call in
-  progress with the codec in use, the codecs it offers, whether Asterisk transcodes it and the RTP loss, jitter and round trip time. The two
+  progress with the codec in use, the codecs negotiated for it, whether Asterisk transcodes it and the RTP loss, jitter and round trip time. The two
   channels of one call are listed together. The ACL `flab-asterisk` gains `active`.
+- **Calls tab: the bridge of a call** (from `bridge show all`): a line over the channels of a bridged call names the bridge technology
+  (`simple_bridge`: the audio passes through Asterisk; `native_rtp`: the two sides exchange it directly), the number of channels, the bridge type
+  and its age.
+- **Calls tab: RTP statistics for channels that are not bridged** (a menu or announcement): `pjsip show channelstats` prints no bridge id and no
+  `PJSIP/` in the name for them, so the statistics were never matched. The card also shows the caller's name, the number dialed, a badge when
+  the media stream is on hold, and the time at which the dialplan's `TIMEOUT(absolute)` will hang the call up.
 - **Calls tab: clock times:** calls in progress show when they started, the history shows the start, the end and the whole duration of each
   call (no more "21 h ago"). A transcoding badge is amber when Asterisk converts between the two sides of a call and blue when it only
   converts its own prompt or menu audio (normal), with the reason in the tooltip.
