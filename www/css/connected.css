@@ -93,7 +93,7 @@
 .cc-device-body strong { overflow: hidden; text-overflow: ellipsis; }
 .cc-device-title { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; min-width: 0; }
 .cc-device-title strong { min-width: 0; }
-.cc-device-title .badge { flex: none; font-size: .7rem; }
+.cc-device-title .badge { flex: none; font-size: .75rem; }
 .cc-device-address, .cc-device .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-wires { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; overflow: visible; }
 .cc-wire { fill: none; stroke: color-mix(in srgb, var(--fl-brand) 35%, var(--fl-stroke)); stroke-width: 1.5; }

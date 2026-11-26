@@ -110,7 +110,7 @@
 /* BIRD configuration card: the file with line numbers, a block index, the syntax-check outcome and the peers' source folds */
 .cfg-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: .75rem; }
 .cfg-index { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; margin: .75rem 0; }
-.cfg-chip { cursor: pointer; border: 1px solid var(--fl-stroke); background: var(--fl-surface); color: inherit; font-weight: 500; }
+.cfg-chip { cursor: pointer; border: 1px solid var(--fl-stroke); background: var(--fl-surface); color: inherit; font-weight: 400; }
 .cfg-chip:hover { border-color: var(--fl-brand); }
 .cfg-code { max-height: 32rem; overflow: auto; padding: .5rem 0; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface); font-family: var(--fl-mono); font-size: .8rem; line-height: 1.5; }
 .cfg-line { display: flex; white-space: pre; }
@@ -124,7 +124,7 @@
 .cfg-check svg { flex: 0 0 auto; margin-top: .15rem; }
 .cfg-check-body { flex: 1 1 auto; min-width: 0; }
 .cfg-check .btn-close { flex: 0 0 auto; margin-left: auto; }
-.cfg-output, .cfg-src { margin: .4rem 0 0; padding: .5rem .7rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface); color: var(--fl-text, inherit); font-family: var(--fl-mono); font-size: .78rem; line-height: 1.45; white-space: pre; overflow: auto; max-height: 22rem; }
+.cfg-output, .cfg-src { margin: .4rem 0 0; padding: .5rem .7rem; border: 1px solid var(--fl-stroke); border-radius: 6px; background: var(--fl-surface); color: var(--fl-text, inherit); font-family: var(--fl-mono); font-size: .8rem; line-height: 1.45; white-space: pre; overflow: auto; max-height: 22rem; }
 .cfg-fold { margin-top: .5rem; }
 
 /* The protocols flow diagram: lanes, tables, splines and their tags. Colors come from the theme variables, so the dark theme follows. */
@@ -134,7 +134,7 @@
 .bgp-flow text { fill: currentColor; font-family: inherit; }
 .bgp-flow .flow-title { font-size: 11px; font-weight: 600; }
 .bgp-flow .flow-sub { font-size: 9px; fill: var(--fl-muted); }
-.bgp-flow .flow-table-name { font-size: 12px; font-weight: 700; }
+.bgp-flow .flow-table-name { font-size: 12px; font-weight: 600; }
 .bgp-flow .flow-count { font-size: 9px; fill: var(--fl-muted); }
 .bgp-flow .flow-count.link { cursor: pointer; }
 .bgp-flow .flow-count.link:hover, .bgp-flow .flow-count.link:focus-visible { fill: var(--fl-brand); text-decoration: underline; outline: none; }
@@ -171,7 +171,7 @@
 .bgp-flow-legend { display: flex; flex-wrap: wrap; gap: .25rem 1.2rem; margin-top: .6rem; color: var(--fl-muted); }
 .bgp-flow-caption { margin: .5rem 0 .25rem; }
 /* The list of the routes behind a count of the diagram, in a drawer */
-.bgp-edge-list { margin: 0; font-size: .85rem; }
+.bgp-edge-list { margin: 0; font-size: .8rem; }
 .bgp-edge-list th { font-size: .75rem; color: var(--fl-muted); }
 
 tr.bgp-row-flash > td { animation: bgp-row-flash 1.6s ease-out; }
@@ -214,7 +214,7 @@ tr.bgp-row-flash > td { animation: bgp-row-flash 1.6s ease-out; }
 .bgp-why-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .4rem; }
 .bgp-figs { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: .35rem .9rem; }
 .bgp-fig { display: flex; flex-direction: column; min-width: 0; }
-.bgp-why { margin: .5rem 0 0; font-size: .85rem; }
+.bgp-why { margin: .5rem 0 0; font-size: .8rem; }
 
 /* Narrow screens: stack the topology and hide the connector graphics */
 @media (max-width: 991.98px) {

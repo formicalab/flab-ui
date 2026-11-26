@@ -11,7 +11,7 @@
 .port-ic { display: inline-grid; place-items: center; flex: none; width: 40px; height: 32px; border-radius: 8px; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); transition: background .25s, color .25s; }
 .port-ic.up { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
 .port-ic.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
-.port-role { margin-left: .5rem; font-size: .7rem; font-weight: 600; letter-spacing: .05em; color: var(--fl-muted); }
+.port-role { margin-left: .5rem; font-size: .75rem; font-weight: 600; letter-spacing: .05em; color: var(--fl-muted); }
 .port-table .spark { display: block; margin: .25rem 0 .15rem auto; max-width: 100%; }
 
 /* Port table: per-port rows with hardware lines and negotiated-link column */

@@ -1,11 +1,11 @@
 // Configuration backup and restore for the System settings page.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { chevron } from '../../core/fold.js';
+import { disclosure } from '../../core/fold.js';
 import { saveFile } from '../../core/download.js';
 import { openDialog } from '../../core/modal.js';
 import { can, ubus } from '../../core/ubus.js';
-import { button, muted, spinner } from '../../core/ui.js';
+import { button, closeButton, muted, spinner } from '../../core/ui.js';
 
 const MAX_BACKUP = 16 * 1024 * 1024;
 const UPLOAD_CHUNK = 32768;
@@ -169,9 +169,11 @@ function confirmRestore(rerender) {
 function review(upload) {
   return h('div', { className: 'mt-3' },
     h('div', { className: 'fw-semibold' }, `${upload.name} · ${upload.files.length} files · ${upload.size.toLocaleString()} bytes`),
-    h('details', { className: 'mt-2' },
-      h('summary', {}, 'Review archive contents'),
-      h('pre', { className: 'small mb-0 mt-2 backup-files' }, upload.files.join('\n'))));
+    disclosure({
+      cls: 'mt-2',
+      summary: 'Review archive contents',
+      body: h('pre', { className: 'small mb-0 mt-2 backup-files' }, upload.files.join('\n')),
+    }));
 }
 
 export function backupCard(rerender) {
@@ -213,17 +215,13 @@ export function backupCard(rerender) {
       className: `alert alert-${state.message.kind === 'error' ? 'danger' : 'success'} alert-dismissible mt-3 mb-0`,
       role: 'alert',
     }, state.message.text,
-    h('button', {
-      type: 'button',
-      className: 'btn-close',
-      ariaLabel: 'Dismiss',
-      onclick: () => { state.message = null; rerender(); },
-    })) : null);
-  return h('details', {
-    className: 'card settings-disclosure',
+    closeButton(() => { state.message = null; rerender(); }, 'Dismiss')) : null);
+  return disclosure({
+    cls: 'card settings-disclosure',
+    summaryCls: 'card-header',
+    summary: [icon('gear'), h('span', {}, 'Configuration backup & restore')],
+    body,
     open: state.open,
-    ontoggle: e => { state.open = e.currentTarget.open; },
-  },
-    h('summary', { className: 'card-header' }, chevron(), icon('gear'), h('span', {}, 'Configuration backup & restore')),
-    body);
+    onToggle: open => { state.open = open; },
+  });
 }

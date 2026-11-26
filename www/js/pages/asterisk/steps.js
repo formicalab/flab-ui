@@ -1,7 +1,7 @@
 // Shared pieces of the Dialplan tab: the listing of an extension's steps (with what each step jumps to and dials) and the jump to a
 // destination. Used by the browser and by the number tester.
 import { h } from '../../core/dom.js';
-import { badge, mono, muted } from '../../core/ui.js';
+import { badge, linkButton, muted } from '../../core/ui.js';
 import { appInfo } from './apps.js';
 import { globalVars, stepDials, stepJumps } from './dialplanmodel.js';
 import { endpointKind } from './pjsipmodel.js';
@@ -40,7 +40,7 @@ function annotations(dp, map, step, here) {
     const text = `${j.branch === 'always' ? '→' : j.branch === 'then' ? '→ if true:' : '→ else:'} ${where}`;
     out.push(j.dynamic ? muted(text) : j.missing
       ? badge(`${text} (no such ${j.missing})`, 'warning')
-      : h('button', { type: 'button', className: 'btn btn-link btn-sm p-0 ast-jump', title: j.cond ? `When ${j.cond}` : 'Show the destination', onclick: () => jumpTo(j.context, j.exten, j.prio) }, text));
+      : linkButton(text, () => jumpTo(j.context, j.exten, j.prio), { title: j.cond ? `When ${j.cond}` : 'Show the destination' }, 'ast-jump'));
   }
   for (const d of stepDials(step, globalVars(dp))) {
     if (d.kind === 'endpoint') {
@@ -63,8 +63,8 @@ export function stepsTable(dp, map, ext, here) {
       h('td', {}, h('span', { className: `ast-app ${info.cat}`, title: info.text || s.app }, s.app)),
       h('td', { className: 'ast-data mono' }, dataNodes(s.data)),
       h('td', { className: 'ast-notes' }, annotations(dp, map, s, here)),
-      h('td', { className: 'ast-src' }, s.source ? h('button', { type: 'button', className: 'btn btn-link btn-sm p-0 mono', title: 'Show this line in the configuration file',
-        onclick: () => go('config', { file: s.source.file, line: s.source.line }) }, `${s.source.file}:${s.source.line}`) : null));
+      h('td', { className: 'ast-src' }, s.source ? linkButton(`${s.source.file}:${s.source.line}`, () => go('config', { file: s.source.file, line: s.source.line }),
+        { title: 'Show this line in the configuration file' }, 'mono') : null));
   });
   return h('div', { className: 'table-responsive' }, h('table', { className: 'table table-sm ast-steps' },
     h('thead', {}, h('tr', {}, ['#', 'Label', 'Application', 'Arguments', 'Next', 'Source'].map(c => h('th', {}, c)))), h('tbody', {}, rows)));

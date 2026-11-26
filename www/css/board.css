@@ -97,7 +97,7 @@
 .nb-panel .kv { margin: 0; }
 
 /* The live information of a bridge (bridgelive.js). */
-.bl .blk h3 { margin: 1rem 0 .4rem; font-size: .95rem; }
+.bl .blk h3 { margin: 1rem 0 .4rem; font-size: 1rem; }
 .bl-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .bl-stp { display: grid; gap: .6rem; margin-top: .8rem; }
 .bl-node { display: grid; gap: .1rem; justify-items: center; text-align: center; padding: .6rem; border: 1px solid var(--fl-stroke); border-radius: 10px; background: var(--fl-surface-hover); }

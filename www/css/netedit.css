@@ -33,7 +33,7 @@
 .np-wizard .set-fields > * { padding: .6rem 0; }
 .np-panel .set-field, .np-wizard .set-field { min-width: 0; }
 .np-sec { display: flex; flex-direction: column; gap: .65rem; min-width: 0; }
-.np-h { margin: 0; font-size: .95rem; display: flex; align-items: center; gap: .55rem; }
+.np-h { margin: 0; font-size: 1rem; display: flex; align-items: center; gap: .55rem; }
 .np-lead { margin: 0; }
 .np-num { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.35rem; height: 1.35rem; border-radius: 50%; font-size: .75rem; font-weight: 600; background: var(--fl-info-bg); color: var(--fl-info-fg); }
 
@@ -57,7 +57,7 @@
 /* The Advanced block (a disclosure() with the fl-disclosure-bar header), the live and "used by" lists, links, the footer notes. */
 .np-adv { border: 1px solid var(--fl-stroke); border-radius: 6px; min-width: 0; }
 .np-adv-body { display: flex; flex-direction: column; gap: 1.2rem; padding: .7rem .9rem .9rem; min-width: 0; }
-.np-adv-group h4 { margin: 0 0 .2rem; font-size: .85rem; }
+.np-adv-group h4 { margin: 0 0 .2rem; font-size: .875rem; }
 .np-adv-group p { margin: 0 0 .4rem; }
 .np-info { grid-template-columns: minmax(6rem, 30%) minmax(0, 1fr); align-items: start; }
 .np-info dd, .np-info dt { min-width: 0; overflow-wrap: anywhere; }
@@ -79,5 +79,5 @@
 .np-steps li.done .np-num { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
 .np-list { display: grid; gap: .4rem; margin: 0; padding-left: 1.2rem; }
 .np-summary { padding: .6rem .8rem; border: 1px dashed var(--fl-stroke); border-radius: 6px; }
-.np-summary h4 { margin: 0 0 .3rem; font-size: .85rem; }
+.np-summary h4 { margin: 0 0 .3rem; font-size: .875rem; }
 .np-problems:empty { display: none; }

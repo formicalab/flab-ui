@@ -2,7 +2,7 @@
 import { h, onActivate } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { ubus } from '../../core/ubus.js';
-import { badge, card, chip, emptyState, kv, mono, muted, sparkline, button } from '../../core/ui.js';
+import { badge, card, chip, emptyState, kv, linkButton, mono, muted, sparkline, spinner, button } from '../../core/ui.js';
 import { disclosure } from '../../core/fold.js';
 import { openDrawer } from '../../core/drawer.js';
 import { fmtSpan } from '../../core/format.js';
@@ -57,7 +57,7 @@ function endpointsCard(p) {
       h('td', {}, h('div', { className: 'fw-semibold' }, e.name), h('div', { className: 'muted small' }, ROLE_TEXT[e.role] ?? e.role, e.callerid && e.callerid !== '<unknown>' ? ` · ${e.callerid}` : '')),
       h('td', {}, badge(e.state, endpointKind(e))),
       h('td', {}, e.channels ? `${e.channels}${e.max_channels != null ? ` of ${e.max_channels}` : ''}` : muted('–')),
-      h('td', {}, e.context ? h('button', { type: 'button', className: 'btn btn-link btn-sm p-0 mono', onclick: ev => { ev.stopPropagation(); go('dialplan', { dpView: 'browse', ctx: e.context, ext: null }); }, title: 'Show this context in the dialplan' }, e.context) : muted('–')),
+      h('td', {}, e.context ? linkButton(e.context, ev => { ev.stopPropagation(); go('dialplan', { dpView: 'browse', ctx: e.context, ext: null }); }, { title: 'Show this context in the dialplan' }, 'mono') : muted('–')),
       h('td', {}, codecChips(e.codecs)),
       h('td', {}, e.contacts.length ? `${reachable} of ${e.contacts.length} reachable` : (e.role === 'phone' ? muted('none registered') : muted('–'))),
       h('td', {}, e.identifies.length ? h('div', { className: 'chips' }, e.identifies.flatMap(i => i.matches).map(m => chip(m, '', 'Calls from this address are matched to the endpoint'))) : muted('by user name')));
@@ -129,7 +129,7 @@ export function openEndpointDrawer(e) {
     const rows = keys.map(([label, key]) => settings[key] ? [label, key === 'allow' ? codecChips(e.codecs) : mono(String(settings[key]))] : null).filter(Boolean);
     return rows.length ? h('div', { className: 'blk' }, h('h3', {}, title), kv(rows)) : null;
   });
-  const all = h('div', { className: 'muted small' }, 'Loading…');
+  const all = h('div', { className: 'muted small' }, spinner('Loading the parameters'));
   let loaded = false;
   const params = disclosure({
     cls: 'mt-3', summary: 'Every parameter Asterisk reports',

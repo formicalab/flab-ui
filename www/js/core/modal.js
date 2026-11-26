@@ -12,6 +12,7 @@
 //   staticBackdrop   true to keep a click outside from closing the dialog
 //   onClose          called once, however the dialog was closed (a button, Escape, the backdrop, close())
 import { h } from './dom.js';
+import { closeButton } from './ui.js';
 
 // How many dialogs were opened, to give each title a unique id for aria-labelledby.
 let opened = 0;
@@ -26,7 +27,7 @@ export function openDialog({ title, subtitle, body, footer, size, staticBackdrop
       h('div', { className: 'modal-content' },
         h('div', { className: 'modal-header' },
           h('div', {}, h('h1', { className: 'modal-title fs-5 fl-dialog-title', id: titleId }, title), subtitle ? h('div', { className: 'muted small' }, subtitle) : null),
-          h('button', { type: 'button', className: 'btn-close', ariaLabel: 'Close', onclick: () => dialog.close() })),
+          closeButton(() => dialog.close())),
         bodyBox, footBox)));
   // The dialog is named by its title (h() sets properties, and aria-labelledby has no string property).
   dialog.setAttribute('aria-labelledby', titleId);

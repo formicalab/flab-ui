@@ -12,6 +12,7 @@
 //   footer           a node or a list of nodes, always visible below the body (setFooter replaces them; empty hides the footer)
 //   onClose          called once, however the drawer was closed (button, Escape, close(), a route change, another drawer replacing it)
 import { h } from './dom.js';
+import { closeButton } from './ui.js';
 
 // How many drawers were opened, to give each title a unique id for aria-labelledby.
 let opened = 0;
@@ -35,9 +36,9 @@ export function openDrawer({ title, subtitle, icon, body, footer, onClose } = {}
   const subNode = h('div', { className: 'muted small fl-drawer-sub' }, subtitle ?? '');
   const bodyBox = h('div', { className: 'offcanvas-body fl-drawer-body' }, body);
   const footBox = h('div', { className: 'fl-drawer-foot' }, footerNodes(footer));
-  const closeButton = h('button', { type: 'button', className: 'btn-close', ariaLabel: 'Close', title: 'Close (Esc)', onclick: () => handle.close() });
+  const closeBtn = closeButton(() => handle.close(), 'Close', { title: 'Close (Esc)' });
   const el = h('aside', { className: 'offcanvas offcanvas-end fl-drawer', tabIndex: -1 },
-    h('div', { className: 'offcanvas-header fl-drawer-head' }, icon ?? null, h('div', { className: 'fl-drawer-titles' }, titleNode, subNode), closeButton),
+    h('div', { className: 'offcanvas-header fl-drawer-head' }, icon ?? null, h('div', { className: 'fl-drawer-titles' }, titleNode, subNode), closeBtn),
     bodyBox, footBox);
   el.setAttribute('aria-labelledby', titleId);
   el.setAttribute('role', 'complementary');

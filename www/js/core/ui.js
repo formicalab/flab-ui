@@ -56,6 +56,15 @@ export const button = (label, iconName, onclick, cls = 'btn-outline-secondary', 
     onclick,
   }, iconName ? icon(iconName) : null, label || null);
 
+// The small x that closes a dialog or drawer or dismisses an alert. `label` names it for screen readers and as its tooltip; `props`
+// sets other properties.
+export const closeButton = (onclick, label = 'Close', props = {}) =>
+  h('button', { type: 'button', className: 'btn-close', ariaLabel: label, title: label, ...props, onclick });
+
+// A button that reads as a link: a jump to another place, inside a table cell or a line of text. `cls` adds classes (`mono`).
+export const linkButton = (label, onclick, props = {}, cls = '') =>
+  h('button', { type: 'button', className: `btn btn-link btn-sm p-0 ${cls}`.trim(), ...props, onclick }, label);
+
 // Label/value list. rows: [label, node|string] pairs; null rows are skipped.
 export const kv = rows => h('dl', { className: 'kv' },
   rows.filter(Boolean).flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]));

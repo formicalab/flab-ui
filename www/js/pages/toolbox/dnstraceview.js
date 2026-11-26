@@ -6,7 +6,7 @@
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { disclosure } from '../../core/fold.js';
-import { badge, mono, muted } from '../../core/ui.js';
+import { badge, mono } from '../../core/ui.js';
 import { fmtMs } from './diagmodel.js';
 import { parseDnsTrace, stepVerdict, zoneLabel } from './dnstracemodel.js';
 import { day, working } from './parts.js';

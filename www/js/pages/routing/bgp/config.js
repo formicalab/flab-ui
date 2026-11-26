@@ -4,7 +4,7 @@
 import { h } from '../../../core/dom.js';
 import { icon } from '../../../core/icons.js';
 import { AuthError, can, ubus } from '../../../core/ubus.js';
-import { badge, button, card, kv, muted, mono, section, chip } from '../../../core/ui.js';
+import { badge, button, card, closeButton, kv, muted, mono, section, chip } from '../../../core/ui.js';
 import { chevron, disclosure, foldable } from '../../../core/fold.js';
 import { fmtBytes } from '../../../core/format.js';
 import { blockText, configOf, findBlock, nameOf, protocolBlocks } from './configmodel.js';
@@ -34,7 +34,7 @@ function checkNote(state, rerender) {
     h('div', { className: 'cfg-check-body' }, h('strong', {}, check.ok ? 'BIRD accepts this configuration.' : 'BIRD rejects this configuration.'),
       check.output ? h('pre', { className: 'cfg-output' }, check.output) : null,
       h('div', { className: 'muted small' }, `Checked ${new Date(check.at).toLocaleTimeString()}; the check does not apply anything.`)),
-    h('button', { type: 'button', className: 'btn-close', ariaLabel: 'Close', title: 'Close', id: 'bgp-cfg-outcome-close', onclick: () => { state.cfgCheck = null; rerender(); } }));
+    closeButton(() => { state.cfgCheck = null; rerender(); }, 'Close', { id: 'bgp-cfg-outcome-close' }));
 }
 
 // The file with line numbers, comments dimmed and the lines of the selected block highlighted. A block comment or a `#` comment is

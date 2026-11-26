@@ -26,11 +26,11 @@
 .ast-cf-node > svg { color: var(--fl-brand); flex: none; }
 .ast-cf-bridge { border-style: dashed; }
 .ast-cf-wire { flex: 1 1 9rem; min-width: 8rem; display: grid; gap: .3rem; text-align: center; }
-.ast-cf-label { font-size: .85rem; }
+.ast-cf-label { font-size: .8rem; }
 .ast-wire.held { background: repeating-linear-gradient(90deg, var(--fl-warn-fg) 0 4px, transparent 4px 12px); opacity: .7; }
 .ast-trend { height: 22px; margin-top: .15rem; }
 .ast-trend .spark { width: 110px; height: 20px; display: block; }
-.ast-trend .spark-empty { font-size: .7rem; }
+.ast-trend .spark-empty { font-size: .75rem; }
 
 /* Status dot used by endpoints and dialed targets */
 .ast-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; margin-right: .35rem; vertical-align: baseline; background: var(--fl-muted); }
@@ -45,8 +45,8 @@
 .ast-reg::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--fl-ok-fg), var(--fl-brand)); }
 .ast-reg.bad::before { background: var(--fl-bad-fg); }
 .ast-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .35rem; }
-.ast-head .name { font-size: 1.1rem; font-weight: 600; }
-.ast-reg .kv { grid-template-columns: minmax(7rem, 36%) minmax(0, 1fr); row-gap: .3rem; font-size: .9rem; }
+.ast-head .name { font-size: 1.2rem; font-weight: 600; }
+.ast-reg .kv { grid-template-columns: minmax(7rem, 36%) minmax(0, 1fr); row-gap: .3rem; font-size: .875rem; }
 
 /* ── Signalling diagram: endpoints, Asterisk, trunks ── */
 .ast-flow { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(2rem, 5rem) minmax(11rem, 1.1fr) minmax(2rem, 5rem) minmax(10rem, 1fr); align-items: center; gap: .5rem; padding: 1.1rem 1.25rem; }
@@ -79,16 +79,16 @@
 
 /* ── Dialplan browser ── */
 .ast-ctx-head { display: grid; gap: .5rem; }
-.ast-ctx-head .name { font-size: 1.15rem; font-weight: 600; }
+.ast-ctx-head .name { font-size: 1.2rem; font-weight: 600; }
 .ast-rel { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
 .ast-chip-btn { border: 0; cursor: pointer; }
 .ast-ext { overflow: hidden; }
 .ast-ext.focus { outline: 2px solid var(--fl-brand); }
 .ast-ext-sum { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; padding: .65rem 1rem; }
-.ast-pattern { font-weight: 700; font-size: .95rem; }
-.ast-explain { font-size: .85rem; }
+.ast-pattern { font-weight: 600; font-size: 1rem; }
+.ast-explain { font-size: .8rem; }
 .ast-ext-body { border-top: 1px solid var(--fl-stroke); }
-.ast-steps { margin: 0; font-size: .85rem; }
+.ast-steps { margin: 0; font-size: .8rem; }
 .ast-steps th { color: var(--fl-muted); font-weight: 600; font-size: .75rem; white-space: nowrap; }
 .ast-steps td { vertical-align: top; }
 .ast-prio { text-align: right; color: var(--fl-muted); width: 2.5rem; }
@@ -102,7 +102,7 @@
 .ast-var { color: var(--fl-info-fg); }
 .ast-redacted { padding: 0 .3rem; border-radius: 4px; background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
 .ast-hl td { background: var(--fl-warn-bg); }
-.ast-app { display: inline-block; padding: .02rem .5rem; border-radius: 6px; font-size: .78rem; font-weight: 600; white-space: nowrap; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
+.ast-app { display: inline-block; padding: .02rem .5rem; border-radius: 6px; font-size: .75rem; font-weight: 600; white-space: nowrap; background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
 .ast-app.dial { background: var(--fl-info-bg); color: var(--fl-info-fg); }
 .ast-app.flow { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
 .ast-app.media { background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
@@ -152,7 +152,7 @@
 .ast-ln .no { flex: none; width: 3.5rem; padding-right: .8rem; text-align: right; color: var(--fl-muted); user-select: none; }
 .ast-ln .tx { flex: 1; min-width: 0; padding-right: 1rem; }
 .ast-ln.comment .tx { color: var(--fl-muted); }
-.ast-ln.section .tx { color: var(--fl-brand); font-weight: 700; }
+.ast-ln.section .tx { color: var(--fl-brand); font-weight: 600; }
 .ast-ln.option .k { color: var(--fl-info-fg); }
 .ast-ln.option .c { color: var(--fl-muted); }
 .ast-ln.exten .tx, .ast-ln.include .tx { color: var(--fl-text); }

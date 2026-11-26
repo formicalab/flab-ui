@@ -99,10 +99,12 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
 
 - **`h(tag, props, ...children)`** builds elements from properties and text nodes only. Router data is
   therefore never parsed as HTML. Never use `innerHTML` with data (the only `innerHTML` is static markup:
-  the icon path data in `icons.js` and the sign-in logo).
+  the icon path data in `icons.js` and the sign-in logo). `dom.js` also has `onEnter(fn)` and `onActivate(fn)`, keydown
+  listeners for Enter (and Space) that act only when the element itself has focus: use them instead of testing `e.key` by hand.
 - **`ui.js`** components: `card`, `tile`/`tiles` (KPI row), `table`, `badge` (soft pill: `success`,
   `warning`, `danger`, `info`), `chip`, `kv` (label/value list), `section`, `lifebar`, `meter`,
-  `sparkline`, `emptyState`, `button`, `healthBanner` (findings list or all-clear), `muted` and `mono`
+  `sparkline`, `emptyState`, `button`, `closeButton` (the x of a dialog, drawer or alert), `linkButton` (a button that reads as a
+  link), `healthBanner` (findings list or all-clear), `muted` and `mono`
   (inline text), `GRADE_KIND` (badge kind of the A+ to D security grades). See
   [UI conventions](#ui-conventions) for `button` and the other shared looks.
 - **`fold.js`**: `disclosure()`, `foldable()` with `chevron()`, and `reveal()`; see [UI conventions](#ui-conventions).
@@ -157,7 +159,9 @@ once per route; only `<main>` is redrawn on refresh, so typing in a filter box i
   names and the page title, `1.5rem` stat values, `1.75rem` KPI tiles. Weights are 400 and 600 only; `base.css` makes `b`,
   `strong` and the headings 600 (bootstrap's are 700 and 500) and `small` / `.small` `.8rem` (bootstrap's is relative to the
   parent, so it differed in every container). Monospace text uses `var(--fl-mono)` (also bootstrap's `pre` and `code`); never
-  spell the font stack out again.
+  spell the font stack out again. Three exceptions: the text of an inline SVG diagram (`.ast-svg`, `.bgp-flow`, `.rt-ch-label`)
+  is sized in `px` because it scales with the drawing, and the sign-in headline (`.login-hero h2`, 2rem) and the CPU figure on
+  the overview (`.cpu-big`, 2.6rem) are larger than any card text.
 - Shared pieces (status `.dot`, health banner, table helpers) live in `base.css` because page CSS is
   loaded lazily.
 

@@ -14,11 +14,11 @@
 .ov-globe svg { width: 1.65rem; height: 1.65rem; }
 .ov-internet-main.offline .ov-globe { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
 .ov-internet-main.unknown .ov-globe { background: var(--fl-neutral-bg); color: var(--fl-neutral-fg); }
-.ov-internet-title { font-size: 1.25rem; font-weight: 600; line-height: 1.2; }
+.ov-internet-title { font-size: 1.2rem; font-weight: 600; line-height: 1.2; }
 .ov-protocols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .ov-protocol { min-width: 0; padding: .75rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface-hover); }
 .ov-protocol-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .4rem; }
-.ov-address { font-size: .85rem; white-space: nowrap; overflow-wrap: normal; }
+.ov-address { font-size: .8rem; white-space: nowrap; overflow-wrap: normal; }
 .ov-internet-foot { grid-column: 1 / -1; display: grid; gap: .2rem; padding-top: .55rem; border-top: 1px solid var(--fl-stroke); overflow-wrap: anywhere; }
 .ov-dns-row { display: grid; grid-template-columns: 14px 5.5rem minmax(0, 1fr); align-items: baseline; gap: .4rem; }
 .ov-dns-row b { color: var(--fl-text); font-weight: 600; }
@@ -53,7 +53,7 @@
 .ov-hero-logo { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 12px; background: var(--fl-info-bg); color: var(--fl-brand); flex: none; }
 .ov-hero-logo svg { width: 1.65rem; height: 1.65rem; }
 .ov-hero-name { min-width: 0; margin-right: auto; }
-.ov-hero-name h2 { margin: 0; font-size: 1.25rem; font-weight: 600; line-height: 1.2; }
+.ov-hero-name h2 { margin: 0; font-size: 1.2rem; font-weight: 600; line-height: 1.2; }
 .ov-hero-facts { display: flex; flex-wrap: wrap; gap: .6rem; }
 .ov-fact { padding: .4rem .75rem; border: 1px solid var(--fl-stroke); border-radius: 8px; background: var(--fl-surface); }
 .ov-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; padding-top: 1rem; border-top: 1px solid var(--fl-stroke); }
@@ -63,7 +63,7 @@
 .ov-kpi-value { font-size: 1.5rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
 
 /* One data font everywhere on this page: monospaced, same size */
-.ov-hero .mono, .ov-network .mono, .ov-storage-body .mono { font-size: .85rem; }
+.ov-hero .mono, .ov-network .mono, .ov-storage-body .mono { font-size: .8rem; }
 .ov-fs .ov-fs-mount { font-size: 1rem; }
 
 /* ── Temperature sensors: one tile per sensor with a temperature, gauge and thresholds ── */

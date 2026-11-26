@@ -217,7 +217,7 @@ function segment(options, value, onpick, disabled) {
 }
 
 // A collapsed explanation of the tool under the form (the warnings that matter stay visible as notes).
-const about = (...kids) => h('details', { className: 'rt-about' }, h('summary', {}, icon('info-circle'), 'About this tool'), h('div', { className: 'rt-about-body muted' }, ...kids));
+const about = (...kids) => disclosure({ cls: 'rt-about', summary: [icon('info-circle'), 'About this tool'], body: h('div', { className: 'rt-about-body muted' }, ...kids) });
 // One labeled input or select of the form (`control` is the element; `title` is the hint shown on hover).
 function field(label, title, control, className = '') {
   return h('label', { className: `rt-field ${className}`, title }, h('span', {}, label), control);

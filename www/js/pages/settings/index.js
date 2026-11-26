@@ -8,9 +8,9 @@
 // polling is suspended while there is something to lose: unsaved edits, a focused control, a save, a backup transfer, or Pause.
 import { h } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { chevron } from '../../core/fold.js';
+import { disclosure } from '../../core/fold.js';
 import { can, optional, ubus } from '../../core/ubus.js';
-import { badge, button, kv, mono, muted, spinner, tile, tiles } from '../../core/ui.js';
+import { badge, button, closeButton, kv, mono, muted, spinner, tile, tiles } from '../../core/ui.js';
 import { pauseControl, refreshControl } from '../../core/controls.js';
 import { fieldRow, legend } from '../../core/forms.js';
 import { createEditor } from '../../core/editpage.js';
@@ -33,6 +33,8 @@ const editor = createEditor({
   },
 });
 const { state } = editor;
+// The cards (by group id) the user has opened; the page redraws on every poll and keeps them open.
+const openCards = new Set();
 // The Pause button's flag (the editor's state is separate).
 const live = { paused: false };
 const ntpAction = { busy: false, message: null };
@@ -156,8 +158,7 @@ function ntpStatus(ctx) {
       ntpAction.busy ? spinner('Synchronizing the router clock') : null),
     ntpAction.message ? h('div', { className: `alert alert-${ntpAction.message.kind} alert-dismissible mt-3 mb-0`, role: 'alert' },
       ntpAction.message.text,
-      h('button', { type: 'button', className: 'btn-close', ariaLabel: 'Dismiss',
-        onclick: () => { ntpAction.message = null; ctx.rerender(); } })) : null);
+      closeButton(() => { ntpAction.message = null; ctx.rerender(); }, 'Dismiss')) : null);
 }
 
 // One card of the form, from its schema group: its legend on top, then either side-by-side columns (the time card:
@@ -179,16 +180,17 @@ function groupCard(ctx, g) {
       badge(!ntpOn ? 'off' : ntp ? (ntp.running ? 'running' : 'not running') : 'state unknown',
         !ntpOn ? '' : ntp?.running ? 'success' : 'warning'))
     : null;
-  return h('details', {
-    className: 'card settings-disclosure',
+  return disclosure({
+    cls: 'card settings-disclosure',
+    summaryCls: 'card-header',
+    summary: [icon(g.icon), h('span', {}, g.title), extra],
+    body: h('div', {}, legend(g.legend), body),
     open: openCards.has(g.id),
-    ontoggle: e => {
-      if (e.currentTarget.open) openCards.add(g.id);
+    onToggle: open => {
+      if (open) openCards.add(g.id);
       else openCards.delete(g.id);
     },
-  },
-    h('summary', { className: 'card-header' }, chevron(), icon(g.icon), h('span', {}, g.title), extra),
-    h('div', {}, legend(g.legend), body));
+  });
 }
 
 //#endregion

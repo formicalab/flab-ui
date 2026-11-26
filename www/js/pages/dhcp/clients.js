@@ -136,7 +136,7 @@ function editor(ctx, c, bad) {
     return h('div', { className: 'col-12 col-md-6 col-xl-4' },
       h('label', { className: 'form-label small mb-1', htmlFor: input.id }, f.label), input, h('div', { className: 'form-text' }, f.hint));
   });
-  const done = row.section == null ? null : button('Done', 'check-lg', () => {
+  const done = row.section == null ? null : button('Done', 'check2', () => {
     // The editor stays open (and is remembered as open) while the lease holds an error, which the form may not show yet.
     if (!problems(ctx.data, ctx.draft).errors.some(e => e.key.startsWith(`host:${row.key}:`))) editing.delete(row.key);
     ctx.redraw();

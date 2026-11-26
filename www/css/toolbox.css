@@ -195,7 +195,7 @@
 .rt-mtr-actions { margin-top: .75rem; }
 .rt-capture { display: grid; gap: .9rem; }
 .rt-cap-protos { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .9rem; }
-.rt-cap-proto { font-family: var(--fl-mono); font-size: .85rem; }
+.rt-cap-proto { font-family: var(--fl-mono); font-size: .8rem; }
 .rt-cap-talkers { display: grid; gap: .2rem; font-size: .875rem; }
 .rt-captable td, .rt-captable th { white-space: nowrap; }
 .rt-capture .table-responsive { max-height: 32rem; overflow: auto; }
@@ -235,7 +235,7 @@
 .rt-tl-bar { position: absolute; top: 3px; bottom: 3px; border-radius: 4px; display: flex; align-items: center; overflow: hidden; background: var(--fl-ok-bg); color: var(--fl-ok-fg); }
 .rt-tl-bar.soon, .rt-tl-bar.warn { background: var(--fl-warn-bg); color: var(--fl-warn-fg); }
 .rt-tl-bar.bad { background: var(--fl-bad-bg); color: var(--fl-bad-fg); }
-.rt-tl-end { padding: 0 .5rem; font-size: .7rem; white-space: nowrap; }
+.rt-tl-end { padding: 0 .5rem; font-size: .75rem; white-space: nowrap; }
 .rt-tl-now { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--fl-brand); }
 
 /* ── Wake-on-LAN ── */
