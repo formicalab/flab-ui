@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.26 - 2026-11-26
+
+### System settings
+
+- **The page renders again:** since 0.1.20 it showed only "openCards is not defined" instead of its cards. The set that remembers which cards
+  are open was removed by mistake and is back.
+
+### User interface
+
+- **Keyboard:** rows, cards and card headers that act as buttons (Asterisk endpoints and calls, routing tables, traffic hosts, the firewall
+  matrix, the BGP flow diagram, interface cards) open with Enter or Space, and only when the element itself has focus, so Enter on a button
+  inside a clickable row no longer also opens the row. One helper (`onEnter`, `onActivate`) replaces twelve hand-written handlers.
+- **Consistency:** the System settings cards, the backup review and the Toolbox "About" blocks use the shared fold; dialogs, drawers and
+  alerts share one close button; font sizes and weights follow the documented type scale (a few `.85rem`, `.7rem`, `.95rem` and 700-weight
+  texts moved by up to one pixel); the endpoint parameters panel shows a spinner while it loads; the DHCP lease editor's Done button uses
+  the confirm icon.
+- **Interfaces:** IPv6 subnets in messages are written with the longest run of zeros compressed (`fd92:cdf9:fb3f:100::/64`).
+
+### Code
+
+- One CIDR, netmask and address-formatting implementation (`core/ip.js`) serves the Interfaces, WireGuard and Routing pages; the process
+  age used by the DNS and Asterisk plugins is one function in `flab.util`.
+
 ## 0.1.25 - 2026-11-26
 
 ### Asterisk
