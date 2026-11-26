@@ -699,8 +699,9 @@ function findings(s) {
 	let day = s.now - 86400, errors = filter(s.problems.entries, (p) => p.level == 'error' && p.at != null && p.at >= day && !p.benign);
 	if (length(errors))
 		push(out, { level: 'warn', text: `${length(errors)} error${length(errors) == 1 ? '' : 's'} in the Asterisk log in the last 24 hours; the latest: ${errors[length(errors) - 1].text}` });
-	if (!s.pjsip_loaded)
-		push(out, { level: 'info', text: 'The PJSIP channel driver is not loaded, so there is nothing to show about SIP.' });
+	if (index(s.cdr?.backends ?? [], 'csv') < 0)
+		push(out, { level: 'warn', text: 'No CDR backend writes the call history: install asterisk-cdr-csv (the Calls tab stays empty without it) and restart Asterisk.' });
+	if (!s.pjsip_loaded) 		push(out, { level: 'info', text: 'The PJSIP channel driver is not loaded, so there is nothing to show about SIP.' });
 	else if (!length(sum.registrations_list) && !length(sum.endpoints_list))
 		push(out, { level: 'info', text: 'PJSIP is loaded but no endpoint or registration is configured.' });
 	return out;

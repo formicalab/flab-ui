@@ -140,6 +140,7 @@ console.log('== call history ==');
   check(h.file === '/var/log/asterisk/cdr-csv/Master.csv' && h.truncated === false, 'the file and whether it was cut');
   const n = load('nocdr', 'calls');
   check(n.csv === false && n.backends.length === 0 && n.entries.length === 0, 'without a backend and a file: nothing, and the reason is in csv', JSON.stringify(n));
+  check(load('nocdr', 'status').findings.some(f => f.level === 'warn' && /asterisk-cdr-csv/.test(f.text)) && !load('base', 'status').findings.some(f => /asterisk-cdr-csv/.test(f.text)), 'a missing CDR backend is a finding, a present one is not', texts(load('nocdr', 'status').findings));
   const u = load('unreachable', 'calls');
   check(u.csv === false && u.entries.length === 8, 'with Asterisk down the file is still read', `${u.csv} ${u.entries.length}`);
 }
