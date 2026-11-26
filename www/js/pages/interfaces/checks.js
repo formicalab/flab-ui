@@ -1,7 +1,7 @@
 // Pure value checks and address math for the network editor (Devices and Interfaces): an address, a netmask, a prefix,
 // a subnet and the other formats /etc/config/network takes. Each `check*` returns an error message that completes the
 // sentence "<label> ...", or null when the value is fine. No DOM and no network.
-import { parseAddress } from '../../core/ip.js';
+import { parseAddress, parseCidr as parseCidrCore, maskPrefix, formatAddress } from '../../core/ip.js';
 import { CHECKS, MAC } from '../../core/fields.js';
 
 //#region Addresses
@@ -11,34 +11,17 @@ const v4 = text => { const a = parseAddress(text); return a?.family === 4 ? a.va
 // An IPv6 address as a BigInt, or null.
 const v6 = text => { const a = parseAddress(text); return a?.family === 6 ? a.value : null; };
 
-// The prefix length of a dotted netmask (255.255.255.0 gives 24), or null when it is not a contiguous mask.
-export function maskPrefix(text) {
-  const value = v4(String(text ?? ''));
-  if (value == null) return null;
-  const bits = value.toString(2).padStart(32, '0');
-  return /^1*0*$/.test(bits) ? bits.indexOf('0') < 0 ? 32 : bits.indexOf('0') : null;
-}
-
 // A prefix length as a bitmask of `size` bits.
 const maskBits = (prefix, size) => (prefix === 0 ? 0n : ((1n << BigInt(prefix)) - 1n) << BigInt(size - prefix));
 
 // An address with an optional prefix, as { family, value, prefix, hasPrefix, size }: "192.168.1.1", "192.168.1.1/24", "192.168.1.1/255.255.255.0",
 // "2001:db8::1/64". `netmask` completes an IPv4 address that has no prefix. Null when the text is not an address.
 export function parseCidr(text, netmask = '') {
-  const [addr, rest, ...more] = String(text ?? '').trim().split('/');
-  if (more.length) return null;
-  const a = parseAddress(addr);
-  if (!a) return null;
-  const size = a.family === 4 ? 32 : 128;
-  let prefix = null;
-  if (rest != null) {
-    if (a.family === 4 && /^\d+\.\d+\.\d+\.\d+$/.test(rest)) prefix = maskPrefix(rest);
-    else if (/^\d{1,3}$/.test(rest) && +rest <= size) prefix = +rest;
-    if (prefix == null) return null;
-  } else if (a.family === 4 && netmask) {
-    prefix = maskPrefix(netmask);
-  }
-  return { family: a.family, value: a.value, prefix, hasPrefix: prefix != null, size };
+  const c = parseCidrCore(text, { mask: true, bare: 'keep' });
+  if (!c) return null;
+  if (c.hasPrefix || c.family !== 4 || !netmask) return c;
+  const prefix = maskPrefix(netmask);
+  return { ...c, prefix, hasPrefix: prefix != null };
 }
 
 // The subnet an address with a prefix is on, as { family, network, prefix, size }; null when it has no prefix.
@@ -55,9 +38,7 @@ export const overlaps = (a, b) => a.family === b.family && (contains(a, b.networ
 
 // An address as text, for messages about a subnet: "192.168.1.0/24".
 export function subnetText(s) {
-  if (s.family === 4) return `${[24n, 16n, 8n, 0n].map(n => (s.network >> n) & 255n).join('.')}/${s.prefix}`;
-  const groups = Array.from({ length: 8 }, (_, i) => ((s.network >> BigInt(112 - 16 * i)) & 0xffffn).toString(16));
-  return `${groups.join(':').replace(/(^|:)0(:0)+(:|$)/, '::')}/${s.prefix}`;
+  return `${formatAddress(s.family, s.network)}/${s.prefix}`;
 }
 
 //#endregion

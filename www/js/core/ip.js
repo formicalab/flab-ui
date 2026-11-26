@@ -1,5 +1,5 @@
-// IP address parsing shared by the pages that compare or order addresses (Routing, BGP). Pure functions: no DOM
-// and no network. Addresses become BigInt values so IPv4 and IPv6 are compared the same way.
+// IP address and CIDR parsing shared by the pages that compare, order or edit addresses (Routing, BGP, Interfaces, WireGuard).
+// Pure functions: no DOM and no network. Addresses become BigInt values so IPv4 and IPv6 are compared the same way.
 
 // An IPv4 address as a BigInt, or null when it is not one.
 function v4Value(text) {
@@ -32,6 +32,62 @@ function v6Value(text) {
   }
   if (groups.length !== 8 || groups.some(g => !/^[0-9a-f]{1,4}$/i.test(g))) return null;
   return groups.reduce((acc, g) => (acc << 16n) | BigInt(parseInt(g, 16)), 0n);
+}
+
+// The number of bits of an address of each family.
+const BITS = { 4: 32, 6: 128 };
+
+// The prefix length of a dotted IPv4 netmask (255.255.255.0 gives 24), or null when it is not a contiguous mask.
+export function maskPrefix(text) {
+  const a = parseAddress(text);
+  if (a?.family !== 4) return null;
+  const bits = a.value.toString(2).padStart(32, '0');
+  return /^1*0*$/.test(bits) ? (bits.indexOf('0') < 0 ? 32 : bits.indexOf('0')) : null;
+}
+
+// Parses "address", "address/prefix" or (with `mask`) "address/255.255.255.0" into
+// { family, value, prefix, hasPrefix, size, network, last }: `network` and `last` are the lowest and highest address of the
+// prefix, `size` the bits of the family. Options: `family` (4 or 6) refuses the other family, `mask` accepts a dotted netmask
+// after the slash, and `bare` says what an address without a prefix is: 'host' (a /32 or /128, the default), 'keep' (no
+// prefix: `prefix` is null, `hasPrefix` false) or 'refuse' (null). Null when the text is not an address with a valid prefix.
+export function parseCidr(text, { family, mask = false, bare = 'host' } = {}) {
+  const t = String(text ?? '').trim();
+  const slash = t.indexOf('/');
+  const a = parseAddress(slash < 0 ? t : t.slice(0, slash));
+  if (!a || (family && a.family !== family)) return null;
+  const size = BITS[a.family];
+  let prefix;
+  if (slash < 0) {
+    if (bare === 'refuse') return null;
+    prefix = bare === 'keep' ? null : size;
+  } else {
+    const p = t.slice(slash + 1);
+    if (/^\d{1,3}$/.test(p)) prefix = +p;
+    else if (mask && a.family === 4) prefix = maskPrefix(p);
+    else return null;
+    if (prefix == null || prefix > size) return null;
+  }
+  if (prefix == null) return { family: a.family, value: a.value, prefix, hasPrefix: false, size, network: a.value, last: a.value };
+  const hostBits = BigInt(size - prefix);
+  const network = (a.value >> hostBits) << hostBits;
+  return { family: a.family, value: a.value, prefix, hasPrefix: true, size, network, last: network | ((1n << hostBits) - 1n) };
+}
+
+// An address as text: dotted for IPv4, RFC 5952 for IPv6 (the longest run of zero groups, at least two, becomes "::").
+export function formatAddress(family, value) {
+  if (family === 4) return [24n, 16n, 8n, 0n].map(s => String((value >> s) & 0xffn)).join('.');
+  const groups = Array.from({ length: 8 }, (_, i) => Number((value >> BigInt(112 - 16 * i)) & 0xffffn));
+  let best = { at: -1, len: 0 };
+  for (let i = 0; i < 8;) {
+    if (groups[i] !== 0) { i++; continue; }
+    let j = i;
+    while (j < 8 && groups[j] === 0) j++;
+    if (j - i > best.len) best = { at: i, len: j - i };
+    i = j;
+  }
+  const hex = groups.map(g => g.toString(16));
+  if (best.len < 2) return hex.join(':');
+  return `${hex.slice(0, best.at).join(':')}::${hex.slice(best.at + best.len).join(':')}`;
 }
 
 // { family, value } of an IPv4 or IPv6 address (a BigInt value), or null.

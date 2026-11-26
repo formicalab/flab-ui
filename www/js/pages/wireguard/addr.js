@@ -1,45 +1,15 @@
 // Address math of the WireGuard page: CIDR parsing and comparison (allowed IPs, interface addresses), the next free address of a
 // tunnel network, and what an endpoint address looks like. Pure functions, no DOM and no network; addresses are BigInt values
 // (core/ip.js), so IPv4 and IPv6 are handled the same way.
-import { parseAddress } from '../../core/ip.js';
-
-// The number of bits of an address of each family.
-const BITS = { 4: 32, 6: 128 };
-
-// The netmask words netifd accepts after the slash of an IPv4 address ("192.168.1.1/255.255.255.0") as a prefix length, or null.
-function maskPrefix(text) {
-  const a = parseAddress(text);
-  if (!a || a.family !== 4) return null;
-  const inverted = (~a.value) & 0xffffffffn;
-  // A netmask is a run of ones then zeros, so its inverse plus one is a power of two.
-  if ((inverted & (inverted + 1n)) !== 0n) return null;
-  return inverted === 0n ? 32 : 32 - inverted.toString(2).length;
-}
+import { parseAddress, parseCidr as parseCidrCore, formatAddress } from '../../core/ip.js';
 
 // Parses "address/prefix" into { family, value, prefix, bits, first, last, text } (`first` and `last` are the network's lowest and highest
 // address), or null when it is not one. Options: `bare` accepts an address without a prefix (a host: /32 or /128) and
 // `mask` accepts a dotted netmask after the slash, as the interface `addresses` option does.
 export function parseCidr(text, { bare = false, mask = false } = {}) {
-  const t = String(text ?? '').trim();
-  const slash = t.indexOf('/');
-  const addr = parseAddress(slash < 0 ? t : t.slice(0, slash));
-  if (!addr) return null;
-  const bits = BITS[addr.family];
-  let prefix;
-  if (slash < 0) {
-    if (!bare) return null;
-    prefix = bits;
-  } else {
-    const p = t.slice(slash + 1);
-    if (/^\d{1,3}$/.test(p)) prefix = +p;
-    else if (mask && addr.family === 4) prefix = maskPrefix(p);
-    else return null;
-    if (prefix == null || prefix > bits) return null;
-  }
-  const hostBits = BigInt(bits - prefix);
-  const first = (addr.value >> hostBits) << hostBits;
-  const last = first | ((1n << hostBits) - 1n);
-  return { family: addr.family, value: addr.value, prefix, bits, first, last, text: t };
+  const c = parseCidrCore(text, { mask, bare: bare ? 'host' : 'refuse' });
+  if (!c) return null;
+  return { family: c.family, value: c.value, prefix: c.prefix, bits: c.size, first: c.network, last: c.last, text: String(text).trim() };
 }
 
 // Whether the network `a` contains the whole of network `b` (the same family).
@@ -48,23 +18,6 @@ export const covers = (a, b) => a.family === b.family && a.first <= b.first && b
 export const overlaps = (a, b) => a.family === b.family && a.first <= b.last && b.first <= a.last;
 // Whether the address of `cidr` lies inside the network `net`.
 export const holds = (net, cidr) => net.family === cidr.family && net.first <= cidr.value && cidr.value <= net.last;
-
-// An address as text: dotted for IPv4, RFC 5952 for IPv6 (the longest run of zero groups, at least two, becomes "::").
-export function formatAddress(family, value) {
-  if (family === 4) return [24n, 16n, 8n, 0n].map(s => String((value >> s) & 0xffn)).join('.');
-  const groups = Array.from({ length: 8 }, (_, i) => Number((value >> BigInt(112 - 16 * i)) & 0xffffn));
-  let best = { at: -1, len: 0 };
-  for (let i = 0; i < 8;) {
-    if (groups[i] !== 0) { i++; continue; }
-    let j = i;
-    while (j < 8 && groups[j] === 0) j++;
-    if (j - i > best.len) best = { at: i, len: j - i };
-    i = j;
-  }
-  const hex = groups.map(g => g.toString(16));
-  if (best.len < 2) return hex.join(':');
-  return `${hex.slice(0, best.at).join(':')}::${hex.slice(best.at + best.len).join(':')}`;
-}
 
 // The address of a parsed CIDR as text, without the prefix.
 export const addressText = c => formatAddress(c.family, c.value);

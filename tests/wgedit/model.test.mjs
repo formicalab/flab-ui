@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 // Imports one module of the page.
 const mod = f => import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/pages/wireguard', f)).href);
 const a = await mod('addr.js');
+const { formatAddress } = await import(pathToFileURL(path.resolve(import.meta.dirname, '../../www/js/core/ip.js')).href);
 const k = await mod('keys.js');
 const m = await mod('model.js');
 const { IFACE_FIELDS, PEER_FIELDS } = await mod('schema.js');
@@ -26,7 +27,7 @@ check(a.parseCidr('fd00:8::2/64').family === 6 && a.networkText(a.parseCidr('fd0
 check(a.parseCidr('10.0.0.1') === null && a.parseCidr('10.0.0.1', { bare: true }).prefix === 32 && a.parseCidr('fd00::1', { bare: true }).prefix === 128, 'a prefix is required unless a bare host is allowed');
 check(a.parseCidr('10.0.0.1/33') === null && a.parseCidr('fd00::1/129') === null && a.parseCidr('10.0.0.1/-1') === null && a.parseCidr('10.0.0.256/24') === null && a.parseCidr('x/24') === null && a.parseCidr('10.0.0.1/24/1') === null, 'bad prefixes and addresses are refused');
 check(a.parseCidr('192.168.1.1/255.255.255.0', { mask: true })?.prefix === 24 && a.parseCidr('192.168.1.1/255.255.255.0') === null && a.parseCidr('192.168.1.1/255.0.255.0', { mask: true }) === null, 'a dotted netmask is accepted only where netifd takes one, and only if it is a real netmask');
-check(a.formatAddress(6, a.parseCidr('2001:0db8:0:0:1:0:0:1', { bare: true }).value) === '2001:db8::1:0:0:1' && a.formatAddress(6, 0n) === '::' && a.formatAddress(6, 1n) === '::1' && a.formatAddress(6, a.parseCidr('fd00:0:0:0:0:0:0:2', { bare: true }).value) === 'fd00::2', 'IPv6 text uses the longest run of zeros');
+check(formatAddress(6, a.parseCidr('2001:0db8:0:0:1:0:0:1', { bare: true }).value) === '2001:db8::1:0:0:1' && formatAddress(6, 0n) === '::' && formatAddress(6, 1n) === '::1' && formatAddress(6, a.parseCidr('fd00:0:0:0:0:0:0:2', { bare: true }).value) === 'fd00::2', 'IPv6 text uses the longest run of zeros');
 check(a.overlaps(a.parseCidr('10.0.0.0/24'), a.parseCidr('10.0.0.128/25')) && !a.overlaps(a.parseCidr('10.0.0.0/24'), a.parseCidr('10.0.1.0/24')) && !a.overlaps(a.parseCidr('10.0.0.0/8'), a.parseCidr('fd00::/8')), 'overlap, also across families');
 check(a.covers(a.parseCidr('0.0.0.0/0'), a.parseCidr('8.8.8.8/32')) && !a.covers(a.parseCidr('10.0.0.0/25'), a.parseCidr('10.0.0.0/24')), 'covers');
 const net = a.parseCidr('10.8.0.1/24');

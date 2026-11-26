@@ -1,7 +1,8 @@
 // Unit tests of the network editor's pure model (www/js/pages/interfaces: checks.js, schema.js, model.js). No router, no browser.
 // Usage: node model.test.mjs
 import assert from 'node:assert/strict';
-import { maskPrefix, parseCidr, subnetOf, subnetText, overlaps, contains, VERIFY } from '../../www/js/pages/interfaces/checks.js';
+import { parseCidr, subnetOf, subnetText, overlaps, contains, VERIFY } from '../../www/js/pages/interfaces/checks.js';
+import { maskPrefix } from '../../www/js/core/ip.js';
 import { DEVICE_FIELDS, IFACE_FIELDS, deviceFields, idOf, ifaceFields } from '../../www/js/pages/interfaces/schema.js';
 import {
   addDevice, addInterface, changesOf, checkApplied, deviceChoices, deviceList, downAfter, draftFrom, ifaceList, isDirty, managementInterfaces, plan, portChoices,

@@ -12,7 +12,7 @@
 // Data (readStatic): { available, routes: [{ section, family, values }], interfaces: [{ name, up, v4, v6, ... }], kernel, tableIds, rules }.
 // The draft (draftFrom) is { rows: [{ key, section, family, removed, values }], next }; a row's `values` are the strings of FIELDS
 // (and booleans for `onlink` and `enabled`).
-import { parseAddress } from '../../core/ip.js';
+import { parseAddress, parseCidr as parseCidrCore, maskPrefix } from '../../core/ip.js';
 import { sectionsOf, uciBool } from '../../core/fields.js';
 import { tableId } from './model.js';
 
@@ -63,27 +63,15 @@ const TEXT_KEYS = ['target', 'gateway', 'interface', 'metric', 'table', 'type', 
 function maskLength(text) {
   const t = String(text).trim();
   if (/^\d{1,2}$/.test(t)) return +t <= 32 ? +t : null;
-  const a = parseAddress(t);
-  if (!a || a.family !== 4) return null;
-  const bits = a.value.toString(2).padStart(32, '0');
-  return /^1*0*$/.test(bits) ? bits.indexOf('0') === -1 ? 32 : bits.indexOf('0') : null;
+  return maskPrefix(t);
 }
 
 // An address with an optional prefix length ("10.0.0.0/8", "2001:db8::/32", "192.0.2.1") of one family as
 // { family, len, value, network, hostBits }, or null when it is not one. `network` is the address with the host bits cleared,
 // `hostBits` whether it had any.
 export function parseCidr(text, family) {
-  const parts = String(text ?? '').trim().split('/');
-  if (parts.length > 2) return null;
-  const a = parseAddress(parts[0]);
-  if (!a || a.family !== family) return null;
-  const bits = family === 6 ? 128 : 32;
-  if (parts.length === 2 && !/^\d{1,3}$/.test(parts[1])) return null;
-  const len = parts.length === 2 ? +parts[1] : bits;
-  if (len > bits) return null;
-  const shift = BigInt(bits - len);
-  const network = (a.value >> shift) << shift;
-  return { family, len, value: a.value, network, hostBits: network !== a.value };
+  const c = parseCidrCore(text, { family });
+  return c && { family, len: c.prefix, value: c.value, network: c.network, hostBits: c.network !== c.value };
 }
 
 // A prefix as a comparable text, so "10.0.0.5/8" and "10.0.0.0/8" and a kernel route's "10.0.0.0/8" are one key.
