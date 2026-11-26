@@ -2,7 +2,7 @@
 // option of the schema tables, the name box of a section that is not saved yet, the ports picker of a bridge, the list of options the page has
 // no control for and the state badge of an interface. They are built from an editing context (editor.js editContext) and read and write the
 // draft; the values and rules are in model.js, the option tables in schema.js.
-import { h } from '../../core/dom.js';
+import { h, onEnter } from '../../core/dom.js';
 import { badge, button } from '../../core/ui.js';
 import { fieldRow } from '../../core/forms.js';
 import { idOf } from './schema.js';
@@ -98,7 +98,7 @@ export function portsPicker(ctx, d) {
   };
   const extra = v.ports.map(p => p.trim()).filter(p => p && !known.has(p));
   const typed = h('input', { className: 'form-control form-control-sm', placeholder: 'another device, e.g. eth0.5', spellcheck: false, autocomplete: 'off', disabled: !ctx.canEdit,
-    onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); addTyped(); } } });
+    onkeydown: onEnter(() => addTyped()) });
   // Adds the typed device name as a port.
   const addTyped = () => {
     const name = typed.value.trim();

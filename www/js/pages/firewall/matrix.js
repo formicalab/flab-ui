@@ -2,7 +2,7 @@
 // is closed. Rows are the source, columns the destination; the router itself is both a source and a destination.
 // With editing on, a cell between two different zones is a switch for the forwarding from the row's zone to the column's (the zone's own dialog
 // has the same switches, with the forwarding's other options left as they are).
-import { h } from '../../core/dom.js';
+import { h, onActivate } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { card } from '../../core/ui.js';
 import { buildMatrix, ROUTER } from './model.js';
@@ -40,7 +40,7 @@ function cell(c, ctx, pending) {
     td.tabIndex = 0;
     td.setAttribute('aria-label', clickWords(c));
     td.addEventListener('click', () => ctx.toggleForwarding(c.src, c.dest));
-    td.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ctx.toggleForwarding(c.src, c.dest); } });
+    td.addEventListener('keydown', onActivate(() => ctx.toggleForwarding(c.src, c.dest)));
   }
   return td;
 }

@@ -131,6 +131,27 @@ export function sysfs(path) {
 	return s == null ? null : trim(s);
 };
 
+// Seconds a process has been running: field 22 of /proc/<pid>/stat (clock ticks since boot, 100 a second) against /proc/uptime. Both
+// are monotonic, so a wall-clock step (a router without a battery clock at boot) does not move them. Null when either cannot be read.
+export function process_age(pid) {
+	if (type(pid) != 'int' || pid < 1)
+		return null;
+	let stat = sysfs_raw(`/proc/${pid}/stat`);
+	let up = sysfs_raw('/proc/uptime');
+	if (!stat || !up)
+		return null;
+	// The command name sits in parentheses and may hold spaces, so the fields are counted after the last ")".
+	let rest = split(trim(substr(stat, rindex(stat, ')') + 1)), /[[:space:]]+/);
+	if (length(rest) < 20)
+		return null;
+	let start = +rest[19];
+	let now = +split(trim(up), /[[:space:]]+/)[0];
+	if (!(start >= 0) || !(now > 0))
+		return null;
+	let age = int(now - start / 100.0);
+	return age < 0 ? 0 : age;
+};
+
 // True when `s` is a string without a line break. ucode's `^...$` patterns match the first line of a multi-line string, so
 // "1.1.1.1\nid" passes /^[0-9.]+$/: test one_line() before any pattern check on a value that reaches a shell string, a command
 // argument or a path.

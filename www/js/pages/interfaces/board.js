@@ -6,7 +6,7 @@
 // opening one, highlights everything connected to it (the cards it is built on and the cards built on it) and dims the rest, which works even
 // where the connectors are not drawn (narrow screens stack the lanes). The connectors are an SVG laid over the lanes, drawn after layout and
 // again whenever the board or a lane changes size. Every card wraps its text: nothing may overlap its neighbours at any width.
-import { h } from '../../core/dom.js';
+import { h, onActivate } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, button } from '../../core/ui.js';
 import { disclosure } from '../../core/fold.js';
@@ -208,7 +208,7 @@ export function boardView({ board, selected = null, onOpen, actions = null }) {
     else if (item.kind === 'radio') el.title = 'Opens the Wi-Fi radios page';
     els.set(item.id, el);
     el.addEventListener('click', e => { if (!e.target.closest('a, button, summary, input')) open(item); });
-    el.addEventListener('keydown', e => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(item); } });
+    el.addEventListener('keydown', onActivate(() => open(item)));
     el.addEventListener('mouseenter', () => { hovered = item.id; paint(); });
     el.addEventListener('mouseleave', () => { hovered = null; paint(); });
     el.addEventListener('focusin', e => { if (own(e)) { hovered = item.id; paint(); } });

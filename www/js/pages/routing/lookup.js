@@ -6,7 +6,7 @@
 // The lookup is part of the page's poll: once a query is set, every refresh asks the kernel again, so the answer
 // follows route changes (a failover shows up on its own). The form is not redrawn while one of its fields has
 // focus (the page pauses polling then), and its text lives in the page's state.
-import { h } from '../../core/dom.js';
+import { h, onEnter } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { disclosure } from '../../core/fold.js';
 import { badge, button, card, kv, mono, muted } from '../../core/ui.js';
@@ -55,7 +55,7 @@ function form(state, devices) {
     h('input', {
       className: 'form-control form-control-sm mono', type: 'text', placeholder, value: state.form[key], spellcheck: false, autocomplete: 'off',
       oninput: e => { state.form[key] = e.target.value; },
-      onkeydown: e => { if (e.key === 'Enter') submit(state); },
+      onkeydown: onEnter(() => submit(state)),
     }));
   const iif = h('select', { className: 'form-select form-select-sm', onchange: e => { state.form.iif = e.target.value; } },
     h('option', { value: '' }, 'any / this router'), devices.map(d => h('option', { value: d }, d)));

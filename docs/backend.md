@@ -64,7 +64,7 @@ that. rpcd cannot restrict `uci get` to section types, and root holds every frag
 Shared modules (`rpcd/lib/flab/`, imported as `flab.util`, `flab.vici`, `flab.exec`, `flab.jobs` and `flab.worker`):
 
 - **`flab.util`**: `run(cmd)`, `command_result(cmd, options)`, `ubus_call(conn, object, method, args)`, `uci_all(config)`,
-  `sysfs(path)` / `sysfs_raw(path)`, `fixture(name)`, `fixture_time()`, `record_file()`, `one_line()` and `safe_ifname()` (validators; see
+  `sysfs(path)` / `sysfs_raw(path)`, `process_age(pid)` (seconds a process has run), `fixture(name)`, `fixture_time()`, `record_file()`, `one_line()` and `safe_ifname()` (validators; see
   Shell safety below), `normalize_mac()`, `num()`, `as_list()` (a UCI option as a list),
   `iw_channel_info()` (channel, width and TX power from `iw dev <if> info`) and `security_label()`
   (human label of a wireless `encryption` value). They are also the test seam: with `FLAB_FIXTURES=<dir>`

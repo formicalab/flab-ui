@@ -1,6 +1,6 @@
 // The kernel-routing cards of the Routing page: the routing tables overview, the policy rules, and the route list
 // (every route of the selected table, with its next hops, interface, protocol and metric).
-import { h } from '../../core/dom.js';
+import { h, onActivate } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { chevron, foldable } from '../../core/fold.js';
 import { badge, button, card, mono, muted } from '../../core/ui.js';
@@ -54,7 +54,7 @@ export function tablesCard(data, state, rerender) {
     return h('tr', {
       className: `rt-pick ${active ? 'active' : ''}`, tabIndex: 0, title: 'Show the routes of this table',
       onclick: () => { state.table = t.name; rerender(); },
-      onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); state.table = t.name; rerender(); } },
+      onkeydown: onActivate(() => { state.table = t.name; rerender(); }),
     },
     h('td', {}, h('strong', {}, t.name), t.id != null && String(t.id) !== t.name ? h('span', { className: 'muted' }, ` (${t.id})`) : null),
     h('td', { className: 'muted' }, t.role || '–'),

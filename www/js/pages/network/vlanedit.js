@@ -1,7 +1,7 @@
 // The editable VLAN cards of the Ethernet ports view (shown while the editor is open): one matrix per VLAN-filtering bridge and per
 // swconfig switch, each cell a choice of how a port takes part in a VLAN. The cards edit the draft of vlanmodel.js; saving,
 // the review banner and the rollback countdown are the shared editor's (vlanpage.js). Styles are in css/network.css.
-import { h } from '../../core/dom.js';
+import { h, onEnter } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, button, card, muted } from '../../core/ui.js';
 import { legend, note } from '../../core/forms.js';
@@ -70,7 +70,7 @@ function addBar(ctx, table) {
     if (!s.error) { s.text = ''; ctx.touched(); }
     ctx.redraw();
   };
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+  input.addEventListener('keydown', onEnter(add));
   const go = button('Add VLAN', 'plus-lg', add, 'btn-outline-secondary', { disabled: !ctx.canEdit });
   return h('div', { className: 'vlan-add' }, input, go, s.error ? h('span', { className: 'vlan-add-error' }, s.error) : null);
 }

@@ -2,7 +2,7 @@
 // `chevron()` make a whole card fold down to its header (DHCP pools, Dynamic DNS services), and `reveal()` makes sure a control with an
 // error is visible again. The page remembers what is open or folded (the onToggle / onChange callbacks), so the choice survives the
 // redraws of the poll. The styles are in css/base.css (.fl-disclosure*, .fl-folded, .fl-fold-header, .fl-chevron), which every page has.
-import { h } from './dom.js';
+import { h, onActivate } from './dom.js';
 import { icon } from './icons.js';
 
 // The Bootstrap Icon at the left of a foldable card's header: right when folded, down when open.
@@ -30,7 +30,7 @@ export function foldable(el, folded, onChange) {
   header.setAttribute('aria-expanded', String(!folded));
   header.title = 'Click to fold or unfold';
   header.addEventListener('click', e => { if (!e.target.closest('input, button, select, a')) toggle(); });
-  header.addEventListener('keydown', e => { if (e.target === header && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(); } });
+  header.addEventListener('keydown', onActivate(toggle));
   return el;
 }
 

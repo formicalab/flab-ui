@@ -1,7 +1,7 @@
 // Controls of the Firewall dialogs that core/forms.js has no field type for: a set of check boxes over a list of choices (the router's
 // interfaces, the zones, the protocols) and the days of the week of a schedule. Each returns the same kind of node as core/forms.js
 // fieldRow() (a `.set-field` with its label and hint) and works on the draft value in place, so the dialog can use them next to the others.
-import { h } from '../../core/dom.js';
+import { h, onEnter } from '../../core/dom.js';
 import { button } from '../../core/ui.js';
 import { WEEKDAYS } from './schema.js';
 
@@ -36,7 +36,7 @@ export function checkField(f, io, items, { free = false } = {}) {
       io.touched();
       io.redraw();
     };
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    input.addEventListener('keydown', onEnter(add));
     more = h('div', { className: 'set-row fw-more' }, input, button('Add', 'plus-lg', add, 'btn-outline-secondary', { disabled: io.disabled }));
   }
   return h('div', { className: 'set-field full' }, h('label', { className: 'form-label' }, f.label), group, more, f.hint ? h('div', { className: 'muted small set-hint' }, f.hint) : null);

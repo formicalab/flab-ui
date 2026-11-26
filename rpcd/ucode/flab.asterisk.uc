@@ -18,7 +18,7 @@
 
 import { deferred } from 'flab.worker';
 import { readfile, writefile, stat, open, lsdir } from 'fs';
-import { command_result, fixture_time, sysfs, uci_all, record_file } from 'flab.util';
+import { command_result, fixture_time, process_age, sysfs, uci_all, record_file } from 'flab.util';
 
 const BINARY = '/usr/sbin/asterisk';
 const CONF_DIR = '/etc/asterisk';
@@ -613,17 +613,6 @@ function conf_index(with_active) {
 	if (RECORD)
 		record_file('conf_index.json', sprintf('%J', out));
 	return out;
-}
-
-// Seconds the process has run, from its start tick (field 22 of /proc/<pid>/stat, in 1/100 s since boot) and /proc/uptime: both are
-// monotonic, so a wall clock change does not move them. Null when unknown.
-function process_age(pid) {
-	let stat_ = pid ? sysfs(`/proc/${pid}/stat`) : null;
-	let boot = match(sysfs('/proc/uptime') ?? '', /^([0-9]+)/);
-	// The command name is in parentheses and may hold spaces: count the fields after the last ")".
-	let rest = stat_ != null ? match(stat_, /\)[ \t]+(.*)$/) : null;
-	let start = rest ? split(rest[1], ' ')[19] : null;
-	return (boot && start != null && match(start, /^[0-9]+$/)) ? max(0, +boot[1] - int(+start / 100)) : null;
 }
 
 // Seconds since the epoch that `core show uptime` puts the last reload at, or null. Only a full `core reload` moves it.

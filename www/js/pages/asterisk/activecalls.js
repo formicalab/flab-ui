@@ -1,7 +1,7 @@
 // Calls in progress card of the Calls tab (reply of `flab.asterisk active`, with the PJSIP reply for the far ends): tiles over all calls, then for each call a
 // diagram of its media path (far end, codec and quality of each side, the bridge) over the table of its channels. A channel row opens a side panel with
 // everything known about it. The data is turned into facts by callsmodel.js; this file only draws.
-import { h } from '../../core/dom.js';
+import { h, onActivate } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { openDrawer } from '../../core/drawer.js';
 import { badge, card, kv, mono, muted, section, sparkline, tile, tiles } from '../../core/ui.js';
@@ -103,7 +103,7 @@ function legRow(ch, call, pjsip, trunks, now) {
   const negotiated = native.length && !(native.length === 1 && native[0] === codec.text) ? native.join(', ') : null;
   const remaining = f?.hangup_at != null && now != null ? f.hangup_at - now : null;
   const open = () => openChannelDrawer(ch, call, pjsip, trunks, now);
-  return h('tr', { className: 'ast-row', tabIndex: 0, title: 'Show everything about this channel', onclick: open, onkeydown: ev => { if (ev.key === 'Enter') open(); } },
+  return h('tr', { className: 'ast-row', tabIndex: 0, title: 'Show everything about this channel', onclick: open, onkeydown: onActivate(open) },
     h('td', {}, h('div', { className: 'mono' }, ch.channel), who ? h('div', { className: 'muted small' }, who) : null, f?.dnid ? h('div', { className: 'muted small' }, `called ${f.dnid}`) : null),
     h('td', {}, badge(ch.state, ch.state === 'Up' ? 'success' : 'info'), held ? [' ', badge(held, 'warning', HOLD_TEXT)] : null),
     h('td', {}, ch.app ? h('span', { className: 'mono' }, ch.app) : muted('–'), ch.exten ? h('div', { className: 'muted small' }, `${ch.exten}@${ch.context}`) : null),

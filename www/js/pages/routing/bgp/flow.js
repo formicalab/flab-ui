@@ -1,8 +1,7 @@
 // Draws the flow diagram of the BIRD protocols card from the geometry of flowmodel.js: the protocols in lanes, the routing tables on the
 // right, what lies outside BIRD on the left, and a spline in each direction per channel, tagged with its filter (or with the default
 // action, when the configuration file says nothing). Plain SVG, so it scales with the card; the reasoning is all in the model.
-
-import { h } from '../../../core/dom.js';
+import { h, onActivate } from '../../../core/dom.js';
 import { icon } from '../../../core/icons.js';
 import { badge, muted, mono } from '../../../core/ui.js';
 import { openDrawer } from '../../../core/drawer.js';
@@ -37,7 +36,7 @@ function pressable(el, run, label) {
   el.setAttribute('tabindex', '0');
   if (label) el.setAttribute('aria-label', label);
   el.addEventListener('click', run);
-  el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); } });
+  el.addEventListener('keydown', onActivate(run));
   return el;
 }
 

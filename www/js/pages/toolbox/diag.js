@@ -8,7 +8,7 @@
 // seconds long, or, for the iperf3 server and a capture, ends by itself at the limit). The form and the job live in the
 // page's state (`state.diag`), so they survive redraws and leaving the page; the result is painted into one element that
 // the view creates on every redraw, so a redraw in the middle of a job simply continues with the new element.
-import { h } from '../../core/dom.js';
+import { h, onEnter } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { can, ubus } from '../../core/ubus.js';
 import { disclosure } from '../../core/fold.js';
@@ -228,7 +228,7 @@ function textInput(state, key, { placeholder = '', mono: m = false, disabled = f
   const input = h('input', {
     className: `form-control form-control-sm ${m ? 'mono' : ''}`, type, placeholder, value: state.diag.form[key], spellcheck: false, autocomplete: 'off', disabled,
     oninput: e => { state.diag.form[key] = e.target.value; },
-    onkeydown: e => { if (e.key === 'Enter') start(state); },
+    onkeydown: onEnter(() => start(state)),
   });
   if (width) input.style.maxWidth = width;
   return input;

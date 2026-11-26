@@ -1,6 +1,6 @@
 // The Connections tab of the Traffic page: the router's connection tracking table (flab.traffic connections), what it
 // holds by protocol, state and host, and the entries themselves with the translated address when NAT changed it.
-import { h } from '../../core/dom.js';
+import { h, onActivate } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { badge, button, card, healthBanner, muted, tile, tiles } from '../../core/ui.js';
 import { legend } from '../../core/forms.js';
@@ -32,7 +32,7 @@ function summary(data) {
 // One small list of hosts for a top-hosts card: the host (name above its address), its connections and, when the
 // router keeps byte counters, its traffic. A click filters the table to that host.
 function hostList(caption, list, names, acct, pick) {
-  const rows = list.map(x => h('tr', { className: 'tr-pick', tabIndex: 0, title: 'Show only this host', onclick: () => pick(x.addr), onkeydown: e => { if (e.key === 'Enter') pick(x.addr); } },
+  const rows = list.map(x => h('tr', { className: 'tr-pick', tabIndex: 0, title: 'Show only this host', onclick: () => pick(x.addr), onkeydown: onActivate(() => pick(x.addr)) },
     h('td', {}, names[x.addr] ? h('div', {}, h('strong', {}, names[x.addr]), h('div', { className: 'mono muted' }, x.addr)) : h('span', { className: 'mono' }, x.addr)),
     h('td', { className: 'tr-num' }, fmtNum(x.connections), x.unreplied ? h('div', {}, badge(`${fmtNum(x.unreplied)} unanswered`, 'warning')) : null),
     acct ? h('td', { className: 'tr-num' }, fmtBytes(x.bytes)) : null));

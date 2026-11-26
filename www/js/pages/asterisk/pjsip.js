@@ -1,5 +1,5 @@
 // PJSIP tab: outbound registrations, a signalling diagram, the endpoints (with a side panel for one), contacts, transports and active channels.
-import { h } from '../../core/dom.js';
+import { h, onActivate } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { ubus } from '../../core/ubus.js';
 import { badge, card, chip, emptyState, kv, mono, muted, sparkline, button } from '../../core/ui.js';
@@ -53,7 +53,7 @@ function endpointsCard(p) {
   const shown = p.endpoints.filter(e => matchesEndpoint(e, state.q, state.role));
   const rows = shown.map(e => {
     const reachable = e.contacts.filter(c => c.status === 'Avail').length;
-    return h('tr', { className: 'ast-row', tabIndex: 0, onclick: () => openEndpointDrawer(e), onkeydown: ev => { if (ev.key === 'Enter') openEndpointDrawer(e); } },
+    return h('tr', { className: 'ast-row', tabIndex: 0, onclick: () => openEndpointDrawer(e), onkeydown: onActivate(() => openEndpointDrawer(e)) },
       h('td', {}, h('div', { className: 'fw-semibold' }, e.name), h('div', { className: 'muted small' }, ROLE_TEXT[e.role] ?? e.role, e.callerid && e.callerid !== '<unknown>' ? ` · ${e.callerid}` : '')),
       h('td', {}, badge(e.state, endpointKind(e))),
       h('td', {}, e.channels ? `${e.channels}${e.max_channels != null ? ` of ${e.max_channels}` : ''}` : muted('–')),

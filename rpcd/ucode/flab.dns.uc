@@ -18,7 +18,7 @@
 import { deferred } from 'flab.worker';
 
 import { connect } from 'ubus';
-import { run, sysfs_raw, ubus_call, uci_all, num, one_line } from 'flab.util';
+import { run, process_age, sysfs_raw, ubus_call, uci_all, num, one_line } from 'flab.util';
 
 // Forwarders, listening sockets and values of one list option returned at most.
 const MAX_FORWARDS = 500;
@@ -111,27 +111,6 @@ function lowest_pid(text) {
 			best = +w;
 	}
 	return best;
-}
-
-// Seconds a process has been running: field 22 of /proc/<pid>/stat (clock ticks since boot, 100 a second)
-// against /proc/uptime. Null when either cannot be read.
-function process_age(pid) {
-	if (type(pid) != 'int' || pid < 1)
-		return null;
-	let stat = sysfs_raw(`/proc/${pid}/stat`);
-	let up = sysfs_raw('/proc/uptime');
-	if (!stat || !up)
-		return null;
-	// The command name sits in parentheses and may hold spaces, so the fields are counted after the last ")".
-	let rest = split(trim(substr(stat, rindex(stat, ')') + 1)), /[[:space:]]+/);
-	if (length(rest) < 20)
-		return null;
-	let start = +rest[19];
-	let now = +split(trim(up), /[[:space:]]+/)[0];
-	if (!(start >= 0) || !(now > 0))
-		return null;
-	let age = int(now - start / 100.0);
-	return age < 0 ? 0 : age;
 }
 
 // The listening sockets of `netstat -lntup` as [{ proto, addr, port, program }]. The local address is split at its
