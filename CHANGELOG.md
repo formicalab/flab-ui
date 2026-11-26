@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.25 - 2026-11-26
+
+### Asterisk
+
+- **Uptime and last reload after a boot:** a router without a battery clock starts with a stale time that NTP steps a few minutes later, and
+  Asterisk (which counts from the wall clock) then reported hours of uptime right after a restart. Both values are now capped by the age of the
+  Asterisk process, read from `/proc`, which a clock change does not move.
+- **Overview finding for a missing call history:** when `cdr show status` lists no `csv` backend, the Overview warns that `asterisk-cdr-csv`
+  is not installed (the Calls tab stays empty without it).
+
 ## 0.1.24 - 2026-11-25
 
 ### DNS
