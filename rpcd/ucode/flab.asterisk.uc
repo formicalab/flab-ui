@@ -615,6 +615,17 @@ function conf_index(with_active) {
 	return out;
 }
 
+// Seconds the process has run, from its start tick (field 22 of /proc/<pid>/stat, in 1/100 s since boot) and /proc/uptime: both are
+// monotonic, so a wall clock change does not move them. Null when unknown.
+function process_age(pid) {
+	let stat_ = pid ? sysfs(`/proc/${pid}/stat`) : null;
+	let boot = match(sysfs('/proc/uptime') ?? '', /^([0-9]+)/);
+	// The command name is in parentheses and may hold spaces: count the fields after the last ")".
+	let rest = stat_ != null ? match(stat_, /\)[ \t]+(.*)$/) : null;
+	let start = rest ? split(rest[1], ' ')[19] : null;
+	return (boot && start != null && match(start, /^[0-9]+$/)) ? max(0, +boot[1] - int(+start / 100)) : null;
+}
+
 // Seconds since the epoch that `core show uptime` puts the last reload at, or null. Only a full `core reload` moves it.
 function reload_epoch(now, up) {
 	return up.reload != null ? now - up.reload : null;
@@ -724,6 +735,14 @@ function status() {
 	}
 
 	let up = parse_uptime(uptime_text);
+	// Asterisk counts from the wall clock, which a router without a battery clock steps at boot once NTP answers: cap it by the process age.
+	let age = process_age(pid);
+	if (age != null) {
+		if (up.uptime != null && up.uptime > age)
+			up.uptime = age;
+		if (up.reload != null && up.reload > age)
+			up.reload = age;
+	}
 	s.uptime = up.uptime;
 	s.started = up.uptime != null ? now - up.uptime : null;
 	s.reloaded = reload_epoch(now, up);
